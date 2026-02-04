@@ -1,0 +1,2612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inventory</title>
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary-green: #10b981;
+            --secondary-green: #059669;
+            --light-green: #d1fae5;
+            --dark-green: #047857;
+            --success-green: #34d399;
+            --warning-green: #fbbf24;
+            --danger-green: #f87171;
+            --info-green: #22d3ee;
+            --dark-color: #1f2937;
+            --light-color: #f9fafb;
+            --sidebar-width: 260px;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background-color: var(--light-color);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            color: var(--dark-color);
+            line-height: 1.6;
+        }
+        
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: var(--light-green);
+            border-radius: 4px;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: var(--primary-green);
+            border-radius: 4px;
+        }
+        
+        /* Login Page */
+        .login-container {
+            min-height: 100vh;
+            background: linear-gradient(135deg, var(--dark-green) 0%, var(--primary-green) 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .login-card {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+            width: 100%;
+            max-width: 450px;
+            border: 1px solid var(--light-green);
+        }
+        
+        .company-logo {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--dark-green), var(--primary-green));
+            margin: 0 auto 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 3rem;
+            overflow: hidden;
+            border: 5px solid white;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+        
+        .company-logo img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        
+        /* Sidebar */
+        .sidebar {
+            background: linear-gradient(180deg, var(--dark-color) 0%, #111827 100%);
+            color: white;
+            height: 100vh;
+            position: fixed;
+            width: var(--sidebar-width);
+            box-shadow: 3px 0 15px rgba(0, 0, 0, 0.1);
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            overflow-y: auto;
+            transition: transform 0.3s ease;
+        }
+        
+        .sidebar-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: center;
+        }
+        
+        .sidebar-header h3 {
+            margin: 0;
+            color: white;
+            font-weight: 700;
+            font-size: 1.25rem;
+        }
+        
+        .sidebar-header .logo-icon {
+            color: var(--primary-green);
+            margin-right: 10px;
+        }
+        
+        .sidebar-menu {
+            padding: 1.5rem 0;
+        }
+        
+        .nav-link {
+            color: #9ca3af;
+            padding: 12px 20px;
+            margin: 4px 15px;
+            border-radius: 10px;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            text-decoration: none;
+            font-weight: 500;
+        }
+        
+        .nav-link:hover, .nav-link.active {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--primary-green);
+            transform: translateX(5px);
+        }
+        
+        .nav-link i {
+            width: 24px;
+            font-size: 1.1rem;
+            margin-right: 12px;
+        }
+        
+        /* Main Content */
+        .main-content {
+            margin-left: var(--sidebar-width);
+            padding: 20px;
+            min-height: 100vh;
+            transition: margin-left 0.3s ease;
+        }
+        
+        /* Mobile Responsiveness */
+        @media (max-width: 992px) {
+            .sidebar {
+                transform: translateX(-100%);
+            }
+            
+            .sidebar.active {
+                transform: translateX(0);
+            }
+            
+            .main-content {
+                margin-left: 0;
+                padding: 15px;
+            }
+        }
+        
+        /* Header/Navbar with User Info */
+        .navbar-top {
+            background: white;
+            border-radius: 12px;
+            padding: 1rem 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            border: 1px solid var(--light-green);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+        
+        .page-title h2 {
+            color: var(--dark-color);
+            font-weight: 700;
+            margin: 0;
+            font-size: 1.5rem;
+        }
+        
+        .page-title p {
+            color: #6b7280;
+            margin: 0;
+            font-size: 0.9rem;
+        }
+        
+        .user-info-top {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            flex-wrap: wrap;
+        }
+        
+        .user-profile-top {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.5rem 1rem;
+            background: rgba(16, 185, 129, 0.1);
+            border-radius: 8px;
+            border: 1px solid var(--light-green);
+        }
+        
+        .user-avatar-top {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--primary-green), var(--secondary-green));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        
+        .user-details-top {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .user-name-top {
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: var(--dark-color);
+        }
+        
+        .user-role-top {
+            font-size: 0.75rem;
+            color: var(--primary-green);
+            font-weight: 500;
+        }
+        
+        .logout-btn-top {
+            background: transparent;
+            border: 1px solid var(--danger-green);
+            color: var(--danger-green);
+            border-radius: 8px;
+            padding: 0.5rem 1rem;
+            font-weight: 600;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            cursor: pointer;
+        }
+        
+        .logout-btn-top:hover {
+            background: var(--danger-green);
+            color: white;
+            transform: translateY(-2px);
+        }
+        
+        /* Cards */
+        .stat-card {
+            border: none;
+            border-radius: 12px;
+            color: white;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+            transition: all 0.3s ease;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+            height: 100%;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 12px 25px rgba(0, 0, 0, 0.12);
+        }
+        
+        .stat-card.total { background: linear-gradient(135deg, var(--dark-green), var(--primary-green)); }
+        .stat-card.sales { background: linear-gradient(135deg, #059669, #10b981); }
+        .stat-card.customers { background: linear-gradient(135deg, #047857, #059669); }
+        .stat-card.pending { background: linear-gradient(135deg, #f59e0b, #fbbf24); }
+        .stat-card.delivery { background: linear-gradient(135deg, #0891b2, #22d3ee); }
+        .stat-card.complete { background: linear-gradient(135deg, #065f46, #047857); }
+        .stat-card.inventory { background: linear-gradient(135deg, #7c3aed, #8b5cf6); }
+        
+        .stat-icon {
+            font-size: 2.2rem;
+            opacity: 0.9;
+            margin-bottom: 0.75rem;
+        }
+        
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin: 0.5rem 0;
+            line-height: 1.2;
+        }
+        
+        .stat-label {
+            font-size: 0.875rem;
+            opacity: 0.95;
+            font-weight: 500;
+        }
+        
+        /* Form Cards */
+        .form-card {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            border: 1px solid var(--light-green);
+            margin-bottom: 1.5rem;
+        }
+        
+        /* Forms */
+        .form-label {
+            font-weight: 600;
+            color: var(--dark-color);
+            margin-bottom: 0.5rem;
+            font-size: 0.9rem;
+        }
+        
+        .form-control, .form-select {
+            border: 2px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 0.75rem 1rem;
+            transition: all 0.3s;
+            font-size: 0.95rem;
+        }
+        
+        .form-control:focus, .form-select:focus {
+            border-color: var(--primary-green);
+            box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+            outline: none;
+        }
+        
+        /* Buttons */
+        .btn-primary {
+            background: linear-gradient(135deg, var(--primary-green), var(--secondary-green));
+            border: none;
+            border-radius: 8px;
+            padding: 0.75rem 1.5rem;
+            font-weight: 600;
+            transition: all 0.3s;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(16, 185, 129, 0.3);
+            background: linear-gradient(135deg, var(--secondary-green), var(--dark-green));
+            color: white;
+        }
+        
+        /* Tables */
+        .data-table {
+            background: white;
+            border-radius: 12px;
+            overflow: hidden;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            border: 1px solid var(--light-green);
+            margin-bottom: 1.5rem;
+        }
+        
+        .table-header {
+            padding: 1.25rem 1.5rem;
+            border-bottom: 1px solid var(--light-green);
+            background: #f9fafb;
+        }
+        
+        .table-header h5 {
+            margin: 0;
+            color: var(--dark-color);
+            font-weight: 600;
+            font-size: 1.1rem;
+        }
+        
+        .custom-table {
+            margin: 0;
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+        }
+        
+        .custom-table thead {
+            background: linear-gradient(90deg, var(--dark-green), var(--secondary-green));
+            color: white;
+        }
+        
+        .custom-table th {
+            border: none;
+            padding: 1rem 1.25rem;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+        
+        .custom-table td {
+            padding: 1rem 1.25rem;
+            vertical-align: middle;
+            border-bottom: 1px solid var(--light-green);
+            font-size: 0.95rem;
+        }
+        
+        .custom-table tbody tr:hover {
+            background-color: rgba(209, 250, 229, 0.3);
+        }
+        
+        /* Badges */
+        .badge {
+            padding: 0.35rem 0.75rem;
+            font-weight: 600;
+            border-radius: 20px;
+            font-size: 0.8rem;
+        }
+        
+        .badge-success { background: rgba(16, 185, 129, 0.15); color: var(--primary-green); }
+        .badge-warning { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+        .badge-danger { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
+        .badge-info { background: rgba(34, 211, 238, 0.15); color: #22d3ee; }
+        .badge-primary { background: rgba(16, 185, 129, 0.15); color: var(--primary-green); }
+        
+        /* Quick Actions */
+        .quick-actions {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem;
+            margin: 1.5rem 0;
+        }
+        
+        .quick-action-btn {
+            background: white;
+            border: 2px dashed #e5e7eb;
+            border-radius: 12px;
+            padding: 1.5rem 1rem;
+            text-align: center;
+            color: var(--dark-color);
+            text-decoration: none;
+            transition: all 0.3s;
+            cursor: pointer;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .quick-action-btn:hover {
+            border-color: var(--primary-green);
+            color: var(--primary-green);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+        }
+        
+        /* Mobile Menu Button */
+        .mobile-menu-btn {
+            display: none;
+            background: var(--primary-green);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 0.75rem;
+            font-size: 1.25rem;
+            cursor: pointer;
+            position: fixed;
+            top: 1rem;
+            left: 1rem;
+            z-index: 9999;
+            box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+        }
+        
+        @media (max-width: 992px) {
+            .mobile-menu-btn {
+                display: block;
+            }
+            
+            .navbar-top {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .user-info-top {
+                justify-content: space-between;
+                width: 100%;
+            }
+        }
+        
+        /* Charts */
+        .chart-container {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+            border: 1px solid var(--light-green);
+            margin-bottom: 1.5rem;
+        }
+        
+        /* Action Buttons */
+        .action-buttons {
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .btn-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: none;
+            transition: all 0.3s;
+        }
+        
+        .btn-icon.btn-view {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--primary-green);
+        }
+        
+        .btn-icon.btn-edit {
+            background: rgba(59, 130, 246, 0.1);
+            color: #3b82f6;
+        }
+        
+        .btn-icon.btn-delete {
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+        }
+        
+        /* Page Content */
+        .page-content {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+        
+        .page-content.active {
+            display: block;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        /* Status Indicators */
+        .status-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        
+        .status-dot.active { background-color: var(--primary-green); }
+        .status-dot.inactive { background-color: #9ca3af; }
+        .status-dot.pending { background-color: #f59e0b; }
+        
+        /* Search Box */
+        .search-box {
+            position: relative;
+        }
+        
+        .search-box input {
+            padding-left: 2.75rem;
+            border-radius: 8px;
+            border: 2px solid #e5e7eb;
+            width: 100%;
+            font-size: 0.95rem;
+        }
+        
+        .search-box i {
+            position: absolute;
+            left: 1rem;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #9ca3af;
+        }
+        
+        /* Access Restricted Message */
+        .access-restricted {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 400px;
+            text-align: center;
+            padding: 3rem;
+        }
+        
+        .access-restricted-icon {
+            font-size: 4rem;
+            color: #9ca3af;
+            margin-bottom: 1.5rem;
+        }
+        
+        /* Branch Filter */
+        .branch-filter {
+            background: rgba(16, 185, 129, 0.1);
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+            border: 1px solid var(--light-green);
+        }
+        
+        .branch-filter-label {
+            font-weight: 600;
+            color: var(--primary-green);
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <!-- MOBILE MENU BUTTON -->
+    <button class="mobile-menu-btn" id="mobileMenuBtn">
+        <i class="bi bi-list"></i>
+    </button>
+
+    <!-- LOGIN PAGE -->
+    <div id="loginPage" class="login-container">
+        <div class="login-card">
+            <div class="text-center">
+                <div class="company-logo">
+                    <!-- Replace this with your actual logo image -->
+                    <div style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; background: linear-gradient(135deg, var(--dark-green), var(--primary-green)); color: white; font-size: 2.5rem; font-weight: bold;">
+                        INV
+                    </div>
+                </div>
+                <h2 class="mb-3 fw-bold">Inventory System</h2>
+                <p class="text-muted mb-4">Sustainable Inventory Management</p>
+            </div>
+            
+            <form id="loginForm">
+                <div class="mb-4">
+                    <label class="form-label">Username</label>
+                    <div class="input-group">
+                        <span class="input-group-text">
+                            <i class="bi bi-person"></i>
+                        </span>
+                        <input type="text" class="form-control" id="username" placeholder="Enter username" required>
+                    </div>
+                </div>
+                
+                <div class="mb-4">
+                    <label class="form-label">Password</label>
+                    <div class="input-group">
+                        <span class="input-group-text">
+                            <i class="bi bi-lock"></i>
+                        </span>
+                        <input type="password" class="form-control" id="password" placeholder="Enter password" required>
+                    </div>
+                </div>
+                
+                <div class="d-grid gap-2">
+                    <button type="button" class="btn btn-primary btn-lg" onclick="login()">
+                        <i class="bi bi-box-arrow-in-right me-2"></i>Log In
+                    </button>
+                    <div class="text-center mt-3">
+                        <small class="text-muted">Try: admin/admin123 | branch1/branch123</small>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- MAIN APPLICATION -->
+    <div id="appPage" style="display: none;">
+        <!-- Sidebar -->
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h3><i class="bi bi-box-seam logo-icon"></i> <span class="nav-text">Inventory</span></h3>
+            </div>
+            
+            <div class="sidebar-menu">
+                <ul class="nav flex-column">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="#" onclick="showPage('dashboard')">
+                            <i class="bi bi-speedometer2"></i>
+                            <span class="nav-text">Dashboard</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" onclick="showPage('transactions')">
+                            <i class="bi bi-arrow-left-right"></i>
+                            <span class="nav-text">Transactions</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" onclick="showPage('items')">
+                            <i class="bi bi-box"></i>
+                            <span class="nav-text">Items</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" onclick="showPage('warehouses')">
+                            <i class="bi bi-house-door"></i>
+                            <span class="nav-text">Warehouses</span>
+                        </a>
+                    </li>
+                    <li class="nav-item" id="branchesNav">
+                        <a class="nav-link" href="#" onclick="showPage('branches')">
+                            <i class="bi bi-shop"></i>
+                            <span class="nav-text">Branches</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" onclick="showPage('sales')">
+                            <i class="bi bi-graph-up-arrow"></i>
+                            <span class="nav-text">Sales Reports</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" onclick="showPage('purchaseOrders')">
+                            <i class="bi bi-file-text"></i>
+                            <span class="nav-text">Purchase Orders</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" onclick="showPage('deliveries')">
+                            <i class="bi bi-truck"></i>
+                            <span class="nav-text">Deliveries</span>
+                        </a>
+                    </li>
+                    <li class="nav-item" id="companiesNav">
+                        <a class="nav-link" href="#" onclick="showPage('companies')">
+                            <i class="bi bi-building"></i>
+                            <span class="nav-text">Companies</span>
+                        </a>
+                    </li>
+                    <li class="nav-item" id="usersNav">
+                        <a class="nav-link" href="#" onclick="showPage('users')">
+                            <i class="bi bi-people"></i>
+                            <span class="nav-text">Users</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content" id="mainContent">
+            <!-- DASHBOARD -->
+            <div id="dashboardContent" class="page-content active">
+                <div class="navbar-top">
+                    <div class="page-title">
+                        <h2><i class="bi bi-speedometer2 me-2"></i>Dashboard</h2>
+                        <p id="dashboardSubtitle">Welcome back! Here's what's happening today.</p>
+                    </div>
+                    
+                    <div class="user-info-top">
+                        <div class="search-box">
+                            <i class="bi bi-search"></i>
+                            <input type="text" class="form-control" placeholder="Search...">
+                        </div>
+                        
+                        <div class="user-profile-top">
+                            <div class="user-avatar-top" id="userAvatar">AD</div>
+                            <div class="user-details-top">
+                                <span class="user-name-top" id="userName">Admin User</span>
+                                <span class="user-role-top" id="userRole">Administrator</span>
+                            </div>
+                        </div>
+                        
+                        <button class="logout-btn-top" onclick="logout()">
+                            <i class="bi bi-box-arrow-right"></i> Logout
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Branch Filter for Branch Manager -->
+                <div id="branchFilterContainer" style="display: none;">
+                    <div class="branch-filter">
+                        <div class="branch-filter-label">
+                            <i class="bi bi-shop"></i> Currently Viewing: 
+                            <select id="branchFilter" class="form-select form-select-sm" style="width: auto; display: inline-block; margin-left: 10px;" onchange="updateBranchView()">
+                                <option value="">Select Branch</option>
+                            </select>
+                        </div>
+                        <small class="text-muted">As a Branch Manager, you can only view data for your assigned branch.</small>
+                    </div>
+                </div>
+
+                <!-- Quick Stats -->
+                <div class="row g-3 mb-4">
+                    <div class="col-xl-3 col-md-6">
+                        <div class="stat-card total">
+                            <i class="bi bi-bar-chart stat-icon"></i>
+                            <div class="stat-value" id="statMonthlySales">₱ 1.2M</div>
+                            <div class="stat-label">Monthly Sales</div>
+                            <small class="d-block mt-2"><i class="bi bi-arrow-up-right"></i> 12.5% from last month</small>
+                        </div>
+                    </div>
+                    <div class="col-xl-3 col-md-6">
+                        <div class="stat-card sales">
+                            <i class="bi bi-cash-coin stat-icon"></i>
+                            <div class="stat-value" id="statActiveAccounts">156</div>
+                            <div class="stat-label">Active Accounts</div>
+                            <small class="d-block mt-2"><i class="bi bi-arrow-up-right"></i> 8 new this month</small>
+                        </div>
+                    </div>
+                    <div class="col-xl-3 col-md-6">
+                        <div class="stat-card pending">
+                            <i class="bi bi-clock stat-icon"></i>
+                            <div class="stat-value" id="statPendingDeliveries">12</div>
+                            <div class="stat-label">Pending Deliveries</div>
+                            <small class="d-block mt-2">3 require immediate attention</small>
+                        </div>
+                    </div>
+                    <div class="col-xl-3 col-md-6">
+                        <div class="stat-card complete">
+                            <i class="bi bi-check-circle stat-icon"></i>
+                            <div class="stat-value" id="statOrderAccuracy">98%</div>
+                            <div class="stat-label">Order Accuracy</div>
+                            <small class="d-block mt-2">Excellent performance</small>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="quick-actions" id="quickActions">
+                    <div class="quick-action-btn" onclick="showPage('transactions')">
+                        <i class="bi bi-plus-circle"></i>
+                        <div>New Transaction</div>
+                    </div>
+                    <div class="quick-action-btn" onclick="showPage('purchaseOrders')">
+                        <i class="bi bi-file-text"></i>
+                        <div>Create PO</div>
+                    </div>
+                    <div class="quick-action-btn" onclick="showPage('deliveries')">
+                        <i class="bi bi-truck"></i>
+                        <div>Schedule Delivery</div>
+                    </div>
+                    <div class="quick-action-btn" onclick="showPage('sales')">
+                        <i class="bi bi-graph-up-arrow"></i>
+                        <div>View Reports</div>
+                    </div>
+                </div>
+
+                <!-- Recent Activity -->
+                <div class="row g-3">
+                    <div class="col-lg-8">
+                        <div class="data-table">
+                            <div class="table-header">
+                                <h5>Recent Transactions</h5>
+                            </div>
+                            <div class="table-responsive">
+                                <table class="table custom-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Type</th>
+                                            <th>Reference</th>
+                                            <th>Amount</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="recentTransactions">
+                                        <tr>
+                                            <td>2024-01-15</td>
+                                            <td><span class="badge badge-success">Sale</span></td>
+                                            <td>SALE-001245</td>
+                                            <td>₱ 25,000</td>
+                                            <td><span class="badge badge-success">Completed</span></td>
+                                        </tr>
+                                        <tr>
+                                            <td>2024-01-15</td>
+                                            <td><span class="badge badge-info">Purchase</span></td>
+                                            <td>PO-001244</td>
+                                            <td>₱ 45,000</td>
+                                            <td><span class="badge badge-warning">Pending</span></td>
+                                        </tr>
+                                        <tr>
+                                            <td>2024-01-14</td>
+                                            <td><span class="badge badge-primary">Delivery</span></td>
+                                            <td>DEL-001243</td>
+                                            <td>₱ 18,750</td>
+                                            <td><span class="badge badge-info">In Transit</span></td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-lg-4">
+                        <div class="chart-container">
+                            <h5>Monthly Sales Trend</h5>
+                            <canvas id="dashboardChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TRANSACTIONS PAGE -->
+            <div id="transactionsContent" class="page-content">
+                <div class="navbar-top">
+                    <div class="page-title">
+                        <h2><i class="bi bi-arrow-left-right me-2"></i>Transactions</h2>
+                        <p>Manage all inventory transactions</p>
+                    </div>
+                    
+                    <div class="user-info-top">
+                        <div class="search-box">
+                            <i class="bi bi-search"></i>
+                            <input type="text" class="form-control" placeholder="Search transactions...">
+                        </div>
+                        
+                        <div class="user-profile-top">
+                            <div class="user-avatar-top">AD</div>
+                            <div class="user-details-top">
+                                <span class="user-name-top" id="transactionsUserName">Admin User</span>
+                                <span class="user-role-top" id="transactionsUserRole">Administrator</span>
+                            </div>
+                        </div>
+                        
+                        <button class="logout-btn-top" onclick="logout()">
+                            <i class="bi bi-box-arrow-right"></i> Logout
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Branch Filter for Branch Manager -->
+                <div id="transactionsBranchFilter" style="display: none;">
+                    <div class="branch-filter">
+                        <div class="branch-filter-label">
+                            <i class="bi bi-filter"></i> Branch Filter: 
+                            <select id="transactionsBranchSelect" class="form-select form-select-sm" style="width: auto; display: inline-block; margin-left: 10px;" onchange="filterTransactionsByBranch()">
+                                <option value="">Select Branch</option>
+                            </select>
+                        </div>
+                        <small class="text-muted">Showing transactions for selected branch only.</small>
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-4">
+                    <div class="col-12">
+                        <div class="form-card">
+                            <div class="row g-3">
+                                <div class="col-md-8">
+                                    <div class="search-box">
+                                        <i class="bi bi-search"></i>
+                                        <input type="text" class="form-control" placeholder="Search transactions...">
+                                    </div>
+                                </div>
+                                <div class="col-md-2">
+                                    <select class="form-select">
+                                        <option>All Types</option>
+                                        <option>Stock In</option>
+                                        <option>Stock Out</option>
+                                        <option>Transfer</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-2">
+                                    <button class="btn btn-primary w-100">Filter</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-4">
+                    <div class="col-md-3">
+                        <div class="stat-card total">
+                            <div class="stat-value" id="transactionsTotal">1,245</div>
+                            <div class="stat-label">Total Transactions</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card sales">
+                            <div class="stat-value" id="transactionsStockIn">856</div>
+                            <div class="stat-label">Stock In</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card complete">
+                            <div class="stat-value" id="transactionsStockOut">389</div>
+                            <div class="stat-label">Stock Out</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card complete">
+                            <div class="stat-value" id="transactionsAccuracy">98.2%</div>
+                            <div class="stat-label">Accuracy Rate</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="data-table">
+                    <div class="table-header d-flex justify-content-between align-items-center">
+                        <h5>Transaction History</h5>
+                        <button class="btn btn-primary btn-sm" id="newTransactionBtn">
+                            <i class="bi bi-plus-circle me-1"></i> New Transaction
+                        </button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table custom-table">
+                            <thead>
+                                <tr>
+                                    <th>Date & Time</th>
+                                    <th>Reference No.</th>
+                                    <th>Transaction Type</th>
+                                    <th>Branch</th>
+                                    <th>Item Code</th>
+                                    <th>Quantity</th>
+                                    <th>Encoded By</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="transactionsTable">
+                                <!-- Transactions will be loaded dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ITEMS PAGE -->
+            <div id="itemsContent" class="page-content">
+                <div class="navbar-top">
+                    <div class="page-title">
+                        <h2><i class="bi bi-box me-2"></i>Items</h2>
+                        <p>Manage inventory items and products</p>
+                    </div>
+                    
+                    <div class="user-info-top">
+                        <div class="search-box">
+                            <i class="bi bi-search"></i>
+                            <input type="text" class="form-control" placeholder="Search items...">
+                        </div>
+                        
+                        <div class="user-profile-top">
+                            <div class="user-avatar-top">AD</div>
+                            <div class="user-details-top">
+                                <span class="user-name-top">Admin User</span>
+                                <span class="user-role-top">Administrator</span>
+                            </div>
+                        </div>
+                        
+                        <button class="logout-btn-top" onclick="logout()">
+                            <i class="bi bi-box-arrow-right"></i> Logout
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Branch Filter for Branch Manager -->
+                <div id="itemsBranchFilter" style="display: none;">
+                    <div class="branch-filter">
+                        <div class="branch-filter-label">
+                            <i class="bi bi-filter"></i> Branch Filter: 
+                            <select id="itemsBranchSelect" class="form-select form-select-sm" style="width: auto; display: inline-block; margin-left: 10px;" onchange="filterItemsByBranch()">
+                                <option value="">Select Branch</option>
+                            </select>
+                        </div>
+                        <small class="text-muted">Showing items for selected branch only.</small>
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-4">
+                    <div class="col-12">
+                        <div class="form-card">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0">Item Management</h5>
+                                <button class="btn btn-primary" id="addItemBtn">
+                                    <i class="bi bi-plus-circle me-1"></i> Add New Item
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-4">
+                    <div class="col-md-3">
+                        <div class="stat-card total">
+                            <div class="stat-value" id="itemsActive">156</div>
+                            <div class="stat-label">Active Items</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card complete">
+                            <div class="stat-value" id="itemsLowStock">12</div>
+                            <div class="stat-label">Low Stock</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card total">
+                            <div class="stat-value" id="itemsValue">₱ 2.5M</div>
+                            <div class="stat-label">Inventory Value</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card complete">
+                            <div class="stat-value" id="itemsCategories">45</div>
+                            <div class="stat-label">Categories</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="data-table">
+                    <div class="table-header">
+                        <h5>Item List</h5>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table custom-table">
+                            <thead>
+                                <tr>
+                                    <th>Item Code</th>
+                                    <th>Item Name</th>
+                                    <th>Category</th>
+                                    <th>Current Stock</th>
+                                    <th>Unit Price</th>
+                                    <th>Warehouse</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="itemsTable">
+                                <!-- Items will be loaded dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- WAREHOUSES PAGE -->
+            <div id="warehousesContent" class="page-content">
+                <div class="navbar-top">
+                    <div class="page-title">
+                        <h2><i class="bi bi-house-door me-2"></i>Warehouses</h2>
+                        <p>Manage warehouse locations and inventory</p>
+                    </div>
+                    
+                    <div class="user-info-top">
+                        <div class="search-box">
+                            <i class="bi bi-search"></i>
+                            <input type="text" class="form-control" placeholder="Search warehouses...">
+                        </div>
+                        
+                        <div class="user-profile-top">
+                            <div class="user-avatar-top">AD</div>
+                            <div class="user-details-top">
+                                <span class="user-name-top">Admin User</span>
+                                <span class="user-role-top">Administrator</span>
+                            </div>
+                        </div>
+                        
+                        <button class="logout-btn-top" onclick="logout()">
+                            <i class="bi bi-box-arrow-right"></i> Logout
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Branch Filter for Branch Manager -->
+                <div id="warehousesBranchFilter" style="display: none;">
+                    <div class="branch-filter">
+                        <div class="branch-filter-label">
+                            <i class="bi bi-filter"></i> Branch Filter: 
+                            <select id="warehousesBranchSelect" class="form-select form-select-sm" style="width: auto; display: inline-block; margin-left: 10px;" onchange="filterWarehousesByBranch()">
+                                <option value="">Select Branch</option>
+                            </select>
+                        </div>
+                        <small class="text-muted">Showing warehouses for selected branch only.</small>
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-4">
+                    <div class="col-md-4">
+                        <div class="stat-card total">
+                            <div class="stat-value" id="warehousesTotal">8</div>
+                            <div class="stat-label">Total Warehouses</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="stat-card sales">
+                            <div class="stat-value" id="warehousesValue">₱ 4.2M</div>
+                            <div class="stat-label">Total Inventory Value</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="stat-card complete">
+                            <div class="stat-value" id="warehousesCapacity">92%</div>
+                            <div class="stat-label">Capacity Used</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="data-table">
+                    <div class="table-header d-flex justify-content-between align-items-center">
+                        <h5>Warehouse List</h5>
+                        <button class="btn btn-primary btn-sm" id="addWarehouseBtn">
+                            <i class="bi bi-plus-circle me-1"></i> Add Warehouse
+                        </button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table custom-table">
+                            <thead>
+                                <tr>
+                                    <th>Warehouse ID</th>
+                                    <th>Warehouse Name</th>
+                                    <th>Location</th>
+                                    <th>Capacity</th>
+                                    <th>Current Stock</th>
+                                    <th>Branch</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="warehousesTable">
+                                <!-- Warehouses will be loaded dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- BRANCHES PAGE -->
+            <div id="branchesContent" class="page-content">
+                <div class="navbar-top">
+                    <div class="page-title">
+                        <h2><i class="bi bi-shop me-2"></i>Branches</h2>
+                        <p id="branchesSubtitle">Manage branch locations and operations</p>
+                    </div>
+                    
+                    <div class="user-info-top">
+                        <div class="search-box">
+                            <i class="bi bi-search"></i>
+                            <input type="text" class="form-control" placeholder="Search branches...">
+                        </div>
+                        
+                        <div class="user-profile-top">
+                            <div class="user-avatar-top">AD</div>
+                            <div class="user-details-top">
+                                <span class="user-name-top">Admin User</span>
+                                <span class="user-role-top">Administrator</span>
+                            </div>
+                        </div>
+                        
+                        <button class="logout-btn-top" onclick="logout()">
+                            <i class="bi bi-box-arrow-right"></i> Logout
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Access Restricted for Branch Manager -->
+                <div id="branchesRestricted" class="access-restricted" style="display: none;">
+                    <div class="access-restricted-icon">
+                        <i class="bi bi-shield-lock"></i>
+                    </div>
+                    <h4 class="mb-3">Access Restricted</h4>
+                    <p class="text-muted mb-4">
+                        As a Branch Manager, you can only view and manage data for your assigned branch.<br>
+                        Branch management is restricted to system administrators.
+                    </p>
+                    <button class="btn btn-primary" onclick="showPage('dashboard')">
+                        <i class="bi bi-arrow-left me-2"></i> Back to Dashboard
+                    </button>
+                </div>
+
+                <div id="branchesContentArea">
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-3">
+                            <div class="stat-card total">
+                                <div class="stat-value">12</div>
+                                <div class="stat-label">Total Branches</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stat-card sales">
+                                <div class="stat-value">₱ 8.5M</div>
+                                <div class="stat-label">Total Sales</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stat-card customers">
+                                <div class="stat-value">156</div>
+                                <div class="stat-label">Active Accounts</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stat-card complete">
+                                <div class="stat-value">98%</div>
+                                <div class="stat-label">Operational</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="data-table">
+                        <div class="table-header d-flex justify-content-between align-items-center">
+                            <h5>Branch List</h5>
+                            <button class="btn btn-primary btn-sm" id="addBranchBtn">
+                                <i class="bi bi-plus-circle me-1"></i> Add Branch
+                            </button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table custom-table">
+                                <thead>
+                                    <tr>
+                                        <th>Branch ID</th>
+                                        <th>Branch Name</th>
+                                        <th>Location</th>
+                                        <th>Manager</th>
+                                        <th>Contact</th>
+                                        <th>Sales (Monthly)</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="branchesTable">
+                                    <!-- Branches will be loaded dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- SALES REPORTS PAGE -->
+            <div id="salesContent" class="page-content">
+                <div class="navbar-top">
+                    <div class="page-title">
+                        <h2><i class="bi bi-graph-up-arrow me-2"></i>Sales Reports</h2>
+                        <p>Sales analytics and performance insights</p>
+                    </div>
+                    
+                    <div class="user-info-top">
+                        <div class="search-box">
+                            <i class="bi bi-search"></i>
+                            <input type="text" class="form-control" placeholder="Search reports...">
+                        </div>
+                        
+                        <div class="user-profile-top">
+                            <div class="user-avatar-top">AD</div>
+                            <div class="user-details-top">
+                                <span class="user-name-top">Admin User</span>
+                                <span class="user-role-top">Administrator</span>
+                            </div>
+                        </div>
+                        
+                        <button class="logout-btn-top" onclick="logout()">
+                            <i class="bi bi-box-arrow-right"></i> Logout
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Branch Filter for Branch Manager -->
+                <div id="salesBranchFilter" style="display: none;">
+                    <div class="branch-filter">
+                        <div class="branch-filter-label">
+                            <i class="bi bi-filter"></i> Branch Filter: 
+                            <select id="salesBranchSelect" class="form-select form-select-sm" style="width: auto; display: inline-block; margin-left: 10px;" onchange="filterSalesByBranch()">
+                                <option value="">Select Branch</option>
+                            </select>
+                        </div>
+                        <small class="text-muted">Showing sales data for selected branch only.</small>
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-4">
+                    <div class="col-md-3">
+                        <div class="stat-card total">
+                            <div class="stat-value" id="salesMonthly">₱ 1.24M</div>
+                            <div class="stat-label">Monthly Sales</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card sales">
+                            <div class="stat-value" id="salesUnits">2,450</div>
+                            <div class="stat-label">Units Sold</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card customers">
+                            <div class="stat-value" id="salesAccounts">156</div>
+                            <div class="stat-label">Active Accounts</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card complete">
+                            <div class="stat-value" id="salesFulfillment">98.5%</div>
+                            <div class="stat-label">Order Fulfillment</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-4">
+                    <div class="col-lg-8">
+                        <div class="chart-container">
+                            <h5>Monthly Sales Trend</h5>
+                            <canvas id="salesChart"></canvas>
+                        </div>
+                    </div>
+                    <div class="col-lg-4">
+                        <div class="chart-container">
+                            <h5>Top Selling Categories</h5>
+                            <canvas id="categoryChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="data-table">
+                    <div class="table-header">
+                        <h5>Top Selling Items - Current Month</h5>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table custom-table">
+                            <thead>
+                                <tr>
+                                    <th>Rank</th>
+                                    <th>Item Code</th>
+                                    <th>Item Name</th>
+                                    <th>Quantity Sold</th>
+                                    <th>Sales Value</th>
+                                    <th>Growth</th>
+                                </tr>
+                            </thead>
+                            <tbody id="salesTable">
+                                <!-- Sales data will be loaded dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- PURCHASE ORDERS PAGE -->
+            <div id="purchaseOrdersContent" class="page-content">
+                <div class="navbar-top">
+                    <div class="page-title">
+                        <h2><i class="bi bi-file-text me-2"></i>Purchase Orders</h2>
+                        <p>Manage vendor purchase orders</p>
+                    </div>
+                    
+                    <div class="user-info-top">
+                        <div class="search-box">
+                            <i class="bi bi-search"></i>
+                            <input type="text" class="form-control" placeholder="Search POs...">
+                        </div>
+                        
+                        <div class="user-profile-top">
+                            <div class="user-avatar-top">AD</div>
+                            <div class="user-details-top">
+                                <span class="user-name-top">Admin User</span>
+                                <span class="user-role-top">Administrator</span>
+                            </div>
+                        </div>
+                        
+                        <button class="logout-btn-top" onclick="logout()">
+                            <i class="bi bi-box-arrow-right"></i> Logout
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Branch Filter for Branch Manager -->
+                <div id="poBranchFilter" style="display: none;">
+                    <div class="branch-filter">
+                        <div class="branch-filter-label">
+                            <i class="bi bi-filter"></i> Branch Filter: 
+                            <select id="poBranchSelect" class="form-select form-select-sm" style="width: auto; display: inline-block; margin-left: 10px;" onchange="filterPOsByBranch()">
+                                <option value="">Select Branch</option>
+                            </select>
+                        </div>
+                        <small class="text-muted">Showing purchase orders for selected branch only.</small>
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-4">
+                    <div class="col-md-4">
+                        <div class="stat-card pending">
+                            <div class="stat-value" id="poPending">5</div>
+                            <div class="stat-label">Pending POs</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="stat-card total">
+                            <div class="stat-value" id="poTotalValue">₱ 450K</div>
+                            <div class="stat-label">Total PO Value</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="stat-card complete">
+                            <div class="stat-value" id="poCompleted">32</div>
+                            <div class="stat-label">Completed POs</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="data-table">
+                    <div class="table-header d-flex justify-content-between align-items-center">
+                        <h5>Purchase Orders</h5>
+                        <button class="btn btn-primary btn-sm" id="createPOBtn">
+                            <i class="bi bi-plus-circle me-1"></i> Create PO
+                        </button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table custom-table">
+                            <thead>
+                                <tr>
+                                    <th>PO ID</th>
+                                    <th>Vendor</th>
+                                    <th>Est. Fulfillment Date</th>
+                                    <th>Mode of Delivery</th>
+                                    <th>Amount</th>
+                                    <th>Status</th>
+                                    <th>Encoded At</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="poTable">
+                                <!-- Purchase orders will be loaded dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- DELIVERIES PAGE -->
+            <div id="deliveriesContent" class="page-content">
+                <div class="navbar-top">
+                    <div class="page-title">
+                        <h2><i class="bi bi-truck me-2"></i>Deliveries</h2>
+                        <p>Manage delivery tracking and status</p>
+                    </div>
+                    
+                    <div class="user-info-top">
+                        <div class="search-box">
+                            <i class="bi bi-search"></i>
+                            <input type="text" class="form-control" placeholder="Search deliveries...">
+                        </div>
+                        
+                        <div class="user-profile-top">
+                            <div class="user-avatar-top">AD</div>
+                            <div class="user-details-top">
+                                <span class="user-name-top">Admin User</span>
+                                <span class="user-role-top">Administrator</span>
+                            </div>
+                        </div>
+                        
+                        <button class="logout-btn-top" onclick="logout()">
+                            <i class="bi bi-box-arrow-right"></i> Logout
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Branch Filter for Branch Manager -->
+                <div id="deliveriesBranchFilter" style="display: none;">
+                    <div class="branch-filter">
+                        <div class="branch-filter-label">
+                            <i class="bi bi-filter"></i> Branch Filter: 
+                            <select id="deliveriesBranchSelect" class="form-select form-select-sm" style="width: auto; display: inline-block; margin-left: 10px;" onchange="filterDeliveriesByBranch()">
+                                <option value="">Select Branch</option>
+                            </select>
+                        </div>
+                        <small class="text-muted">Showing deliveries for selected branch only.</small>
+                    </div>
+                </div>
+
+                <div class="row g-3 mb-4">
+                    <div class="col-md-3">
+                        <div class="stat-card delivery">
+                            <div class="stat-value" id="deliveriesInTransit">8</div>
+                            <div class="stat-label">In Transit</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card pending">
+                            <div class="stat-value" id="deliveriesPending">3</div>
+                            <div class="stat-label">Pending</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card complete">
+                            <div class="stat-value" id="deliveriesCompleted">45</div>
+                            <div class="stat-label">Completed</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card total">
+                            <div class="stat-value" id="deliveriesOnTime">98%</div>
+                            <div class="stat-label">On-Time Rate</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="data-table">
+                    <div class="table-header d-flex justify-content-between align-items-center">
+                        <h5>Delivery Tracking</h5>
+                        <button class="btn btn-primary btn-sm" id="createDeliveryBtn">
+                            <i class="bi bi-plus-circle me-1"></i> Create Delivery
+                        </button>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table custom-table">
+                            <thead>
+                                <tr>
+                                    <th>Delivery ID</th>
+                                    <th>Trip Ticket ID</th>
+                                    <th>Invoice ID</th>
+                                    <th>Status</th>
+                                    <th>Driver</th>
+                                    <th>Location</th>
+                                    <th>Encoded At</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="deliveriesTable">
+                                <!-- Deliveries will be loaded dynamically -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- COMPANIES PAGE -->
+            <div id="companiesContent" class="page-content">
+                <div class="navbar-top">
+                    <div class="page-title">
+                        <h2><i class="bi bi-building me-2"></i>Companies</h2>
+                        <p id="companiesSubtitle">Manage company information and details</p>
+                    </div>
+                    
+                    <div class="user-info-top">
+                        <div class="search-box">
+                            <i class="bi bi-search"></i>
+                            <input type="text" class="form-control" placeholder="Search companies...">
+                        </div>
+                        
+                        <div class="user-profile-top">
+                            <div class="user-avatar-top">AD</div>
+                            <div class="user-details-top">
+                                <span class="user-name-top">Admin User</span>
+                                <span class="user-role-top">Administrator</span>
+                            </div>
+                        </div>
+                        
+                        <button class="logout-btn-top" onclick="logout()">
+                            <i class="bi bi-box-arrow-right"></i> Logout
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Access Restricted for Branch Manager -->
+                <div id="companiesRestricted" class="access-restricted" style="display: none;">
+                    <div class="access-restricted-icon">
+                        <i class="bi bi-shield-lock"></i>
+                    </div>
+                    <h4 class="mb-3">Access Restricted</h4>
+                    <p class="text-muted mb-4">
+                        Company management is restricted to system administrators.<br>
+                        Branch managers can only view and manage data for their assigned branch.
+                    </p>
+                    <button class="btn btn-primary" onclick="showPage('dashboard')">
+                        <i class="bi bi-arrow-left me-2"></i> Back to Dashboard
+                    </button>
+                </div>
+
+                <div id="companiesContentArea">
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-3">
+                            <div class="stat-card total">
+                                <div class="stat-value">24</div>
+                                <div class="stat-label">Total Companies</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stat-card sales">
+                                <div class="stat-value">8</div>
+                                <div class="stat-label">Vendors</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stat-card customers">
+                                <div class="stat-value">156</div>
+                                <div class="stat-label">Customers</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stat-card complete">
+                                <div class="stat-value">12</div>
+                                <div class="stat-label">Partners</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="data-table">
+                        <div class="table-header d-flex justify-content-between align-items-center">
+                            <h5>Company Directory</h5>
+                            <button class="btn btn-primary btn-sm" id="addCompanyBtn">
+                                <i class="bi bi-plus-circle me-1"></i> Add Company
+                            </button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table custom-table">
+                                <thead>
+                                    <tr>
+                                        <th>Company ID</th>
+                                        <th>Company Name</th>
+                                        <th>Address</th>
+                                        <th>Email</th>
+                                        <th>Contact Number</th>
+                                        <th>Type</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="companiesTable">
+                                    <!-- Companies will be loaded dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- USERS PAGE -->
+            <div id="usersContent" class="page-content">
+                <div class="navbar-top">
+                    <div class="page-title">
+                        <h2><i class="bi bi-people me-2"></i>Users</h2>
+                        <p id="usersSubtitle">Manage system users and permissions</p>
+                    </div>
+                    
+                    <div class="user-info-top">
+                        <div class="search-box">
+                            <i class="bi bi-search"></i>
+                            <input type="text" class="form-control" placeholder="Search users...">
+                        </div>
+                        
+                        <div class="user-profile-top">
+                            <div class="user-avatar-top">AD</div>
+                            <div class="user-details-top">
+                                <span class="user-name-top">Admin User</span>
+                                <span class="user-role-top">Administrator</span>
+                            </div>
+                        </div>
+                        
+                        <button class="logout-btn-top" onclick="logout()">
+                            <i class="bi bi-box-arrow-right"></i> Logout
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Access Restricted for Branch Manager -->
+                <div id="usersRestricted" class="access-restricted" style="display: none;">
+                    <div class="access-restricted-icon">
+                        <i class="bi bi-shield-lock"></i>
+                    </div>
+                    <h4 class="mb-3">Access Restricted</h4>
+                    <p class="text-muted mb-4">
+                        User management is restricted to system administrators.<br>
+                        Branch managers can only view and manage their own profile.
+                    </p>
+                    <button class="btn btn-primary" onclick="showPage('dashboard')">
+                        <i class="bi bi-arrow-left me-2"></i> Back to Dashboard
+                    </button>
+                </div>
+
+                <div id="usersContentArea">
+                    <div class="row g-3 mb-4">
+                        <div class="col-md-3">
+                            <div class="stat-card total">
+                                <div class="stat-value">45</div>
+                                <div class="stat-label">Total Users</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stat-card sales">
+                                <div class="stat-value">8</div>
+                                <div class="stat-label">Administrators</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stat-card customers">
+                                <div class="stat-value">32</div>
+                                <div class="stat-label">Staff Users</div>
+                            </div>
+                        </div>
+                        <div class="col-md-3">
+                            <div class="stat-card complete">
+                                <div class="stat-value">5</div>
+                                <div class="stat-label">Branch Admins</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="data-table">
+                        <div class="table-header d-flex justify-content-between align-items-center">
+                            <h5>User Management</h5>
+                            <button class="btn btn-primary btn-sm" id="addUserBtn">
+                                <i class="bi bi-plus-circle me-1"></i> Add User
+                            </button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table custom-table">
+                                <thead>
+                                    <tr>
+                                        <th>User ID</th>
+                                        <th>Full Name</th>
+                                        <th>Username</th>
+                                        <th>Email</th>
+                                        <th>User Type</th>
+                                        <th>Branch</th>
+                                        <th>Last Login</th>
+                                        <th>Status</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="usersTable">
+                                    <!-- Users will be loaded dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        // Global variables
+        let currentUser = null;
+        let currentUserType = null;
+        let currentUserBranch = null;
+        let allBranches = [
+            { id: 'BR-001', name: 'Main Branch', location: 'Makati City' },
+            { id: 'BR-002', name: 'North Branch', location: 'Quezon City' },
+            { id: 'BR-003', name: 'South Branch', location: 'Muntinlupa City' },
+            { id: 'BR-004', name: 'East Branch', location: 'Pasig City' },
+            { id: 'BR-005', name: 'West Branch', location: 'Manila City' }
+        ];
+
+        // User database (for demo purposes)
+        const users = {
+            'admin': {
+                password: 'admin123',
+                fullName: 'Admin User',
+                userType: 'admin',
+                branch: null, // Admin has access to all branches
+                avatar: 'AD'
+            },
+            'branch1': {
+                password: 'branch123',
+                fullName: 'Juan Dela Cruz',
+                userType: 'branch_manager',
+                branch: 'BR-001', // Main Branch
+                avatar: 'JC'
+            },
+            'branch2': {
+                password: 'branch123',
+                fullName: 'Maria Santos',
+                userType: 'branch_manager',
+                branch: 'BR-002', // North Branch
+                avatar: 'MS'
+            },
+            'staff1': {
+                password: 'staff123',
+                fullName: 'Pedro Reyes',
+                userType: 'staff',
+                branch: 'BR-001', // Main Branch
+                avatar: 'PR'
+            }
+        };
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("Inventory System loaded!");
+            
+            // Initialize Bootstrap components
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+            
+            // Setup mobile menu toggle
+            document.getElementById('mobileMenuBtn').addEventListener('click', function() {
+                document.getElementById('sidebar').classList.toggle('active');
+            });
+            
+            // Initialize charts
+            initializeCharts();
+            
+            // Close sidebar when clicking outside on mobile
+            document.addEventListener('click', function(event) {
+                const sidebar = document.getElementById('sidebar');
+                const mobileBtn = document.getElementById('mobileMenuBtn');
+                const isMobile = window.innerWidth <= 992;
+                
+                if (isMobile && sidebar.classList.contains('active') && 
+                    !sidebar.contains(event.target) && 
+                    !mobileBtn.contains(event.target)) {
+                    sidebar.classList.remove('active');
+                }
+            });
+
+            // Set default credentials for testing
+            document.getElementById('username').value = 'admin';
+            document.getElementById('password').value = 'admin123';
+        });
+
+        // Login Function
+        function login() {
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value.trim();
+            
+            if (!username || !password) {
+                alert('Please enter both username and password!');
+                return;
+            }
+            
+            // Check credentials
+            if (users[username] && users[username].password === password) {
+                currentUser = username;
+                currentUserType = users[username].userType;
+                currentUserBranch = users[username].branch;
+                
+                // Hide login page
+                document.getElementById('loginPage').style.display = 'none';
+                
+                // Show main app
+                document.getElementById('appPage').style.display = 'block';
+                
+                // Update user interface based on user type
+                updateUserInterface();
+                
+                // Ensure dashboard is active
+                showPage('dashboard');
+                
+                // Load initial data
+                loadInitialData();
+            } else {
+                alert('Invalid credentials. Please try again.');
+            }
+        }
+
+        // Logout Function
+        function logout() {
+            // Hide app page
+            document.getElementById('appPage').style.display = 'none';
+            
+            // Show login page
+            document.getElementById('loginPage').style.display = 'flex';
+            
+            // Clear form
+            document.getElementById('username').value = '';
+            document.getElementById('password').value = '';
+            
+            // Reset user variables
+            currentUser = null;
+            currentUserType = null;
+            currentUserBranch = null;
+            
+            // Hide sidebar on mobile
+            document.getElementById('sidebar').classList.remove('active');
+        }
+
+        // Update User Interface based on user type
+        function updateUserInterface() {
+            const user = users[currentUser];
+            
+            // Update user info in header
+            document.getElementById('userName').textContent = user.fullName;
+            document.getElementById('userRole').textContent = user.userType === 'admin' ? 'Administrator' : 'Branch Manager';
+            document.getElementById('userAvatar').textContent = user.avatar;
+            
+            // Update all user info sections
+            document.querySelectorAll('.user-name-top').forEach(el => el.textContent = user.fullName);
+            document.querySelectorAll('.user-role-top').forEach(el => el.textContent = user.userType === 'admin' ? 'Administrator' : 'Branch Manager');
+            document.querySelectorAll('.user-avatar-top').forEach(el => el.textContent = user.avatar);
+            
+            // Update dashboard subtitle
+            const subtitle = user.userType === 'admin' 
+                ? 'Welcome back! Here\'s what\'s happening today.' 
+                : `Welcome back! Here's what's happening at ${getBranchName(currentUserBranch)}.`;
+            document.getElementById('dashboardSubtitle').textContent = subtitle;
+            
+            // Show/hide branch filter for branch managers
+            const branchFilter = document.getElementById('branchFilterContainer');
+            if (user.userType === 'branch_manager') {
+                branchFilter.style.display = 'block';
+                populateBranchFilter();
+            } else {
+                branchFilter.style.display = 'none';
+            }
+            
+            // Show/hide restricted pages for branch managers
+            const restrictedPages = ['branches', 'companies', 'users'];
+            restrictedPages.forEach(page => {
+                const navItem = document.getElementById(page + 'Nav');
+                if (navItem) {
+                    if (user.userType === 'branch_manager') {
+                        navItem.style.display = 'none';
+                    } else {
+                        navItem.style.display = 'block';
+                    }
+                }
+            });
+        }
+
+        // Get branch name by ID
+        function getBranchName(branchId) {
+            const branch = allBranches.find(b => b.id === branchId);
+            return branch ? branch.name : 'Unknown Branch';
+        }
+
+        // Populate branch filter dropdown
+        function populateBranchFilter() {
+            const branchFilter = document.getElementById('branchFilter');
+            branchFilter.innerHTML = '<option value="">Select Branch</option>';
+            
+            if (currentUserType === 'branch_manager') {
+                // Branch managers can only see their assigned branch
+                const userBranch = allBranches.find(b => b.id === currentUserBranch);
+                if (userBranch) {
+                    const option = document.createElement('option');
+                    option.value = userBranch.id;
+                    option.textContent = `${userBranch.name} (${userBranch.location})`;
+                    option.selected = true;
+                    branchFilter.appendChild(option);
+                }
+            } else {
+                // Admins can see all branches
+                allBranches.forEach(branch => {
+                    const option = document.createElement('option');
+                    option.value = branch.id;
+                    option.textContent = `${branch.name} (${branch.location})`;
+                    branchFilter.appendChild(option);
+                });
+            }
+            
+            // Update all branch filters
+            updateAllBranchFilters();
+        }
+
+        // Update all branch filters on the page
+        function updateAllBranchFilters() {
+            const filters = [
+                'transactionsBranchSelect',
+                'itemsBranchSelect',
+                'warehousesBranchSelect',
+                'salesBranchSelect',
+                'poBranchSelect',
+                'deliveriesBranchSelect'
+            ];
+            
+            filters.forEach(filterId => {
+                const filter = document.getElementById(filterId);
+                if (filter) {
+                    filter.innerHTML = '<option value="">Select Branch</option>';
+                    
+                    if (currentUserType === 'branch_manager') {
+                        // Branch managers can only see their assigned branch
+                        const userBranch = allBranches.find(b => b.id === currentUserBranch);
+                        if (userBranch) {
+                            const option = document.createElement('option');
+                            option.value = userBranch.id;
+                            option.textContent = `${userBranch.name} (${userBranch.location})`;
+                            option.selected = true;
+                            filter.appendChild(option);
+                        }
+                    } else {
+                        // Admins can see all branches
+                        allBranches.forEach(branch => {
+                            const option = document.createElement('option');
+                            option.value = branch.id;
+                            option.textContent = `${branch.name} (${userBranch.location})`;
+                            filter.appendChild(option);
+                        });
+                    }
+                }
+            });
+            
+            // Show/hide branch filters based on user type
+            const filterContainers = [
+                'transactionsBranchFilter',
+                'itemsBranchFilter',
+                'warehousesBranchFilter',
+                'salesBranchFilter',
+                'poBranchFilter',
+                'deliveriesBranchFilter'
+            ];
+            
+            filterContainers.forEach(containerId => {
+                const container = document.getElementById(containerId);
+                if (container) {
+                    if (currentUserType === 'branch_manager') {
+                        container.style.display = 'block';
+                    } else {
+                        container.style.display = 'none';
+                    }
+                }
+            });
+        }
+
+        // Update branch view when filter changes
+        function updateBranchView() {
+            const selectedBranch = document.getElementById('branchFilter').value;
+            const user = users[currentUser];
+            
+            // Update dashboard stats based on selected branch
+            updateDashboardStats(selectedBranch);
+            
+            // Update recent transactions
+            updateRecentTransactions(selectedBranch);
+        }
+
+        // Update dashboard statistics
+        function updateDashboardStats(branchId) {
+            // Mock data - in real app, this would come from API
+            const stats = {
+                'BR-001': { monthlySales: '₱ 1.2M', activeAccounts: '156', pendingDeliveries: '12', orderAccuracy: '98%' },
+                'BR-002': { monthlySales: '₱ 850K', activeAccounts: '89', pendingDeliveries: '8', orderAccuracy: '95%' },
+                'BR-003': { monthlySales: '₱ 650K', activeAccounts: '67', pendingDeliveries: '5', orderAccuracy: '96%' },
+                'BR-004': { monthlySales: '₱ 920K', activeAccounts: '102', pendingDeliveries: '7', orderAccuracy: '97%' },
+                'BR-005': { monthlySales: '₱ 780K', activeAccounts: '78', pendingDeliveries: '6', orderAccuracy: '94%' }
+            };
+            
+            const defaultStats = { monthlySales: '₱ 0', activeAccounts: '0', pendingDeliveries: '0', orderAccuracy: '0%' };
+            const branchStats = branchId ? (stats[branchId] || defaultStats) : defaultStats;
+            
+            document.getElementById('statMonthlySales').textContent = branchStats.monthlySales;
+            document.getElementById('statActiveAccounts').textContent = branchStats.activeAccounts;
+            document.getElementById('statPendingDeliveries').textContent = branchStats.pendingDeliveries;
+            document.getElementById('statOrderAccuracy').textContent = branchStats.orderAccuracy;
+        }
+
+        // Update recent transactions
+        function updateRecentTransactions(branchId) {
+            const transactionsTable = document.getElementById('recentTransactions');
+            
+            // Mock transactions data
+            const transactions = [
+                { date: '2024-01-15', type: 'Sale', ref: 'SALE-001245', amount: '₱ 25,000', status: 'Completed', branch: 'BR-001' },
+                { date: '2024-01-15', type: 'Purchase', ref: 'PO-001244', amount: '₱ 45,000', status: 'Pending', branch: 'BR-001' },
+                { date: '2024-01-14', type: 'Delivery', ref: 'DEL-001243', amount: '₱ 18,750', status: 'In Transit', branch: 'BR-002' },
+                { date: '2024-01-14', type: 'Sale', ref: 'SALE-001242', amount: '₱ 32,500', status: 'Completed', branch: 'BR-002' },
+                { date: '2024-01-13', type: 'Purchase', ref: 'PO-001241', amount: '₱ 28,000', status: 'Completed', branch: 'BR-003' }
+            ];
+            
+            // Filter by branch if specified
+            let filteredTransactions = transactions;
+            if (branchId) {
+                filteredTransactions = transactions.filter(t => t.branch === branchId);
+            }
+            
+            // Limit to 3 transactions
+            filteredTransactions = filteredTransactions.slice(0, 3);
+            
+            // Update table
+            let html = '';
+            filteredTransactions.forEach(transaction => {
+                const typeClass = transaction.type === 'Sale' ? 'badge-success' : 
+                                 transaction.type === 'Purchase' ? 'badge-info' : 'badge-primary';
+                const statusClass = transaction.status === 'Completed' ? 'badge-success' :
+                                   transaction.status === 'Pending' ? 'badge-warning' : 'badge-info';
+                
+                html += `
+                    <tr>
+                        <td>${transaction.date}</td>
+                        <td><span class="badge ${typeClass}">${transaction.type}</span></td>
+                        <td>${transaction.ref}</td>
+                        <td>${transaction.amount}</td>
+                        <td><span class="badge ${statusClass}">${transaction.status}</span></td>
+                    </tr>
+                `;
+            });
+            
+            transactionsTable.innerHTML = html;
+        }
+
+        // Show Page Function
+        function showPage(pageName) {
+            // Hide all page contents
+            const pages = [
+                'dashboard', 'transactions', 'items', 'warehouses', 
+                'branches', 'sales', 'purchaseOrders', 'deliveries', 
+                'companies', 'users'
+            ];
+            
+            pages.forEach(page => {
+                const pageElement = document.getElementById(page + 'Content');
+                if (pageElement) {
+                    pageElement.classList.remove('active');
+                    pageElement.style.display = 'none';
+                }
+            });
+            
+            // Show selected page
+            const selectedPage = document.getElementById(pageName + 'Content');
+            if (selectedPage) {
+                selectedPage.classList.add('active');
+                selectedPage.style.display = 'block';
+                
+                // Check access restrictions for branch managers
+                if (currentUserType === 'branch_manager') {
+                    const restrictedPages = ['branches', 'companies', 'users'];
+                    if (restrictedPages.includes(pageName)) {
+                        document.getElementById(pageName + 'Restricted').style.display = 'block';
+                        document.getElementById(pageName + 'ContentArea').style.display = 'none';
+                    } else {
+                        document.getElementById(pageName + 'Restricted').style.display = 'none';
+                        document.getElementById(pageName + 'ContentArea').style.display = 'block';
+                    }
+                }
+                
+                // Initialize page-specific content
+                if (pageName === 'sales') {
+                    initializeSalesCharts();
+                }
+                
+                // Load page data
+                loadPageData(pageName);
+            }
+            
+            // Update active nav link
+            document.querySelectorAll('.nav-link').forEach(link => {
+                link.classList.remove('active');
+            });
+            
+            // Find and activate the clicked nav link
+            document.querySelectorAll('.nav-link').forEach(link => {
+                const linkText = link.textContent.toLowerCase();
+                if (linkText.includes(pageName.toLowerCase())) {
+                    link.classList.add('active');
+                }
+            });
+            
+            // Hide sidebar on mobile after clicking a link
+            if (window.innerWidth <= 992) {
+                document.getElementById('sidebar').classList.remove('active');
+            }
+        }
+
+        // Load initial data
+        function loadInitialData() {
+            // Update dashboard with default branch view
+            if (currentUserType === 'branch_manager') {
+                updateDashboardStats(currentUserBranch);
+                updateRecentTransactions(currentUserBranch);
+            } else {
+                updateDashboardStats();
+                updateRecentTransactions();
+            }
+        }
+
+        // Load page-specific data
+        function loadPageData(pageName) {
+            switch(pageName) {
+                case 'transactions':
+                    loadTransactionsData();
+                    break;
+                case 'items':
+                    loadItemsData();
+                    break;
+                case 'warehouses':
+                    loadWarehousesData();
+                    break;
+                case 'branches':
+                    loadBranchesData();
+                    break;
+                case 'sales':
+                    loadSalesData();
+                    break;
+                case 'purchaseOrders':
+                    loadPurchaseOrdersData();
+                    break;
+                case 'deliveries':
+                    loadDeliveriesData();
+                    break;
+                case 'companies':
+                    loadCompaniesData();
+                    break;
+                case 'users':
+                    loadUsersData();
+                    break;
+            }
+        }
+
+        // Load transactions data
+        function loadTransactionsData() {
+            // Mock data - in real app, this would come from API
+            const transactions = [
+                { date: '2024-01-15 10:30', ref: 'TRX-001245', type: 'Stock In', branch: 'BR-001', item: 'ITM-005', quantity: '+50', encodedBy: 'admin' },
+                { date: '2024-01-15 09:15', ref: 'TRX-001244', type: 'Stock Out', branch: 'BR-002', item: 'ITM-012', quantity: '-25', encodedBy: 'staff1' },
+                { date: '2024-01-14 16:45', ref: 'TRX-001243', type: 'Stock In', branch: 'BR-001', item: 'ITM-008', quantity: '+30', encodedBy: 'admin' },
+                { date: '2024-01-14 14:20', ref: 'TRX-001242', type: 'Stock Out', branch: 'BR-003', item: 'ITM-003', quantity: '-15', encodedBy: 'staff1' },
+                { date: '2024-01-13 11:10', ref: 'TRX-001241', type: 'Stock In', branch: 'BR-002', item: 'ITM-007', quantity: '+20', encodedBy: 'admin' }
+            ];
+            
+            // Filter by branch if user is branch manager
+            let filteredTransactions = transactions;
+            if (currentUserType === 'branch_manager') {
+                filteredTransactions = transactions.filter(t => t.branch === currentUserBranch);
+            }
+            
+            // Update stats
+            document.getElementById('transactionsTotal').textContent = filteredTransactions.length;
+            document.getElementById('transactionsStockIn').textContent = filteredTransactions.filter(t => t.type === 'Stock In').length;
+            document.getElementById('transactionsStockOut').textContent = filteredTransactions.filter(t => t.type === 'Stock Out').length;
+            document.getElementById('transactionsAccuracy').textContent = '98.2%';
+            
+            // Update table
+            const table = document.getElementById('transactionsTable');
+            let html = '';
+            
+            filteredTransactions.forEach(transaction => {
+                const typeClass = transaction.type === 'Stock In' ? 'badge-success' : 'badge-danger';
+                const quantityClass = transaction.quantity.startsWith('+') ? 'text-success' : 'text-danger';
+                
+                html += `
+                    <tr>
+                        <td>${transaction.date}</td>
+                        <td>${transaction.ref}</td>
+                        <td><span class="badge ${typeClass}">${transaction.type}</span></td>
+                        <td>${getBranchName(transaction.branch)}</td>
+                        <td>${transaction.item}</td>
+                        <td class="${quantityClass}">${transaction.quantity}</td>
+                        <td>${transaction.encodedBy}</td>
+                        <td>
+                            <div class="action-buttons">
+                                <button class="btn-icon btn-view"><i class="bi bi-eye"></i></button>
+                                <button class="btn-icon btn-edit"><i class="bi bi-pencil"></i></button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            table.innerHTML = html;
+        }
+
+        // Load items data
+        function loadItemsData() {
+            // Mock data - similar implementation as transactions
+            // Update stats and table based on user type and branch filter
+        }
+
+        // Load warehouses data
+        function loadWarehousesData() {
+            // Mock data - similar implementation
+        }
+
+        // Load branches data
+        function loadBranchesData() {
+            // Only accessible to admins
+            if (currentUserType === 'admin') {
+                const table = document.getElementById('branchesTable');
+                let html = '';
+                
+                allBranches.forEach(branch => {
+                    html += `
+                        <tr>
+                            <td><strong>${branch.id}</strong></td>
+                            <td>${branch.name}</td>
+                            <td>${branch.location}</td>
+                            <td>Juan Dela Cruz</td>
+                            <td>+63 912 345 6789</td>
+                            <td>₱ 2.5M</td>
+                            <td><span class="badge badge-success">Active</span></td>
+                            <td>
+                                <div class="action-buttons">
+                                    <button class="btn-icon btn-view"><i class="bi bi-eye"></i></button>
+                                    <button class="btn-icon btn-edit"><i class="bi bi-pencil"></i></button>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                });
+                
+                table.innerHTML = html;
+            }
+        }
+
+        // Load sales data
+        function loadSalesData() {
+            // Mock data - similar implementation
+        }
+
+        // Load purchase orders data
+        function loadPurchaseOrdersData() {
+            // Mock data - similar implementation
+        }
+
+        // Load deliveries data
+        function loadDeliveriesData() {
+            // Mock data - similar implementation
+        }
+
+        // Load companies data
+        function loadCompaniesData() {
+            // Only accessible to admins
+            if (currentUserType === 'admin') {
+                // Populate companies table
+            }
+        }
+
+        // Load users data
+        function loadUsersData() {
+            // Only accessible to admins
+            if (currentUserType === 'admin') {
+                const table = document.getElementById('usersTable');
+                let html = '';
+                
+                Object.keys(users).forEach(username => {
+                    const user = users[username];
+                    html += `
+                        <tr>
+                            <td><strong>USR-${username === 'admin' ? '001' : username === 'branch1' ? '002' : '003'}</strong></td>
+                            <td>${user.fullName}</td>
+                            <td>${username}</td>
+                            <td>${username}@company.com</td>
+                            <td><span class="badge ${user.userType === 'admin' ? 'badge-primary' : 'badge-info'}">${user.userType === 'admin' ? 'Administrator' : 'Branch Manager'}</span></td>
+                            <td>${user.branch ? getBranchName(user.branch) : 'All Branches'}</td>
+                            <td>2024-01-15 10:30</td>
+                            <td><span class="badge badge-success">Active</span></td>
+                            <td>
+                                <div class="action-buttons">
+                                    <button class="btn-icon btn-view"><i class="bi bi-eye"></i></button>
+                                    <button class="btn-icon btn-edit"><i class="bi bi-pencil"></i></button>
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                });
+                
+                table.innerHTML = html;
+            }
+        }
+
+        // Filter functions for branch managers
+        function filterTransactionsByBranch() {
+            const branchId = document.getElementById('transactionsBranchSelect').value;
+            loadTransactionsData(); // This would be filtered by branchId in real implementation
+        }
+
+        function filterItemsByBranch() {
+            const branchId = document.getElementById('itemsBranchSelect').value;
+            // Filter items by branch
+        }
+
+        function filterWarehousesByBranch() {
+            const branchId = document.getElementById('warehousesBranchSelect').value;
+            // Filter warehouses by branch
+        }
+
+        function filterSalesByBranch() {
+            const branchId = document.getElementById('salesBranchSelect').value;
+            // Filter sales by branch
+        }
+
+        function filterPOsByBranch() {
+            const branchId = document.getElementById('poBranchSelect').value;
+            // Filter purchase orders by branch
+        }
+
+        function filterDeliveriesByBranch() {
+            const branchId = document.getElementById('deliveriesBranchSelect').value;
+            // Filter deliveries by branch
+        }
+
+        // Initialize Charts
+        function initializeCharts() {
+            // Dashboard Chart
+            const dashboardCtx = document.getElementById('dashboardChart');
+            if (dashboardCtx) {
+                new Chart(dashboardCtx, {
+                    type: 'line',
+                    data: {
+                        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+                        datasets: [{
+                            label: 'Sales (₱)',
+                            data: [850000, 920000, 1010000, 980000, 1120000, 1250000],
+                            borderColor: '#10b981',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    callback: function(value) {
+                                        return '₱ ' + (value / 1000).toFixed(0) + 'K';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        // Initialize Sales Charts
+        function initializeSalesCharts() {
+            // Sales Chart
+            const salesCtx = document.getElementById('salesChart');
+            if (salesCtx) {
+                new Chart(salesCtx, {
+                    type: 'bar',
+                    data: {
+                        labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
+                        datasets: [{
+                            label: 'Sales (₱)',
+                            data: [285000, 312000, 298500, 350180],
+                            backgroundColor: '#10b981',
+                            borderRadius: 6
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: {
+                                display: false
+                            }
+                        },
+                        scales: {
+                            y: {
+                                beginAtZero: true,
+                                ticks: {
+                                    callback: function(value) {
+                                        return '₱ ' + (value / 1000).toFixed(0) + 'K';
+                                    }
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+            
+            // Category Chart
+            const categoryCtx = document.getElementById('categoryChart');
+            if (categoryCtx) {
+                new Chart(categoryCtx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: ['Electronics', 'Office Supplies', 'Furniture', 'Others'],
+                        datasets: [{
+                            data: [45, 25, 20, 10],
+                            backgroundColor: [
+                                '#10b981',
+                                '#059669',
+                                '#047857',
+                                '#d1fae5'
+                            ]
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: {
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        // Handle window resize
+        window.addEventListener('resize', function() {
+            // Close sidebar on mobile when resizing to desktop
+            if (window.innerWidth > 992) {
+                document.getElementById('sidebar').classList.remove('active');
+            }
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Ctrl + D for dashboard
+            if (e.ctrlKey && e.key === 'd') {
+                e.preventDefault();
+                showPage('dashboard');
+            }
+            // Ctrl + L for logout
+            else if (e.ctrlKey && e.key === 'l') {
+                e.preventDefault();
+                logout();
+            }
+        });
+    </script>
+</body>
+</html>
