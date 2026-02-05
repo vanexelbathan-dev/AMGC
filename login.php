@@ -17,49 +17,29 @@ try {
     $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password);
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 } catch(PDOException $e) {
-    // Kapag hindi maka-connect sa database, gumamit ng demo credentials
-    $demo_mode = true;
+    $error = 'Database connection failed. Please contact administrator.';
+    $conn = null;
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $input_username = htmlspecialchars(trim($_POST['username'] ?? ''));
     $input_password = $_POST['password'] ?? '';
     
-    // Demo credentials (remove this in production)
-    $demo_users = [
-        'admin' => [
-            'password' => 'admin123',
-            'full_name' => 'Admin User',
-            'user_type' => 'admin',
-            'branch' => null,
-            'avatar' => 'AD'
-        ],
-        'branch1' => [
-            'password' => 'branch123',
-            'full_name' => 'Juan Dela Cruz',
-            'user_type' => 'branch_manager',
-            'branch' => 'BR-001',
-            'avatar' => 'JC'
-        ],
-        'branch2' => [
-            'password' => 'branch123',
-            'full_name' => 'Maria Santos',
-            'user_type' => 'branch_manager',
-            'branch' => 'BR-002',
-            'avatar' => 'MS'
-        ]
-    ];
+    // Check if forgot password was requested
+    if (isset($_POST['forgot_password'])) {
+        // Handle forgot password logic here
+        // This would typically send a reset link to the user's email
+        // For now, we'll show a message
+        $_SESSION['reset_username'] = $input_username;
+        header('Location: forgot-password.php');
+        exit;
+    }
     
     $valid = false;
     $user_data = null;
     
-    // Check demo users first
-    if (isset($demo_users[$input_username]) && $demo_users[$input_username]['password'] === $input_password) {
-        $valid = true;
-        $user_data = $demo_users[$input_username];
-    }
-    // If not in demo users, check database
-    elseif (isset($conn)) {
+    // Check database only (demo accounts removed)
+    if (isset($conn)) {
         $stmt = $conn->prepare("SELECT * FROM users WHERE username = ? AND status = 'active'");
         $stmt->execute([$input_username]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -139,25 +119,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             animation: fadeIn 0.5s ease-out;
         }
         
-.company-logo{
-    width:110px;
-    height:110px;
-    border-radius:50%;
-    overflow:hidden;
-    margin:auto;
-    margin-bottom:15px;
-    border:4px solid rgba(255,255,255,0.6);
-    box-shadow:0 10px 25px rgba(0,0,0,0.4);
-    background:rgba(255,255,255,0.15);
-    backdrop-filter:blur(10px);
-}
+        .company-logo{
+            width:110px;
+            height:110px;
+            border-radius:50%;
+            overflow:hidden;
+            margin:auto;
+            margin-bottom:15px;
+            border:4px solid rgba(255,255,255,0.6);
+            box-shadow:0 10px 25px rgba(0,0,0,0.4);
+            background:rgba(255,255,255,0.15);
+            backdrop-filter:blur(10px);
+        }
 
-.company-logo img{
-    width:100%;
-    height:100%;
-    object-fit:cover;
-}
-
+        .company-logo img{
+            width:100%;
+            height:100%;
+            object-fit:cover;
+        }
         
         /* Password input with eye icon */
         .password-input-group {
@@ -197,6 +176,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             box-shadow: none !important;
         }
         
+        /* Forgot password link */
+        .forgot-password {
+            text-decoration: none;
+            color: #000000;
+            font-size: 0.9rem;
+            transition: color 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .forgot-password:hover {
+            color: var(--primary-green);
+            text-decoration: underline;
+        }
+        
         /* Error message */
         .alert-danger {
             border-radius: 10px;
@@ -206,6 +201,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             padding: 12px 16px;
             margin-bottom: 20px;
             animation: shake 0.5s ease-in-out;
+        }
+        
+        /* Success message */
+        .alert-success {
+            border-radius: 10px;
+            border: 1px solid #a7f3d0;
+            background: #ecfdf5;
+            color: var(--dark-green);
+            padding: 12px 16px;
+            margin-bottom: 20px;
+        }
+        
+        /* Modal styles */
+        .modal-content {
+            border-radius: 15px;
+            border: none;
+        }
+        
+        .modal-header {
+            background: linear-gradient(135deg, var(--primary-green), var(--secondary-green));
+            color: white;
+            border-radius: 15px 15px 0 0 !important;
+            border: none;
+        }
+        
+        .modal-body {
+            padding: 2rem;
+        }
+        
+        .reset-btn {
+            background: linear-gradient(135deg, var(--primary-green), var(--secondary-green));
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 600;
         }
         
         @keyframes fadeIn {
@@ -224,7 +255,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
             20%, 40%, 60%, 80% { transform: translateX(5px); }
         }
-    
     </style>
 </head>
 <body>
@@ -237,7 +267,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 </div>
 
                 <h2 class="mb-3 fw-bold">AMGC System</h2>
-                <p class="text-muted mb-4">Sustainable Inventory Management</p>
+                <p class="text-muted mb-4">A. MACALINDONG GROUP OF COMPANIES</p>
             </div>
             
             <?php if (isset($error)): ?>
@@ -272,6 +302,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <i class="bi bi-eye"></i>
                         </button>
                     </div>
+                    <div class="text-end mt-2">
+                        <a href="#" class="forgot-password" data-bs-toggle="modal" data-bs-target="#forgotPasswordModal">
+                            <i class="bi bi-question-circle"></i> Forgot Password?
+                        </a>
+                    </div>
                 </div>
                 
                 <div class="d-grid gap-2">
@@ -280,6 +315,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     </button>           
                 </div>
             </form>
+            
+            <div class="text-center mt-4">
+                <p class="text-muted small">
+                    <i class="bi bi-shield-check"></i> Secure login system
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Forgot Password Modal -->
+    <div class="modal fade" id="forgotPasswordModal" tabindex="-1" aria-labelledby="forgotPasswordModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="forgotPasswordModalLabel">
+                        <i class="bi bi-key me-2"></i>Reset Password
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-3">Enter your username to receive password reset instructions.</p>
+                    <form id="forgotPasswordForm">
+                        <div class="mb-3">
+                            <label for="resetUsername" class="form-label">Username</label>
+                            <input type="text" class="form-control" id="resetUsername" name="resetUsername" placeholder="Enter your username" required>
+                        </div>
+                        <div class="alert alert-info small">
+                            <i class="bi bi-info-circle me-2"></i>
+                            Password reset instructions will be sent to the email associated with your account.
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn reset-btn" id="submitResetRequest">
+                        <i class="bi bi-send me-2"></i>Send Reset Link
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -326,7 +400,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 return true;
             });
             
-            // Keyboard shortcut for focusing on password
+            // Forgot password functionality
+            document.getElementById('submitResetRequest').addEventListener('click', function() {
+                const username = document.getElementById('resetUsername').value.trim();
+                
+                if (!username) {
+                    alert('Please enter your username.');
+                    return;
+                }
+                
+                // In a real application, you would send an AJAX request here
+                // For now, we'll simulate the process
+                
+                // Show loading state
+                const btn = this;
+                const originalText = btn.innerHTML;
+                btn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Sending...';
+                btn.disabled = true;
+                
+                // Simulate API call
+                setTimeout(function() {
+                    // Reset button
+                    btn.innerHTML = originalText;
+                    btn.disabled = false;
+                    
+                    // Close modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('forgotPasswordModal'));
+                    modal.hide();
+                    
+                    // Show success message
+                    const loginCard = document.querySelector('.login-card');
+                    const successAlert = document.createElement('div');
+                    successAlert.className = 'alert alert-success alert-dismissible fade show';
+                    successAlert.innerHTML = `
+                        <i class="bi bi-check-circle-fill me-2"></i>
+                        Password reset instructions have been sent to the email associated with <strong>${username}</strong>.
+                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                    `;
+                    
+                    // Insert after logo section
+                    const logoSection = document.querySelector('.text-center');
+                    logoSection.parentNode.insertBefore(successAlert, logoSection.nextSibling);
+                    
+                    // Clear the form
+                    document.getElementById('resetUsername').value = '';
+                    
+                }, 1500);
+            });
+            
+            // Clear forgot password form when modal closes
+            document.getElementById('forgotPasswordModal').addEventListener('hidden.bs.modal', function () {
+                document.getElementById('resetUsername').value = '';
+            });
+            
+            // Keyboard shortcuts
             document.addEventListener('keydown', function(e) {
                 if (e.key === 'Tab' && document.activeElement.name === 'username') {
                     // Auto-focus password field after username
@@ -338,6 +465,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Enter key to submit form
                 if (e.key === 'Enter' && document.activeElement.name === 'password') {
                     document.getElementById('loginForm').submit();
+                }
+                
+                // Alt + F for forgot password
+                if (e.altKey && e.key === 'f') {
+                    e.preventDefault();
+                    const modal = new bootstrap.Modal(document.getElementById('forgotPasswordModal'));
+                    modal.show();
                 }
             });
         });
