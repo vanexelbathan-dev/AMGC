@@ -159,7 +159,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             color: var(--primary-green);
         }
         
-        /* Login button */
+        /* Login button - FIXED with standard Bootstrap hover */
         .login-btn {
             background: linear-gradient(135deg, var(--primary-green), var(--secondary-green));
             border: none;
@@ -167,13 +167,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             padding: 0.75rem 1.5rem;
             font-weight: 600;
             color: white;
-            transition: none !important;
         }
         
         .login-btn:hover {
-            background: linear-gradient(135deg, var(--secondary-green), var(--dark-green)) !important;
-            transform: none !important;
-            box-shadow: none !important;
+            background: linear-gradient(135deg, var(--secondary-green), var(--dark-green));
+            color: white;
         }
         
         /* Forgot password link */
@@ -237,6 +235,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             padding: 10px 20px;
             border-radius: 8px;
             font-weight: 600;
+        }
+        
+        .reset-btn:hover {
+            background: linear-gradient(135deg, var(--secondary-green), var(--dark-green));
+            color: white;
         }
         
         @keyframes fadeIn {
