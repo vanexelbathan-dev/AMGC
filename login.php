@@ -90,7 +90,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Inventory System - Login</title>
+    <title>AMGC - Login</title>
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
@@ -139,21 +139,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             animation: fadeIn 0.5s ease-out;
         }
         
-        .company-logo {
-            width: 120px;
-            height: 120px;
-            border-radius: 50%;
-            background: linear-gradient(135deg, var(--dark-green), var(--primary-green));
-            margin: 0 auto 1.5rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 3rem;
-            overflow: hidden;
-            border: 5px solid white;
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
-        }
+.company-logo{
+    width:110px;
+    height:110px;
+    border-radius:50%;
+    overflow:hidden;
+    margin:auto;
+    margin-bottom:15px;
+    border:4px solid rgba(255,255,255,0.6);
+    box-shadow:0 10px 25px rgba(0,0,0,0.4);
+    background:rgba(255,255,255,0.15);
+    backdrop-filter:blur(10px);
+}
+
+.company-logo img{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+}
+
         
         /* Password input with eye icon */
         .password-input-group {
@@ -229,12 +233,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="login-card">
             <div class="text-center">
                 <div class="company-logo">
-                    <!-- Replace this with your actual logo image -->
-                    <div style="display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; background: linear-gradient(135deg, var(--dark-green), var(--primary-green)); color: white; font-size: 2.5rem; font-weight: bold;">
-                        INV
-                    </div>
+                    <img src="assets/logo.png" alt="AMGC Logo">
                 </div>
-                <h2 class="mb-3 fw-bold">Inventory System</h2>
+
+                <h2 class="mb-3 fw-bold">AMGC System</h2>
                 <p class="text-muted mb-4">Sustainable Inventory Management</p>
             </div>
             
