@@ -220,21 +220,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
             20%, 40%, 60%, 80% { transform: translateX(5px); }
         }
-        
-        .demo-credentials {
-            background: rgba(16, 185, 129, 0.1);
-            border-radius: 8px;
-            padding: 10px;
-            margin-top: 15px;
-            border: 1px solid var(--light-green);
-            font-size: 0.85rem;
-        }
-        
-        .demo-credentials h6 {
-            color: var(--primary-green);
-            font-weight: 600;
-            margin-bottom: 5px;
-        }
+    
     </style>
 </head>
 <body>
@@ -289,19 +275,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="d-grid gap-2">
                     <button type="submit" class="btn btn-lg login-btn">
                         <i class="bi bi-box-arrow-in-right me-2"></i>Log In
-                    </button>
-                    
-                    <div class="demo-credentials">
-                        <h6><i class="bi bi-info-circle"></i> Demo Credentials:</h6>
-                        <div class="row">
-                            <div class="col-6">
-                                <small><strong>Admin:</strong> admin/admin123</small>
-                            </div>
-                            <div class="col-6">
-                                <small><strong>Branch Manager:</strong> branch1/branch123</small>
-                            </div>
-                        </div>
-                    </div>
+                    </button>           
                 </div>
             </form>
         </div>
