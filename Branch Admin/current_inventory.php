@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Branch Admin</title>
+    <title>Current Inventory</title>
     <link rel="stylesheet" href="../css/style.css">
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -35,7 +35,7 @@
             </a>
         </li>
         <li class="nav-item">
-            <a class="nav-link" href="sales_orders.php">
+            <a class="nav-link" href="sales_order.php">
                 <i class="bi bi-bag"></i>
                 <span class="nav-text">Sales Orders</span>
             </a>
@@ -53,9 +53,9 @@
             </a>
         </li>
         <li class="nav-item">
-            <a class="nav-link" href="purchase_orders.php">
+            <a class="nav-link" href="purchase_order.php">
                 <i class="bi bi-box"></i>
-                <span class="nav-text">PO</span>
+                <span class="nav-text">Purchase Orders</span>
             </a>
         </li>
         <li class="nav-item">
