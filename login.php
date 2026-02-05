@@ -233,7 +233,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <div class="login-card">
             <div class="text-center">
                 <div class="company-logo">
-                    <img src="assets/logo.png" alt="AMGC Logo">
+                    <img src="Pictures/AMGCLOGO.png" alt="AMGC Logo">
                 </div>
 
                 <h2 class="mb-3 fw-bold">AMGC System</h2>
