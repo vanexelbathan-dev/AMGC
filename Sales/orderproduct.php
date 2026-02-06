@@ -349,11 +349,11 @@
             cartItemsDiv.innerHTML = cart.map(item => `
                 <div class="cart-item">
                     <div style="flex: 1;">
-                        <div class="small">${item.name}</div>
-                        <div class="text-white-50 small">$${item.price.toFixed(2)} × ${item.quantity}</div>
+                        <div class="text-black-50 small">${item.name}</div>
+                        <div class="text-black-50 small">$${item.price.toFixed(2)} × ${item.quantity}</div>
                     </div>
                     <div class="text-end">
-                        <div class="text-white fw-bold">$${(item.price * item.quantity).toFixed(2)}</div>
+                        <div class="text-black fw-bold">$${(item.price * item.quantity).toFixed(2)}</div>
                         <button class="btn btn-sm btn-outline-light mt-1" onclick="removeFromCart(${item.id})">
                             <i class="bi bi-trash"></i>
                         </button>
