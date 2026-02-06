@@ -23,7 +23,7 @@
         <!-- Sidebar (SAME AS CURRENT INVENTORY) -->
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
-                <h3><i class="bi bi-box-seam logo-icon"></i> <span class="nav-text">Branch Admin</span></h3>
+                 <h3><img src="../Pictures/nobg.png" alt="Logo" class="logo-icon"> <span class="nav-text">Branch Admin</span></h3>
             </div>
             
             <div class="sidebar-menu">
@@ -55,7 +55,7 @@
                     <li class="nav-item">
                         <a class="nav-link" href="purchase_orders.php">
                             <i class="bi bi-box"></i>
-                            <span class="nav-text">PO</span>
+                            <span class="nav-text">Purchase Orders</span>
                         </a>
                     </li>
                     <!-- TRIP TICKETS ACTIVE LINK -->

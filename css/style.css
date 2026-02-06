@@ -167,6 +167,8 @@ a:hover {
 .sidebar-header .logo-icon {
     color: var(--primary-green);
     margin-right: 10px;
+    width: 50px;
+    height: 50px;
 }
 
 .sidebar-menu {
@@ -359,13 +361,88 @@ a:hover {
     box-shadow: 0 12px 25px rgba(0, 0, 0, 0.12);
 }
 
-.stat-card.total { background: linear-gradient(135deg, var(--dark-green), var(--primary-green)); }
-.stat-card.sales { background: linear-gradient(135deg, #059669, #10b981); }
-.stat-card.customers { background: linear-gradient(135deg, #047857, #059669); }
-.stat-card.pending { background: linear-gradient(135deg, #f59e0b, #fbbf24); }
-.stat-card.delivery { background: linear-gradient(135deg, #0891b2, #22d3ee); }
-.stat-card.complete { background: linear-gradient(135deg, #065f46, #047857); }
-.stat-card.inventory { background: linear-gradient(135deg, #7c3aed, #8b5cf6); }
+/* Stat Cards Colors */
+.stat-card.total { 
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green)); 
+}
+
+.stat-card.sales { 
+    background: linear-gradient(135deg, #059669, #10b981); 
+}
+
+.stat-card.customers { 
+    background: linear-gradient(135deg, #047857, #059669); 
+}
+
+.stat-card.pending { 
+    background: linear-gradient(135deg, #f59e0b, #fbbf24); 
+}
+.stat-card.delivery { 
+    background: linear-gradient(135deg, #0891b2, #22d3ee); 
+}
+
+.stat-card.complete { 
+    background: linear-gradient(135deg, #065f46, #047857); 
+}
+
+.stat-card.inventory { 
+    background: linear-gradient(135deg, #7c3aed, #8b5cf6); 
+}
+
+.stat-card.processing { 
+    background: linear-gradient(135deg, #8b5cf6, #a78bfa); 
+}
+
+.stat-card.approved { 
+    background: linear-gradient(135deg, #10b981, #34d399); 
+}
+
+.stat-card.rejected { 
+    background: linear-gradient(135deg, #ef4444, #f87171); 
+}
+
+/* Stat Card Icon Colors */
+.stat-card.total .stat-icon { color: rgba(255, 255, 255, 0.9); }
+.stat-card.sales .stat-icon { color: rgba(255, 255, 255, 0.9); }
+.stat-card.customers .stat-icon { color: rgba(255, 255, 255, 0.9); }
+.stat-card.pending .stat-icon { color: rgba(255, 255, 255, 0.9); }
+.stat-card.delivery .stat-icon { color: rgba(255, 255, 255, 0.9); }
+.stat-card.complete .stat-icon { color: rgba(255, 255, 255, 0.9); }
+.stat-card.inventory .stat-icon { color: rgba(255, 255, 255, 0.9); }
+.stat-card.processing .stat-icon { color: rgba(255, 255, 255, 0.9); }
+.stat-card.approved .stat-icon { color: rgba(255, 255, 255, 0.9); }
+.stat-card.rejected .stat-icon { color: rgba(255, 255, 255, 0.9); }
+
+/* Stat Card Text Colors */
+.stat-card.total .stat-value,
+.stat-card.total .stat-label { color: white; }
+
+.stat-card.sales .stat-value,
+.stat-card.sales .stat-label { color: white; }
+
+.stat-card.customers .stat-value,
+.stat-card.customers .stat-label { color: white; }
+
+.stat-card.pending .stat-value,
+.stat-card.pending .stat-label { color: white; }
+
+.stat-card.delivery .stat-value,
+.stat-card.delivery .stat-label { color: white; }
+
+.stat-card.complete .stat-value,
+.stat-card.complete .stat-label { color: white; }
+
+.stat-card.inventory .stat-value,
+.stat-card.inventory .stat-label { color: white; }
+
+.stat-card.processing .stat-value,
+.stat-card.processing .stat-label { color: white; }
+
+.stat-card.approved .stat-value,
+.stat-card.approved .stat-label { color: white; }
+
+.stat-card.rejected .stat-value,
+.stat-card.rejected .stat-label { color: white; }
 
 .stat-icon {
     font-size: 2.2rem;

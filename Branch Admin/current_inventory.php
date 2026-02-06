@@ -20,10 +20,10 @@
 
     <!-- MAIN APPLICATION -->
     <div id="appPage">
-        <!-- Sidebar -->
+       <!-- Sidebar -->
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
-                <h3><i class="bi bi-box-seam logo-icon"></i> <span class="nav-text">Branch Admin</span></h3>
+                <h3><img src="../Pictures/nobg.png" alt="Logo" class="logo-icon"> <span class="nav-text">Branch Admin</span></h3>
             </div>
             
             <div class="sidebar-menu">
@@ -89,7 +89,7 @@
             <div id="dashboardContent" class="page-content active">
                 <div class="navbar-top">
                     <div class="page-title">
-                        <h2><i class="bi bi-speedometer2 me-2"></i>Dashboard</h2>
+                        <h2><i class="bi bi-speedometer2 me-2"></i>Current Inventory</h2>
                         <p id="dashboardSubtitle">Welcome to Inventory System Demo Mode</p>
                     </div>
                     
@@ -108,7 +108,7 @@
                         </div>
                         
                         <button class="logout-btn-top" onclick="logout()">
-                            <i class="bi bi-box-arrow-right"></i> Reset Demo
+                            <i class="bi bi-box-arrow-right"></i> Log Out
                         </button>
                     </div>
                 </div>
