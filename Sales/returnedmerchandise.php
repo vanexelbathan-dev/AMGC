@@ -78,53 +78,63 @@
                 </div>
             </div>
 
-            <!-- Return Stats -->
-            <div class="row g-3 mb-4">
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card">
-                        <div class="stat-icon" style="background-color: #fff3cd;">
-                            <i class="bi bi-hourglass-split" style="color: #ff9800;"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">14</div>
-                            <div class="stat-label">Pending Requests</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card">
-                        <div class="stat-icon" style="background-color: #e8f5e9;">
-                            <i class="bi bi-check-circle" style="color: #388e3c;"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">32</div>
-                            <div class="stat-label">Approved</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card">
-                        <div class="stat-icon" style="background-color: #ffebee;">
-                            <i class="bi bi-x-circle" style="color: #d32f2f;"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">8</div>
-                            <div class="stat-label">Rejected</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card">
-                        <div class="stat-icon" style="background-color: #e3f2fd;">
-                            <i class="bi bi-cash-coin" style="color: #1976d2;"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">$4,250</div>
-                            <div class="stat-label">Total Refunds</div>
-                        </div>
-                    </div>
-                </div>
+<!-- Return Stats -->
+<div class="row g-3 mb-4">
+
+    <!-- Pending Requests -->
+    <div class="col-md-3 mb-3">
+        <div class="stat-card pending">
+            <div class="stat-icon">
+                <i class="bi bi-hourglass-split"></i>
             </div>
+            <div>
+                <div class="stat-value">14</div>
+                <div class="stat-label">Pending Requests</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Approved -->
+    <div class="col-md-3 mb-3">
+        <div class="stat-card complete">
+            <div class="stat-icon">
+                <i class="bi bi-check-circle"></i>
+            </div>
+            <div>
+                <div class="stat-value">32</div>
+                <div class="stat-label">Approved</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rejected -->
+    <div class="col-md-3 mb-3">
+        <div class="stat-card sales">
+            <div class="stat-icon">
+                <i class="bi bi-x-circle"></i>
+            </div>
+            <div>
+                <div class="stat-value">8</div>
+                <div class="stat-label">Rejected</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Total Refunds -->
+    <div class="col-md-3 mb-3">
+        <div class="stat-card inventory">
+            <div class="stat-icon">
+                <i class="bi bi-cash-coin"></i>
+            </div>
+            <div>
+                <div class="stat-value">$4,250</div>
+                <div class="stat-label">Total Refunds</div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
 
             <!-- Search and Filter with Add Button -->
             <div class="card mb-4">

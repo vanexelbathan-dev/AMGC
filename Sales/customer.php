@@ -78,42 +78,50 @@
                 </div>
             </div>
 
-            <!-- Customer Stats -->
-            <div class="row g-3 mb-4">
-                <div class="col-md-4 mb-3">
-                    <div class="stat-card">
-                        <div class="stat-icon" style="background-color: #e3f2fd;">
-                            <i class="bi bi-people" style="color: #1976d2;"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">156</div>
-                            <div class="stat-label">Total Customers</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4 mb-3">
-                    <div class="stat-card">
-                        <div class="stat-icon" style="background-color: #e8f5e9;">
-                            <i class="bi bi-check-circle" style="color: #388e3c;"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">142</div>
-                            <div class="stat-label">Active Customers</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4 mb-3">
-                    <div class="stat-card">
-                        <div class="stat-icon" style="background-color: #fce4ec;">
-                            <i class="bi bi-graph-up" style="color: #c2185b;"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">$487K</div>
-                            <div class="stat-label">Total Revenue</div>
-                        </div>
-                    </div>
-                </div>
+<!-- Customer Stats -->
+<div class="row g-3 mb-4">
+
+    <!-- Total Customers -->
+    <div class="col-md-4 mb-3">
+        <div class="stat-card customers">
+            <div class="stat-icon">
+                <i class="bi bi-people"></i>
             </div>
+            <div>
+                <div class="stat-value">156</div>
+                <div class="stat-label">Total Customers</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Customers -->
+    <div class="col-md-4 mb-3">
+        <div class="stat-card complete">
+            <div class="stat-icon">
+                <i class="bi bi-check-circle"></i>
+            </div>
+            <div>
+                <div class="stat-value">142</div>
+                <div class="stat-label">Active Customers</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Total Revenue -->
+    <div class="col-md-4 mb-3">
+        <div class="stat-card sales">
+            <div class="stat-icon">
+                <i class="bi bi-graph-up"></i>
+            </div>
+            <div>
+                <div class="stat-value">$487K</div>
+                <div class="stat-label">Total Revenue</div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
 
             <!-- Search and Filter with Add Button -->
             <div class="card mb-4">

@@ -78,53 +78,63 @@
                 </div>
             </div>
 
-            <!-- Inventory Stats -->
-            <div class="row g-3 mb-4">
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card">
-                        <div class="stat-icon" style="background-color: #e3f2fd;">
-                            <i class="bi bi-box" style="color: #1976d2;"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">547</div>
-                            <div class="stat-label">Total Products</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card">
-                        <div class="stat-icon" style="background-color: #e8f5e9;">
-                            <i class="bi bi-check-circle" style="color: #388e3c;"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">521</div>
-                            <div class="stat-label">In Stock</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card">
-                        <div class="stat-icon" style="background-color: #fff3cd;">
-                            <i class="bi bi-exclamation-circle" style="color: #f57c00;"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">18</div>
-                            <div class="stat-label">Low Stock</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card">
-                        <div class="stat-icon" style="background-color: #ffebee;">
-                            <i class="bi bi-exclamation-triangle" style="color: #d32f2f;"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">8</div>
-                            <div class="stat-label">Critical Stock</div>
-                        </div>
-                    </div>
-                </div>
+<!-- Inventory Stats -->
+<div class="row g-3 mb-4">
+
+    <!-- Total Products -->
+    <div class="col-md-3 mb-3">
+        <div class="stat-card inventory">
+            <div class="stat-icon">
+                <i class="bi bi-box"></i>
             </div>
+            <div>
+                <div class="stat-value">547</div>
+                <div class="stat-label">Total Products</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- In Stock -->
+    <div class="col-md-3 mb-3">
+        <div class="stat-card complete">
+            <div class="stat-icon">
+                <i class="bi bi-check-circle"></i>
+            </div>
+            <div>
+                <div class="stat-value">521</div>
+                <div class="stat-label">In Stock</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Low Stock -->
+    <div class="col-md-3 mb-3">
+        <div class="stat-card pending">
+            <div class="stat-icon">
+                <i class="bi bi-exclamation-circle"></i>
+            </div>
+            <div>
+                <div class="stat-value">18</div>
+                <div class="stat-label">Low Stock</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Critical Stock -->
+    <div class="col-md-3 mb-3">
+        <div class="stat-card sales">
+            <div class="stat-icon">
+                <i class="bi bi-exclamation-triangle"></i>
+            </div>
+            <div>
+                <div class="stat-value">8</div>
+                <div class="stat-label">Critical Stock</div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
 
             <!-- Search and Filter -->
             <div class="card mb-4">
