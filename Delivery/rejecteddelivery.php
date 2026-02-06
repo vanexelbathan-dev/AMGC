@@ -65,43 +65,50 @@
                     </button>
                 </div>
             </div>
+<!-- Rejected Delivery Stats -->
+<div class="row g-3 mb-4">
 
-            <!-- Rejected Delivery Stats -->
-            <div class="row g-3 mb-4">
-                <div class="col-md-4 mb-3">
-                    <div class="stat-card">
-                        <div class="stat-icon" style="background-color: #ffebee;">
-                            <i class="bi bi-exclamation-triangle" style="color: #d32f2f;"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">8</div>
-                            <div class="stat-label">Total Rejected</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4 mb-3">
-                    <div class="stat-card">
-                        <div class="stat-icon" style="background-color: #fff3cd;">
-                            <i class="bi bi-clock" style="color: #ff9800;"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">3</div>
-                            <div class="stat-label">Pending Resolution</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4 mb-3">
-                    <div class="stat-card">
-                        <div class="stat-icon" style="background-color: #f3e5f5;">
-                            <i class="bi bi-info-circle" style="color: #7b1fa2;"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">5</div>
-                            <div class="stat-label">Resolved</div>
-                        </div>
-                    </div>
-                </div>
+    <!-- Total Rejected -->
+    <div class="col-md-4 mb-3">
+        <div class="stat-card sales">
+            <div class="stat-icon">
+                <i class="bi bi-exclamation-triangle"></i>
             </div>
+            <div>
+                <div class="stat-value">8</div>
+                <div class="stat-label">Total Rejected</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pending Resolution -->
+    <div class="col-md-4 mb-3">
+        <div class="stat-card pending">
+            <div class="stat-icon">
+                <i class="bi bi-clock"></i>
+            </div>
+            <div>
+                <div class="stat-value">3</div>
+                <div class="stat-label">Pending Resolution</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Resolved -->
+    <div class="col-md-4 mb-3">
+        <div class="stat-card inventory">
+            <div class="stat-icon">
+                <i class="bi bi-info-circle"></i>
+            </div>
+            <div>
+                <div class="stat-value">5</div>
+                <div class="stat-label">Resolved</div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
 
             <!-- Rejected Delivery Form -->
             <div class="card">

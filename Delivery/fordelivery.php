@@ -66,42 +66,50 @@
                 </div>
             </div>
 
-            <!-- Delivery Stats -->
-            <div class="row g-3 mb-4">
-                <div class="col-md-4 mb-3">
-                    <div class="stat-card">
-                        <div class="stat-icon" style="background-color: #e3f2fd;">
-                            <i class="bi bi-truck" style="color: #1976d2;"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">12</div>
-                            <div class="stat-label">Total for Delivery</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4 mb-3">
-                    <div class="stat-card">
-                        <div class="stat-icon" style="background-color: #fff3cd;">
-                            <i class="bi bi-hourglass-split" style="color: #ff9800;"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">5</div>
-                            <div class="stat-label">In Transit</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-4 mb-3">
-                    <div class="stat-card">
-                        <div class="stat-icon" style="background-color: #e8f5e9;">
-                            <i class="bi bi-check-circle" style="color: #388e3c;"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">28</div>
-                            <div class="stat-label">Completed Today</div>
-                        </div>
-                    </div>
-                </div>
+<!-- Delivery Stats -->
+<div class="row g-3 mb-4">
+
+    <!-- Total for Delivery -->
+    <div class="col-md-4 mb-3">
+        <div class="stat-card inventory">
+            <div class="stat-icon">
+                <i class="bi bi-truck"></i>
             </div>
+            <div>
+                <div class="stat-value">12</div>
+                <div class="stat-label">Total for Delivery</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- In Transit -->
+    <div class="col-md-4 mb-3">
+        <div class="stat-card pending">
+            <div class="stat-icon">
+                <i class="bi bi-hourglass-split"></i>
+            </div>
+            <div>
+                <div class="stat-value">5</div>
+                <div class="stat-label">In Transit</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Completed Today -->
+    <div class="col-md-4 mb-3">
+        <div class="stat-card complete">
+            <div class="stat-icon">
+                <i class="bi bi-check-circle"></i>
+            </div>
+            <div>
+                <div class="stat-value">28</div>
+                <div class="stat-label">Completed Today</div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
 
             <!-- Search and Filter -->
             <div class="card mb-4">
