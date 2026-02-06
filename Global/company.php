@@ -93,17 +93,6 @@
                     </div>
                 </div>
 
-                <!-- Demo Mode Info -->
-                <div class="demo-info-card mb-4">
-                    <div class="demo-info-icon">
-                        <i class="bi bi-info-circle"></i>
-                    </div>
-                    <div class="demo-info-content">
-                        <h5>Company Management</h5>
-                        <p class="mb-0">Manage company information, contacts, and addresses from the global database.</p>
-                    </div>
-                </div>
-
                 <div class="row g-3 mb-4">
                     <div class="col-12">
                         <div class="form-card">
