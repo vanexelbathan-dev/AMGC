@@ -40,7 +40,7 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="sales_orders.php">
+                        <a class="nav-link" href="sales_order.php">
                             <i class="bi bi-bag"></i>
                             <span class="nav-text">Sales Orders</span>
                         </a>
