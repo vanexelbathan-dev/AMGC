@@ -28,7 +28,7 @@
         <!-- Sidebar (SAME AS CURRENT INVENTORY) -->
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
-                 <h3><img src="../Pictures/nobg.png" alt="Logo" class="logo-icon"> <span class="nav-text">Branch Admin</span></h3>
+                 <h3><img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> <span class="nav-text">Branch Admin</span></h3>
             </div>
             
             <div class="sidebar-menu">

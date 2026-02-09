@@ -435,7 +435,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <!-- Mobile Logo (Visible only on mobile) -->
             <div class="mobile-logo">
                 <!-- Mobile Logo - Replace with your mobile logo image -->
-                <img src="Pictures/AMGC3DLOGOICON.png" alt="AMGC LOGO">
+                <img src="AMGC3DLOGOICON.png" alt="AMGC Logo">
             </div>
 
             <!-- Header -->
