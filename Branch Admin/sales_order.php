@@ -71,20 +71,6 @@
                     </li>
 
                     <hr class="sidebar-divider">
-
-                    <li class="nav-item">
-                        <a class="nav-link" href="#">
-                            <i class="bi bi-info-circle"></i>
-                            <span class="nav-text">About</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#">
-                            <i class="bi bi-chat-left-text"></i>
-                            <span class="nav-text">Feedback</span>
-                        </a>
-                    </li>
-                </ul>
             </div>
         </div>
 
@@ -152,10 +138,12 @@
                             <div class="stat-label">For Delivery</div>
                         </div>
                     </div>
+                    <div class="col-md-3">
                     <div class="stat-card complete">
                         <i class="bi bi-check-circle stat-icon"></i>
                         <div class="stat-value">215</div>
                         <div class="stat-label">Completed</div>
+                    </div>
                     </div>
                 </div>
 

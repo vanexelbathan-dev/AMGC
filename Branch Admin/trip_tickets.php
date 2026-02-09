@@ -73,18 +73,6 @@
 
                     <hr class="sidebar-divider">
 
-                    <li class="nav-item">
-                        <a class="nav-link" href="#">
-                            <i class="bi bi-info-circle"></i>
-                            <span class="nav-text">About</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="#">
-                            <i class="bi bi-chat-left-text"></i>
-                            <span class="nav-text">Feedback</span>
-                        </a>
-                    </li>
                 </ul>
             </div>
         </div>

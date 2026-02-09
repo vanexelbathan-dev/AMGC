@@ -1,0 +1,717 @@
+    /* Reset and Base Styles */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        /* Main Container */
+        .page-content.active {
+            padding: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        /* Pick List Item Cards - IMPROVED LAYOUT */
+        .pick-list-card {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 12px;
+            padding: 1.25rem;
+            margin-bottom: 1rem;
+            transition: all 0.3s ease;
+            position: relative;
+            min-height: 200px;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .pick-list-card:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            transform: translateY(-2px);
+        }
+        
+        /* Card Header */
+        .card-header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+            gap: 15px;
+        }
+        
+        .card-left-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            flex: 1;
+        }
+        
+        .so-id {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #374151;
+            background: #f3f4f6;
+            padding: 4px 10px;
+            border-radius: 20px;
+            display: inline-block;
+        }
+        
+        /* Warehouse Action Buttons - FIXED POSITION */
+        .warehouse-actions {
+            display: flex;
+            gap: 8px;
+            flex-direction: column;
+            align-items: flex-end;
+            min-width: 130px;
+        }
+        
+        .warehouse-btn {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap;
+            width: 100%;
+            justify-content: center;
+        }
+        
+        .btn-send-warehouse {
+            background: rgba(59, 130, 246, 0.1);
+            color: #3b82f6;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+        
+        .btn-send-warehouse:hover {
+            background: rgba(59, 130, 246, 0.2);
+        }
+        
+        .btn-generate-invoice {
+            background: rgba(16, 185, 129, 0.1);
+            color: #059669;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+        
+        .btn-generate-invoice:hover {
+            background: rgba(16, 185, 129, 0.2);
+        }
+        
+        .btn-generate-ticket {
+            background: rgba(245, 158, 11, 0.1);
+            color: #d97706;
+            border: 1px solid rgba(245, 158, 11, 0.3);
+        }
+        
+        .btn-generate-ticket:hover {
+            background: rgba(245, 158, 11, 0.2);
+        }
+        
+        .btn-disabled {
+            background: #f3f4f6;
+            color: #9ca3af;
+            border: 1px solid #e5e7eb;
+            cursor: not-allowed;
+        }
+        
+        /* Warehouse Status Badge */
+        .warehouse-status {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 0.7rem;
+            font-weight: 600;
+            vertical-align: middle;
+        }
+        
+        .warehouse-pending {
+            background: rgba(239, 68, 68, 0.1);
+            color: #dc2626;
+        }
+        
+        .warehouse-ready {
+            background: rgba(245, 158, 11, 0.1);
+            color: #d97706;
+        }
+        
+        .warehouse-shipped {
+            background: rgba(59, 130, 246, 0.1);
+            color: #2563eb;
+        }
+        
+        .warehouse-delivered {
+            background: rgba(16, 185, 129, 0.1);
+            color: #059669;
+        }
+        
+        /* Item Details */
+        .item-details {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .item-name {
+            font-weight: 600;
+            color: #1f2937;
+            font-size: 1rem;
+            margin-bottom: 15px;
+            line-height: 1.4;
+        }
+        
+        .item-code {
+            color: #6b7280;
+            font-size: 0.875rem;
+            margin-left: 5px;
+        }
+        
+        /* Quantities Section */
+        .quantities {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .quantity-badge {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 10px 15px;
+            background: #f8fafc;
+            border-radius: 8px;
+            min-width: 80px;
+            border: 1px solid #e5e7eb;
+        }
+        
+        .quantity-label {
+            font-size: 0.75rem;
+            color: #6b7280;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+        
+        .quantity-value {
+            font-weight: 700;
+            font-size: 1.25rem;
+            color: #059669;
+        }
+        
+        /* Item Meta Information */
+        .item-meta-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: auto;
+            padding-top: 15px;
+            border-top: 1px solid #e5e7eb;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        .item-meta {
+            font-size: 0.875rem;
+            color: #6b7280;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        .item-meta i {
+            margin-right: 4px;
+        }
+        
+        /* Status Badges */
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+        
+        .status-pending {
+            background: rgba(245, 158, 11, 0.1);
+            color: #d97706;
+        }
+        
+        .status-in-progress {
+            background: rgba(59, 130, 246, 0.1);
+            color: #3b82f6;
+        }
+        
+        .status-completed {
+            background: rgba(16, 185, 129, 0.1);
+            color: #059669;
+        }
+        
+        /* Additional Info */
+        .additional-info {
+            margin-top: 10px;
+            font-size: 0.8rem;
+            color: #6b7280;
+            display: flex;
+            flex-direction: column;
+            gap: 3px;
+        }
+        
+        .additional-info div {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        /* Checkbox Styling */
+        .form-check-input {
+            cursor: pointer;
+            width: 18px;
+            height: 18px;
+            margin-top: 0;
+        }
+        
+        .form-check-input:checked {
+            background-color: #3b82f6;
+            border-color: #3b82f6;
+        }
+        
+        /* Progress Steps */
+        .progress-steps {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin: 1.5rem 0;
+            position: relative;
+            padding: 0 20px;
+        }
+        
+        .progress-steps::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 20px;
+            right: 20px;
+            height: 2px;
+            background: #e5e7eb;
+            z-index: 1;
+        }
+        
+        .progress-step {
+            position: relative;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            flex: 1;
+        }
+        
+        .step-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: white;
+            border: 2px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 8px;
+            transition: all 0.3s ease;
+        }
+        
+        .step-icon.active {
+            background: #3b82f6;
+            border-color: #3b82f6;
+            color: white;
+        }
+        
+        .step-icon.completed {
+            background: #10b981;
+            border-color: #10b981;
+            color: white;
+        }
+        
+        .step-label {
+            font-size: 0.75rem;
+            color: #6b7280;
+            text-align: center;
+            white-space: nowrap;
+        }
+        
+        .step-label.active {
+            color: #3b82f6;
+            font-weight: 600;
+        }
+        
+        /* Batch Actions */
+        .batch-actions {
+            background: #f8fafc;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            display: none;
+        }
+        
+        .batch-actions-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        
+        .selected-count {
+            font-weight: 600;
+            color: #3b82f6;
+            font-size: 1rem;
+        }
+        
+        .batch-buttons {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        
+        /* Action Bar */
+        .action-bar {
+            background: #f8fafc;
+            border-radius: 8px;
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+        
+        .action-bar-content {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        
+        .action-left {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+        
+        .action-right {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        
+        /* Sort Controls */
+        .sort-controls {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .sort-btn {
+            padding: 6px 12px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            background: white;
+            font-size: 0.875rem;
+            color: #6b7280;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+        
+        .sort-btn:hover {
+            background: #f9fafb;
+            border-color: #9ca3af;
+        }
+        
+        .sort-btn.active {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+        
+        /* Stats Cards */
+        .stat-card {
+            padding: 1.25rem;
+            border-radius: 12px;
+            background: white;
+            border: 1px solid #e5e7eb;
+            height: 100%;
+        }
+        
+        .stat-icon {
+            font-size: 2rem;
+            margin-bottom: 10px;
+        }
+        
+        .stat-value {
+            font-size: 1.75rem;
+            font-weight: 700;
+            color: #e5e7eb;
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            font-size: 0.875rem;
+            color: #e5e7eb;
+        }
+        
+       .stat-card.total { background: linear-gradient(135deg, var(--dark-green), var(--primary-green)); }
+        .stat-card.sales { background: linear-gradient(135deg, #059669, #10b981); }
+        .stat-card.customers { background: linear-gradient(135deg, #047857, #059669); }
+        .stat-card.pending { background: linear-gradient(135deg, #f59e0b, #fbbf24); }
+        .stat-card.delivery { background: linear-gradient(135deg, #0891b2, #22d3ee); }
+        .stat-card.complete { background: linear-gradient(135deg, #065f46, #047857); }
+        .stat-card.inventory { background: linear-gradient(135deg, #7c3aed, #8b5cf6); }
+
+        
+        /* New Item Card */
+        .new-item-card {
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.05), rgba(16, 185, 129, 0.02));
+            border: 2px dashed #d1d5db;
+            border-radius: 12px;
+            padding: 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 1rem;
+        }
+        
+        .new-item-card:hover {
+            border-color: #10b981;
+            background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.05));
+        }
+        
+        .new-item-card .add-icon {
+            width: 48px;
+            height: 48px;
+            background: rgba(16, 185, 129, 0.2);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1rem;
+        }
+        
+        .new-item-card .add-icon i {
+            color: #10b981;
+            font-size: 1.5rem;
+        }
+        
+        .new-item-card h5 {
+            color: #374151;
+            margin-bottom: 0.5rem;
+        }
+        
+        .new-item-card p {
+            color: #6b7280;
+            font-size: 0.875rem;
+            margin-bottom: 0;
+        }
+        
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 3rem 1rem;
+            display: none;
+        }
+        
+        .empty-state-icon {
+            width: 80px;
+            height: 80px;
+            background: #f3f4f6;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1.5rem;
+        }
+        
+        .empty-state-icon i {
+            font-size: 2rem;
+            color: #9ca3af;
+        }
+        
+        /* Buttons */
+        .btn {
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+        }
+        
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 0.875rem;
+        }
+        
+        .btn-outline-primary {
+            border: 1px solid #3b82f6;
+            color: #3b82f6;
+            background: white;
+        }
+        
+        .btn-outline-primary:hover {
+            background: #3b82f6;
+            color: white;
+        }
+        
+        .btn-outline-secondary {
+            border: 1px solid #6b7280;
+            color: #6b7280;
+            background: white;
+        }
+        
+        .btn-outline-secondary:hover {
+            background: #6b7280;
+            color: white;
+        }
+        
+        .btn-primary {
+            background: #3b82f6;
+            color: white;
+            border: 1px solid #3b82f6;
+        }
+        
+        .btn-primary:hover {
+            background: #2563eb;
+            border-color: #2563eb;
+        }
+        
+        .btn-danger {
+            background: #ef4444;
+            color: white;
+            border: 1px solid #ef4444;
+        }
+        
+        .btn-danger:hover {
+            background: #dc2626;
+            border-color: #dc2626;
+        }
+        
+        /* Responsive Design */
+        @media (max-width: 1200px) {
+            .page-content.active {
+                padding: 15px;
+            }
+        }
+        
+        @media (max-width: 992px) {
+            .progress-steps {
+                flex-wrap: wrap;
+                gap: 20px;
+            }
+            
+            .progress-steps::before {
+                display: none;
+            }
+            
+            .progress-step {
+                flex: 0 0 calc(33.333% - 20px);
+            }
+            
+            .card-header-row {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .warehouse-actions {
+                width: 100%;
+                flex-direction: row;
+                justify-content: flex-start;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .progress-step {
+                flex: 0 0 calc(50% - 20px);
+            }
+            
+            .action-bar-content,
+            .batch-actions-content {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .action-left,
+            .action-right,
+            .batch-buttons {
+                width: 100%;
+                justify-content: center;
+            }
+            
+            .sort-controls {
+                flex-wrap: wrap;
+                justify-content: center;
+            }
+            
+            .quantities {
+                justify-content: center;
+            }
+            
+            .item-meta-row {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 10px;
+            }
+            
+            .item-meta {
+                justify-content: center;
+            }
+            
+            .status-badge {
+                align-self: center;
+            }
+            
+            .stat-card {
+                margin-bottom: 15px;
+            }
+        }
+        
+        @media (max-width: 576px) {
+            .progress-step {
+                flex: 0 0 100%;
+            }
+            
+            .warehouse-actions {
+                flex-direction: column;
+            }
+            
+            .warehouse-btn {
+                width: 100%;
+            }
+            
+            .action-right .btn {
+                width: 100%;
+                justify-content: center;
+            }
+            
+            .batch-buttons {
+                flex-direction: column;
+            }
+            
+            .batch-buttons .btn {
+                width: 100%;
+            }
+            
+            .sort-controls {
+                flex-direction: column;
+                width: 100%;
+            }
+            
+            .sort-btn {
+                width: 100%;
+                text-align: center;
+            }
+        }

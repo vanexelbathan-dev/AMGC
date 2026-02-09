@@ -28,7 +28,7 @@
        <!-- Sidebar -->
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
-                <h3><img src="../Pictures/nobg.png" alt="Logo" class="logo-icon"> <span class="nav-text">Branch Admin</span></h3>
+                <h3><img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> <span class="nav-text">Branch Admin</span></h3>
             </div>
             
             <div class="sidebar-menu">
@@ -72,18 +72,6 @@
 
         <hr class="sidebar-divider">
 
-        <li class="nav-item">
-            <a class="nav-link" href="#">
-                <i class="bi bi-info-circle"></i>
-                <span class="nav-text">About</span>
-            </a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link" href="#">
-                <i class="bi bi-chat-left-text"></i>
-                <span class="nav-text">Feedback</span>
-            </a>
-        </li>
     </ul>
 </div>
         </div>
@@ -155,26 +143,6 @@
                     </div>
                 </div>
 
-                <!-- Quick Actions -->
-                <div class="quick-actions" id="quickActions">
-                    <div class="quick-action-btn" onclick="showPage('transactions')">
-                        <i class="bi bi-plus-circle"></i>
-                        <div>New Transaction</div>
-                    </div>
-                    <div class="quick-action-btn" onclick="showPage('purchaseOrders')">
-                        <i class="bi bi-file-text"></i>
-                        <div>Create PO</div>
-                    </div>
-                    <div class="quick-action-btn" onclick="showPage('deliveries')">
-                        <i class="bi bi-truck"></i>
-                        <div>Schedule Delivery</div>
-                    </div>
-                    <div class="quick-action-btn" onclick="showPage('sales')">
-                        <i class="bi bi-graph-up-arrow"></i>
-                        <div>View Reports</div>
-                    </div>
-                </div>
-
                 <!-- Recent Activity -->
                 <div class="row g-3">
                     <div class="col-lg-8">
@@ -228,131 +196,9 @@
                     </div>
                 </div>
             </div>
-
-            <!-- TRANSACTIONS PAGE -->
-            <div id="transactionsContent" class="page-content">
-                <div class="navbar-top">
-                    <div class="page-title">
-                        <h2><i class="bi bi-arrow-left-right me-2"></i>Transactions</h2>
-                        <p>Manage all inventory transactions</p>
-                    </div>
-                    
-                    <div class="user-info-top">
-                        <div class="search-box">
-                            <i class="bi bi-search"></i>
-                            <input type="text" class="form-control" placeholder="Search transactions...">
-                        </div>
-                        
-                        <div class="user-profile-top">
-                            <div class="user-avatar-top">AD</div>
-                            <div class="user-details-top">
-                                <span class="user-name-top" id="transactionsUserName">Admin User</span>
-                                <span class="user-role-top" id="transactionsUserRole">Administrator</span>
-                            </div>
-                        </div>
-                        
-                        <button class="logout-btn-top" onclick="logout()">
-                            <i class="bi bi-box-arrow-right"></i> Reset Demo
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Demo Mode Info -->
-                <div class="demo-info-card mb-4">
-                    <div class="demo-info-icon">
-                        <i class="bi bi-info-circle"></i>
-                    </div>
-                    <div class="demo-info-content">
-                        <h5>Transactions Demo</h5>
-                        <p class="mb-0">This page demonstrates transaction management features. All data shown is sample data for demonstration purposes.</p>
-                    </div>
-                </div>
-
-                <div class="row g-3 mb-4">
-                    <div class="col-12">
-                        <div class="form-card">
-                            <div class="row g-3">
-                                <div class="col-md-8">
-                                    <div class="search-box">
-                                        <i class="bi bi-search"></i>
-                                        <input type="text" class="form-control" placeholder="Search transactions...">
-                                    </div>
-                                </div>
-                                <div class="col-md-2">
-                                    <select class="form-select">
-                                        <option>All Types</option>
-                                        <option>Stock In</option>
-                                        <option>Stock Out</option>
-                                        <option>Transfer</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-2">
-                                    <button class="btn btn-primary w-100">Filter</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="row g-3 mb-4">
-                    <div class="col-md-3">
-                        <div class="stat-card total">
-                            <div class="stat-value" id="transactionsTotal">1,245</div>
-                            <div class="stat-label">Total Transactions</div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="stat-card sales">
-                            <div class="stat-value" id="transactionsStockIn">856</div>
-                            <div class="stat-label">Stock In</div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="stat-card complete">
-                            <div class="stat-value" id="transactionsStockOut">389</div>
-                            <div class="stat-label">Stock Out</div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="stat-card complete">
-                            <div class="stat-value" id="transactionsAccuracy">98.2%</div>
-                            <div class="stat-label">Accuracy Rate</div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="data-table">
-                    <div class="table-header d-flex justify-content-between align-items-center">
-                        <h5>Transaction History</h5>
-                        <button class="btn btn-primary btn-sm" id="newTransactionBtn">
-                            <i class="bi bi-plus-circle me-1"></i> New Transaction
-                        </button>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="table custom-table">
-                            <thead>
-                                <tr>
-                                    <th>Date & Time</th>
-                                    <th>Reference No.</th>
-                                    <th>Transaction Type</th>
-                                    <th>Branch</th>
-                                    <th>Item Code</th>
-                                    <th>Quantity</th>
-                                    <th>Encoded By</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody id="transactionsTable">
-                                <!-- Transactions will be loaded dynamically -->
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
         </div>
-    </div>
-    
+    </div> 
+
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     
