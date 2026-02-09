@@ -463,6 +463,46 @@ a:hover {
     font-weight: 500;
 }
 
+.stat-card.alert {
+    background: linear-gradient(135deg, #f59e0b, #fbbf24);
+}
+
+.stat-card.stock {
+    background: linear-gradient(135deg, #059669, #10b981);
+}
+
+.stat-card.capacity {
+    background: linear-gradient(135deg, #0891b2, #22d3ee);
+}
+
+
+/* Additional Stat Cards for Driver Stats */
+.stat-card.drivers { 
+    background: linear-gradient(135deg, #8b5cf6, #a78bfa); 
+}
+
+.stat-card.drivers .stat-icon { 
+    color: rgba(255, 255, 255, 0.9); 
+}
+
+.stat-card.drivers .stat-value,
+.stat-card.drivers .stat-label { 
+    color: white; 
+}
+
+.stat-card.trips { 
+    background: linear-gradient(135deg, #0891b2, #22d3ee); 
+}
+
+.stat-card.trips .stat-icon { 
+    color: rgba(255, 255, 255, 0.9); 
+}
+
+.stat-card.trips .stat-value,
+.stat-card.trips .stat-label { 
+    color: white; 
+}
+
 /* Form Cards */
 .form-card {
     background: white;
