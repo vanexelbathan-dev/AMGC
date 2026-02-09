@@ -316,7 +316,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .mobile-logo {
             display: none;
             text-align: center;
-            margin-bottom: 30px;
+            margin-bottom: 15px; /* Reduced margin */
             width: 100%;
         }
 
@@ -350,19 +350,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
 
             .form-column {
-                padding: 20px 20px;
+                padding: 15px 20px; /* Reduced padding */
                 justify-content: flex-start;
-                padding-top: 30px;
+                padding-top: 20px; /* Reduced top padding */
                 height: auto;
                 overflow-y: visible;
             }
 
             .form-header {
-                margin-bottom: 25px;
+                margin-bottom: 20px; /* Reduced margin */
             }
 
             .form-header h1 {
                 font-size: 28px;
+                margin-bottom: 5px; /* Reduced margin */
             }
 
             .form-header p {
@@ -376,13 +377,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         @media (max-width: 480px) {
             .form-column {
-                padding: 16px 16px;
-                padding-top: 25px;
+                padding: 12px 16px; /* Further reduced padding */
+                padding-top: 15px; /* Further reduced top padding */
             }
 
             .form-header h1 {
                 font-size: 26px;
-                margin-bottom: 8px;
+                margin-bottom: 4px; /* Further reduced margin */
             }
 
             .form-header p {
