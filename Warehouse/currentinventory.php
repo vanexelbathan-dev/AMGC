@@ -84,62 +84,63 @@
                 </div>
             </div>
 
-            <!-- Inventory Stats -->
-            <div class="row g-3 mb-4">
+<!-- Inventory Stats -->
+<div class="row g-3 mb-4">
 
-                <!-- Total Items -->
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card inventory">
-                        <div class="stat-icon">
-                            <i class="bi bi-boxes"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">2,450</div>
-                            <div class="stat-label">Total Items</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Low Stock Items -->
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card alert">
-                        <div class="stat-icon">
-                            <i class="bi bi-exclamation-triangle"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">8</div>
-                            <div class="stat-label">Low Stock Items</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Total Value -->
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card stock">
-                        <div class="stat-icon">
-                            <i class="bi bi-graph-up"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">$145K</div>
-                            <div class="stat-label">Inventory Value</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Warehouse Capacity -->
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card capacity">
-                        <div class="stat-icon">
-                            <i class="bi bi-percent"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">87%</div>
-                            <div class="stat-label">Capacity Used</div>
-                        </div>
-                    </div>
-                </div>
-
+    <!-- Total Items -->
+    <div class="col-md-3 mb-3">
+        <div class="stat-card inventory">
+            <div class="stat-icon">
+                <i class="bi bi-boxes"></i>
             </div>
+            <div>
+                <div class="stat-value">2,450</div>
+                <div class="stat-label">Total Items</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Low Stock Items -->
+    <div class="col-md-3 mb-3">
+        <div class="stat-card pending">
+            <div class="stat-icon">
+                <i class="bi bi-exclamation-triangle"></i>
+            </div>
+            <div>
+                <div class="stat-value">8</div>
+                <div class="stat-label">Low Stock Items</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Inventory Value -->
+    <div class="col-md-3 mb-3">
+        <div class="stat-card sales">
+            <div class="stat-icon">
+                <i class="bi bi-graph-up"></i>
+            </div>
+            <div>
+                <div class="stat-value">$145K</div>
+                <div class="stat-label">Inventory Value</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Capacity Used -->
+    <div class="col-md-3 mb-3">
+        <div class="stat-card delivery">
+            <div class="stat-icon">
+                <i class="bi bi-percent"></i>
+            </div>
+            <div>
+                <div class="stat-value">87%</div>
+                <div class="stat-label">Capacity Used</div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
 
             <!-- Search and Filter with Add Button -->
             <div class="card mb-4">

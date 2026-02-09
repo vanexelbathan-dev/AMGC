@@ -84,62 +84,63 @@
                 </div>
             </div>
 
-            <!-- Trip Tickets Stats -->
-            <div class="row g-3 mb-4">
+<!-- Trip Tickets Stats -->
+<div class="row g-3 mb-4">
 
-                <!-- Total Trips -->
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card trips">
-                        <div class="stat-icon">
-                            <i class="bi bi-ticket"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">48</div>
-                            <div class="stat-label">Total Trips</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Completed -->
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card complete">
-                        <div class="stat-icon">
-                            <i class="bi bi-check-circle"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">35</div>
-                            <div class="stat-label">Completed</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- In Transit -->
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card pending">
-                        <div class="stat-icon">
-                            <i class="bi bi-arrow-right-circle"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">8</div>
-                            <div class="stat-label">In Transit</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Pending -->
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card alert">
-                        <div class="stat-icon">
-                            <i class="bi bi-exclamation-circle"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">5</div>
-                            <div class="stat-label">Pending</div>
-                        </div>
-                    </div>
-                </div>
-
+    <!-- Total Trips -->
+    <div class="col-md-3 mb-3">
+        <div class="stat-card inventory">
+            <div class="stat-icon">
+                <i class="bi bi-ticket"></i>
             </div>
+            <div>
+                <div class="stat-value">48</div>
+                <div class="stat-label">Total Trips</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Completed -->
+    <div class="col-md-3 mb-3">
+        <div class="stat-card sales">
+            <div class="stat-icon">
+                <i class="bi bi-check-circle"></i>
+            </div>
+            <div>
+                <div class="stat-value">35</div>
+                <div class="stat-label">Completed</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- In Transit -->
+    <div class="col-md-3 mb-3">
+        <div class="stat-card pending">
+            <div class="stat-icon">
+                <i class="bi bi-arrow-right-circle"></i>
+            </div>
+            <div>
+                <div class="stat-value">8</div>
+                <div class="stat-label">In Transit</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pending -->
+    <div class="col-md-3 mb-3">
+        <div class="stat-card delivery">
+            <div class="stat-icon">
+                <i class="bi bi-exclamation-circle"></i>
+            </div>
+            <div>
+                <div class="stat-value">5</div>
+                <div class="stat-label">Pending</div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
 
             <!-- Search and Filter -->
             <div class="card mb-4">

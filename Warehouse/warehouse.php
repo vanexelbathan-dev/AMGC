@@ -84,62 +84,63 @@
                 </div>
             </div>
 
-            <!-- Warehouse Stats -->
-            <div class="row g-3 mb-4">
+<!-- Warehouse Stats -->
+<div class="row g-3 mb-4">
 
-                <!-- Total Inventory Items -->
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card inventory">
-                        <div class="stat-icon">
-                            <i class="bi bi-boxes"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">2,450</div>
-                            <div class="stat-label">Total Items</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Pending Deliveries -->
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card pending">
-                        <div class="stat-icon">
-                            <i class="bi bi-truck"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">18</div>
-                            <div class="stat-label">Pending Deliveries</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Active Drivers -->
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card drivers">
-                        <div class="stat-icon">
-                            <i class="bi bi-person-badge"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">12</div>
-                            <div class="stat-label">Active Drivers</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Stock Level -->
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card stock">
-                        <div class="stat-icon">
-                            <i class="bi bi-graph-up"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">87%</div>
-                            <div class="stat-label">Warehouse Capacity</div>
-                        </div>
-                    </div>
-                </div>
-
+    <!-- Total Inventory Items -->
+    <div class="col-md-3 mb-3">
+        <div class="stat-card inventory">
+            <div class="stat-icon">
+                <i class="bi bi-boxes"></i>
             </div>
+            <div>
+                <div class="stat-value">2,450</div>
+                <div class="stat-label">Total Items</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pending Deliveries -->
+    <div class="col-md-3 mb-3">
+        <div class="stat-card pending">
+            <div class="stat-icon">
+                <i class="bi bi-truck"></i>
+            </div>
+            <div>
+                <div class="stat-value">18</div>
+                <div class="stat-label">Pending Deliveries</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Active Drivers -->
+    <div class="col-md-3 mb-3">
+        <div class="stat-card delivery">
+            <div class="stat-icon">
+                <i class="bi bi-person-badge"></i>
+            </div>
+            <div>
+                <div class="stat-value">12</div>
+                <div class="stat-label">Active Drivers</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Warehouse Capacity -->
+    <div class="col-md-3 mb-3">
+        <div class="stat-card sales">
+            <div class="stat-icon">
+                <i class="bi bi-graph-up"></i>
+            </div>
+            <div>
+                <div class="stat-value">88%</div>
+                <div class="stat-label">Warehouse Capacity</div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
 
             <!-- Recent Activities -->
             <div class="row">
