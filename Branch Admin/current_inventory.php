@@ -31,49 +31,52 @@
                 <h3><img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> <span class="nav-text">Branch Admin</span></h3>
             </div>
             
+            <!-- Update this line in your HTML -->
+            <button class="desktop-toggle-btn" id="desktopToggleBtn">
+                <i class="bi bi-list" id="toggleIcon"></i>
+            </button>
             <div class="sidebar-menu">
-    <ul class="nav flex-column">
-        <li class="nav-item">
-            <a class="nav-link active" href="current_inventory.php">
-                <i class="bi bi-bar-chart-line"></i>
-                <span class="nav-text">Current Inventory</span>
-            </a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link" href="sales_order.php">
-                <i class="bi bi-bag"></i>
-                <span class="nav-text">Sales Orders</span>
-            </a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link" href="pick_list_items.php">
-                <i class="bi bi-list-check"></i>
-                <span class="nav-text">Pick List Items</span>
-            </a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link" href="bad_orders.php">
-                <i class="bi bi-x-circle"></i>
-                <span class="nav-text">Bad Orders</span>
-            </a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link" href="purchase_order.php">
-                <i class="bi bi-box"></i>
-                <span class="nav-text">Purchase Orders</span>
-            </a>
-        </li>
-        <li class="nav-item">
-            <a class="nav-link" href="trip_tickets.php">
-                <i class="bi bi-ticket-perforated"></i>
-                <span class="nav-text">Trip Tickets</span>
-            </a>
-        </li>
+                <ul class="nav flex-column">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="current_inventory.php" data-title="Current Inventory">
+                            <i class="bi bi-bar-chart-line"></i>
+                            <span class="nav-text">Current Inventory</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="sales_order.php" data-title="Sales Orders">
+                            <i class="bi bi-bag"></i>
+                            <span class="nav-text">Sales Orders</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="pick_list_items.php" data-title="Pick List Items">
+                            <i class="bi bi-list-check"></i>
+                            <span class="nav-text">Pick List Items</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="bad_orders.php" data-title="Bad Orders">
+                            <i class="bi bi-x-circle"></i>
+                            <span class="nav-text">Bad Orders</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="purchase_order.php" data-title="Purchase Orders">
+                            <i class="bi bi-box"></i>
+                            <span class="nav-text">Purchase Orders</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="trip_tickets.php" data-title="Trip Tickets">
+                            <i class="bi bi-ticket-perforated"></i>
+                            <span class="nav-text">Trip Tickets</span>
+                        </a>
+                    </li>
 
-        <hr class="sidebar-divider">
-
-    </ul>
-</div>
+                    <hr class="sidebar-divider">
+                </ul>
+            </div>
         </div>
 
         <!-- Main Content -->
@@ -247,6 +250,33 @@
             }
         };
 
+        // Toggle sidebar collapse/expand on desktop
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const toggleIcon = document.getElementById('toggleIcon');
+            const isMobile = window.innerWidth <= 992;
+            
+            if (isMobile) {
+                // On mobile, use the existing hamburger functionality
+                sidebar.classList.toggle('active');
+            } else {
+                // On desktop, toggle between expanded and collapsed
+                sidebar.classList.toggle('collapsed');
+                
+                // Update the toggle icon
+                if (sidebar.classList.contains('collapsed')) {
+                    toggleIcon.classList.remove('bi-chevron-left');
+                    toggleIcon.classList.add('bi-chevron-right');
+                } else {
+                    toggleIcon.classList.remove('bi-chevron-right');
+                    toggleIcon.classList.add('bi-chevron-left');
+                }
+                
+                // Store preference in localStorage
+                localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+            }
+        }
+
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', function() {
             console.log("Inventory System Demo Mode loaded!");
@@ -259,7 +289,20 @@
             
             // Setup mobile menu toggle
             document.getElementById('mobileMenuBtn').addEventListener('click', function() {
-                document.getElementById('sidebar').classList.toggle('active');
+                const sidebar = document.getElementById('sidebar');
+                sidebar.classList.toggle('active');
+                
+                // If sidebar is collapsed on desktop and we're opening on mobile,
+                // ensure it shows the full version
+                if (window.innerWidth <= 992) {
+                    sidebar.classList.remove('collapsed');
+                }
+            });
+            
+            // Add event listener for desktop toggle button
+            document.getElementById('desktopToggleBtn').addEventListener('click', function(e) {
+                e.stopPropagation(); // Prevent event bubbling
+                toggleSidebar();
             });
             
             // Initialize charts
@@ -269,11 +312,13 @@
             document.addEventListener('click', function(event) {
                 const sidebar = document.getElementById('sidebar');
                 const mobileBtn = document.getElementById('mobileMenuBtn');
+                const desktopToggle = document.getElementById('desktopToggleBtn');
                 const isMobile = window.innerWidth <= 992;
                 
                 if (isMobile && sidebar.classList.contains('active') && 
                     !sidebar.contains(event.target) && 
-                    !mobileBtn.contains(event.target)) {
+                    !mobileBtn.contains(event.target) &&
+                    !desktopToggle.contains(event.target)) {
                     sidebar.classList.remove('active');
                 }
             });
@@ -286,11 +331,22 @@
             
             // Load all page data
             loadAllDemoData();
+            
+            // Load sidebar preference from localStorage
+            const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+            if (savedCollapsed === 'true' && window.innerWidth > 992) {
+                const sidebar = document.getElementById('sidebar');
+                const toggleIcon = document.getElementById('toggleIcon');
+                sidebar.classList.add('collapsed');
+                toggleIcon.classList.remove('bi-chevron-left');
+                toggleIcon.classList.add('bi-chevron-right');
+            }
         });
 
         // Logout Function - Now just refreshes the page for demo reset
         function logout() {
             if (confirm('Reset demo to initial state?')) {
+                localStorage.removeItem('sidebarCollapsed');
                 location.reload();
             }
         }
@@ -645,9 +701,29 @@
 
         // Handle window resize
         window.addEventListener('resize', function() {
-            // Close sidebar on mobile when resizing to desktop
+            const sidebar = document.getElementById('sidebar');
+            const toggleIcon = document.getElementById('toggleIcon');
+            
             if (window.innerWidth > 992) {
-                document.getElementById('sidebar').classList.remove('active');
+                // Desktop mode
+                sidebar.classList.remove('active');
+                
+                // Load saved preference
+                const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+                if (savedCollapsed === 'true') {
+                    sidebar.classList.add('collapsed');
+                    toggleIcon.classList.remove('bi-chevron-left');
+                    toggleIcon.classList.add('bi-chevron-right');
+                } else {
+                    sidebar.classList.remove('collapsed');
+                    toggleIcon.classList.remove('bi-chevron-right');
+                    toggleIcon.classList.add('bi-chevron-left');
+                }
+            } else {
+                // Mobile mode - always show expanded
+                sidebar.classList.remove('collapsed');
+                toggleIcon.classList.remove('bi-chevron-right');
+                toggleIcon.classList.add('bi-chevron-left');
             }
         });
 
@@ -662,6 +738,11 @@
             else if (e.ctrlKey && e.key === 'r') {
                 e.preventDefault();
                 logout();
+            }
+            // Ctrl + B to toggle sidebar (desktop only)
+            else if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
+                e.preventDefault();
+                toggleSidebar();
             }
         });
     </script>
