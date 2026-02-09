@@ -440,7 +440,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             <!-- Header -->
             <div class="form-header">
-                <h1>Welcome Back</h1>
+                <h1>Welcome Back!</h1>
                 <p>A. MACALINDONG GROUP OF COMPANIES</p>
             </div>
 
