@@ -1,487 +1,605 @@
 <?php
 session_start();
-
-// I-check kung naka-login na
-if (isset($_SESSION['user'])) {
-    header('Location: dashboard.php');
-    exit;
-}
-
-// Database connection details
-$host = 'localhost';
-$dbname = 'inventory_db';
-$username = 'root';
-$password = '';
-
-try {
-    $conn = new PDO("mysql:host=$host;dbname=$dbname;charset=utf8", $username, $password);
-    $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-} catch(PDOException $e) {
-    $error = 'Database connection failed. Please contact administrator.';
-    $conn = null;
-}
+$error = '';
+$success = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $input_username = htmlspecialchars(trim($_POST['username'] ?? ''));
-    $input_password = $_POST['password'] ?? '';
-    
-    // Check if forgot password was requested
-    if (isset($_POST['forgot_password'])) {
-        // Handle forgot password logic here
-        // This would typically send a reset link to the user's email
-        // For now, we'll show a message
-        $_SESSION['reset_username'] = $input_username;
-        header('Location: forgot-password.php');
-        exit;
-    }
-    
-    $valid = false;
-    $user_data = null;
-    
-    // Check database only (demo accounts removed)
-    if (isset($conn)) {
-        $stmt = $conn->prepare("SELECT * FROM users WHERE username = ? AND status = 'active'");
-        $stmt->execute([$input_username]);
-        $user = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        if ($user && password_verify($input_password, $user['password'])) {
-            $valid = true;
-            $user_data = [
-                'full_name' => $user['full_name'],
-                'user_type' => $user['user_type'],
-                'branch' => $user['branch_id'],
-                'avatar' => substr($user['full_name'], 0, 2)
-            ];
-        }
-    }
-    
-    if ($valid && $user_data) {
-        $_SESSION['user'] = $input_username;
-        $_SESSION['user_data'] = $user_data;
-        header('Location: dashboard.php');
-        exit;
+    $email = isset($_POST['email']) ? trim($_POST['email']) : '';
+    $password = isset($_POST['password']) ? trim($_POST['password']) : '';
+
+    // Validate input
+    if (empty($email) || empty($password)) {
+        $error = 'Please enter both email and password';
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $error = 'Please enter a valid email address';
+    } elseif (strlen($password) < 6) {
+        $error = 'Password must be at least 6 characters long';
     } else {
-        $error = 'Invalid username or password';
+        // Demo login - in production, query database
+        if ($email === 'demo@example.com' && $password === 'password') {
+            $_SESSION['user'] = $email;
+            header('Location: dashboard.php');
+            exit;
+        } else {
+            $error = 'Invalid email or password';
+        }
     }
 }
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AMGC</title>
-<link rel="icon" type="image/png" href="Pictures/favicon-96x96.png" sizes="96x96" />
-<link rel="icon" type="image/svg+xml" href="Pictures/favicon.svg" />
-<link rel="shortcut icon" href="Pictures/favicon.ico" />
-<link rel="apple-touch-icon" sizes="180x180" href="Pictures/apple-touch-icon.png" />
-<link rel="manifest" href="Pictures/site.webmanifest" />
-<!-- Bootstrap 5 CSS -->
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-<!-- Bootstrap Icons -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
-
-<style>
-        :root {
-            --primary-green: #44D34E;
-            --secondary-green: #44D34E;
-            --light-green: #d1fae5;
-            --dark-green: #047857;
-            --dark-color: #052A47;
-            --light-color: #f9fafb;
-        }
-        
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AMGC</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
-        
-        body {
-            background-color: var(--light-color);
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-            color: var(--dark-color);
-            line-height: 1.6;
+
+        :root {
+            --primary-green: #44D34E;
+            --secondary-green: #44D34E;
+            --light-green: #d1fae5;
+            --dark-green: #047857;
+            --success-green: #44D34E;
+            --warning-green: #fbbf24;
+            --danger-green: #f87171;
+            --info-green: #22d3ee;
+            --dark-color: #052A47;
+            --light-color: #f9fafb;
+            --sidebar-width: 260px;
+            
+            /* Additional colors for consistency */
+            --gray-text: #666666;
+            --border-color: #E0E0E0;
         }
-        
-        /* Login Page */
+
+        html, body {
+            height: 100%;
+            overflow: hidden;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background-color: #FFFFFF;
+            color: var(--dark-color);
+        }
+
         .login-container {
-            min-height: 100vh;
-            background: linear-gradient(135deg, var(--dark-green) 0%, var(--primary-green) 100%);
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            height: 100vh;
+            gap: 0;
+            overflow: hidden;
+        }
+
+        /* Left Column - Form */
+        .form-column {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 40px 30px;
+            width: 100%;
+            height: 100vh;
+            overflow-y: auto;
+            overflow-x: hidden;
+        }
+
+        .form-column > * {
+            width: 100%;
+            max-width: 420px;
+        }
+
+        .form-header {
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        .form-header h1 {
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--dark-color);
+            margin-bottom: 8px;
+            line-height: 1.2;
+        }
+
+        .form-header p {
+            color: var(--gray-text);
+            font-size: 14px;
+            margin-bottom: 0;
+        }
+
+        /* Alert Messages */
+        .alert-error {
+            background-color: #FEE2E2;
+            border: 1px solid #FECACA;
+            color: #DC2626;
+            padding: 10px 12px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-shrink: 0;
+        }
+
+        .alert-success {
+            background-color: #ECFDF5;
+            border: 1px solid #D1FAE5;
+            color: var(--success-green);
+            padding: 10px 12px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 13px;
+            flex-shrink: 0;
+        }
+
+        /* Form Groups */
+        .form-group {
+            margin-bottom: 14px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--dark-color);
+            margin-bottom: 6px;
+        }
+
+        .input-wrapper {
+            position: relative;
+            display: flex;
+            align-items: center;
+        }
+
+        .input-wrapper i {
+            position: absolute;
+            left: 12px;
+            color: var(--gray-text);
+            pointer-events: none;
+            font-size: 14px;
+        }
+
+        .form-control {
+            border: 1px solid var(--border-color);
+            padding: 9px 44px 9px 38px !important;
+            border-radius: 8px;
+            font-size: 13px;
+            transition: all 0.3s ease;
+            width: 100%;
+        }
+
+        .form-control:focus {
+            border-color: var(--primary-green);
+            box-shadow: 0 0 0 3px rgba(68, 211, 78, 0.1);
+            outline: none;
+        }
+
+        /* Enhanced Password Toggle Button */
+        .password-toggle-btn {
+            position: absolute;
+            right: 8px;
+            background: none;
+            border: none;
+            color: var(--gray-text);
+            cursor: pointer;
+            padding: 6px;
+            transition: all 0.3s ease;
+            font-size: 14px;
+            z-index: 2;
             display: flex;
             align-items: center;
             justify-content: center;
-            padding: 20px;
-        }
-        
-        .login-card {
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.1);
-            padding: 40px;
-            width: 100%;
-            max-width: 450px;
-            border: 1px solid var(--light-green);
-            animation: fadeIn 0.5s ease-out;
-        }
-        
-        .company-logo{
-            width:110px;
-            height:110px;
-            border-radius:50%;
-            overflow:hidden;
-            margin:auto;
-            margin-bottom:15px;
-            border:4px solid rgba(255,255,255,0.6);
-            box-shadow:0 10px 25px rgba(0,0,0,0.4);
-            background:rgba(255,255,255,0.15);
-            backdrop-filter:blur(10px);
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
         }
 
-        .company-logo img{
-            width:100%;
-            height:100%;
-            object-fit:cover;
+        .password-toggle-btn:hover {
+            color: var(--primary-green);
+            background-color: rgba(68, 211, 78, 0.1);
         }
-        
-        /* Password input with eye icon */
-        .password-input-group {
-            position: relative;
+
+        .password-toggle-btn:active {
+            transform: scale(0.95);
         }
-        
-        .password-toggle {
-            position: absolute;
-            right: 10px;
-            top: 50%;
-            transform: translateY(-50%);
-            background: none;
-            border: none;
-            color: #6b7280;
-            cursor: pointer;
-            z-index: 10;
+
+        .password-toggle-btn i {
+            position: static !important;
         }
-        
-        .password-toggle:hover {
+
+        .password-toggle-btn.active {
             color: var(--primary-green);
         }
-        
-        /* Login button - FIXED with standard Bootstrap hover */
-        .login-btn {
-            background: linear-gradient(135deg, var(--primary-green), var(--secondary-green));
-            border: none;
-            border-radius: 8px;
-            padding: 0.75rem 1.5rem;
-            font-weight: 600;
-            color: white;
+
+        .form-control:focus + .password-toggle-btn {
+            color: var(--primary-green);
         }
-        
-        .login-btn:hover {
-            background: linear-gradient(135deg, var(--secondary-green), var(--dark-green));
-            color: white;
-        }
-        
-        /* Forgot password link */
+
+        /* Forgot Password */
         .forgot-password {
-            text-decoration: none;
-            color: #000000;
-            font-size: 0.9rem;
-            transition: color 0.2s;
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
+            text-align: right;
+            margin-bottom: 14px;
+            flex-shrink: 0;
         }
-        
-        .forgot-password:hover {
+
+        .forgot-password a {
             color: var(--primary-green);
-            text-decoration: underline;
+            text-decoration: none;
+            font-size: 12px;
+            font-weight: 500;
+            transition: opacity 0.3s ease;
         }
-        
-        /* Error message */
-        .alert-danger {
-            border-radius: 10px;
-            border: 1px solid #fecaca;
-            background: #fef2f2;
-            color: #dc2626;
-            padding: 12px 16px;
-            margin-bottom: 20px;
-            animation: shake 0.5s ease-in-out;
+
+        .forgot-password a:hover {
+            opacity: 0.8;
         }
-        
-        /* Success message */
-        .alert-success {
-            border-radius: 10px;
-            border: 1px solid #a7f3d0;
-            background: #ecfdf5;
-            color: var(--dark-green);
-            padding: 12px 16px;
-            margin-bottom: 20px;
-        }
-        
-        /* Modal styles */
-        .modal-content {
-            border-radius: 15px;
-            border: none;
-        }
-        
-        .modal-header {
-            background: linear-gradient(135deg, var(--primary-green), var(--secondary-green));
+
+        /* Submit Button */
+        .btn-primary {
+            width: 100%;
+            padding: 11px;
+            background-color: var(--primary-green);
             color: white;
-            border-radius: 15px 15px 0 0 !important;
             border: none;
-        }
-        
-        .modal-body {
-            padding: 2rem;
-        }
-        
-        .reset-btn {
-            background: linear-gradient(135deg, var(--primary-green), var(--secondary-green));
-            border: none;
-            color: white;
-            padding: 10px 20px;
             border-radius: 8px;
             font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 14px;
+            flex-shrink: 0;
         }
-        
-        .reset-btn:hover {
-            background: linear-gradient(135deg, var(--secondary-green), var(--dark-green));
-            color: white;
+
+        .btn-primary:hover {
+            background-color: var(--dark-green);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(68, 211, 78, 0.3);
         }
-        
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Footer Text */
+        .footer-text {
+            font-size: 11px;
+            color: var(--gray-text);
+            text-align: center;
+            line-height: 1.4;
+            margin: 0;
+            flex-shrink: 0;
+            margin-top: 20px;
+        }
+
+        /* Right Column - Image */
+        .illustration-column {
+            background: linear-gradient(135deg, rgba(68, 211, 78, 0.1) 0%, #f0fff2 50%, rgba(68, 211, 78, 0.05) 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .illustration-column .desktop-logo {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 2;
+        }
+
+        .image-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, rgba(68, 211, 78, 0.1) 0%, rgba(68, 211, 78, 0.05) 100%);
+            z-index: 1;
+        }
+
+        /* Mobile Logo */
+        .mobile-logo {
+            display: none;
+            text-align: center;
+            margin-bottom: 30px;
+            width: 100%;
+        }
+
+        .mobile-logo img {
+            max-width: 180px;
+            height: auto;
+            object-fit: contain;
+            margin: 0 auto;
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .login-container {
+                grid-template-columns: 1fr 0.8fr;
             }
+        }
+
+        @media (max-width: 768px) {
+            .login-container {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto 1fr;
+                height: 100vh;
+            }
+
+            .illustration-column {
+                display: none;
+            }
+
+            .mobile-logo {
+                display: block;
+            }
+
+            .form-column {
+                padding: 20px 20px;
+                justify-content: flex-start;
+                padding-top: 30px;
+                height: auto;
+                overflow-y: visible;
+            }
+
+            .form-header {
+                margin-bottom: 25px;
+            }
+
+            .form-header h1 {
+                font-size: 28px;
+            }
+
+            .form-header p {
+                font-size: 13px;
+            }
+
+            .form-column > * {
+                max-width: 100%;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .form-column {
+                padding: 16px 16px;
+                padding-top: 25px;
+            }
+
+            .form-header h1 {
+                font-size: 26px;
+                margin-bottom: 8px;
+            }
+
+            .form-header p {
+                font-size: 14px;
+            }
+
+            .footer-text {
+                font-size: 11px;
+            }
+
+            .mobile-logo img {
+                max-width: 160px;
+            }
+        }
+
+        @media (max-width: 375px) {
+            .mobile-logo img {
+                max-width: 140px;
+            }
+            
+            .form-header h1 {
+                font-size: 24px;
+            }
+        }
+
+        /* Loading state */
+        .spinner {
+            display: inline-block;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            border-top-color: white;
+            animation: spin 0.8s linear infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
             to {
-                opacity: 1;
-                transform: translateY(0);
+                transform: rotate(360deg);
             }
-        }
-        
-        @keyframes shake {
-            0%, 100% { transform: translateX(0); }
-            10%, 30%, 50%, 70%, 90% { transform: translateX(-5px); }
-            20%, 40%, 60%, 80% { transform: translateX(5px); }
         }
     </style>
 </head>
 <body>
-    <!-- LOGIN PAGE -->
     <div class="login-container">
-        <div class="login-card">
-            <div class="text-center">
-                <div class="company-logo">
-                    <img src="Pictures/AMGCLOGO.png" alt="AMGC Logo">
-                </div>
-
-                <h2 class="mb-3 fw-bold">AMGC System</h2>
-                <p class="text-muted mb-4">A. MACALINDONG GROUP OF COMPANIES</p>
+        <!-- Left Column - Form -->
+        <div class="form-column">
+            <!-- Mobile Logo (Visible only on mobile) -->
+            <div class="mobile-logo">
+                <!-- Mobile Logo - Replace with your mobile logo image -->
+                <img src="AMGC3DLOGOICON.png" alt="AMGC Logo">
             </div>
-            
-            <?php if (isset($error)): ?>
-                <div class="alert alert-danger" role="alert">
-                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                    <?php echo $error; ?>
+
+            <!-- Header -->
+            <div class="form-header">
+                <h1>Welcome Back</h1>
+                <p>A. MACALINDONG GROUP OF COMPANIES</p>
+            </div>
+
+            <!-- Error Message -->
+            <?php if ($error): ?>
+                <div class="alert-error">
+                    <i class="fas fa-exclamation-circle"></i>
+                    <?php echo htmlspecialchars($error); ?>
                 </div>
             <?php endif; ?>
-            
-            <form method="POST" action="" id="loginForm">
-                <div class="mb-4">
-                    <label class="form-label">Username</label>
-                    <div class="input-group">
-                        <span class="input-group-text">
-                            <i class="bi bi-person"></i>
-                        </span>
-                        <input type="text" class="form-control" name="username" placeholder="Enter username" required 
-                               value="<?php echo htmlspecialchars($_POST['username'] ?? ''); ?>">
+
+            <!-- Success Message -->
+            <?php if ($success): ?>
+                <div class="alert-success">
+                    <i class="fas fa-check-circle"></i>
+                    <?php echo htmlspecialchars($success); ?>
+                </div>
+            <?php endif; ?>
+
+            <!-- Form -->
+            <form method="POST" id="login-form" onsubmit="handleSubmit(event)">
+                <!-- Email Field -->
+                <div class="form-group">
+                    <label for="email">Username</label>
+                    <div class="input-wrapper">
+                        <i class="fas fa-envelope"></i>
+                        <input 
+                            type="email" 
+                            id="email" 
+                            name="email" 
+                            class="form-control" 
+                            placeholder="Username"
+                            required
+                            value="<?php echo isset($_POST['email']) ? htmlspecialchars($_POST['email']) : ''; ?>"
+                        >
                     </div>
                 </div>
-                
-                <div class="mb-4">
-                    <label class="form-label">Password</label>
-                    <div class="password-input-group">
-                        <div class="input-group">
-                            <span class="input-group-text">
-                                <i class="bi bi-lock"></i>
-                            </span>
-                            <input type="password" class="form-control" id="password" name="password" placeholder="Enter password" required>
-                        </div>
-                        <button type="button" class="password-toggle" id="togglePassword">
-                            <i class="bi bi-eye"></i>
+
+                <!-- Password Field with Enhanced Toggle -->
+                <div class="form-group">
+                    <label for="password">Password</label>
+                    <div class="input-wrapper">
+                        <i class="fas fa-lock"></i>
+                        <input 
+                            type="password" 
+                            id="password" 
+                            name="password" 
+                            class="form-control" 
+                            placeholder="Password"
+                            required
+                        >
+                        <button 
+                            type="button" 
+                            class="password-toggle-btn" 
+                            id="password-toggle"
+                            aria-label="Show password"
+                            role="button"
+                            tabindex="0"
+                        >
+                            <i class="fas fa-eye" id="toggle-icon"></i>
                         </button>
                     </div>
-                    <div class="text-end mt-2">
-                        <a href="#" class="forgot-password" data-bs-toggle="modal" data-bs-target="#forgotPasswordModal">
-                            <i class="bi bi-question-circle"></i> Forgot Password?
-                        </a>
-                    </div>
                 </div>
-                
-                <div class="d-grid gap-2">
-                    <button type="submit" class="btn btn-lg login-btn">
-                        <i class="bi bi-box-arrow-in-right me-2"></i>Log In
-                    </button>           
+
+                <!-- Forgot Password -->
+                <div class="forgot-password">
+                    <a href="#forgot">Forgot Password?</a>
                 </div>
+
+                <!-- Submit Button -->
+                <button type="submit" class="btn-primary" id="submit-btn">
+                    <span id="btn-text">Login</span>
+                </button>
             </form>
-            
-            <div class="text-center mt-4">
-                <p class="text-muted small">
-                    <i class="bi bi-shield-check"></i> Secure login system
-                </p>
-            </div>
+
+            <!-- Footer Text -->
+            <p class="footer-text">
+                Join the millions of smart investors who trust us to manage their finances. Log in to access your personalized dashboard, track your portfolio performance, and make informed investment decisions.
+            </p>
+        </div>
+
+        <!-- Right Column - Image -->
+        <div class="illustration-column">
+            <div class="image-overlay"></div>
+            <!-- Desktop Logo - Replace with your desktop logo image -->
+            <img src="AMGC3DLOGO.png" alt="AMGC Desktop Logo" class="desktop-logo">
         </div>
     </div>
 
-    <!-- Forgot Password Modal -->
-    <div class="modal fade" id="forgotPasswordModal" tabindex="-1" aria-labelledby="forgotPasswordModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="forgotPasswordModalLabel">
-                        <i class="bi bi-key me-2"></i>Reset Password
-                    </h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <p class="mb-3">Enter your username to receive password reset instructions.</p>
-                    <form id="forgotPasswordForm">
-                        <div class="mb-3">
-                            <label for="resetUsername" class="form-label">Username</label>
-                            <input type="text" class="form-control" id="resetUsername" name="resetUsername" placeholder="Enter your username" required>
-                        </div>
-                        <div class="alert alert-info small">
-                            <i class="bi bi-info-circle me-2"></i>
-                            Password reset instructions will be sent to the email associated with your account.
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn reset-btn" id="submitResetRequest">
-                        <i class="bi bi-send me-2"></i>Send Reset Link
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Bootstrap JS -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Initialize when page loads
-        document.addEventListener('DOMContentLoaded', function() {
-            // Password toggle functionality
-            const togglePassword = document.getElementById('togglePassword');
+        // Enhanced Password visibility toggle
+        function togglePassword() {
             const passwordInput = document.getElementById('password');
+            const toggleBtn = document.getElementById('password-toggle');
+            const toggleIcon = document.getElementById('toggle-icon');
             
-            togglePassword.addEventListener('click', function() {
-                // Toggle password visibility
-                const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
-                passwordInput.setAttribute('type', type);
-                
-                // Toggle eye icon
-                const eyeIcon = this.querySelector('i');
-                if (type === 'password') {
-                    eyeIcon.classList.remove('bi-eye-slash');
-                    eyeIcon.classList.add('bi-eye');
-                } else {
-                    eyeIcon.classList.remove('bi-eye');
-                    eyeIcon.classList.add('bi-eye-slash');
-                }
-            });
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                toggleIcon.classList.remove('fa-eye');
+                toggleIcon.classList.add('fa-eye-slash');
+                toggleBtn.classList.add('active');
+                toggleBtn.setAttribute('aria-label', 'Hide password');
+            } else {
+                passwordInput.type = 'password';
+                toggleIcon.classList.remove('fa-eye-slash');
+                toggleIcon.classList.add('fa-eye');
+                toggleBtn.classList.remove('active');
+                toggleBtn.setAttribute('aria-label', 'Show password');
+            }
             
-            // Auto-focus on username field
-            document.querySelector('input[name="username"]').focus();
+            // Maintain focus on password field
+            passwordInput.focus();
+        }
+
+        // Form submission with loading state
+        function handleSubmit(event) {
+            const submitBtn = document.getElementById('submit-btn');
+            const btnText = document.getElementById('btn-text');
             
-            // Form validation
-            document.getElementById('loginForm').addEventListener('submit', function(e) {
-                const username = document.querySelector('input[name="username"]').value.trim();
-                const password = document.getElementById('password').value.trim();
-                
-                if (!username || !password) {
+            // Check if form is valid
+            const form = event.target;
+            if (!form.checkValidity()) {
+                form.reportValidity();
+                return;
+            }
+            
+            submitBtn.disabled = true;
+            btnText.innerHTML = '<span class="spinner"></span>Processing...';
+            
+            // Allow form submission after showing loading state
+            setTimeout(() => {
+                event.target.submit();
+            }, 500);
+        }
+
+        // Initialize password toggle functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const toggleBtn = document.getElementById('password-toggle');
+            
+            // Add click event listener to toggle button
+            toggleBtn.addEventListener('click', togglePassword);
+            
+            // Add keyboard support (Space and Enter keys)
+            toggleBtn.addEventListener('keydown', function(e) {
+                if (e.key === ' ' || e.key === 'Enter') {
                     e.preventDefault();
-                    alert('Please enter both username and password!');
-                    return false;
+                    togglePassword();
                 }
-                
-                return true;
             });
             
-            // Forgot password functionality
-            document.getElementById('submitResetRequest').addEventListener('click', function() {
-                const username = document.getElementById('resetUsername').value.trim();
-                
-                if (!username) {
-                    alert('Please enter your username.');
-                    return;
-                }
-                
-                // In a real application, you would send an AJAX request here
-                // For now, we'll simulate the process
-                
-                // Show loading state
-                const btn = this;
-                const originalText = btn.innerHTML;
-                btn.innerHTML = '<i class="bi bi-hourglass-split me-2"></i>Sending...';
-                btn.disabled = true;
-                
-                // Simulate API call
-                setTimeout(function() {
-                    // Reset button
-                    btn.innerHTML = originalText;
-                    btn.disabled = false;
-                    
-                    // Close modal
-                    const modal = bootstrap.Modal.getInstance(document.getElementById('forgotPasswordModal'));
-                    modal.hide();
-                    
-                    // Show success message
-                    const loginCard = document.querySelector('.login-card');
-                    const successAlert = document.createElement('div');
-                    successAlert.className = 'alert alert-success alert-dismissible fade show';
-                    successAlert.innerHTML = `
-                        <i class="bi bi-check-circle-fill me-2"></i>
-                        Password reset instructions have been sent to the email associated with <strong>${username}</strong>.
-                        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                    `;
-                    
-                    // Insert after logo section
-                    const logoSection = document.querySelector('.text-center');
-                    logoSection.parentNode.insertBefore(successAlert, logoSection.nextSibling);
-                    
-                    // Clear the form
-                    document.getElementById('resetUsername').value = '';
-                    
-                }, 1500);
+            // Make the button focusable with proper styling
+            toggleBtn.addEventListener('focus', function() {
+                this.style.outline = '2px solid var(--primary-green)';
+                this.style.outlineOffset = '2px';
             });
             
-            // Clear forgot password form when modal closes
-            document.getElementById('forgotPasswordModal').addEventListener('hidden.bs.modal', function () {
-                document.getElementById('resetUsername').value = '';
-            });
-            
-            // Keyboard shortcuts
-            document.addEventListener('keydown', function(e) {
-                if (e.key === 'Tab' && document.activeElement.name === 'username') {
-                    // Auto-focus password field after username
-                    setTimeout(() => {
-                        document.getElementById('password').focus();
-                    }, 10);
-                }
-                
-                // Enter key to submit form
-                if (e.key === 'Enter' && document.activeElement.name === 'password') {
-                    document.getElementById('loginForm').submit();
-                }
-                
-                // Alt + F for forgot password
-                if (e.altKey && e.key === 'f') {
-                    e.preventDefault();
-                    const modal = new bootstrap.Modal(document.getElementById('forgotPasswordModal'));
-                    modal.show();
-                }
+            toggleBtn.addEventListener('blur', function() {
+                this.style.outline = 'none';
             });
         });
     </script>
