@@ -1,29 +1,66 @@
 <?php
 session_start();
+require_once 'config/database.php';
+
+ini_set('display_errors', 1);
+error_reporting(E_ALL);
+
 $error = '';
-$success = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = isset($_POST['email']) ? trim($_POST['email']) : '';
-    $password = isset($_POST['password']) ? trim($_POST['password']) : '';
 
-    // Validate input
+    $email = trim($_POST['email']);
+    $password = trim($_POST['password']);
+
     if (empty($email) || empty($password)) {
-        $error = 'Please enter both email and password';
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $error = 'Please enter a valid email address';
-    } elseif (strlen($password) < 6) {
-        $error = 'Password must be at least 6 characters long';
+        $error = "❌ Please enter email and password";
     } else {
-        // Demo login - in production, query database
-        if ($email === 'demo@example.com' && $password === 'password') {
-            $_SESSION['user'] = $email;
-            header('Location: dashboard.php');
-            exit;
+
+        $sql = "SELECT * FROM users WHERE email = ? AND status = 'active' LIMIT 1";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("s", $email);
+        $stmt->execute();
+        $result = $stmt->get_result();
+
+        if ($user = $result->fetch_assoc()) {
+
+            if (password_verify($password, $user['password_hash'])) {
+
+                $_SESSION['user_id'] = $user['user_id'];
+                $_SESSION['user_name'] = $user['first_name'] . " " . $user['last_name'];
+                $_SESSION['user_email'] = $user['email'];
+                $_SESSION['role'] = $user['role'];
+                $_SESSION['department'] = $user['department'];
+                $_SESSION['logged_in'] = true;
+
+                // Redirect based on user role
+                $redirect_page = getDashboardByRole($user['role']);
+                header("Location: $redirect_page");
+                exit;
+
+            } else {
+                $error = "❌ Wrong password";
+            }
+
         } else {
-            $error = 'Invalid email or password';
+            $error = "❌ User not found or inactive";
         }
     }
+}
+
+/**
+ * Get the appropriate dashboard page based on user role
+ */
+function getDashboardByRole($role) {
+    $redirect_map = [
+        'branch_admin' => 'BranchAdmin/current_inventory.php',
+        'sales' => 'Sales/currentinventory.php',
+        'warehouse' => 'Warehouse/warehouse.php',
+        'delivery' => 'Delivery/fordelivery.php',
+        'admin' => 'Global/sales_reports.php',
+    ];
+    
+    return isset($redirect_map[$role]) ? $redirect_map[$role] : '';
 }
 ?>
 <!DOCTYPE html>
@@ -449,14 +486,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <div class="alert-error">
                     <i class="fas fa-exclamation-circle"></i>
                     <?php echo htmlspecialchars($error); ?>
-                </div>
-            <?php endif; ?>
-
-            <!-- Success Message -->
-            <?php if ($success): ?>
-                <div class="alert-success">
-                    <i class="fas fa-check-circle"></i>
-                    <?php echo htmlspecialchars($success); ?>
                 </div>
             <?php endif; ?>
 

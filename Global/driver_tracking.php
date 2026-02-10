@@ -45,6 +45,18 @@
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="drivers.php">
+                            <i class="bi bi-person-badge"></i>
+                            <span class="nav-text">Drivers</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="trip_tickets.php">
+                            <i class="bi bi-ticket-perforated"></i>
+                            <span class="nav-text">Trip Tickets</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link active" href="driver_tracking.php">
                             <i class="bi bi-geo-alt"></i>
                             <span class="nav-text">Driver Tracking</span>
@@ -85,6 +97,27 @@
                 </div>
 
                 <div class="row g-3 mb-4">
+                    <div class="col-md-4">
+                        <div class="stat-card total">
+                            <div class="stat-value" id="totalDrivers">0</div>
+                            <div class="stat-label">Total Drivers</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="stat-card sales">
+                            <div class="stat-value" id="activeDrivers">0</div>
+                            <div class="stat-label">Active On Delivery</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="stat-card complete">
+                            <div class="stat-value" id="completedTrips">0</div>
+                            <div class="stat-label">Completed Today</div>
+                        </div>
+                    </div>
+                </div>
+
+                                <div class="row g-3 mb-4">
                     <div class="col-12">
                         <div class="form-card">
                             <div class="d-flex justify-content-between align-items-center">
@@ -124,22 +157,12 @@
                 </div>
 
                 <div class="row g-3 mb-4">
-                    <div class="col-md-4">
-                        <div class="stat-card total">
-                            <div class="stat-value" id="totalDrivers">0</div>
-                            <div class="stat-label">Total Drivers</div>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="stat-card sales">
-                            <div class="stat-value" id="activeDrivers">0</div>
-                            <div class="stat-label">Active On Delivery</div>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="stat-card complete">
-                            <div class="stat-value" id="completedTrips">0</div>
-                            <div class="stat-label">Completed Today</div>
+                    <div class="col-12">
+                        <div class="data-table">
+                            <div class="table-header">
+                                <h5><i class="bi bi-map"></i> Live Driver Map</h5>
+                            </div>
+                            <div id="driverMap" style="width: 100%; height: 500px; border-radius: 8px; overflow: hidden;"></div>
                         </div>
                     </div>
                 </div>
@@ -224,10 +247,185 @@
         </div>
     </div>
 
+    <style>
+        /* Mobile responsive adjustments ONLY */
+        @media (max-width: 768px) {
+            .stat-card {
+                padding: 12px;
+                min-height: 85px;
+                margin-bottom: 8px;
+            }
+            
+            .stat-icon {
+                font-size: 2rem;
+                margin-right: 12px;
+            }
+            
+            .stat-value {
+                font-size: 1.5rem;
+            }
+            
+            .stat-label {
+                font-size: 0.8rem;
+            }
+            
+            /* Make cards 2 columns on mobile */
+            .col-md-4 {
+                width: 50%;
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+            
+            .row.g-3 {
+                margin-left: -8px;
+                margin-right: -8px;
+            }
+            
+            .mb-3 {
+                margin-bottom: 8px !important;
+            }
+        }
+        
+        /* Extra small devices (phones, less than 576px) */
+        @media (max-width: 576px) {
+            .stat-card {
+                min-height: 80px;
+                padding: 10px;
+            }
+            
+            .stat-icon {
+                font-size: 1.8rem;
+                margin-right: 10px;
+            }
+            
+            .stat-value {
+                font-size: 1.3rem;
+            }
+            
+            .stat-label {
+                font-size: 0.75rem;
+            }
+            
+            .col-md-4 {
+                width: 50%;
+                padding-left: 6px;
+                padding-right: 6px;
+            }
+            
+            .row.g-3 {
+                margin-left: -6px;
+                margin-right: -6px;
+            }
+        }
+    </style>
+
+    <!-- Leaflet CSS and JS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.js"></script>
+
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     
     <script>
+        let map;
+        let markers = {};
+        let popups = {};
+        let userLocation = null;
+
+        // Create truck icon SVG for Leaflet
+        const truckIcon = L.divIcon({
+            html: `
+                <div style="background: #FF6B35; border: 2px solid white; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 8px rgba(0,0,0,0.3); transform: rotate(-45deg);">
+                    <i class="bi bi-truck" style="color: white; font-size: 20px; transform: rotate(45deg);"></i>
+                </div>
+            `,
+            className: 'truck-marker',
+            iconSize: [40, 40],
+            iconAnchor: [20, 20],
+            popupAnchor: [0, -20]
+        });
+
+        // Initialize map with Leaflet
+        function initMap() {
+            map = L.map('driverMap').setView([40.7128, -74.0060], 12); // Default to NYC
+
+            // Add OpenStreetMap tiles
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; OpenStreetMap contributors',
+                maxZoom: 19
+            }).addTo(map);
+
+            // Try to get user's current location
+            if (navigator.geolocation) {
+                navigator.geolocation.watchPosition(
+                    (position) => {
+                        const { latitude, longitude } = position.coords;
+                        userLocation = { lat: latitude, lng: longitude };
+                        map.setView([latitude, longitude], 12);
+                    },
+                    (error) => {
+                        console.log('[v0] Geolocation error:', error.message);
+                    },
+                    { enableHighAccuracy: true, maximumAge: 10000, timeout: 5000 }
+                );
+            }
+        }
+
+        // Create or update marker for driver with geolocation
+        function updateMarker(driver) {
+            const lat = parseFloat(driver.latitude);
+            const lng = parseFloat(driver.longitude);
+            
+            if (!isNaN(lat) && !isNaN(lng)) {
+                if (markers[driver.id]) {
+                    // Update existing marker position
+                    markers[driver.id].setLatLng([lat, lng]);
+                    // Update popup content
+                    const popupContent = createPopupContent(driver);
+                    markers[driver.id].setPopupContent(popupContent);
+                } else {
+                    // Create new marker
+                    const marker = L.marker([lat, lng], { icon: truckIcon })
+                        .addTo(map)
+                        .bindPopup(createPopupContent(driver))
+                        .on('click', () => {
+                            marker.openPopup();
+                        });
+
+                    markers[driver.id] = marker;
+                }
+            }
+        }
+
+        // Create popup content for marker
+        function createPopupContent(driver) {
+            return `
+                <div style="min-width: 200px; font-family: Arial; font-size: 12px;">
+                    <strong style="font-size: 14px;">${driver.name}</strong><br>
+                    <i class="bi bi-ticket"></i> Trip: <strong>${driver.current_trip || 'None'}</strong><br>
+                    <i class="bi bi-geo-alt"></i> Location: ${driver.current_location}<br>
+                    <i class="bi bi-map-pin"></i> Destination: ${driver.destination || 'N/A'}<br>
+                    <span style="display: inline-block; margin-top: 8px; padding: 4px 8px; background: #28a745; color: white; border-radius: 4px; font-size: 11px;">
+                        ${driver.status.replace('_', ' ').toUpperCase()}
+                    </span><br>
+                    <button onclick="focusOnDriver(${driver.id})" style="margin-top: 8px; padding: 6px 12px; background: #FF6B35; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: bold;">View Details</button>
+                </div>
+            `;
+        }
+
+        // Focus map on specific driver
+        function focusOnDriver(driverId) {
+            if (markers[driverId]) {
+                const marker = markers[driverId];
+                const latlng = marker.getLatLng();
+                map.setView([latlng.lat, latlng.lng], 16);
+                marker.openPopup();
+                // Highlight the driver row in the table
+                document.querySelectorAll('#driversTable tr').forEach(row => row.classList.remove('table-active'));
+                document.querySelector(`tr[data-driver-id="${driverId}"]`)?.classList.add('table-active');
+            }
+        }
+
         // Mobile menu toggle
         document.getElementById('mobileMenuBtn').addEventListener('click', function() {
             const sidebar = document.getElementById('sidebar');
@@ -283,8 +481,11 @@
                 if (driver.status === 'idle') statusBadge = 'bg-warning';
                 else if (driver.status === 'off_duty') statusBadge = 'bg-secondary';
 
+                // Update map markers
+                updateMarker(driver);
+
                 return `
-                <tr>
+                <tr data-driver-id="${driver.id}">
                     <td>${driver.id}</td>
                     <td><strong>${driver.name}</strong></td>
                     <td>
@@ -299,6 +500,9 @@
                     </td>
                     <td>${new Date(driver.last_update).toLocaleTimeString()}</td>
                     <td>
+                        <button class="btn btn-sm btn-warning" onclick="focusOnDriver(${driver.id})" title="View on Map">
+                            <i class="bi bi-geo-alt-fill"></i> View
+                        </button>
                         <button class="btn btn-sm btn-info" onclick="viewDriver(${driver.id})">
                             <i class="bi bi-eye"></i> Details
                         </button>
@@ -406,8 +610,11 @@
             }
         });
 
-        // Load tracking data on page load
-        loadTracking();
+        // Initialize map on page load
+        window.addEventListener('load', function() {
+            initMap();
+            loadTracking();
+        });
 
         // Auto-refresh tracking data every 30 seconds
         setInterval(loadTracking, 30000);

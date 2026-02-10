@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Global - All Items Catalog</title>
+    <title>Global - Drivers</title>
     <link rel="stylesheet" href="../css/style.css">
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -39,13 +39,13 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link active" href="all_items.php">
+                        <a class="nav-link" href="all_items.php">
                             <i class="bi bi-box"></i>
                             <span class="nav-text">All Items</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="drivers.php">
+                        <a class="nav-link active" href="drivers.php">
                             <i class="bi bi-person-badge"></i>
                             <span class="nav-text">Drivers</span>
                         </a>
@@ -68,18 +68,18 @@
 
         <!-- Main Content -->
         <div class="main-content" id="mainContent">
-            <!-- ALL ITEMS PAGE -->
-            <div id="itemsContent" class="page-content active">
+            <!-- DRIVERS PAGE -->
+            <div id="driversContent" class="page-content active">
                 <div class="navbar-top">
                     <div class="page-title">
-                        <h2><i class="bi bi-box me-2"></i>All Items Catalog</h2>
-                        <p>View all items across the system, including out-of-stock items</p>
+                        <h2><i class="bi bi-person-badge me-2"></i>All Drivers</h2>
+                        <p>Manage and view all drivers across all locations</p>
                     </div>
                     
                     <div class="user-info-top">
                         <div class="search-box">
                             <i class="bi bi-search"></i>
-                            <input type="text" class="form-control" placeholder="Search items..." id="searchItems">
+                            <input type="text" class="form-control" placeholder="Search drivers..." id="searchDrivers">
                         </div>
                         
                         <div class="user-profile-top">
@@ -97,22 +97,28 @@
                 </div>
 
                 <div class="row g-3 mb-4">
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <div class="stat-card total">
-                            <div class="stat-value" id="totalItems">0</div>
-                            <div class="stat-label">Total Items</div>
+                            <div class="stat-value" id="totalDrivers">0</div>
+                            <div class="stat-label">Total Drivers</div>
                         </div>
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <div class="stat-card sales">
-                            <div class="stat-value" id="inStockItems">0</div>
-                            <div class="stat-label">In Stock</div>
+                            <div class="stat-value" id="activeDrivers">0</div>
+                            <div class="stat-label">Active Drivers</div>
                         </div>
                     </div>
-                    <div class="col-md-4">
+                    <div class="col-md-3">
                         <div class="stat-card complete">
-                            <div class="stat-value" id="outOfStockItems">0</div>
-                            <div class="stat-label">Out of Stock</div>
+                            <div class="stat-value" id="onLeave">0</div>
+                            <div class="stat-label">On Leave</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="stat-card total">
+                            <div class="stat-value" id="avgRating">0/5</div>
+                            <div class="stat-label">Avg Rating</div>
                         </div>
                     </div>
                 </div>
@@ -121,45 +127,42 @@
                     <div class="col-12">
                         <div class="form-card">
                             <div class="d-flex justify-content-between align-items-center">
-                                <h5 class="mb-0">Filter Items</h5>
+                                <h5 class="mb-0">Filter Drivers</h5>
                             </div>
                             <div class="row mt-3">
                                 <div class="col-md-3">
-                                    <label class="form-label">Category</label>
-                                    <select class="form-select" id="categoryFilter" onchange="loadItems()">
-                                        <option value="">All Categories</option>
-                                        <option value="electronics">Electronics</option>
-                                        <option value="groceries">Groceries</option>
-                                        <option value="hardware">Hardware</option>
-                                        <option value="other">Other</option>
+                                    <label class="form-label">Status</label>
+                                    <select class="form-select" id="statusFilter" onchange="loadDrivers()">
+                                        <option value="">All Status</option>
+                                        <option value="active">Active</option>
+                                        <option value="on_leave">On Leave</option>
+                                        <option value="inactive">Inactive</option>
                                     </select>
                                 </div>
                                 <div class="col-md-3">
-                                    <label class="form-label">Stock Status</label>
-                                    <select class="form-select" id="stockFilter" onchange="loadItems()">
-                                        <option value="">All Items</option>
-                                        <option value="in_stock">In Stock</option>
-                                        <option value="low_stock">Low Stock</option>
-                                        <option value="out_of_stock">Out of Stock</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-3">
-                                    <label class="form-label">Price Range</label>
-                                    <select class="form-select" id="priceFilter" onchange="loadItems()">
-                                        <option value="">All Prices</option>
-                                        <option value="0-50">$0 - $50</option>
-                                        <option value="50-100">$50 - $100</option>
-                                        <option value="100-500">$100 - $500</option>
-                                        <option value="500+">$500+</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-3">
-                                    <label class="form-label">Location</label>
-                                    <select class="form-select" id="locationFilter" onchange="loadItems()">
+                                    <label class="form-label">Location/Branch</label>
+                                    <select class="form-select" id="locationFilter" onchange="loadDrivers()">
                                         <option value="">All Locations</option>
                                         <option value="warehouse">Warehouse</option>
                                         <option value="branch1">Branch 1</option>
                                         <option value="branch2">Branch 2</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">License Status</label>
+                                    <select class="form-select" id="licenseFilter" onchange="loadDrivers()">
+                                        <option value="">All</option>
+                                        <option value="valid">Valid</option>
+                                        <option value="expiring">Expiring Soon</option>
+                                        <option value="expired">Expired</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-3">
+                                    <label class="form-label">Sort By</label>
+                                    <select class="form-select" id="sortFilter" onchange="loadDrivers()">
+                                        <option value="name">Name</option>
+                                        <option value="rating">Rating</option>
+                                        <option value="trips">Trips Completed</option>
                                     </select>
                                 </div>
                             </div>
@@ -169,26 +172,27 @@
 
                 <div class="data-table">
                     <div class="table-header">
-                        <h5>Complete Items Catalog</h5>
+                        <h5>Driver Information</h5>
                     </div>
                     <div class="table-responsive">
                         <table class="table custom-table">
                             <thead>
                                 <tr>
-                                    <th>ID</th>
-                                    <th>Item Name</th>
-                                    <th>Category</th>
-                                    <th>Unit Price</th>
-                                    <th>Total Quantity</th>
-                                    <th>Available</th>
-                                    <th>Stock Status</th>
-                                    <th>Primary Location</th>
+                                    <th>Driver ID</th>
+                                    <th>Name</th>
+                                    <th>License No</th>
+                                    <th>License Expiry</th>
+                                    <th>Vehicle</th>
+                                    <th>Status</th>
+                                    <th>Rating</th>
+                                    <th>Trips Completed</th>
+                                    <th>Phone</th>
                                     <th>Actions</th>
                                 </tr>
                             </thead>
-                            <tbody id="itemsTable">
+                            <tbody id="driversTable">
                                 <tr>
-                                    <td colspan="9" class="text-center py-4">Loading items...</td>
+                                    <td colspan="10" class="text-center py-4">Loading drivers...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -198,15 +202,15 @@
         </div>
     </div>
 
-    <!-- Item Details Modal -->
-    <div class="modal fade" id="itemModal" tabindex="-1">
+    <!-- Driver Details Modal -->
+    <div class="modal fade" id="driverModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Item Details</h5>
+                    <h5 class="modal-title">Driver Details</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body" id="itemDetails">
+                <div class="modal-body" id="driverDetails">
                     <!-- Details will be populated here -->
                 </div>
                 <div class="modal-footer">
@@ -239,7 +243,7 @@
             }
             
             /* Make cards 2 columns on mobile */
-            .col-md-4 {
+            .col-md-3 {
                 width: 50%;
                 padding-left: 8px;
                 padding-right: 8px;
@@ -275,7 +279,7 @@
                 font-size: 0.75rem;
             }
             
-            .col-md-4 {
+            .col-md-3 {
                 width: 50%;
                 padding-left: 6px;
                 padding-right: 6px;
@@ -304,65 +308,73 @@
             window.location.href = '../login.php';
         }
 
-        // Load items
-        async function loadItems() {
+        // Load drivers
+        async function loadDrivers() {
             try {
-                const category = document.getElementById('categoryFilter').value;
-                const stock = document.getElementById('stockFilter').value;
-                const price = document.getElementById('priceFilter').value;
+                const status = document.getElementById('statusFilter').value;
                 const location = document.getElementById('locationFilter').value;
+                const license = document.getElementById('licenseFilter').value;
+                const sort = document.getElementById('sortFilter').value;
 
                 const params = new URLSearchParams({
-                    category: category,
-                    stock: stock,
-                    price: price,
-                    location: location
+                    status: status,
+                    location: location,
+                    license: license,
+                    sort: sort
                 });
 
-                const response = await fetch('api/get_all_items.php?' + params);
+                const response = await fetch('api/get_drivers.php?' + params);
                 const data = await response.json();
                 
                 if (data.success) {
-                    displayItems(data.items || []);
-                    updateItemStats(data.stats || {});
-                } else {
-                    console.log('No items found');
-                    displayItems([]);
+                    displayDrivers(data.drivers || []);
+                    updateDriverStats(data.stats || {});
                 }
             } catch (error) {
-                console.error('Error loading items:', error);
+                console.error('Error loading drivers:', error);
             }
         }
 
-        function displayItems(items) {
-            const tbody = document.getElementById('itemsTable');
+        function displayDrivers(drivers) {
+            const tbody = document.getElementById('driversTable');
             
-            if (items.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4">No items found</td></tr>';
+            if (drivers.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4">No drivers found</td></tr>';
                 return;
             }
 
-            tbody.innerHTML = items.map(item => {
+            tbody.innerHTML = drivers.map(driver => {
                 let statusBadge = 'bg-success';
-                if (item.available === 0) statusBadge = 'bg-danger';
-                else if (item.available < 10) statusBadge = 'bg-warning';
+                if (driver.status === 'on_leave') statusBadge = 'bg-warning';
+                else if (driver.status === 'inactive') statusBadge = 'bg-secondary';
+
+                let licenseBadge = 'bg-success';
+                if (driver.license_status === 'expiring') licenseBadge = 'bg-warning';
+                else if (driver.license_status === 'expired') licenseBadge = 'bg-danger';
+
+                const ratingStars = '⭐'.repeat(Math.round(driver.rating));
 
                 return `
                 <tr>
-                    <td>${item.id}</td>
-                    <td><strong>${item.item_name}</strong></td>
-                    <td>${item.category}</td>
-                    <td>$${item.unit_price.toLocaleString()}</td>
-                    <td>${item.total_quantity}</td>
-                    <td>${item.available}</td>
+                    <td>${driver.id}</td>
+                    <td><strong>${driver.name}</strong></td>
+                    <td>${driver.license_no}</td>
                     <td>
-                        <span class="badge ${statusBadge}">
-                            ${item.available === 0 ? 'Out of Stock' : item.available < 10 ? 'Low Stock' : 'In Stock'}
+                        <span class="badge ${licenseBadge}">
+                            ${driver.license_expiry}
                         </span>
                     </td>
-                    <td>${item.primary_location}</td>
+                    <td>${driver.vehicle_id}</td>
                     <td>
-                        <button class="btn btn-sm btn-info" onclick="viewItem(${item.id})">
+                        <span class="badge ${statusBadge}">
+                            ${driver.status.replace('_', ' ')}
+                        </span>
+                    </td>
+                    <td>${ratingStars} <small>${driver.rating}/5</small></td>
+                    <td>${driver.trips_completed}</td>
+                    <td>${driver.phone}</td>
+                    <td>
+                        <button class="btn btn-sm btn-info" onclick="viewDriver(${driver.id})">
                             <i class="bi bi-eye"></i> View
                         </button>
                     </td>
@@ -371,62 +383,69 @@
             }).join('');
         }
 
-        function updateItemStats(stats) {
-            document.getElementById('totalItems').textContent = stats.totalItems || 0;
-            document.getElementById('inStockItems').textContent = stats.inStockItems || 0;
-            document.getElementById('outOfStockItems').textContent = stats.outOfStockItems || 0;
+        function updateDriverStats(stats) {
+            document.getElementById('totalDrivers').textContent = stats.totalDrivers || 0;
+            document.getElementById('activeDrivers').textContent = stats.activeDrivers || 0;
+            document.getElementById('onLeave').textContent = stats.onLeave || 0;
+            document.getElementById('avgRating').textContent = (stats.avgRating || 0).toFixed(1) + '/5';
         }
 
-        function viewItem(id) {
-            const modal = new bootstrap.Modal(document.getElementById('itemModal'));
-            const details = document.getElementById('itemDetails');
-            details.innerHTML = '<p>Loading item details...</p>';
+        function viewDriver(id) {
+            const modal = new bootstrap.Modal(document.getElementById('driverModal'));
+            const details = document.getElementById('driverDetails');
+            details.innerHTML = '<p>Loading driver details...</p>';
             modal.show();
             
-            fetch('api/get_item_details.php?id=' + id)
+            fetch('api/get_driver_details.php?id=' + id)
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        const item = data.item;
+                        const driver = data.driver;
                         details.innerHTML = `
                             <dl class="row">
-                                <dt class="col-sm-4">Item ID:</dt>
-                                <dd class="col-sm-8">${item.id}</dd>
-                                <dt class="col-sm-4">Item Name:</dt>
-                                <dd class="col-sm-8">${item.item_name}</dd>
-                                <dt class="col-sm-4">Category:</dt>
-                                <dd class="col-sm-8">${item.category}</dd>
-                                <dt class="col-sm-4">Unit Price:</dt>
-                                <dd class="col-sm-8">$${item.unit_price.toLocaleString()}</dd>
-                                <dt class="col-sm-4">Total Quantity:</dt>
-                                <dd class="col-sm-8">${item.total_quantity}</dd>
-                                <dt class="col-sm-4">Available:</dt>
-                                <dd class="col-sm-8">${item.available}</dd>
-                                <dt class="col-sm-4">Supplier:</dt>
-                                <dd class="col-sm-8">${item.supplier || 'N/A'}</dd>
-                                <dt class="col-sm-4">Primary Location:</dt>
-                                <dd class="col-sm-8">${item.primary_location}</dd>
+                                <dt class="col-sm-4">Driver ID:</dt>
+                                <dd class="col-sm-8">${driver.id}</dd>
+                                <dt class="col-sm-4">Name:</dt>
+                                <dd class="col-sm-8">${driver.name}</dd>
+                                <dt class="col-sm-4">Email:</dt>
+                                <dd class="col-sm-8">${driver.email}</dd>
+                                <dt class="col-sm-4">Phone:</dt>
+                                <dd class="col-sm-8">${driver.phone}</dd>
+                                <dt class="col-sm-4">License No:</dt>
+                                <dd class="col-sm-8">${driver.license_no}</dd>
+                                <dt class="col-sm-4">License Expiry:</dt>
+                                <dd class="col-sm-8">${driver.license_expiry}</dd>
+                                <dt class="col-sm-4">Vehicle:</dt>
+                                <dd class="col-sm-8">${driver.vehicle_id}</dd>
+                                <dt class="col-sm-4">Status:</dt>
+                                <dd class="col-sm-8"><span class="badge bg-success">${driver.status}</span></dd>
+                                <dt class="col-sm-4">Rating:</dt>
+                                <dd class="col-sm-8">${driver.rating}/5 ⭐</dd>
+                                <dt class="col-sm-4">Trips Completed:</dt>
+                                <dd class="col-sm-8">${driver.trips_completed}</dd>
+                                <dt class="col-sm-4">Joined Date:</dt>
+                                <dd class="col-sm-8">${driver.joined_date}</dd>
                             </dl>
                         `;
                     }
                 })
-                .catch(error => console.error('Error loading item details:', error));
+                .catch(error => console.error('Error loading driver details:', error));
         }
 
-        // Search items
-        document.getElementById('searchItems').addEventListener('keyup', async function(e) {
+        // Search drivers
+        document.getElementById('searchDrivers').addEventListener('keyup', async function(e) {
             const searchTerm = e.target.value.toLowerCase();
             try {
-                const response = await fetch(`api/search_items.php?q=${encodeURIComponent(searchTerm)}`);
+                const response = await fetch(`api/search_drivers.php?q=${encodeURIComponent(searchTerm)}`);
                 const data = await response.json();
-                displayItems(data.items || []);
+                displayDrivers(data.drivers || []);
             } catch (error) {
-                console.error('Error searching items:', error);
+                console.error('Error searching drivers:', error);
             }
         });
 
-        // Load items on page load
-        loadItems();
+        // Load drivers on page load
+        loadDrivers();
     </script>
 </body>
 </html>

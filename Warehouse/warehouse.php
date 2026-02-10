@@ -9,6 +9,77 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <style>
+    /* Mobile responsive adjustments ONLY - same as warehouse.php */
+        @media (max-width: 768px) {
+            .stat-card {
+                padding: 12px;
+                min-height: 85px;
+                margin-bottom: 8px;
+            }
+            
+            .stat-icon {
+                font-size: 2rem;
+                margin-right: 12px;
+            }
+            
+            .stat-value {
+                font-size: 1.5rem;
+            }
+            
+            .stat-label {
+                font-size: 0.8rem;
+            }
+            
+            /* Make cards 2 columns on mobile */
+            .col-md-3 {
+                width: 50%;
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+            
+            .row.g-3 {
+                margin-left: -8px;
+                margin-right: -8px;
+            }
+            
+            .mb-3 {
+                margin-bottom: 8px !important;
+            }
+        }
+        
+        /* Extra small devices (phones, less than 576px) */
+        @media (max-width: 576px) {
+            .stat-card {
+                min-height: 80px;
+                padding: 10px;
+            }
+            
+            .stat-icon {
+                font-size: 1.8rem;
+                margin-right: 10px;
+            }
+            
+            .stat-value {
+                font-size: 1.3rem;
+            }
+            
+            .stat-label {
+                font-size: 0.75rem;
+            }
+            
+            .col-md-3 {
+                width: 50%;
+                padding-left: 6px;
+                padding-right: 6px;
+            }
+            
+            .row.g-3 {
+                margin-left: -6px;
+                margin-right: -6px;
+            }
+        }
+    </style>
 </head>
 <body>
     <!-- MOBILE MENU BUTTON -->
@@ -84,74 +155,71 @@
                 </div>
             </div>
 
-<!-- Warehouse Stats -->
-<div class="row g-3 mb-4">
+            <!-- Warehouse Stats - UPDATED FOR MOBILE -->
+            <div class="row g-3 mb-4">
+                <!-- Total Inventory Items -->
+                <div class="col-6 col-md-3 mb-3">
+                    <div class="stat-card inventory">
+                        <div class="stat-icon">
+                            <i class="bi bi-boxes"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value">2,450</div>
+                            <div class="stat-label">Total Items</div>
+                        </div>
+                    </div>
+                </div>
 
-    <!-- Total Inventory Items -->
-    <div class="col-md-3 mb-3">
-        <div class="stat-card inventory">
-            <div class="stat-icon">
-                <i class="bi bi-boxes"></i>
-            </div>
-            <div>
-                <div class="stat-value">2,450</div>
-                <div class="stat-label">Total Items</div>
-            </div>
-        </div>
-    </div>
+                <!-- Pending Deliveries -->
+                <div class="col-6 col-md-3 mb-3">
+                    <div class="stat-card pending">
+                        <div class="stat-icon">
+                            <i class="bi bi-truck"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value">18</div>
+                            <div class="stat-label">Pending Deliveries</div>
+                        </div>
+                    </div>
+                </div>
 
-    <!-- Pending Deliveries -->
-    <div class="col-md-3 mb-3">
-        <div class="stat-card pending">
-            <div class="stat-icon">
-                <i class="bi bi-truck"></i>
-            </div>
-            <div>
-                <div class="stat-value">18</div>
-                <div class="stat-label">Pending Deliveries</div>
-            </div>
-        </div>
-    </div>
+                <!-- Active Drivers -->
+                <div class="col-6 col-md-3 mb-3">
+                    <div class="stat-card delivery">
+                        <div class="stat-icon">
+                            <i class="bi bi-person-badge"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value">12</div>
+                            <div class="stat-label">Active Drivers</div>
+                        </div>
+                    </div>
+                </div>
 
-    <!-- Active Drivers -->
-    <div class="col-md-3 mb-3">
-        <div class="stat-card delivery">
-            <div class="stat-icon">
-                <i class="bi bi-person-badge"></i>
+                <!-- Warehouse Capacity -->
+                <div class="col-6 col-md-3 mb-3">
+                    <div class="stat-card sales">
+                        <div class="stat-icon">
+                            <i class="bi bi-graph-up"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value">88%</div>
+                            <div class="stat-label">Warehouse Capacity</div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div>
-                <div class="stat-value">12</div>
-                <div class="stat-label">Active Drivers</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Warehouse Capacity -->
-    <div class="col-md-3 mb-3">
-        <div class="stat-card sales">
-            <div class="stat-icon">
-                <i class="bi bi-graph-up"></i>
-            </div>
-            <div>
-                <div class="stat-value">88%</div>
-                <div class="stat-label">Warehouse Capacity</div>
-            </div>
-        </div>
-    </div>
-
-</div>
-
 
             <!-- Recent Activities -->
             <div class="row">
                 <!-- Recent Pick List Items -->
                 <div class="col-lg-6 mb-4">
                     <div class="card">
-                        <div class="card-header bg-primary text-white">
+                        <div class="card-header">
                             <h5 class="mb-0"><i class="bi bi-clipboard-check me-2"></i>Recent Pick List Items</h5>
                         </div>
                         <div class="table-responsive">
-                            <table class="table table-sm mb-0">
+                            <table class="table table-hover mb-0">
                                 <thead class="table-light">
                                     <tr>
                                         <th>Item ID</th>
@@ -162,25 +230,25 @@
                                 </thead>
                                 <tbody>
                                     <tr>
-                                        <td>PLI-001</td>
+                                        <td><span class="badge bg-light text-dark">PLI-001</span></td>
                                         <td>Widget A</td>
                                         <td>50</td>
                                         <td><span class="badge bg-success">Picked</span></td>
                                     </tr>
                                     <tr>
-                                        <td>PLI-002</td>
+                                        <td><span class="badge bg-light text-dark">PLI-002</span></td>
                                         <td>Gadget B</td>
                                         <td>30</td>
                                         <td><span class="badge bg-warning">Pending</span></td>
                                     </tr>
                                     <tr>
-                                        <td>PLI-003</td>
+                                        <td><span class="badge bg-light text-dark">PLI-003</span></td>
                                         <td>Device C</td>
                                         <td>25</td>
                                         <td><span class="badge bg-success">Picked</span></td>
                                     </tr>
                                     <tr>
-                                        <td>PLI-004</td>
+                                        <td><span class="badge bg-light text-dark">PLI-004</span></td>
                                         <td>Tool D</td>
                                         <td>15</td>
                                         <td><span class="badge bg-info">In Progress</span></td>
@@ -194,11 +262,11 @@
                 <!-- Recent Trip Tickets -->
                 <div class="col-lg-6 mb-4">
                     <div class="card">
-                        <div class="card-header bg-info text-white">
+                        <div class="card-header">
                             <h5 class="mb-0"><i class="bi bi-ticket me-2"></i>Recent Trip Tickets</h5>
                         </div>
                         <div class="table-responsive">
-                            <table class="table table-sm mb-0">
+                            <table class="table table-hover mb-0">
                                 <thead class="table-light">
                                     <tr>
                                         <th>Ticket ID</th>
@@ -209,25 +277,25 @@
                                 </thead>
                                 <tbody>
                                     <tr>
-                                        <td>TT-001</td>
+                                        <td><span class="badge bg-light text-dark">TT-001</span></td>
                                         <td>John Smith</td>
                                         <td>New York</td>
                                         <td><span class="badge bg-success">Completed</span></td>
                                     </tr>
                                     <tr>
-                                        <td>TT-002</td>
+                                        <td><span class="badge bg-light text-dark">TT-002</span></td>
                                         <td>Sarah Jones</td>
                                         <td>Boston</td>
                                         <td><span class="badge bg-warning">In Transit</span></td>
                                     </tr>
                                     <tr>
-                                        <td>TT-003</td>
+                                        <td><span class="badge bg-light text-dark">TT-003</span></td>
                                         <td>Mike Davis</td>
                                         <td>Philadelphia</td>
                                         <td><span class="badge bg-info">Pending</span></td>
                                     </tr>
                                     <tr>
-                                        <td>TT-004</td>
+                                        <td><span class="badge bg-light text-dark">TT-004</span></td>
                                         <td>Jessica White</td>
                                         <td>Chicago</td>
                                         <td><span class="badge bg-success">Completed</span></td>
@@ -241,7 +309,7 @@
 
             <!-- Inventory Alerts -->
             <div class="card mt-4">
-                <div class="card-header bg-warning text-dark">
+                <div class="card-header">
                     <h5 class="mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Low Stock Alerts</h5>
                 </div>
                 <div class="card-body">
@@ -270,6 +338,6 @@
                 window.location.href = '../login.php';
             }
         }
-    </script>
+    </script>   
 </body>
 </html>
