@@ -45,6 +45,18 @@
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link active" href="drivers.php">
+                            <i class="bi bi-person-badge"></i>
+                            <span class="nav-text">Drivers</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="trip_tickets.php">
+                            <i class="bi bi-ticket-perforated"></i>
+                            <span class="nav-text">Trip Tickets</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="driver_tracking.php">
                             <i class="bi bi-geo-alt"></i>
                             <span class="nav-text">Driver Tracking</span>

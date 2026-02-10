@@ -27,13 +27,13 @@
             <div class="sidebar-menu">
                 <ul class="nav flex-column">
                     <li class="nav-item">
-                        <a class="nav-link" href="sales_reports.php">
+                        <a class="nav-link active" href="sales_reports.php">
                             <i class="bi bi-graph-up"></i>
                             <span class="nav-text">Sales Reports</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link active" href="branch_records.php">
+                        <a class="nav-link" href="branch_records.php">
                             <i class="bi bi-file-text"></i>
                             <span class="nav-text">Branch Records</span>
                         </a>
@@ -42,6 +42,18 @@
                         <a class="nav-link" href="all_items.php">
                             <i class="bi bi-box"></i>
                             <span class="nav-text">All Items</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="drivers.php">
+                            <i class="bi bi-person-badge"></i>
+                            <span class="nav-text">Drivers</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="trip_tickets.php">
+                            <i class="bi bi-ticket-perforated"></i>
+                            <span class="nav-text">Trip Tickets</span>
                         </a>
                     </li>
                     <li class="nav-item">
