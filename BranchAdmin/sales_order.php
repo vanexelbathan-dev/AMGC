@@ -18,17 +18,19 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
-    <!-- MOBILE MENU BUTTON -->
-    <button class="mobile-menu-btn" id="mobileMenuBtn">
-        <i class="bi bi-list"></i>
-    </button>
-
     <!-- MAIN APPLICATION -->
     <div id="appPage">
         <!-- Sidebar -->
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
-                <h3><img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> <span class="nav-text">Branch Admin</span></h3>
+                <h3>
+                    <!-- Burger icon moved before logo -->
+                    <button class="desktop-toggle-btn" id="desktopToggleBtn">
+                        <i class="bi bi-list" id="toggleIcon"></i>
+                    </button>
+                    <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
+                    <span class="nav-text">Branch Admin</span>
+                </h3>
             </div>
             
             <div class="sidebar-menu">
@@ -69,38 +71,24 @@
                             <span class="nav-text">Trip Tickets</span>
                         </a>
                     </li>
-
                     <hr class="sidebar-divider">
+                </ul>
             </div>
         </div>
 
         <!-- Main Content -->
         <div class="main-content" id="mainContent">
             <!-- SALES ORDER CONTENT -->
-            <div class="page-content active">
+            <div id="dashboardContent" class="page-content active">
                 <div class="navbar-top">
-                    <div class="page-title">
-                        <h2><i class="bi bi-bag me-2"></i>Sales Orders</h2>
-                        <p>Manage and track all sales orders</p>
-                    </div>
+                    <!-- MOBILE MENU BUTTON -->
+                    <button class="mobile-menu-btn" id="mobileMenuBtn">
+                        <i class="bi bi-list"></i>
+                    </button>
                     
-                    <div class="user-info-top">
-                        <div class="search-box">
-                            <i class="bi bi-search"></i>
-                            <input type="text" class="form-control" placeholder="Search sales orders...">
-                        </div>
-                        
-                        <div class="user-profile-top">
-                            <div class="user-avatar-top">AD</div>
-                            <div class="user-details-top">
-                                <span class="user-name-top">Admin User</span>
-                                <span class="user-role-top">Administrator</span>
-                            </div>
-                        </div>
-                        
-                        <button class="logout-btn-top" onclick="logout()">
-                            <i class="bi bi-box-arrow-right"></i> Logout
-                        </button>
+                    <div class="page-title">
+                        <h2></i>Sales Orders</h2>
+                        <p id="dashboardSubtitle">Manage and track all sales orders</p>
                     </div>
                 </div>
 
@@ -139,11 +127,11 @@
                         </div>
                     </div>
                     <div class="col-md-3">
-                    <div class="stat-card complete">
-                        <i class="bi bi-check-circle stat-icon"></i>
-                        <div class="stat-value">215</div>
-                        <div class="stat-label">Completed</div>
-                    </div>
+                        <div class="stat-card complete">
+                            <i class="bi bi-check-circle stat-icon"></i>
+                            <div class="stat-value">215</div>
+                            <div class="stat-label">Completed</div>
+                        </div>
                     </div>
                 </div>
 
@@ -216,86 +204,7 @@
                                 </tr>
                             </thead>
                             <tbody id="salesOrdersTable">
-                                <tr>
-                                    <td><strong>SO-2024-001245</strong></td>
-                                    <td>2024-01-15</td>
-                                    <td>Juan Dela Cruz</td>
-                                    <td>3 items</td>
-                                    <td>₱ 25,500.00</td>
-                                    <td><span class="badge badge-success">Paid</span></td>
-                                    <td><span class="badge badge-success">Completed</span></td>
-                                    <td>
-                                        <div class="action-buttons">
-                                            <button class="btn-icon btn-view"><i class="bi bi-eye"></i></button>
-                                            <button class="btn-icon btn-edit"><i class="bi bi-pencil"></i></button>
-                                            <button class="btn-icon btn-delete"><i class="bi bi-trash"></i></button>
-                                        </div>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td><strong>SO-2024-001244</strong></td>
-                                    <td>2024-01-15</td>
-                                    <td>Maria Santos</td>
-                                    <td>2 items</td>
-                                    <td>₱ 18,750.00</td>
-                                    <td><span class="badge badge-warning">Pending</span></td>
-                                    <td><span class="badge badge-warning">Processing</span></td>
-                                    <td>
-                                        <div class="action-buttons">
-                                            <button class="btn-icon btn-view"><i class="bi bi-eye"></i></button>
-                                            <button class="btn-icon btn-edit"><i class="bi bi-pencil"></i></button>
-                                            <button class="btn-icon btn-delete"><i class="bi bi-trash"></i></button>
-                                        </div>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td><strong>SO-2024-001243</strong></td>
-                                    <td>2024-01-14</td>
-                                    <td>ABC Corporation</td>
-                                    <td>5 items</td>
-                                    <td>₱ 45,200.00</td>
-                                    <td><span class="badge badge-success">Paid</span></td>
-                                    <td><span class="badge badge-info">For Delivery</span></td>
-                                    <td>
-                                        <div class="action-buttons">
-                                            <button class="btn-icon btn-view"><i class="bi bi-eye"></i></button>
-                                            <button class="btn-icon btn-edit"><i class="bi bi-pencil"></i></button>
-                                            <button class="btn-icon btn-delete"><i class="bi bi-trash"></i></button>
-                                        </div>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td><strong>SO-2024-001242</strong></td>
-                                    <td>2024-01-14</td>
-                                    <td>XYZ Enterprises</td>
-                                    <td>1 item</td>
-                                    <td>₱ 8,500.00</td>
-                                    <td><span class="badge badge-danger">Overdue</span></td>
-                                    <td><span class="badge badge-warning">Pending</span></td>
-                                    <td>
-                                        <div class="action-buttons">
-                                            <button class="btn-icon btn-view"><i class="bi bi-eye"></i></button>
-                                            <button class="btn-icon btn-edit"><i class="bi bi-pencil"></i></button>
-                                            <button class="btn-icon btn-delete"><i class="bi bi-trash"></i></button>
-                                        </div>
-                                    </td>
-                                </tr>
-                                <tr>
-                                    <td><strong>SO-2024-001241</strong></td>
-                                    <td>2024-01-13</td>
-                                    <td>John Smith</td>
-                                    <td>4 items</td>
-                                    <td>₱ 32,150.00</td>
-                                    <td><span class="badge badge-success">Paid</span></td>
-                                    <td><span class="badge badge-success">Completed</span></td>
-                                    <td>
-                                        <div class="action-buttons">
-                                            <button class="btn-icon btn-view"><i class="bi bi-eye"></i></button>
-                                            <button class="btn-icon btn-edit"><i class="bi bi-pencil"></i></button>
-                                            <button class="btn-icon btn-delete"><i class="bi bi-trash"></i></button>
-                                        </div>
-                                    </td>
-                                </tr>
+                                <!-- Data will be populated by JavaScript -->
                             </tbody>
                         </table>
                     </div>
@@ -328,6 +237,115 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     
     <script>
+        // Global variables
+        let currentUser = 'admin'; // Set to admin for demo
+        let currentUserType = 'admin';
+        let currentUserBranch = null;
+        let allBranches = [
+            { id: 'BR-001', name: 'Main Branch', location: 'Makati City' },
+            { id: 'BR-002', name: 'North Branch', location: 'Quezon City' },
+            { id: 'BR-003', name: 'South Branch', location: 'Muntinlupa City' },
+            { id: 'BR-004', name: 'East Branch', location: 'Pasig City' },
+            { id: 'BR-005', name: 'West Branch', location: 'Manila City' }
+        ];
+
+        // User database (for demo purposes)
+        const users = {
+            'admin': {
+                password: 'admin123',
+                fullName: 'Admin User',
+                userType: 'admin',
+                branch: null, // Admin has access to all branches
+                avatar: 'AD'
+            },
+            'branch1': {
+                password: 'branch123',
+                fullName: 'Juan Dela Cruz',
+                userType: 'branch_manager',
+                branch: 'BR-001', // Main Branch
+                avatar: 'JC'
+            },
+            'branch2': {
+                password: 'branch123',
+                fullName: 'Maria Santos',
+                userType: 'branch_manager',
+                branch: 'BR-002', // North Branch
+                avatar: 'MS'
+            },
+            'staff1': {
+                password: 'staff123',
+                fullName: 'Pedro Reyes',
+                userType: 'staff',
+                branch: 'BR-001', // Main Branch
+                avatar: 'PR'
+            }
+        };
+
+        // Toggle sidebar collapse/expand on desktop
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const toggleIcon = document.getElementById('toggleIcon');
+            const isMobile = window.innerWidth <= 992;
+            
+            if (isMobile) {
+                // On mobile, use the existing hamburger functionality
+                sidebar.classList.toggle('active');
+                
+                // Create overlay for mobile
+                if (!document.querySelector('.sidebar-overlay')) {
+                    const overlay = document.createElement('div');
+                    overlay.className = 'sidebar-overlay';
+                    document.body.appendChild(overlay);
+                    
+                    overlay.addEventListener('click', () => {
+                        closeMobileSidebar();
+                    });
+                    
+                    setTimeout(() => {
+                        overlay.classList.add('active');
+                    }, 10);
+                }
+            } else {
+                // On desktop, toggle between expanded and collapsed
+                sidebar.classList.toggle('collapsed');
+                
+                // Update the toggle icon
+                if (sidebar.classList.contains('collapsed')) {
+                    toggleIcon.classList.remove('bi-chevron-left');
+                    toggleIcon.classList.add('bi-chevron-right');
+                    // Ensure all nav-text are hidden when collapsed
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'none';
+                    });
+                } else {
+                    toggleIcon.classList.remove('bi-chevron-right');
+                    toggleIcon.classList.add('bi-chevron-left');
+                    // Show all nav-text when expanded
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'inline-block';
+                    });
+                }
+                
+                // Store preference in localStorage
+                localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+            }
+        }
+
+        // Close mobile sidebar
+        function closeMobileSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.querySelector('.sidebar-overlay');
+            
+            sidebar.classList.remove('active');
+            
+            if (overlay) {
+                overlay.classList.remove('active');
+                setTimeout(() => {
+                    overlay.remove();
+                }, 300);
+            }
+        }
+
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', function() {
             console.log("Sales Orders page loaded!");
@@ -340,20 +358,22 @@
             
             // Setup mobile menu toggle
             document.getElementById('mobileMenuBtn').addEventListener('click', function() {
-                document.getElementById('sidebar').classList.toggle('active');
+                toggleSidebar();
             });
             
-            // Close sidebar when clicking outside on mobile
-            document.addEventListener('click', function(event) {
-                const sidebar = document.getElementById('sidebar');
-                const mobileBtn = document.getElementById('mobileMenuBtn');
-                const isMobile = window.innerWidth <= 992;
-                
-                if (isMobile && sidebar.classList.contains('active') && 
-                    !sidebar.contains(event.target) && 
-                    !mobileBtn.contains(event.target)) {
-                    sidebar.classList.remove('active');
-                }
+            // Add event listener for desktop toggle button
+            document.getElementById('desktopToggleBtn').addEventListener('click', function(e) {
+                e.stopPropagation(); // Prevent event bubbling
+                toggleSidebar();
+            });
+            
+            // Add click listeners to sidebar links to close on mobile
+            document.querySelectorAll('.sidebar .nav-link').forEach(link => {
+                link.addEventListener('click', function() {
+                    if (window.innerWidth <= 992) {
+                        closeMobileSidebar();
+                    }
+                });
             });
 
             // New Order Button functionality
@@ -362,45 +382,152 @@
                 // In a real application, this would open a modal or redirect to a form
             });
 
-            // Handle window resize
-            window.addEventListener('resize', function() {
-                // Close sidebar on mobile when resizing to desktop
-                if (window.innerWidth > 992) {
-                    document.getElementById('sidebar').classList.remove('active');
-                }
-            });
-
-            // Keyboard shortcuts
-            document.addEventListener('keydown', function(e) {
-                // Ctrl + N for new order
-                if (e.ctrlKey && e.key === 'n') {
-                    e.preventDefault();
-                    document.getElementById('newOrderBtn').click();
-                }
-                // Ctrl + F for focus search
-                else if (e.ctrlKey && e.key === 'f') {
-                    e.preventDefault();
-                    document.querySelector('.search-box input').focus();
-                }
-            });
-
-            // Demo data for sales orders
+            // Update user interface
+            updateUserInterface();
+            
+            // Load sales orders data
             loadSalesOrdersData();
+            
+            // Load sidebar preference from localStorage
+            const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+            if (savedCollapsed === 'true' && window.innerWidth > 992) {
+                const sidebar = document.getElementById('sidebar');
+                const toggleIcon = document.getElementById('toggleIcon');
+                sidebar.classList.add('collapsed');
+                toggleIcon.classList.remove('bi-chevron-left');
+                toggleIcon.classList.add('bi-chevron-right');
+                // Hide all nav-text when collapsed
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'none';
+                });
+            } else {
+                // Show all nav-text by default when expanded
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'inline-block';
+                });
+            }
+        });
+
+        // Close sidebar when clicking outside on mobile
+        document.addEventListener('click', function(event) {
+            const sidebar = document.getElementById('sidebar');
+            const mobileBtn = document.getElementById('mobileMenuBtn');
+            const overlay = document.querySelector('.sidebar-overlay');
+            const isMobile = window.innerWidth <= 992;
+            
+            if (isMobile && sidebar.classList.contains('active') && 
+                !sidebar.contains(event.target) && 
+                !mobileBtn.contains(event.target) &&
+                !overlay?.contains(event.target)) {
+                closeMobileSidebar();
+            }
         });
 
         // Logout Function
         function logout() {
-            if (confirm('Are you sure you want to logout?')) {
-                // In a real application, this would redirect to logout page
-                alert('Logout functionality would redirect to login page.');
-                // window.location.href = 'logout.php';
+            if (confirm('Reset demo to initial state?')) {
+                localStorage.removeItem('sidebarCollapsed');
+                location.reload();
             }
+        }
+
+        // Update User Interface based on user type
+        function updateUserInterface() {
+            const user = users[currentUser];
+            
+            // Update user info in header
+            document.getElementById('userName').textContent = user.fullName;
+            document.getElementById('userRole').textContent = user.userType === 'admin' ? 'Administrator' : 'Branch Manager';
+            document.getElementById('userAvatar').textContent = user.avatar;
+            
+            // Update all user info sections
+            document.querySelectorAll('.user-name-top').forEach(el => el.textContent = user.fullName);
+            document.querySelectorAll('.user-role-top').forEach(el => el.textContent = user.userType === 'admin' ? 'Administrator' : 'Branch Manager');
+            document.querySelectorAll('.user-avatar-top').forEach(el => el.textContent = user.avatar);
         }
 
         // Load sales orders data (for demo purposes)
         function loadSalesOrdersData() {
-            // This function would typically fetch data from an API
-            console.log('Sales orders data loaded.');
+            // Demo data for sales orders
+            const salesOrders = [
+                {
+                    orderNo: 'SO-2024-001245',
+                    date: '2024-01-15',
+                    customer: 'Juan Dela Cruz',
+                    items: '3 items',
+                    amount: '₱ 25,500.00',
+                    paymentStatus: 'Paid',
+                    orderStatus: 'Completed'
+                },
+                {
+                    orderNo: 'SO-2024-001244',
+                    date: '2024-01-15',
+                    customer: 'Maria Santos',
+                    items: '2 items',
+                    amount: '₱ 18,750.00',
+                    paymentStatus: 'Pending',
+                    orderStatus: 'Processing'
+                },
+                {
+                    orderNo: 'SO-2024-001243',
+                    date: '2024-01-14',
+                    customer: 'ABC Corporation',
+                    items: '5 items',
+                    amount: '₱ 45,200.00',
+                    paymentStatus: 'Paid',
+                    orderStatus: 'For Delivery'
+                },
+                {
+                    orderNo: 'SO-2024-001242',
+                    date: '2024-01-14',
+                    customer: 'XYZ Enterprises',
+                    items: '1 item',
+                    amount: '₱ 8,500.00',
+                    paymentStatus: 'Overdue',
+                    orderStatus: 'Pending'
+                },
+                {
+                    orderNo: 'SO-2024-001241',
+                    date: '2024-01-13',
+                    customer: 'John Smith',
+                    items: '4 items',
+                    amount: '₱ 32,150.00',
+                    paymentStatus: 'Paid',
+                    orderStatus: 'Completed'
+                }
+            ];
+            
+            const table = document.getElementById('salesOrdersTable');
+            let html = '';
+            
+            salesOrders.forEach(order => {
+                const paymentClass = order.paymentStatus === 'Paid' ? 'badge-success' : 
+                                    order.paymentStatus === 'Pending' ? 'badge-warning' : 'badge-danger';
+                const orderClass = order.orderStatus === 'Completed' ? 'badge-success' : 
+                                  order.orderStatus === 'Processing' ? 'badge-warning' : 
+                                  order.orderStatus === 'For Delivery' ? 'badge-info' : 'badge-warning';
+                
+                html += `
+                    <tr>
+                        <td><strong>${order.orderNo}</strong></td>
+                        <td>${order.date}</td>
+                        <td>${order.customer}</td>
+                        <td>${order.items}</td>
+                        <td>${order.amount}</td>
+                        <td><span class="badge ${paymentClass}">${order.paymentStatus}</span></td>
+                        <td><span class="badge ${orderClass}">${order.orderStatus}</span></td>
+                        <td>
+                            <div class="action-buttons">
+                                <button class="btn-icon btn-view"><i class="bi bi-eye"></i></button>
+                                <button class="btn-icon btn-edit"><i class="bi bi-pencil"></i></button>
+                                <button class="btn-icon btn-delete"><i class="bi bi-trash"></i></button>
+                            </div>
+                        </td>
+                    </tr>
+                `;
+            });
+            
+            table.innerHTML = html;
             
             // Add event listeners to action buttons
             document.querySelectorAll('.btn-icon.btn-view').forEach(button => {
@@ -426,6 +553,50 @@
                 });
             });
         }
+
+        // Handle window resize
+        window.addEventListener('resize', function() {
+            const sidebar = document.getElementById('sidebar');
+            const toggleIcon = document.getElementById('toggleIcon');
+            const overlay = document.querySelector('.sidebar-overlay');
+            
+            if (window.innerWidth > 992) {
+                // Desktop mode - remove mobile overlay
+                if (overlay) {
+                    overlay.remove();
+                }
+                sidebar.classList.remove('active');
+                
+                // Load saved preference
+                const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+                if (savedCollapsed === 'true') {
+                    sidebar.classList.add('collapsed');
+                    toggleIcon.classList.remove('bi-chevron-left');
+                    toggleIcon.classList.add('bi-chevron-right');
+                    // Hide all nav-text when collapsed
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'none';
+                    });
+                } else {
+                    sidebar.classList.remove('collapsed');
+                    toggleIcon.classList.remove('bi-chevron-right');
+                    toggleIcon.classList.add('bi-chevron-left');
+                    // Show all nav-text when expanded
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'inline-block';
+                    });
+                }
+            } else {
+                // Mobile mode - always show expanded
+                sidebar.classList.remove('collapsed');
+                toggleIcon.classList.remove('bi-chevron-right');
+                toggleIcon.classList.add('bi-chevron-left');
+                // Show all nav-text on mobile
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'inline-block';
+                });
+            }
+        });
 
         // Demo Info Card Styling (add if not in CSS)
         const style = document.createElement('style');
