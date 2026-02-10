@@ -1,4 +1,82 @@
 <!DOCTYPE html>
+<?php
+require_once '../config/database.php';
+require_once '../config/session_handler.php';
+
+// Protect page - only Sales role can access
+requireLogin();
+requireRole(['sales']);
+
+// Get all items
+$items_result = $conn->query("SELECT i.*, SUM(inv.quantity_available) as stock
+                              FROM items i
+                              LEFT JOIN inventory inv ON i.item_id = inv.item_id
+                              WHERE i.status = 'active'
+                              GROUP BY i.item_id
+                              ORDER BY i.item_code ASC");
+$items = [];
+if ($items_result) {
+    $items = $items_result->fetch_all(MYSQLI_ASSOC);
+}
+
+// Get all customers for dropdown
+$customers_result = $conn->query("SELECT customer_id, customer_name FROM customers WHERE status = 'active' ORDER BY customer_name ASC");
+$customers = [];
+if ($customers_result) {
+    $customers = $customers_result->fetch_all(MYSQLI_ASSOC);
+}
+
+// Handle order submission via AJAX
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'submit_order') {
+    $customer_id = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
+    $customer_name = isset($_POST['customer_name']) ? trim($_POST['customer_name']) : '';
+    $email = isset($_POST['email']) ? trim($_POST['email']) : '';
+    $phone = isset($_POST['phone']) ? trim($_POST['phone']) : '';
+    $address = isset($_POST['address']) ? trim($_POST['address']) : '';
+    $items_data = isset($_POST['items']) ? json_decode($_POST['items'], true) : [];
+    
+    if (!empty($items_data)) {
+        // Create sales order
+        $total_amount = 0;
+        foreach ($items_data as $item) {
+            $total_amount += $item['price'] * $item['quantity'];
+        }
+        
+        $so_number = 'SO-' . date('Ymd') . '-' . time();
+        $order_date = date('Y-m-d H:i:s');
+        $user_id = getUserId();
+        $branch_id = 1; // Default branch
+        
+        $sql = "INSERT INTO sales_orders (so_number, customer_id, branch_id, order_date, total_amount, order_status, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?)";
+        $stmt = $conn->prepare($sql);
+        $status = 'pending';
+        $stmt->bind_param('siiidss', $so_number, $customer_id, $branch_id, $order_date, $total_amount, $status, $user_id);
+        
+        if ($stmt->execute()) {
+            $so_id = $stmt->insert_id;
+            
+            // Insert order items
+            $sql_items = "INSERT INTO sales_order_items (so_id, item_id, quantity_ordered, unit_price)
+                         VALUES (?, ?, ?, ?)";
+            $stmt_items = $conn->prepare($sql_items);
+            
+            foreach ($items_data as $item) {
+                $item_id = $item['id'];
+                $quantity = $item['quantity'];
+                $unit_price = $item['price'];
+                $stmt_items->bind_param('iiid', $so_id, $item_id, $quantity, $unit_price);
+                $stmt_items->execute();
+            }
+            
+            echo json_encode(['success' => true, 'message' => 'Order submitted successfully!', 'so_number' => $so_number]);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Error creating order']);
+        }
+        exit;
+    }
+}
+?>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -398,14 +476,14 @@
                 
                 <div class="user-info-top">
                     <div class="user-profile-top">
-                        <div class="user-avatar-top" id="userAvatar">AD</div>
+                        <div class="user-avatar-top" id="userAvatar"><?php echo substr(getUserName(), 0, 2); ?></div>
                         <div class="user-details-top">
-                            <span class="user-name-top" id="userName">Admin User</span>
-                            <span class="user-role-top" id="userRole">Administrator</span>
+                            <span class="user-name-top" id="userName"><?php echo getUserName(); ?></span>
+                            <span class="user-role-top" id="userRole"><?php echo ucfirst(str_replace('_', ' ', getUserRole())); ?></span>
                         </div>
                     </div>
                     
-                    <button class="logout-btn-top" onclick="logout()">
+                    <button class="logout-btn-top" onclick="window.location.href='../logout.php'">
                         <i class="bi bi-box-arrow-right"></i> Logout
                     </button>
                 </div>
@@ -437,10 +515,9 @@
                                     <label class="form-label">Select Customer</label>
                                     <select class="form-select" id="customerSelect">
                                         <option value="">-- Choose Customer --</option>
-                                        <option value="1">John Doe</option>
-                                        <option value="2">Jane Smith</option>
-                                        <option value="3">ABC Corporation</option>
-                                        <option value="4">XYZ Limited</option>
+                                        <?php foreach ($customers as $customer): ?>
+                                            <option value="<?php echo $customer['customer_id']; ?>"><?php echo htmlspecialchars($customer['customer_name']); ?></option>
+                                        <?php endforeach; ?>
                                     </select>
                                 </div>
                                 <div class="col-md-6">
@@ -554,21 +631,16 @@
     <!-- JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Sample inventory data - includes all products
-        const inventory = [
-            { id: 1, name: 'Laptop Computer', sku: 'SKU-001', price: 899.99, stock: 45 },
-            { id: 2, name: 'Office Chair', sku: 'SKU-002', price: 249.99, stock: 8 },
-            { id: 3, name: 'Desk Lamp', sku: 'SKU-003', price: 34.99, stock: 120 },
-            { id: 4, name: 'Wireless Mouse', sku: 'SKU-004', price: 19.99, stock: 2 },
-            { id: 5, name: 'USB-C Cable', sku: 'SKU-005', price: 9.99, stock: 256 },
-            { id: 6, name: 'Desk Organizer', sku: 'SKU-006', price: 29.99, stock: 75 },
-            { id: 7, name: 'Notebook Set', sku: 'SKU-007', price: 12.99, stock: 5 },
-            { id: 8, name: 'Coffee Maker', sku: 'SKU-008', price: 79.99, stock: 18 },
-            { id: 9, name: 'Monitor 24"', sku: 'SKU-009', price: 199.99, stock: 15 },
-            { id: 10, name: 'Keyboard Mechanical', sku: 'SKU-010', price: 89.99, stock: 22 },
-            { id: 11, name: 'Webcam HD', sku: 'SKU-011', price: 49.99, stock: 30 },
-            { id: 12, name: 'Headphones Wireless', sku: 'SKU-012', price: 129.99, stock: 12 },
-        ];
+        // Inventory data from database
+        const inventory = <?php echo json_encode(array_map(function($item) {
+            return [
+                'id' => $item['item_id'],
+                'name' => $item['item_name'],
+                'sku' => $item['item_code'],
+                'price' => (float)$item['unit_price'],
+                'stock' => (int)($item['stock'] ?? 0)
+            ];
+        }, $items)); ?>;
 
         let cart = [];
 
@@ -1001,42 +1073,58 @@
 
         // Submit order
         function submitOrder() {
-            const orderId = 'ORD-' + Math.random().toString(36).substr(2, 9).toUpperCase();
-            showToast(`Order ${orderId} submitted successfully!`);
+            const customerSelect = document.getElementById('customerSelect');
+            const customer_id = customerSelect.value || 0;
+            const customer_name = document.getElementById('newCustomerName').value;
+            const email = document.getElementById('customerEmail').value;
+            const phone = document.getElementById('customerPhone').value;
+            const address = document.getElementById('customerAddress').value;
             
-            // Update inventory stock
-            cart.forEach(item => {
-                const product = inventory.find(p => p.id === item.id);
-                if (product) {
-                    product.stock -= item.quantity;
+            const formData = new FormData();
+            formData.append('action', 'submit_order');
+            formData.append('customer_id', customer_id);
+            formData.append('customer_name', customer_name);
+            formData.append('email', email);
+            formData.append('phone', phone);
+            formData.append('address', address);
+            formData.append('items', JSON.stringify(cart));
+            
+            fetch(window.location.href, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    showToast(`Order ${data.so_number} submitted successfully!`);
+                    
+                    // Clear cart and form
+                    cart = [];
+                    updateCart();
+                    document.getElementById('customerSelect').value = '';
+                    document.getElementById('newCustomerName').value = '';
+                    document.getElementById('customerEmail').value = '';
+                    document.getElementById('customerPhone').value = '';
+                    document.getElementById('customerAddress').value = '';
+                    
+                    // Re-render products
+                    renderProducts();
+                    
+                    // Close modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('cartModal'));
+                    modal.hide();
+                } else {
+                    showToast('Error: ' + (data.message || 'Failed to submit order'));
                 }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                showToast('Error submitting order');
             });
-            
-            cart = [];
-            updateCart();
-            document.getElementById('customerSelect').value = '';
-            document.getElementById('newCustomerName').value = '';
-            document.getElementById('customerEmail').value = '';
-            document.getElementById('customerPhone').value = '';
-            document.getElementById('customerAddress').value = '';
-            
-            // Re-render products to show updated stock
-            renderProducts();
-            
-            // Close modal
-            const modal = bootstrap.Modal.getInstance(document.getElementById('cartModal'));
-            modal.hide();
         }
 
         // Initialize on page load
         window.addEventListener('DOMContentLoaded', init);
-
-        // Logout function
-        function logout() {
-            if (confirm('Are you sure you want to logout?')) {
-                window.location.href = '../login.php';
-            }
-        }
     </script>
 </body>
 </html>

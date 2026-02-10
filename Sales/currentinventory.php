@@ -1,3 +1,47 @@
+<?php
+require_once '../config/database.php';
+require_once '../config/session_handler.php';
+
+// Protect page - only Sales role can access
+requireLogin();
+requireRole(['sales']);
+
+// Get all items with inventory
+$items = [];
+$query = "SELECT i.*, SUM(inv.quantity_available) as total_stock
+          FROM items i
+          LEFT JOIN inventory inv ON i.item_id = inv.item_id
+          WHERE i.status = 'active'
+          GROUP BY i.item_id
+          ORDER BY i.item_code ASC";
+$result = $conn->query($query);
+if ($result) {
+    $items = $result->fetch_all(MYSQLI_ASSOC);
+}
+
+// Get stats
+$total_products = 0;
+$in_stock = 0;
+$low_stock = 0;
+$critical_stock = 0;
+
+$stats_query = "SELECT 
+                COUNT(DISTINCT i.item_id) as total,
+                SUM(CASE WHEN inv.quantity_available > i.reorder_level THEN 1 ELSE 0 END) as in_stock,
+                SUM(CASE WHEN inv.quantity_available <= i.reorder_level AND inv.quantity_available > 5 THEN 1 ELSE 0 END) as low_stock,
+                SUM(CASE WHEN inv.quantity_available <= 5 THEN 1 ELSE 0 END) as critical
+                FROM items i
+                LEFT JOIN inventory inv ON i.item_id = inv.item_id
+                WHERE i.status = 'active'";
+$stats_result = $conn->query($stats_query);
+if ($stats_result) {
+    $stats = $stats_result->fetch_assoc();
+    $total_products = $stats['total'] ?? 0;
+    $in_stock = $stats['in_stock'] ?? 0;
+    $low_stock = $stats['low_stock'] ?? 0;
+    $critical_stock = $stats['critical'] ?? 0;
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -136,14 +180,14 @@
                 
                 <div class="user-info-top">
                     <div class="user-profile-top">
-                        <div class="user-avatar-top" id="userAvatar">AD</div>
+                        <div class="user-avatar-top" id="userAvatar"><?php echo substr(getUserName(), 0, 2); ?></div>
                         <div class="user-details-top">
-                            <span class="user-name-top" id="userName">Admin User</span>
-                            <span class="user-role-top" id="userRole">Administrator</span>
+                            <span class="user-name-top" id="userName"><?php echo getUserName(); ?></span>
+                            <span class="user-role-top" id="userRole"><?php echo ucfirst(str_replace('_', ' ', getUserRole())); ?></span>
                         </div>
                     </div>
                     
-                    <button class="logout-btn-top" onclick="logout()">
+                    <button class="logout-btn-top" onclick="window.location.href='../logout.php'">
                         <i class="bi bi-box-arrow-right"></i> Logout
                     </button>
                 </div>
@@ -159,7 +203,7 @@
                 <i class="bi bi-box"></i>
             </div>
             <div>
-                <div class="stat-value">547</div>
+                <div class="stat-value"><?php echo $total_products; ?></div>
                 <div class="stat-label">Total Products</div>
             </div>
         </div>
@@ -172,7 +216,7 @@
                 <i class="bi bi-check-circle"></i>
             </div>
             <div>
-                <div class="stat-value">521</div>
+                <div class="stat-value"><?php echo $in_stock; ?></div>
                 <div class="stat-label">In Stock</div>
             </div>
         </div>
@@ -185,7 +229,7 @@
                 <i class="bi bi-exclamation-circle"></i>
             </div>
             <div>
-                <div class="stat-value">18</div>
+                <div class="stat-value"><?php echo $low_stock; ?></div>
                 <div class="stat-label">Low Stock</div>
             </div>
         </div>
@@ -198,7 +242,7 @@
                 <i class="bi bi-exclamation-triangle"></i>
             </div>
             <div>
-                <div class="stat-value">8</div>
+                <div class="stat-value"><?php echo $critical_stock; ?></div>
                 <div class="stat-label">Critical Stock</div>
             </div>
         </div>
@@ -248,94 +292,45 @@
                             </tr>
                         </thead>
                         <tbody>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">SKU-001</span></td>
-                                <td>Laptop Computer</td>
-                                <td>Electronics</td>
-                                <td>
-                                    <span class="badge bg-success">45 units</span>
-                                </td>
-                                <td>$899.99</td>
-                                <td>$40,499.55</td>
-                                <td><span class="badge bg-success">In Stock</span></td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">SKU-002</span></td>
-                                <td>Office Chair</td>
-                                <td>Furniture</td>
-                                <td>
-                                    <span class="badge bg-warning">8 units</span>
-                                </td>
-                                <td>$249.99</td>
-                                <td>$1,999.92</td>
-                                <td><span class="badge bg-warning">Low Stock</span></td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">SKU-003</span></td>
-                                <td>Desk Lamp</td>
-                                <td>Electronics</td>
-                                <td>
-                                    <span class="badge bg-success">120 units</span>
-                                </td>
-                                <td>$34.99</td>
-                                <td>$4,198.80</td>
-                                <td><span class="badge bg-success">In Stock</span></td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">SKU-004</span></td>
-                                <td>Wireless Mouse</td>
-                                <td>Electronics</td>
-                                <td>
-                                    <span class="badge bg-danger">2 units</span>
-                                </td>
-                                <td>$19.99</td>
-                                <td>$39.98</td>
-                                <td><span class="badge bg-danger">Critical Stock</span></td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">SKU-005</span></td>
-                                <td>USB-C Cable</td>
-                                <td>Electronics</td>
-                                <td>
-                                    <span class="badge bg-success">256 units</span>
-                                </td>
-                                <td>$9.99</td>
-                                <td>$2,557.44</td>
-                                <td><span class="badge bg-success">In Stock</span></td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">SKU-006</span></td>
-                                <td>Desk Organizer</td>
-                                <td>Furniture</td>
-                                <td>
-                                    <span class="badge bg-success">75 units</span>
-                                </td>
-                                <td>$29.99</td>
-                                <td>$2,249.25</td>
-                                <td><span class="badge bg-success">In Stock</span></td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">SKU-007</span></td>
-                                <td>Notebook Set</td>
-                                <td>Food</td>
-                                <td>
-                                    <span class="badge bg-warning">5 units</span>
-                                </td>
-                                <td>$12.99</td>
-                                <td>$64.95</td>
-                                <td><span class="badge bg-warning">Low Stock</span></td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">SKU-008</span></td>
-                                <td>Coffee Maker</td>
-                                <td>Electronics</td>
-                                <td>
-                                    <span class="badge bg-success">18 units</span>
-                                </td>
-                                <td>$79.99</td>
-                                <td>$1,439.82</td>
-                                <td><span class="badge bg-success">In Stock</span></td>
-                            </tr>
+                            <?php if (count($items) > 0): ?>
+                                <?php foreach ($items as $item): ?>
+                                    <?php
+                                        $stock = $item['total_stock'] ?? 0;
+                                        $unit_price = $item['unit_price'];
+                                        $total_value = $stock * $unit_price;
+                                        $reorder_level = $item['reorder_level'];
+                                        
+                                        if ($stock <= 5) {
+                                            $stock_badge = 'bg-danger';
+                                            $status_badge = 'bg-danger';
+                                            $status_text = 'Critical Stock';
+                                        } elseif ($stock <= $reorder_level) {
+                                            $stock_badge = 'bg-warning';
+                                            $status_badge = 'bg-warning';
+                                            $status_text = 'Low Stock';
+                                        } else {
+                                            $stock_badge = 'bg-success';
+                                            $status_badge = 'bg-success';
+                                            $status_text = 'In Stock';
+                                        }
+                                    ?>
+                                <tr>
+                                    <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($item['item_code']); ?></span></td>
+                                    <td><?php echo htmlspecialchars($item['item_name']); ?></td>
+                                    <td><?php echo htmlspecialchars($item['category'] ?? 'N/A'); ?></td>
+                                    <td>
+                                        <span class="badge <?php echo $stock_badge; ?>"><?php echo $stock; ?> units</span>
+                                    </td>
+                                    <td>$<?php echo number_format($unit_price, 2); ?></td>
+                                    <td>$<?php echo number_format($total_value, 2); ?></td>
+                                    <td><span class="badge <?php echo $status_badge; ?>"><?php echo $status_text; ?></span></td>
+                                </tr>
+                                <?php endforeach; ?>
+                            <?php else: ?>
+                                <tr>
+                                    <td colspan="7" class="text-center text-muted py-4">No products found</td>
+                                </tr>
+                            <?php endif; ?>
                         </tbody>
                     </table>
                 </div>
@@ -373,12 +368,7 @@
             });
         });
 
-        // Logout function
-        function logout() {
-            if (confirm('Are you sure you want to logout?')) {
-                window.location.href = '../login.php';
-            }
-        }
+
     </script>
 </body>
 </html>
