@@ -542,7 +542,7 @@
                     </div>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Edit Order</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Add Order</button>
                     <button type="button" class="btn btn-success" onclick="submitOrder()">
                         <i class="bi bi-check-circle"></i> Confirm & Submit Order
                     </button>
