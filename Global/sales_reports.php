@@ -45,7 +45,7 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link active" href="drivers.php">
+                        <a class="nav-link" href="drivers.php">
                             <i class="bi bi-person-badge"></i>
                             <span class="nav-text">Drivers</span>
                         </a>

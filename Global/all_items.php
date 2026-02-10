@@ -39,7 +39,7 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="all_items.php">
+                        <a class="nav-link active" href="all_items.php">
                             <i class="bi bi-box"></i>
                             <span class="nav-text">All Items</span>
                         </a>
@@ -57,7 +57,7 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link active" href="driver_tracking.php">
+                        <a class="nav-link" href="driver_tracking.php">
                             <i class="bi bi-geo-alt"></i>
                             <span class="nav-text">Driver Tracking</span>
                         </a>

@@ -27,7 +27,7 @@
             <div class="sidebar-menu">
                 <ul class="nav flex-column">
                     <li class="nav-item">
-                        <a class="nav-link active" href="sales_reports.php">
+                        <a class="nav-link" href="sales_reports.php">
                             <i class="bi bi-graph-up"></i>
                             <span class="nav-text">Sales Reports</span>
                         </a>
