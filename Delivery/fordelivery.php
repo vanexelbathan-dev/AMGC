@@ -9,6 +9,102 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    
+    <style>
+        /* MOBILE RESPONSIVE FEATURES FOR STAT CARDS */
+        
+        /* Tablets and small devices (768px and below) */
+        @media (max-width: 768px) {
+            /* 2 COLUMN LAYOUT */
+            .delivery-stats .col-md-4 {
+                flex: 0 0 50%;
+                max-width: 50%;
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+            
+            /* ADJUSTED PADDING AND MARGIN */
+            .delivery-stats .row.g-3 {
+                margin-left: -8px;
+                margin-right: -8px;
+            }
+            
+            .delivery-stats .stat-card {
+                padding: 12px 10px;
+                margin-bottom: 8px;
+                min-height: 85px;
+            }
+            
+            /* RESPONSIVE TYPOGRAPHY */
+            .delivery-stats .stat-icon {
+                font-size: 2rem;
+                margin-right: 12px;
+            }
+            
+            .delivery-stats .stat-value {
+                font-size: 1.5rem;
+                line-height: 1.2;
+            }
+            
+            .delivery-stats .stat-label {
+                font-size: 0.8rem;
+                line-height: 1.1;
+            }
+        }
+        
+        /* Extra small devices (phones, 576px and below) */
+        @media (max-width: 576px) {
+            /* COMPACT SIZING */
+            .delivery-stats .col-md-4 {
+                padding-left: 6px;
+                padding-right: 6px;
+            }
+            
+            .delivery-stats .row.g-3 {
+                margin-left: -6px;
+                margin-right: -6px;
+            }
+            
+            .delivery-stats .stat-card {
+                padding: 10px 8px;
+                min-height: 80px;
+            }
+            
+            .delivery-stats .stat-icon {
+                font-size: 1.8rem;
+                margin-right: 10px;
+            }
+            
+            .delivery-stats .stat-value {
+                font-size: 1.3rem;
+            }
+            
+            .delivery-stats .stat-label {
+                font-size: 0.75rem;
+            }
+        }
+        
+        /* Very small devices (375px and below) */
+        @media (max-width: 375px) {
+            .delivery-stats .stat-card {
+                padding: 8px 6px;
+                min-height: 75px;
+            }
+            
+            .delivery-stats .stat-icon {
+                font-size: 1.6rem;
+                margin-right: 8px;
+            }
+            
+            .delivery-stats .stat-value {
+                font-size: 1.2rem;
+            }
+            
+            .delivery-stats .stat-label {
+                font-size: 0.7rem;
+            }
+        }
+    </style>
 </head>
 <body>
     <!-- MOBILE MENU BUTTON -->
@@ -66,50 +162,49 @@
                 </div>
             </div>
 
-<!-- Delivery Stats -->
-<div class="row g-3 mb-4">
+            <!-- Delivery Stats - Added delivery-stats class for specific targeting -->
+            <div class="row g-3 mb-4 delivery-stats">
 
-    <!-- Total for Delivery -->
-    <div class="col-md-4 mb-3">
-        <div class="stat-card inventory">
-            <div class="stat-icon">
-                <i class="bi bi-truck"></i>
-            </div>
-            <div>
-                <div class="stat-value">12</div>
-                <div class="stat-label">Total for Delivery</div>
-            </div>
-        </div>
-    </div>
+                <!-- Total for Delivery -->
+                <div class="col-md-4 mb-3">
+                    <div class="stat-card inventory">
+                        <div class="stat-icon">
+                            <i class="bi bi-truck"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value">12</div>
+                            <div class="stat-label">Total for Delivery</div>
+                        </div>
+                    </div>
+                </div>
 
-    <!-- In Transit -->
-    <div class="col-md-4 mb-3">
-        <div class="stat-card pending">
-            <div class="stat-icon">
-                <i class="bi bi-hourglass-split"></i>
-            </div>
-            <div>
-                <div class="stat-value">5</div>
-                <div class="stat-label">In Transit</div>
-            </div>
-        </div>
-    </div>
+                <!-- In Transit -->
+                <div class="col-md-4 mb-3">
+                    <div class="stat-card pending">
+                        <div class="stat-icon">
+                            <i class="bi bi-hourglass-split"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value">5</div>
+                            <div class="stat-label">In Transit</div>
+                        </div>
+                    </div>
+                </div>
 
-    <!-- Completed Today -->
-    <div class="col-md-4 mb-3">
-        <div class="stat-card complete">
-            <div class="stat-icon">
-                <i class="bi bi-check-circle"></i>
-            </div>
-            <div>
-                <div class="stat-value">28</div>
-                <div class="stat-label">Completed Today</div>
-            </div>
-        </div>
-    </div>
+                <!-- Completed Today -->
+                <div class="col-md-4 mb-3">
+                    <div class="stat-card complete">
+                        <div class="stat-icon">
+                            <i class="bi bi-check-circle"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value">28</div>
+                            <div class="stat-label">Completed Today</div>
+                        </div>
+                    </div>
+                </div>
 
-</div>
-
+            </div>
 
             <!-- Search and Filter -->
             <div class="card mb-4">

@@ -97,6 +97,27 @@
                 </div>
 
                 <div class="row g-3 mb-4">
+                    <div class="col-md-4">
+                        <div class="stat-card total">
+                            <div class="stat-value" id="totalDrivers">0</div>
+                            <div class="stat-label">Total Drivers</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="stat-card sales">
+                            <div class="stat-value" id="activeDrivers">0</div>
+                            <div class="stat-label">Active On Delivery</div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="stat-card complete">
+                            <div class="stat-value" id="completedTrips">0</div>
+                            <div class="stat-label">Completed Today</div>
+                        </div>
+                    </div>
+                </div>
+
+                                <div class="row g-3 mb-4">
                     <div class="col-12">
                         <div class="form-card">
                             <div class="d-flex justify-content-between align-items-center">
@@ -131,27 +152,6 @@
                                     </select>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="row g-3 mb-4">
-                    <div class="col-md-4">
-                        <div class="stat-card total">
-                            <div class="stat-value" id="totalDrivers">0</div>
-                            <div class="stat-label">Total Drivers</div>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="stat-card sales">
-                            <div class="stat-value" id="activeDrivers">0</div>
-                            <div class="stat-label">Active On Delivery</div>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="stat-card complete">
-                            <div class="stat-value" id="completedTrips">0</div>
-                            <div class="stat-label">Completed Today</div>
                         </div>
                     </div>
                 </div>
@@ -246,6 +246,78 @@
             </div>
         </div>
     </div>
+
+    <style>
+        /* Mobile responsive adjustments ONLY */
+        @media (max-width: 768px) {
+            .stat-card {
+                padding: 12px;
+                min-height: 85px;
+                margin-bottom: 8px;
+            }
+            
+            .stat-icon {
+                font-size: 2rem;
+                margin-right: 12px;
+            }
+            
+            .stat-value {
+                font-size: 1.5rem;
+            }
+            
+            .stat-label {
+                font-size: 0.8rem;
+            }
+            
+            /* Make cards 2 columns on mobile */
+            .col-md-4 {
+                width: 50%;
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+            
+            .row.g-3 {
+                margin-left: -8px;
+                margin-right: -8px;
+            }
+            
+            .mb-3 {
+                margin-bottom: 8px !important;
+            }
+        }
+        
+        /* Extra small devices (phones, less than 576px) */
+        @media (max-width: 576px) {
+            .stat-card {
+                min-height: 80px;
+                padding: 10px;
+            }
+            
+            .stat-icon {
+                font-size: 1.8rem;
+                margin-right: 10px;
+            }
+            
+            .stat-value {
+                font-size: 1.3rem;
+            }
+            
+            .stat-label {
+                font-size: 0.75rem;
+            }
+            
+            .col-md-4 {
+                width: 50%;
+                padding-left: 6px;
+                padding-right: 6px;
+            }
+            
+            .row.g-3 {
+                margin-left: -6px;
+                margin-right: -6px;
+            }
+        }
+    </style>
 
     <!-- Leaflet CSS and JS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css" />
