@@ -21,10 +21,6 @@
             border-left: 4px solid var(--primary-green);
         }
         
-        .qty-input {
-            width: 80px;
-        }
-        
         .order-summary {
             background: linear-gradient(135deg, var(--dark-green), var(--primary-green));
             color: white;
@@ -38,6 +34,312 @@
             color: #f87171;
             font-size: 0.875rem;
             margin-top: 5px;
+            min-height: 18px;
+        }
+        
+        /* Custom quantity input with plus/minus buttons */
+        .quantity-control {
+            display: flex;
+            align-items: center;
+            width: 100%;
+        }
+        
+        .quantity-control button {
+            width: 36px;
+            height: 36px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 1px solid #dee2e6;
+            background: white;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        
+        .quantity-control button:hover {
+            background: #f8f9fa;
+        }
+        
+        .quantity-control button:active {
+            background: #e9ecef;
+        }
+        
+        .quantity-control button:disabled {
+            background: #e9ecef;
+            color: #adb5bd;
+            cursor: not-allowed;
+        }
+        
+        .quantity-control .decrease-btn {
+            border-radius: 6px 0 0 6px;
+            color: #dc3545;
+            border-right: none;
+        }
+        
+        .quantity-control .increase-btn {
+            border-radius: 0 6px 6px 0;
+            color: #28a745;
+            border-left: none;
+        }
+        
+        .quantity-control input {
+            width: 50px;
+            height: 36px;
+            text-align: center;
+            border: 1px solid #dee2e6;
+            font-size: 16px;
+            -moz-appearance: textfield;
+        }
+        
+        /* Hide number input arrows */
+        .quantity-control input::-webkit-outer-spin-button,
+        .quantity-control input::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        
+        .quantity-control input:focus {
+            outline: none;
+        }
+        
+        .quantity-control input:disabled {
+            background: #e9ecef;
+            cursor: not-allowed;
+        }
+        
+        /* Add to Cart Button - GREEN WITHOUT BORDER - SAME FOR BOTH */
+        .btn-add-to-cart {
+            height: 36px;
+            font-size: 14px;
+            padding: 6px 12px;
+            border-radius: 6px;
+            background: #28a745; /* Green background */
+            color: white; /* White text */
+            border: none !important; /* Remove border */
+            font-weight: 500;
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 5px;
+            margin-top: 8px;
+            cursor: pointer;
+        }
+        
+        .btn-add-to-cart:hover {
+            background: #218838; /* Dark green on hover */
+        }
+        
+        .btn-add-to-cart:active {
+            background: #1e7e34; /* Even darker green when clicked */
+        }
+        
+        .btn-add-to-cart:disabled {
+            background: #6c757d; /* Gray when disabled */
+            color: white;
+            cursor: not-allowed;
+        }
+        
+        .btn-add-to-cart i {
+            font-size: 16px;
+        }
+        
+        /* Stock warning */
+        .stock-warning {
+            color: #ff6b6b;
+            font-size: 12px;
+            font-weight: 500;
+            margin-bottom: 5px;
+        }
+        
+        /* MOBILE PREVIEW STYLES ONLY */
+        @media (max-width: 768px) {
+            /* Products Grid for Mobile - 2 Columns */
+            #productsContainer {
+                display: grid !important;
+                grid-template-columns: repeat(2, 1fr) !important;
+                gap: 12px !important;
+            }
+            
+            /* Remove Bootstrap row/col spacing for mobile */
+            #productsContainer .col-md-6 {
+                width: 100% !important;
+                padding: 0 !important;
+                margin-bottom: 0 !important;
+            }
+            
+            .product-card-mobile {
+                margin-bottom: 0 !important;
+                height: 100% !important;
+                display: flex !important;
+                flex-direction: column !important;
+                border: 1px solid #dee2e6 !important;
+                border-radius: 8px !important;
+                overflow: hidden !important;
+                background: white !important;
+            }
+            
+            .product-card-mobile .card {
+                height: 100% !important;
+                border: none !important;
+                margin: 0 !important;
+            }
+            
+            .product-card-mobile .card-body {
+                flex: 1 !important;
+                padding: 15px !important;
+                display: flex !important;
+                flex-direction: column !important;
+            }
+            
+            /* Product Title */
+            .product-card-mobile .card-title {
+                font-size: 14px !important;
+                font-weight: 600 !important;
+                line-height: 1.4 !important;
+                height: 2.8em !important;
+                overflow: hidden !important;
+                display: -webkit-box !important;
+                -webkit-line-clamp: 2 !important;
+                -webkit-box-orient: vertical !important;
+                margin-bottom: 8px !important;
+                color: #333 !important;
+            }
+            
+            /* SKU Badge */
+            .product-card-mobile .badge {
+                font-size: 10px !important;
+                padding: 4px 8px !important;
+                background: #f8f9fa !important;
+                color: #666 !important;
+                border: 1px solid #dee2e6 !important;
+            }
+            
+            /* Stock Info */
+            .product-stock-mobile {
+                font-size: 12px !important;
+                color: #6c757d !important;
+                margin-bottom: 8px !important;
+                line-height: 1.4 !important;
+            }
+            
+            /* Price */
+            .product-price-mobile {
+                font-size: 16px !important;
+                font-weight: 700 !important;
+                color: #28a745 !important;
+                margin-bottom: 12px !important;
+            }
+            
+            /* Quantity Input Group - IMPROVED SPACING */
+            .product-input-group-mobile {
+                margin-top: auto !important;
+            }
+            
+            /* Error Message */
+            .product-input-group-mobile .error-message {
+                font-size: 11px !important;
+                text-align: center !important;
+                margin-top: 5px !important;
+                min-height: 16px !important;
+            }
+            
+            /* Cart adjustments for mobile */
+            .order-summary {
+                position: static !important;
+                margin-top: 20px !important;
+                border-radius: 10px !important;
+            }
+            
+            /* Cart Items in Mobile */
+            .cart-item {
+                padding: 12px !important;
+                margin-bottom: 8px !important;
+                border-radius: 8px !important;
+            }
+            
+            /* Buttons in Mobile */
+            .btn-group-mobile .btn {
+                padding: 12px !important;
+                font-size: 14px !important;
+                margin-bottom: 8px !important;
+                border-radius: 8px !important;
+            }
+        }
+        
+        /* DESKTOP VIEW - ALIGN PROPERLY */
+        @media (min-width: 769px) {
+            #productsContainer {
+                display: flex !important;
+                flex-wrap: wrap !important;
+            }
+            
+            #productsContainer .col-md-6 {
+                width: 50% !important;
+                padding: 10px !important;
+            }
+            
+            .product-card-mobile {
+                display: block !important;
+                height: 100%;
+            }
+            
+            .product-card-mobile .card {
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+            }
+            
+            .product-card-mobile .card-body {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+            }
+            
+            /* FOR DESKTOP: Keep button below quantity controls */
+            .product-input-group-mobile {
+                margin-top: auto;
+                display: flex;
+                flex-direction: column;
+            }
+            
+            /* FOR DESKTOP: Align quantity controls properly */
+            .quantity-control {
+                width: 100%;
+            }
+            
+            /* FOR DESKTOP: Add to Cart button positioned at bottom right */
+            .btn-add-to-cart {
+                margin-top: auto;
+                align-self: flex-end;
+                width: auto;
+                min-width: 120px;
+            }
+            
+            .product-card-mobile .card-title {
+                font-size: 16px;
+                font-weight: 600;
+                line-height: 1.4;
+                margin-bottom: 10px;
+                color: #333;
+                min-height: 2.8em;
+            }
+            
+            .product-card-mobile .badge {
+                font-size: 12px;
+                padding: 4px 8px;
+            }
+            
+            .product-stock-mobile {
+                font-size: 14px;
+                margin-bottom: 10px;
+            }
+            
+            .product-price-mobile {
+                font-size: 18px;
+                margin-bottom: 15px;
+            }
         }
     </style>
 </head>
@@ -112,8 +414,6 @@
             <div class="row">
                 <!-- Products Section -->
                 <div class="col-lg-8">
-                    <!-- Header Section -->
-
                     <!-- Available Products -->
                     <div class="card mb-4">
                         <div class="card-header bg-light">
@@ -195,12 +495,14 @@
                             <h3 id="totalPrice" class="mb-0">$0.00</h3>
                         </div>
 
-                        <button class="btn btn-light w-100 mb-2" onclick="viewCart()">
-                            <i class="bi bi-eye"></i> View & Confirm Order
-                        </button>
-                        <button class="btn btn-outline-light w-100" onclick="clearCart()">
-                            <i class="bi bi-trash"></i> Clear Cart
-                        </button>
+                        <div class="btn-group-mobile">
+                            <button class="btn btn-light w-100 mb-2" onclick="viewCart()">
+                                <i class="bi bi-eye"></i> View & Confirm Order
+                            </button>
+                            <button class="btn btn-outline-light w-100" onclick="clearCart()">
+                                <i class="bi bi-trash"></i> Clear Cart
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -262,6 +564,10 @@
             { id: 6, name: 'Desk Organizer', sku: 'SKU-006', price: 29.99, stock: 75 },
             { id: 7, name: 'Notebook Set', sku: 'SKU-007', price: 12.99, stock: 5 },
             { id: 8, name: 'Coffee Maker', sku: 'SKU-008', price: 79.99, stock: 18 },
+            { id: 9, name: 'Monitor 24"', sku: 'SKU-009', price: 199.99, stock: 15 },
+            { id: 10, name: 'Keyboard Mechanical', sku: 'SKU-010', price: 89.99, stock: 22 },
+            { id: 11, name: 'Webcam HD', sku: 'SKU-011', price: 49.99, stock: 30 },
+            { id: 12, name: 'Headphones Wireless', sku: 'SKU-012', price: 129.99, stock: 12 },
         ];
 
         let cart = [];
@@ -272,63 +578,216 @@
             document.getElementById('mobileMenuBtn').addEventListener('click', function() {
                 document.getElementById('sidebar').classList.toggle('show');
             });
+            // Update cart on load
+            updateCart();
         }
 
-        // Render product cards
+        // Render product cards with plus/minus buttons
         function renderProducts() {
             const container = document.getElementById('productsContainer');
-            container.innerHTML = inventory.map(product => `
-                <div class="col-md-6">
+            container.innerHTML = inventory.map(product => {
+                const lowStock = product.stock < 10;
+                const outOfStock = product.stock === 0;
+                
+                return `
+                <div class="col-md-6 product-card-mobile">
                     <div class="card h-100">
                         <div class="card-body">
                             <div class="d-flex justify-content-between align-items-start mb-2">
                                 <h6 class="card-title mb-0">${product.name}</h6>
                                 <span class="badge bg-light text-dark">${product.sku}</span>
                             </div>
-                            <p class="text-muted small mb-2">Stock: <strong>${product.stock} units</strong></p>
-                            <p class="h5 text-success mb-3">$${product.price.toFixed(2)}</p>
+                            <p class="text-muted small mb-1 product-stock-mobile">
+                                Stock: <strong class="${lowStock ? 'text-danger' : ''}">${product.stock} units</strong>
+                                ${lowStock && !outOfStock ? '<span class="stock-warning"> - Low Stock</span>' : ''}
+                            </p>
+                            ${outOfStock ? '<div class="stock-warning mb-1">Out of Stock</div>' : ''}
+                            <p class="h5 text-success mb-3 product-price-mobile">$${product.price.toFixed(2)}</p>
                             
-                            <div class="input-group input-group-sm">
-                                <input type="number" class="form-control" id="qty-${product.id}" min="0" max="${product.stock}" value="0" placeholder="Qty">
-                                <button class="btn btn-outline-success btn-sm" type="button" onclick="addToCart(${product.id})">
-                                    <i class="bi bi-plus-lg"></i> Add
+                            <div class="product-input-group-mobile">
+                                <div class="quantity-control">
+                                    <button type="button" class="decrease-btn" onclick="decreaseQuantity(${product.id})" ${outOfStock ? 'disabled' : ''}>
+                                        <i class="bi bi-dash-lg"></i>
+                                    </button>
+                                    <input type="number" class="form-control" id="qty-${product.id}" 
+                                           min="0" max="${product.stock}" value="0" 
+                                           onchange="validateQuantity(${product.id})"
+                                           ${outOfStock ? 'disabled' : ''}>
+                                    <button type="button" class="increase-btn" onclick="increaseQuantity(${product.id})" ${outOfStock ? 'disabled' : ''}>
+                                        <i class="bi bi-plus-lg"></i>
+                                    </button>
+                                </div>
+                                
+                                <button class="btn-add-to-cart" type="button" 
+                                        onclick="addToCart(${product.id})"
+                                        id="btn-add-${product.id}"
+                                        ${outOfStock ? 'disabled' : ''}>
+                                    <i class="bi bi-cart-plus"></i> Add to Cart
                                 </button>
+                                
+                                <div class="error-message" id="error-${product.id}"></div>
                             </div>
-                            <div class="error-message" id="error-${product.id}"></div>
                         </div>
                     </div>
                 </div>
-            `).join('');
+                `;
+            }).join('');
+        }
+
+        // Decrease quantity
+        function decreaseQuantity(productId) {
+            const qtyInput = document.getElementById(`qty-${productId}`);
+            let currentValue = parseInt(qtyInput.value) || 0;
+            if (currentValue > 0) {
+                qtyInput.value = currentValue - 1;
+                validateQuantity(productId);
+            }
+        }
+
+        // Increase quantity
+        function increaseQuantity(productId) {
+            const qtyInput = document.getElementById(`qty-${productId}`);
+            const product = inventory.find(p => p.id === productId);
+            let currentValue = parseInt(qtyInput.value) || 0;
+            if (currentValue < product.stock) {
+                qtyInput.value = currentValue + 1;
+                validateQuantity(productId);
+            }
+        }
+
+        // Validate quantity input and update button state
+        function validateQuantity(productId) {
+            const qtyInput = document.getElementById(`qty-${productId}`);
+            const addButton = document.getElementById(`btn-add-${productId}`);
+            const product = inventory.find(p => p.id === productId);
+            const errorDiv = document.getElementById(`error-${productId}`);
+            
+            let value = parseInt(qtyInput.value) || 0;
+            
+            if (value < 0) {
+                value = 0;
+                qtyInput.value = 0;
+            }
+            
+            if (value > product.stock) {
+                value = product.stock;
+                qtyInput.value = product.stock;
+                errorDiv.textContent = `Max ${product.stock} units`;
+                addButton.disabled = false;
+                return value;
+            } else {
+                errorDiv.textContent = '';
+            }
+            
+            // Check available stock considering items already in cart
+            const cartItem = cart.find(item => item.id === productId);
+            const alreadyInCart = cartItem ? cartItem.quantity : 0;
+            const availableStock = product.stock - alreadyInCart;
+            
+            if (value > availableStock) {
+                errorDiv.textContent = `Only ${availableStock} more available`;
+                addButton.disabled = true;
+            } else if (value === 0) {
+                addButton.disabled = true;
+            } else {
+                addButton.disabled = false;
+            }
+            
+            return value;
         }
 
         // Add to cart with validation
         function addToCart(productId) {
             const product = inventory.find(p => p.id === productId);
-            const qtyInput = document.getElementById(`qty-${productId}`);
-            const quantity = parseInt(qtyInput.value);
+            const quantity = validateQuantity(productId);
             const errorDiv = document.getElementById(`error-${productId}`);
-
-            errorDiv.textContent = '';
+            const addButton = document.getElementById(`btn-add-${productId}`);
 
             if (quantity <= 0) {
                 errorDiv.textContent = 'Please enter a quantity';
                 return;
             }
 
-            if (quantity > product.stock) {
-                errorDiv.textContent = `Only ${product.stock} units available`;
+            // Check available stock considering items already in cart
+            const cartItem = cart.find(item => item.id === productId);
+            const alreadyInCart = cartItem ? cartItem.quantity : 0;
+            const availableStock = product.stock - alreadyInCart;
+
+            if (quantity > availableStock) {
+                errorDiv.textContent = `Only ${availableStock} more available`;
+                addButton.disabled = true;
                 return;
             }
 
-            const existingItem = cart.find(item => item.id === productId);
-            if (existingItem) {
-                existingItem.quantity += quantity;
+            if (cartItem) {
+                cartItem.quantity += quantity;
             } else {
                 cart.push({ ...product, quantity });
             }
 
-            qtyInput.value = '0';
+            // Reset quantity input and disable button
+            document.getElementById(`qty-${productId}`).value = '0';
+            addButton.disabled = true;
             updateCart();
+            
+            // Show success feedback
+            showToast(`${quantity} × ${product.name} added to cart!`);
+        }
+
+        // Show toast notification
+        function showToast(message) {
+            // Remove existing toast if any
+            const existingToast = document.querySelector('.toast-notification');
+            if (existingToast) {
+                existingToast.remove();
+            }
+            
+            const toast = document.createElement('div');
+            toast.className = 'toast-notification';
+            toast.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                background: var(--primary-green);
+                color: white;
+                padding: 12px 20px;
+                border-radius: 8px;
+                z-index: 9999;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+                animation: slideIn 0.3s ease-out;
+            `;
+            
+            toast.innerHTML = `
+                <div class="d-flex align-items-center">
+                    <i class="bi bi-check-circle-fill me-2"></i>
+                    <span>${message}</span>
+                </div>
+            `;
+            
+            document.body.appendChild(toast);
+            
+            // Auto remove after 3 seconds
+            setTimeout(() => {
+                toast.style.animation = 'slideOut 0.3s ease-out';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+            
+            // Add CSS animations
+            if (!document.querySelector('#toast-styles')) {
+                const style = document.createElement('style');
+                style.id = 'toast-styles';
+                style.textContent = `
+                    @keyframes slideIn {
+                        from { transform: translateX(100%); opacity: 0; }
+                        to { transform: translateX(0); opacity: 1; }
+                    }
+                    @keyframes slideOut {
+                        from { transform: translateX(0); opacity: 1; }
+                        to { transform: translateX(100%); opacity: 0; }
+                    }
+                `;
+                document.head.appendChild(style);
+            }
         }
 
         // Update cart display
@@ -346,11 +805,17 @@
                 return;
             }
 
-            cartItemsDiv.innerHTML = cart.map(item => `
+            cartItemsDiv.innerHTML = cart.map(item => {
+                const product = inventory.find(p => p.id === item.id);
+                const remainingStock = product.stock - item.quantity;
+                const lowStockWarning = remainingStock < 10 ? `<div class="text-warning small mt-1">${remainingStock} left in stock</div>` : '';
+                
+                return `
                 <div class="cart-item">
                     <div style="flex: 1;">
                         <div class="text-black-50 small">${item.name}</div>
                         <div class="text-black-50 small">$${item.price.toFixed(2)} × ${item.quantity}</div>
+                        ${lowStockWarning}
                     </div>
                     <div class="text-end">
                         <div class="text-black fw-bold">$${(item.price * item.quantity).toFixed(2)}</div>
@@ -359,7 +824,8 @@
                         </button>
                     </div>
                 </div>
-            `).join('');
+                `;
+            }).join('');
 
             const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
             const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
@@ -367,26 +833,45 @@
             subtotalDiv.textContent = `$${subtotal.toFixed(2)}`;
             totalItemsDiv.textContent = totalItems;
             totalPriceDiv.textContent = `$${subtotal.toFixed(2)}`;
+            
+            // Update all quantity inputs to reflect new stock limits
+            cart.forEach(item => {
+                validateQuantity(item.id);
+            });
         }
 
         // Remove from cart
         function removeFromCart(productId) {
             cart = cart.filter(item => item.id !== productId);
             updateCart();
+            showToast('Item removed from cart');
+            // Re-enable the add button for this product
+            validateQuantity(productId);
         }
 
         // Clear cart
         function clearCart() {
+            if (cart.length === 0) {
+                showToast('Cart is already empty');
+                return;
+            }
+            
             if (confirm('Clear all items from cart?')) {
                 cart = [];
                 updateCart();
+                // Reset all quantity inputs and re-enable buttons
+                inventory.forEach(product => {
+                    document.getElementById(`qty-${product.id}`).value = '0';
+                    validateQuantity(product.id);
+                });
+                showToast('Cart cleared');
             }
         }
 
         // View cart and confirm
         function viewCart() {
             if (cart.length === 0) {
-                alert('Please add items to cart first');
+                showToast('Please add items to cart first');
                 return;
             }
 
@@ -397,12 +882,12 @@
             const address = document.getElementById('customerAddress').value;
 
             if (!customer && !newCustomer) {
-                alert('Please select or enter a customer');
+                showToast('Please select or enter a customer');
                 return;
             }
 
             if (!email || !phone || !address) {
-                alert('Please fill in all customer information');
+                showToast('Please fill in all customer information');
                 return;
             }
 
@@ -421,21 +906,40 @@
                             </tr>
                         </thead>
                         <tbody>
-                            ${cart.map(item => `
+                            ${cart.map(item => {
+                                const product = inventory.find(p => p.id === item.id);
+                                const remainingStock = product.stock - item.quantity;
+                                return `
                                 <tr>
-                                    <td>${item.name}</td>
+                                    <td>
+                                        ${item.name}
+                                        ${remainingStock < 10 ? 
+                                            `<br><small class="text-warning">${remainingStock} left in stock</small>` : ''}
+                                    </td>
                                     <td>$${item.price.toFixed(2)}</td>
                                     <td>
-                                        <input type="number" class="form-control form-control-sm" style="width: 60px;" min="1" value="${item.quantity}" onchange="updateItemQuantity(${item.id}, this.value)">
+                                        <div class="d-flex align-items-center">
+                                            <button class="btn btn-sm btn-outline-secondary" onclick="updateCartQuantity(${item.id}, -1)">
+                                                <i class="bi bi-dash"></i>
+                                            </button>
+                                            <input type="number" class="form-control form-control-sm mx-2" 
+                                                   style="width: 60px;" min="1" max="${product.stock}" 
+                                                   value="${item.quantity}" 
+                                                   onchange="updateCartQuantity(${item.id}, 0, this.value)">
+                                            <button class="btn btn-sm btn-outline-secondary" onclick="updateCartQuantity(${item.id}, 1)">
+                                                <i class="bi bi-plus"></i>
+                                            </button>
+                                        </div>
                                     </td>
                                     <td>$${(item.price * item.quantity).toFixed(2)}</td>
                                     <td>
-                                        <button class="btn btn-sm btn-danger" onclick="removeFromCart(${item.id})">
+                                        <button class="btn btn-sm btn-danger" onclick="removeFromCartReview(${item.id})">
                                             <i class="bi bi-trash"></i>
                                         </button>
                                     </td>
                                 </tr>
-                            `).join('')}
+                                `;
+                            }).join('')}
                         </tbody>
                     </table>
                 </div>
@@ -454,20 +958,60 @@
             modal.show();
         }
 
-        // Update item quantity in review
-        function updateItemQuantity(productId, newQuantity) {
+        // Update cart quantity in review modal
+        function updateCartQuantity(productId, change, directValue = null) {
             const item = cart.find(i => i.id === productId);
+            const product = inventory.find(p => p.id === productId);
+            
             if (item) {
-                item.quantity = parseInt(newQuantity);
+                let newQuantity;
+                
+                if (directValue !== null) {
+                    newQuantity = parseInt(directValue) || 1;
+                } else {
+                    newQuantity = item.quantity + change;
+                }
+                
+                if (newQuantity < 1) {
+                    removeFromCart(productId);
+                    viewCart();
+                    return;
+                }
+                
+                // Check stock limit
+                if (newQuantity > product.stock) {
+                    showToast(`Only ${product.stock} units available`);
+                    return;
+                }
+                
+                item.quantity = newQuantity;
+                updateCart();
                 const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
                 document.getElementById('reviewSubtotal').textContent = `$${subtotal.toFixed(2)}`;
                 document.getElementById('reviewTotal').textContent = `$${subtotal.toFixed(2)}`;
             }
         }
 
+        // Remove from cart in review modal
+        function removeFromCartReview(productId) {
+            removeFromCart(productId);
+            // Refresh review items
+            viewCart();
+        }
+
         // Submit order
         function submitOrder() {
-            alert('Order submitted successfully!\n\nOrder ID: ORD-' + Math.random().toString(36).substr(2, 9).toUpperCase());
+            const orderId = 'ORD-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+            showToast(`Order ${orderId} submitted successfully!`);
+            
+            // Update inventory stock
+            cart.forEach(item => {
+                const product = inventory.find(p => p.id === item.id);
+                if (product) {
+                    product.stock -= item.quantity;
+                }
+            });
+            
             cart = [];
             updateCart();
             document.getElementById('customerSelect').value = '';
@@ -475,7 +1019,13 @@
             document.getElementById('customerEmail').value = '';
             document.getElementById('customerPhone').value = '';
             document.getElementById('customerAddress').value = '';
-            bootstrap.Modal.getInstance(document.getElementById('cartModal')).hide();
+            
+            // Re-render products to show updated stock
+            renderProducts();
+            
+            // Close modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('cartModal'));
+            modal.hide();
         }
 
         // Initialize on page load
