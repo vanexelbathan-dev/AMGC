@@ -9,6 +9,77 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <style>
+    /* Mobile responsive adjustments ONLY - same as warehouse.php */
+        @media (max-width: 768px) {
+            .stat-card {
+                padding: 12px;
+                min-height: 85px;
+                margin-bottom: 8px;
+            }
+            
+            .stat-icon {
+                font-size: 2rem;
+                margin-right: 12px;
+            }
+            
+            .stat-value {
+                font-size: 1.5rem;
+            }
+            
+            .stat-label {
+                font-size: 0.8rem;
+            }
+            
+            /* Make cards 2 columns on mobile */
+            .col-md-3 {
+                width: 50%;
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+            
+            .row.g-3 {
+                margin-left: -8px;
+                margin-right: -8px;
+            }
+            
+            .mb-3 {
+                margin-bottom: 8px !important;
+            }
+        }
+        
+        /* Extra small devices (phones, less than 576px) */
+        @media (max-width: 576px) {
+            .stat-card {
+                min-height: 80px;
+                padding: 10px;
+            }
+            
+            .stat-icon {
+                font-size: 1.8rem;
+                margin-right: 10px;
+            }
+            
+            .stat-value {
+                font-size: 1.3rem;
+            }
+            
+            .stat-label {
+                font-size: 0.75rem;
+            }
+            
+            .col-md-3 {
+                width: 50%;
+                padding-left: 6px;
+                padding-right: 6px;
+            }
+            
+            .row.g-3 {
+                margin-left: -6px;
+                margin-right: -6px;
+            }
+        }
+    </style>
 </head>
 <body>
     <!-- MOBILE MENU BUTTON -->
@@ -84,69 +155,66 @@
                 </div>
             </div>
 
-<!-- Inventory Stats -->
-<div class="row g-3 mb-4">
+            <!-- Inventory Stats - UPDATED SAME AS WAREHOUSE.PHP -->
+            <div class="row g-3 mb-4">
+                <!-- Total Items -->
+                <div class="col-md-3 mb-3">
+                    <div class="stat-card inventory">
+                        <div class="stat-icon">
+                            <i class="bi bi-boxes"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value">2,450</div>
+                            <div class="stat-label">Total Items</div>
+                        </div>
+                    </div>
+                </div>
 
-    <!-- Total Items -->
-    <div class="col-md-3 mb-3">
-        <div class="stat-card inventory">
-            <div class="stat-icon">
-                <i class="bi bi-boxes"></i>
-            </div>
-            <div>
-                <div class="stat-value">2,450</div>
-                <div class="stat-label">Total Items</div>
-            </div>
-        </div>
-    </div>
+                <!-- Low Stock Items -->
+                <div class="col-md-3 mb-3">
+                    <div class="stat-card pending">
+                        <div class="stat-icon">
+                            <i class="bi bi-exclamation-triangle"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value">8</div>
+                            <div class="stat-label">Low Stock Items</div>
+                        </div>
+                    </div>
+                </div>
 
-    <!-- Low Stock Items -->
-    <div class="col-md-3 mb-3">
-        <div class="stat-card pending">
-            <div class="stat-icon">
-                <i class="bi bi-exclamation-triangle"></i>
-            </div>
-            <div>
-                <div class="stat-value">8</div>
-                <div class="stat-label">Low Stock Items</div>
-            </div>
-        </div>
-    </div>
+                <!-- Inventory Value -->
+                <div class="col-md-3 mb-3">
+                    <div class="stat-card sales">
+                        <div class="stat-icon">
+                            <i class="bi bi-graph-up"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value">$145K</div>
+                            <div class="stat-label">Inventory Value</div>
+                        </div>
+                    </div>
+                </div>
 
-    <!-- Inventory Value -->
-    <div class="col-md-3 mb-3">
-        <div class="stat-card sales">
-            <div class="stat-icon">
-                <i class="bi bi-graph-up"></i>
+                <!-- Capacity Used -->
+                <div class="col-md-3 mb-3">
+                    <div class="stat-card delivery">
+                        <div class="stat-icon">
+                            <i class="bi bi-percent"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value">87%</div>
+                            <div class="stat-label">Capacity Used</div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div>
-                <div class="stat-value">$145K</div>
-                <div class="stat-label">Inventory Value</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Capacity Used -->
-    <div class="col-md-3 mb-3">
-        <div class="stat-card delivery">
-            <div class="stat-icon">
-                <i class="bi bi-percent"></i>
-            </div>
-            <div>
-                <div class="stat-value">87%</div>
-                <div class="stat-label">Capacity Used</div>
-            </div>
-        </div>
-    </div>
-
-</div>
-
 
             <!-- Search and Filter with Add Button -->
             <div class="card mb-4">
                 <div class="card-body">
                     <div class="row g-3">
-                        <div class="col-md-6">
+                        <div class="col-md-6 col-12">
                             <div class="input-group">
                                 <span class="input-group-text">
                                     <i class="bi bi-search"></i>
@@ -154,7 +222,7 @@
                                 <input type="text" class="form-control" id="searchInput" placeholder="Search by item name or SKU...">
                             </div>
                         </div>
-                        <div class="col-md-4">
+                        <div class="col-md-4 col-12">
                             <select class="form-select" id="categoryFilter">
                                 <option value="">All Categories</option>
                                 <option value="Electronics">Electronics</option>
@@ -163,7 +231,7 @@
                                 <option value="Other">Other</option>
                             </select>
                         </div>
-                        <div class="col-md-2">
+                        <div class="col-md-2 col-12">
                             <button class="btn btn-primary w-100" data-bs-toggle="modal" data-bs-target="#addInventoryModal">
                                 <i class="bi bi-plus-lg"></i> Add Item
                             </button>
