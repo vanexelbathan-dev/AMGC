@@ -303,7 +303,7 @@ $success = '';
                 <i class="bi bi-cash-coin"></i>
             </div>
             <div>
-                <div class="stat-value">$<?php echo number_format($total_refunds, 2); ?></div>
+                <div class="stat-value">₱<?php echo number_format($total_refunds, 2); ?></div>
                 <div class="stat-label">Total Refunds</div>
             </div>
         </div>
@@ -381,7 +381,7 @@ $success = '';
                                     <td><?php echo htmlspecialchars($return['return_reason']); ?></td>
                                     <td><?php echo date('Y-m-d', strtotime($return['created_at'])); ?></td>
                                     <td><span class="badge <?php echo $status_badge; ?>"><?php echo $status_label; ?></span></td>
-                                    <td>$<?php echo number_format($refund_amount, 2); ?></td>
+                                    <td>₱<?php echo number_format($refund_amount, 2); ?></td>
                                     <td>
                                         <?php if ($return['rmr_status'] === 'pending'): ?>
                                             <button class="btn btn-sm btn-success" title="Approve" onclick="updateStatus(this, '<?php echo $return['rmr_id']; ?>', 'approved')">

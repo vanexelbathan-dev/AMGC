@@ -269,7 +269,7 @@ $success = '';
                 <i class="bi bi-graph-up"></i>
             </div>
             <div>
-                <div class="stat-value">$<?php echo number_format($total_revenue, 2); ?></div>
+                <div class="stat-value">₱<?php echo number_format($total_revenue, 2); ?></div>
                 <div class="stat-label">Total Revenue</div>
             </div>
         </div>
@@ -334,7 +334,7 @@ $success = '';
                                     <td><?php echo htmlspecialchars($customer['city']); ?></td>
                                     <td><span class="badge bg-success"><?php echo ucfirst($customer['status']); ?></span></td>
                                     <td><?php echo $customer['total_orders'] ?? 0; ?></td>
-                                    <td>$<?php echo number_format($customer['total_spent'], 2); ?></td>
+                                    <td>₱<?php echo number_format($customer['total_spent'], 2); ?></td>
                                 </tr>
                                 <?php endforeach; ?>
                             <?php else: ?>
