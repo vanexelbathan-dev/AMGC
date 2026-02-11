@@ -58,7 +58,7 @@
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="bad_orders.php" data-title="Bad Orders">
-                            <i class="bi bi-x-circle"></i>
+                            <i class="bi bi-recycle"></i>
                             <span class="nav-text">Bad Orders</span>
                         </a>
                     </li>
@@ -78,6 +78,21 @@
                     <hr class="sidebar-divider">
                 </ul>
             </div>
+              <!-- User Profile Section at the bottom of sidebar -->
+     <div class="sidebar-footer">
+        <div class="user-profile-sidebar">
+            <div class="user-avatar-sidebar">AD</div>
+            <div class="user-details-sidebar">
+                <span class="user-name-sidebar">Quality Control</span>
+                <span class="user-role-sidebar">QC Officer</span>
+            </div>
+        </div>
+        
+        <button class="logout-btn-sidebar" onclick="logout()">
+            <i class="bi bi-box-arrow-right"></i>
+            <span class="logout-text">Logout</span>
+        </button>
+    </div>
         </div>
 
         <!-- Main Content -->
@@ -192,54 +207,9 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     
   <script>
-    // Global variables
-    let currentUser = 'admin'; // Set to admin for demo
-    let currentUserType = 'admin';
-    let currentUserBranch = null;
-    let allBranches = [
-        { id: 'BR-001', name: 'Main Branch', location: 'Makati City' },
-        { id: 'BR-002', name: 'North Branch', location: 'Quezon City' },
-        { id: 'BR-003', name: 'South Branch', location: 'Muntinlupa City' },
-        { id: 'BR-004', name: 'East Branch', location: 'Pasig City' },
-        { id: 'BR-005', name: 'West Branch', location: 'Manila City' }
-    ];
-
-    // User database (for demo purposes)
-    const users = {
-        'admin': {
-            password: 'admin123',
-            fullName: 'Admin User',
-            userType: 'admin',
-            branch: null, // Admin has access to all branches
-            avatar: 'AD'
-        },
-        'branch1': {
-            password: 'branch123',
-            fullName: 'Juan Dela Cruz',
-            userType: 'branch_manager',
-            branch: 'BR-001', // Main Branch
-            avatar: 'JC'
-        },
-        'branch2': {
-            password: 'branch123',
-            fullName: 'Maria Santos',
-            userType: 'branch_manager',
-            branch: 'BR-002', // North Branch
-            avatar: 'MS'
-        },
-        'staff1': {
-            password: 'staff123',
-            fullName: 'Pedro Reyes',
-            userType: 'staff',
-            branch: 'BR-001', // Main Branch
-            avatar: 'PR'
-        }
-    };
-
     // Toggle sidebar collapse/expand on desktop
     function toggleSidebar() {
         const sidebar = document.getElementById('sidebar');
-        const toggleIcon = document.getElementById('toggleIcon');
         const isMobile = window.innerWidth <= 992;
         
         if (isMobile) {
@@ -264,114 +234,110 @@
             // On desktop, toggle between expanded and collapsed
             sidebar.classList.toggle('collapsed');
             
-            // Update the toggle icon
-            if (sidebar.classList.contains('collapsed')) {
-                toggleIcon.classList.remove('bi-chevron-left');
-                toggleIcon.classList.add('bi-chevron-right');
-                // Ensure all nav-text are hidden when collapsed
-                document.querySelectorAll('.nav-text').forEach(text => {
-                    text.style.display = 'none';
-                });
-            } else {
-                toggleIcon.classList.remove('bi-chevron-right');
-                toggleIcon.classList.add('bi-chevron-left');
-                // Show all nav-text when expanded
-                document.querySelectorAll('.nav-text').forEach(text => {
-                    text.style.display = 'inline-block';
-                });
-            }
-            
             // Store preference in localStorage
             localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+            
+            // Show/hide nav text
+            document.querySelectorAll('.nav-text').forEach(text => {
+                text.style.display = sidebar.classList.contains('collapsed') ? 'none' : 'inline-block';
+            });
         }
     }
 
-   // Close mobile sidebar (simplified)
-function closeMobileSidebar() {
-    const sidebar = document.getElementById('sidebar');
-    const overlay = document.querySelector('.sidebar-overlay');
-    
-    sidebar.classList.remove('active');
-    
-    if (overlay) {
-        overlay.classList.remove('active');
-        setTimeout(() => {
-            overlay.remove();
-        }, 300);
+    // Close mobile sidebar
+    function closeMobileSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.querySelector('.sidebar-overlay');
+        
+        sidebar.classList.remove('active');
+        
+        if (overlay) {
+            overlay.classList.remove('active');
+            setTimeout(() => {
+                overlay.remove();
+            }, 300);
+        }
     }
-}
 
     // Initialize when page loads
     document.addEventListener('DOMContentLoaded', function() {
-        console.log("Inventory System Demo Mode loaded!");
+        console.log("Current Inventory page loaded!");
         
-        // Initialize Bootstrap components
-        var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-        var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-            return new bootstrap.Tooltip(tooltipTriggerEl);
+        // Setup mobile menu toggle
+        document.getElementById('mobileMenuBtn').addEventListener('click', function() {
+            const sidebar = document.getElementById('sidebar');
+            const isMobile = window.innerWidth <= 992;
+            
+            if (isMobile) {
+                sidebar.classList.toggle('active');
+                
+                // Create overlay for mobile
+                if (!document.querySelector('.sidebar-overlay')) {
+                    const overlay = document.createElement('div');
+                    overlay.className = 'sidebar-overlay';
+                    document.body.appendChild(overlay);
+                    
+                    overlay.addEventListener('click', () => {
+                        closeMobileSidebar();
+                    });
+                    
+                    setTimeout(() => {
+                        overlay.classList.add('active');
+                    }, 10);
+                }
+            } else {
+                // On desktop, toggle sidebar collapse
+                toggleSidebar();
+            }
+        });
+        
+        // Add event listener for desktop toggle button
+        const desktopToggleBtn = document.getElementById('desktopToggleBtn');
+        if (desktopToggleBtn) {
+            desktopToggleBtn.addEventListener('click', function(e) {
+                e.stopPropagation(); // Prevent event bubbling
+                toggleSidebar();
+            });
+        }
+        
+        // Add click listeners to sidebar links to close on mobile
+        document.querySelectorAll('.sidebar .nav-link').forEach(link => {
+            link.addEventListener('click', function() {
+                if (window.innerWidth <= 992) {
+                    closeMobileSidebar();
+                }
+            });
+        });
 
-            document.querySelectorAll('.sidebar .nav-link').forEach(link => {
-        link.addEventListener('click', function() {
-            if (window.innerWidth <= 992) {
+        // Close sidebar when clicking outside on mobile
+        document.addEventListener('click', function(event) {
+            const sidebar = document.getElementById('sidebar');
+            const mobileBtn = document.getElementById('mobileMenuBtn');
+            const overlay = document.querySelector('.sidebar-overlay');
+            const isMobile = window.innerWidth <= 992;
+            
+            if (isMobile && sidebar.classList.contains('active') && 
+                !sidebar.contains(event.target) && 
+                !mobileBtn.contains(event.target) &&
+                !overlay?.contains(event.target)) {
                 closeMobileSidebar();
             }
         });
-    });
-        });
-// Update the mobile menu button click event handler
-document.getElementById('mobileMenuBtn').addEventListener('click', function() {
-    const sidebar = document.getElementById('sidebar');
-    const isMobile = window.innerWidth <= 992;
-    
-    if (isMobile) {
-        sidebar.classList.toggle('active');
-        
-        // Create overlay for mobile
-        if (!document.querySelector('.sidebar-overlay')) {
-            const overlay = document.createElement('div');
-            overlay.className = 'sidebar-overlay';
-            document.body.appendChild(overlay);
-            
-            overlay.addEventListener('click', () => {
-                closeMobileSidebar();
-            });
-            
-            setTimeout(() => {
-                overlay.classList.add('active');
-            }, 10);
-        }
-    } else {
-        // On desktop, toggle sidebar collapse
-        toggleSidebar();
-    }
-});
 
-        // Add event listener for desktop toggle button
-        document.getElementById('desktopToggleBtn').addEventListener('click', function(e) {
-            e.stopPropagation(); // Prevent event bubbling
-            toggleSidebar();
-        });
-        
         // Initialize charts
         initializeCharts();
         
-        // Update user interface
-        updateUserInterface();
+        // Update dashboard statistics
+        updateDashboardStats();
         
-        // Load initial data
-        loadInitialData();
-        
-        // Load all page data
-        loadAllDemoData();
-        
+        // Update recent transactions
+        updateRecentTransactions();
+
         // Load sidebar preference from localStorage
         const savedCollapsed = localStorage.getItem('sidebarCollapsed');
         if (savedCollapsed === 'true' && window.innerWidth > 992) {
             const sidebar = document.getElementById('sidebar');
-            const toggleIcon = document.getElementById('toggleIcon');
             sidebar.classList.add('collapsed');
-            toggleIcon.classList.remove('bi-chevron-left');
-            toggleIcon.classList.add('bi-chevron-right');
             // Hide all nav-text when collapsed
             document.querySelectorAll('.nav-text').forEach(text => {
                 text.style.display = 'none';
@@ -384,74 +350,81 @@ document.getElementById('mobileMenuBtn').addEventListener('click', function() {
         }
     });
 
-    // Close sidebar when clicking outside on mobile
-    document.addEventListener('click', function(event) {
+    // Handle window resize
+    window.addEventListener('resize', function() {
         const sidebar = document.getElementById('sidebar');
-        const mobileBtn = document.getElementById('mobileMenuBtn');
         const overlay = document.querySelector('.sidebar-overlay');
-        const isMobile = window.innerWidth <= 992;
         
-        if (isMobile && sidebar.classList.contains('active') && 
-            !sidebar.contains(event.target) && 
-            !mobileBtn.contains(event.target) &&
-            !overlay?.contains(event.target)) {
-            closeMobileSidebar();
+        if (window.innerWidth > 992) {
+            // Desktop mode - remove mobile overlay
+            if (overlay) {
+                overlay.remove();
+            }
+            sidebar.classList.remove('active');
+            
+            // Load saved preference
+            const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+            if (savedCollapsed === 'true') {
+                sidebar.classList.add('collapsed');
+                // Hide all nav-text when collapsed
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'none';
+                });
+            } else {
+                sidebar.classList.remove('collapsed');
+                // Show all nav-text when expanded
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'inline-block';
+                });
+            }
+        } else {
+            // Mobile mode - always show expanded
+            sidebar.classList.remove('collapsed');
+            // Show all nav-text on mobile
+            document.querySelectorAll('.nav-text').forEach(text => {
+                text.style.display = 'inline-block';
+            });
         }
     });
 
-    // Logout Function - Now just refreshes the page for demo reset
-    function logout() {
-        if (confirm('Reset demo to initial state?')) {
-            localStorage.removeItem('sidebarCollapsed');
-            location.reload();
-        }
-    }
-
-    // Update User Interface based on user type
-    function updateUserInterface() {
-        const user = users[currentUser];
-        
-        // Update user info in header
-        document.getElementById('userName').textContent = user.fullName;
-        document.getElementById('userRole').textContent = user.userType === 'admin' ? 'Administrator' : 'Branch Manager';
-        document.getElementById('userAvatar').textContent = user.avatar;
-        
-        // Update all user info sections
-        document.querySelectorAll('.user-name-top').forEach(el => el.textContent = user.fullName);
-        document.querySelectorAll('.user-role-top').forEach(el => el.textContent = user.userType === 'admin' ? 'Administrator' : 'Branch Manager');
-        document.querySelectorAll('.user-avatar-top').forEach(el => el.textContent = user.avatar);
-        
-        // Show/hide restricted pages for branch managers
-        const restrictedPages = ['branches', 'companies', 'users'];
-        restrictedPages.forEach(page => {
-            const navItem = document.getElementById(page + 'Nav');
-            if (navItem) {
-                if (user.userType === 'branch_manager') {
-                    navItem.style.display = 'none';
-                } else {
-                    navItem.style.display = 'block';
+    // Initialize Charts
+    function initializeCharts() {
+        // Dashboard Chart
+        const dashboardCtx = document.getElementById('dashboardChart');
+        if (dashboardCtx) {
+            new Chart(dashboardCtx, {
+                type: 'line',
+                data: {
+                    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
+                    datasets: [{
+                        label: 'Sales (₱)',
+                        data: [850000, 920000, 1010000, 980000, 1120000, 1250000],
+                        borderColor: '#10b981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        fill: true,
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return '₱ ' + (value / 1000).toFixed(0) + 'K';
+                                }
+                            }
+                        }
+                    }
                 }
-            }
-        });
-    }
-
-    // Get branch name by ID
-    function getBranchName(branchId) {
-        const branch = allBranches.find(b => b.id === branchId);
-        return branch ? branch.name : 'Unknown Branch';
-    }
-
-    // Load all demo data
-    function loadAllDemoData() {
-        loadTransactionsData();
-        loadBranchesData();
-        loadUsersData();
-    }
-
-    // Load initial data
-    function loadInitialData() {
-        updateDashboardStats();
-        updateRecentTransactions();
+            });
+        }
     }
 
     // Update dashboard statistics
@@ -496,318 +469,18 @@ document.getElementById('mobileMenuBtn').addEventListener('click', function() {
         transactionsTable.innerHTML = html;
     }
 
-    // Show Page Function
-    function showPage(pageName) {
-        // Hide all page contents
-        const pages = [
-            'dashboard', 'transactions', 'items', 'warehouses', 
-            'branches', 'sales', 'purchaseOrders', 'deliveries', 
-            'companies', 'users'
-        ];
-        
-        pages.forEach(page => {
-            const pageElement = document.getElementById(page + 'Content');
-            if (pageElement) {
-                pageElement.classList.remove('active');
-                pageElement.style.display = 'none';
-            }
-        });
-        
-        // Show selected page
-        const selectedPage = document.getElementById(pageName + 'Content');
-        if (selectedPage) {
-            selectedPage.classList.add('active');
-            selectedPage.style.display = 'block';
-            
-            // Initialize page-specific content
-            if (pageName === 'sales') {
-                initializeSalesCharts();
-            }
-        }
-        
-        // Update active nav link
-        document.querySelectorAll('.nav-link').forEach(link => {
-            link.classList.remove('active');
-        });
-        
-        // Find and activate the clicked nav link
-        document.querySelectorAll('.nav-link').forEach(link => {
-            const linkText = link.textContent.toLowerCase();
-            if (linkText.includes(pageName.toLowerCase())) {
-                link.classList.add('active');
-            }
-        });
-        
-        // Hide sidebar on mobile after clicking a link
-        if (window.innerWidth <= 992) {
-            closeMobileSidebar();
+    // Logout Function - Now just refreshes the page for demo reset
+    function logout() {
+        if (confirm('Reset demo to initial state?')) {
+            localStorage.removeItem('sidebarCollapsed');
+            location.reload();
         }
     }
-
-    // Load transactions data
-    function loadTransactionsData() {
-        // Mock data for demo
-        const transactions = [
-            { date: '2024-01-15 10:30', ref: 'TRX-001245', type: 'Stock In', branch: 'BR-001', item: 'ITM-005', quantity: '+50', encodedBy: 'admin' },
-            { date: '2024-01-15 09:15', ref: 'TRX-001244', type: 'Stock Out', branch: 'BR-002', item: 'ITM-012', quantity: '-25', encodedBy: 'staff1' },
-            { date: '2024-01-14 16:45', ref: 'TRX-001243', type: 'Stock In', branch: 'BR-001', item: 'ITM-008', quantity: '+30', encodedBy: 'admin' },
-            { date: '2024-01-14 14:20', ref: 'TRX-001242', type: 'Stock Out', branch: 'BR-003', item: 'ITM-003', quantity: '-15', encodedBy: 'staff1' },
-            { date: '2024-01-13 11:10', ref: 'TRX-001241', type: 'Stock In', branch: 'BR-002', item: 'ITM-007', quantity: '+20', encodedBy: 'admin' }
-        ];
-        
-        // Update stats
-        document.getElementById('transactionsTotal').textContent = transactions.length;
-        document.getElementById('transactionsStockIn').textContent = transactions.filter(t => t.type === 'Stock In').length;
-        document.getElementById('transactionsStockOut').textContent = transactions.filter(t => t.type === 'Stock Out').length;
-        document.getElementById('transactionsAccuracy').textContent = '98.2%';
-        
-        // Update table
-        const table = document.getElementById('transactionsTable');
-        let html = '';
-        
-        transactions.forEach(transaction => {
-            const typeClass = transaction.type === 'Stock In' ? 'badge-success' : 'badge-danger';
-            const quantityClass = transaction.quantity.startsWith('+') ? 'text-success' : 'text-danger';
-            
-            html += `
-                <tr>
-                    <td>${transaction.date}</td>
-                    <td>${transaction.ref}</td>
-                    <td><span class="badge ${typeClass}">${transaction.type}</span></td>
-                    <td>${getBranchName(transaction.branch)}</td>
-                    <td>${transaction.item}</td>
-                    <td class="${quantityClass}">${transaction.quantity}</td>
-                    <td>${transaction.encodedBy}</td>
-                    <td>
-                        <div class="action-buttons">
-                            <button class="btn-icon btn-view"><i class="bi bi-eye"></i></button>
-                            <button class="btn-icon btn-edit"><i class="bi bi-pencil"></i></button>
-                        </div>
-                    </td>
-                </tr>
-            `;
-        });
-        
-        table.innerHTML = html;
-    }
-
-    // Load branches data
-    function loadBranchesData() {
-        const table = document.getElementById('branchesTable');
-        let html = '';
-        
-        allBranches.forEach(branch => {
-            html += `
-                <tr>
-                    <td><strong>${branch.id}</strong></td>
-                    <td>${branch.name}</td>
-                    <td>${branch.location}</td>
-                    <td>Juan Dela Cruz</td>
-                    <td>+63 912 345 6789</td>
-                    <td>₱ 2.5M</td>
-                    <td><span class="badge badge-success">Active</span></td>
-                    <td>
-                        <div class="action-buttons">
-                            <button class="btn-icon btn-view"><i class="bi bi-eye"></i></button>
-                            <button class="btn-icon btn-edit"><i class="bi bi-pencil"></i></button>
-                        </div>
-                    </td>
-                </tr>
-            `;
-        });
-        
-        table.innerHTML = html;
-    }
-
-    // Load users data
-    function loadUsersData() {
-        const table = document.getElementById('usersTable');
-        let html = '';
-        
-        Object.keys(users).forEach(username => {
-            const user = users[username];
-            html += `
-                <tr>
-                    <td><strong>USR-${username === 'admin' ? '001' : username === 'branch1' ? '002' : '003'}</strong></td>
-                    <td>${user.fullName}</td>
-                    <td>${username}</td>
-                    <td>${username}@company.com</td>
-                    <td><span class="badge ${user.userType === 'admin' ? 'badge-primary' : 'badge-info'}">${user.userType === 'admin' ? 'Administrator' : 'Branch Manager'}</span></td>
-                    <td>${user.branch ? getBranchName(user.branch) : 'All Branches'}</td>
-                    <td>2024-01-15 10:30</td>
-                    <td><span class="badge badge-success">Active</span></td>
-                    <td>
-                        <div class="action-buttons">
-                            <button class="btn-icon btn-view"><i class="bi bi-eye"></i></button>
-                            <button class="btn-icon btn-edit"><i class="bi bi-pencil"></i></button>
-                        </div>
-                    </td>
-                </tr>
-            `;
-        });
-        
-        table.innerHTML = html;
-    }
-
-    // Initialize Charts
-    function initializeCharts() {
-        // Dashboard Chart
-        const dashboardCtx = document.getElementById('dashboardChart');
-        if (dashboardCtx) {
-            new Chart(dashboardCtx, {
-                type: 'line',
-                data: {
-                    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-                    datasets: [{
-                        label: 'Sales (₱)',
-                        data: [850000, 920000, 1010000, 980000, 1120000, 1250000],
-                        borderColor: '#10b981',
-                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                        fill: true,
-                        tension: 0.4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: {
-                            display: false
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                callback: function(value) {
-                                    return '₱ ' + (value / 1000).toFixed(0) + 'K';
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-        }
-    }
-
-    // Initialize Sales Charts
-    function initializeSalesCharts() {
-        // Sales Chart
-        const salesCtx = document.getElementById('salesChart');
-        if (salesCtx) {
-            new Chart(salesCtx, {
-                type: 'bar',
-                data: {
-                    labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
-                    datasets: [{
-                        label: 'Sales (₱)',
-                        data: [285000, 312000, 298500, 350180],
-                        backgroundColor: '#10b981',
-                        borderRadius: 6
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: {
-                            display: false
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                callback: function(value) {
-                                    return '₱ ' + (value / 1000).toFixed(0) + 'K';
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-        }
-        
-        // Category Chart
-        const categoryCtx = document.getElementById('categoryChart');
-        if (categoryCtx) {
-            new Chart(categoryCtx, {
-                type: 'doughnut',
-                data: {
-                    labels: ['Electronics', 'Office Supplies', 'Furniture', 'Others'],
-                    datasets: [{
-                        data: [45, 25, 20, 10],
-                        backgroundColor: [
-                            '#10b981',
-                            '#059669',
-                            '#047857',
-                            '#d1fae5'
-                        ]
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: {
-                            position: 'bottom'
-                        }
-                    }
-                }
-            });
-        }
-    }
-
-    // Handle window resize
-    window.addEventListener('resize', function() {
-        const sidebar = document.getElementById('sidebar');
-        const toggleIcon = document.getElementById('toggleIcon');
-        const overlay = document.querySelector('.sidebar-overlay');
-        
-        if (window.innerWidth > 992) {
-            // Desktop mode - remove mobile overlay
-            if (overlay) {
-                overlay.remove();
-            }
-            sidebar.classList.remove('active');
-            
-            // Load saved preference
-            const savedCollapsed = localStorage.getItem('sidebarCollapsed');
-            if (savedCollapsed === 'true') {
-                sidebar.classList.add('collapsed');
-                toggleIcon.classList.remove('bi-chevron-left');
-                toggleIcon.classList.add('bi-chevron-right');
-                // Hide all nav-text when collapsed
-                document.querySelectorAll('.nav-text').forEach(text => {
-                    text.style.display = 'none';
-                });
-            } else {
-                sidebar.classList.remove('collapsed');
-                toggleIcon.classList.remove('bi-chevron-right');
-                toggleIcon.classList.add('bi-chevron-left');
-                // Show all nav-text when expanded
-                document.querySelectorAll('.nav-text').forEach(text => {
-                    text.style.display = 'inline-block';
-                });
-            }
-        } else {
-            // Mobile mode - always show expanded
-            sidebar.classList.remove('collapsed');
-            toggleIcon.classList.remove('bi-chevron-right');
-            toggleIcon.classList.add('bi-chevron-left');
-            // Show all nav-text on mobile
-            document.querySelectorAll('.nav-text').forEach(text => {
-                text.style.display = 'inline-block';
-            });
-        }
-    });
 
     // Keyboard shortcuts
     document.addEventListener('keydown', function(e) {
-        // Ctrl + D for dashboard
-        if (e.ctrlKey && e.key === 'd') {
-            e.preventDefault();
-            showPage('dashboard');
-        }
         // Ctrl + R for reset
-        else if (e.ctrlKey && e.key === 'r') {
+        if (e.ctrlKey && e.key === 'r') {
             e.preventDefault();
             logout();
         }

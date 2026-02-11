@@ -6,10 +6,12 @@
         }
         
         /* Main Container */
+        .page-content {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
         .page-content.active {
-            padding: 20px;
-            max-width: 1400px;
-            margin: 0 auto;
+          display: block;
         }
         
         /* Pick List Item Cards - IMPROVED LAYOUT */
@@ -609,7 +611,7 @@
         
         @media (max-width: 992px) {
             .progress-steps {
-                flex-wrap: wrap;
+                flex-wrap: nowrap;
                 gap: 20px;
             }
             

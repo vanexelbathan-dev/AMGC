@@ -55,7 +55,7 @@
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="bad_orders.php">
-                            <i class="bi bi-x-circle"></i>
+                            <i class="bi bi-recycle"></i>
                             <span class="nav-text">Bad Orders</span>
                         </a>
                     </li>
@@ -74,6 +74,21 @@
                     <hr class="sidebar-divider">
                 </ul>
             </div>
+             <!-- User Profile Section at the bottom of sidebar -->
+     <div class="sidebar-footer">
+        <div class="user-profile-sidebar">
+            <div class="user-avatar-sidebar">AD</div>
+            <div class="user-details-sidebar">
+                <span class="user-name-sidebar">Quality Control</span>
+                <span class="user-role-sidebar">QC Officer</span>
+            </div>
+        </div>
+        
+        <button class="logout-btn-sidebar" onclick="logout()">
+            <i class="bi bi-box-arrow-right"></i>
+            <span class="logout-text">Logout</span>
+        </button>
+    </div>
         </div>
 
         <!-- Main Content -->
@@ -236,59 +251,69 @@
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     
-    <script>
-        // Global variables
-        let currentUser = 'admin'; // Set to admin for demo
-        let currentUserType = 'admin';
-        let currentUserBranch = null;
-        let allBranches = [
-            { id: 'BR-001', name: 'Main Branch', location: 'Makati City' },
-            { id: 'BR-002', name: 'North Branch', location: 'Quezon City' },
-            { id: 'BR-003', name: 'South Branch', location: 'Muntinlupa City' },
-            { id: 'BR-004', name: 'East Branch', location: 'Pasig City' },
-            { id: 'BR-005', name: 'West Branch', location: 'Manila City' }
-        ];
-
-        // User database (for demo purposes)
-        const users = {
-            'admin': {
-                password: 'admin123',
-                fullName: 'Admin User',
-                userType: 'admin',
-                branch: null, // Admin has access to all branches
-                avatar: 'AD'
-            },
-            'branch1': {
-                password: 'branch123',
-                fullName: 'Juan Dela Cruz',
-                userType: 'branch_manager',
-                branch: 'BR-001', // Main Branch
-                avatar: 'JC'
-            },
-            'branch2': {
-                password: 'branch123',
-                fullName: 'Maria Santos',
-                userType: 'branch_manager',
-                branch: 'BR-002', // North Branch
-                avatar: 'MS'
-            },
-            'staff1': {
-                password: 'staff123',
-                fullName: 'Pedro Reyes',
-                userType: 'staff',
-                branch: 'BR-001', // Main Branch
-                avatar: 'PR'
+<script>
+    // Toggle sidebar collapse/expand on desktop
+    function toggleSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const isMobile = window.innerWidth <= 992;
+        
+        if (isMobile) {
+            // On mobile, use the existing hamburger functionality
+            sidebar.classList.toggle('active');
+            
+            // Create overlay for mobile
+            if (!document.querySelector('.sidebar-overlay')) {
+                const overlay = document.createElement('div');
+                overlay.className = 'sidebar-overlay';
+                document.body.appendChild(overlay);
+                
+                overlay.addEventListener('click', () => {
+                    closeMobileSidebar();
+                });
+                
+                setTimeout(() => {
+                    overlay.classList.add('active');
+                }, 10);
             }
-        };
+        } else {
+            // On desktop, toggle between expanded and collapsed
+            sidebar.classList.toggle('collapsed');
+            
+            // Store preference in localStorage
+            localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+            
+            // Show/hide nav text
+            document.querySelectorAll('.nav-text').forEach(text => {
+                text.style.display = sidebar.classList.contains('collapsed') ? 'none' : 'inline-block';
+            });
+        }
+    }
 
-        // Toggle sidebar collapse/expand on desktop
-        function toggleSidebar() {
+    // Close mobile sidebar
+    function closeMobileSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.querySelector('.sidebar-overlay');
+        
+        sidebar.classList.remove('active');
+        
+        if (overlay) {
+            overlay.classList.remove('active');
+            setTimeout(() => {
+                overlay.remove();
+            }, 300);
+        }
+    }
+
+    // Initialize when page loads
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log("Sales Orders page loaded!");
+        
+        // Setup mobile menu toggle
+        document.getElementById('mobileMenuBtn').addEventListener('click', function() {
             const sidebar = document.getElementById('sidebar');
-            const toggleIcon = document.getElementById('toggleIcon');
             const isMobile = window.innerWidth <= 992;
             
             if (isMobile) {
-                // On mobile, use the existing hamburger functionality
                 sidebar.classList.toggle('active');
                 
                 // Create overlay for mobile
@@ -306,106 +331,27 @@
                     }, 10);
                 }
             } else {
-                // On desktop, toggle between expanded and collapsed
-                sidebar.classList.toggle('collapsed');
-                
-                // Update the toggle icon
-                if (sidebar.classList.contains('collapsed')) {
-                    toggleIcon.classList.remove('bi-chevron-left');
-                    toggleIcon.classList.add('bi-chevron-right');
-                    // Ensure all nav-text are hidden when collapsed
-                    document.querySelectorAll('.nav-text').forEach(text => {
-                        text.style.display = 'none';
-                    });
-                } else {
-                    toggleIcon.classList.remove('bi-chevron-right');
-                    toggleIcon.classList.add('bi-chevron-left');
-                    // Show all nav-text when expanded
-                    document.querySelectorAll('.nav-text').forEach(text => {
-                        text.style.display = 'inline-block';
-                    });
-                }
-                
-                // Store preference in localStorage
-                localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
-            }
-        }
-
-        // Close mobile sidebar
-        function closeMobileSidebar() {
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.querySelector('.sidebar-overlay');
-            
-            sidebar.classList.remove('active');
-            
-            if (overlay) {
-                overlay.classList.remove('active');
-                setTimeout(() => {
-                    overlay.remove();
-                }, 300);
-            }
-        }
-
-        // Initialize when page loads
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log("Sales Orders page loaded!");
-            
-            // Initialize Bootstrap components
-            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-            var tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-                return new bootstrap.Tooltip(tooltipTriggerEl);
-            });
-            
-            // Setup mobile menu toggle
-            document.getElementById('mobileMenuBtn').addEventListener('click', function() {
+                // On desktop, toggle sidebar collapse
                 toggleSidebar();
-            });
-            
-            // Add event listener for desktop toggle button
-            document.getElementById('desktopToggleBtn').addEventListener('click', function(e) {
+            }
+        });
+        
+        // Add event listener for desktop toggle button
+        const desktopToggleBtn = document.getElementById('desktopToggleBtn');
+        if (desktopToggleBtn) {
+            desktopToggleBtn.addEventListener('click', function(e) {
                 e.stopPropagation(); // Prevent event bubbling
                 toggleSidebar();
             });
-            
-            // Add click listeners to sidebar links to close on mobile
-            document.querySelectorAll('.sidebar .nav-link').forEach(link => {
-                link.addEventListener('click', function() {
-                    if (window.innerWidth <= 992) {
-                        closeMobileSidebar();
-                    }
-                });
+        }
+        
+        // Add click listeners to sidebar links to close on mobile
+        document.querySelectorAll('.sidebar .nav-link').forEach(link => {
+            link.addEventListener('click', function() {
+                if (window.innerWidth <= 992) {
+                    closeMobileSidebar();
+                }
             });
-
-            // New Order Button functionality
-            document.getElementById('newOrderBtn').addEventListener('click', function() {
-                alert('Create New Sales Order functionality would open here.');
-                // In a real application, this would open a modal or redirect to a form
-            });
-
-            // Update user interface
-            updateUserInterface();
-            
-            // Load sales orders data
-            loadSalesOrdersData();
-            
-            // Load sidebar preference from localStorage
-            const savedCollapsed = localStorage.getItem('sidebarCollapsed');
-            if (savedCollapsed === 'true' && window.innerWidth > 992) {
-                const sidebar = document.getElementById('sidebar');
-                const toggleIcon = document.getElementById('toggleIcon');
-                sidebar.classList.add('collapsed');
-                toggleIcon.classList.remove('bi-chevron-left');
-                toggleIcon.classList.add('bi-chevron-right');
-                // Hide all nav-text when collapsed
-                document.querySelectorAll('.nav-text').forEach(text => {
-                    text.style.display = 'none';
-                });
-            } else {
-                // Show all nav-text by default when expanded
-                document.querySelectorAll('.nav-text').forEach(text => {
-                    text.style.display = 'inline-block';
-                });
-            }
         });
 
         // Close sidebar when clicking outside on mobile
@@ -423,224 +369,203 @@
             }
         });
 
-        // Logout Function
-        function logout() {
-            if (confirm('Reset demo to initial state?')) {
-                localStorage.removeItem('sidebarCollapsed');
-                location.reload();
-            }
-        }
-
-        // Update User Interface based on user type
-        function updateUserInterface() {
-            const user = users[currentUser];
-            
-            // Update user info in header
-            document.getElementById('userName').textContent = user.fullName;
-            document.getElementById('userRole').textContent = user.userType === 'admin' ? 'Administrator' : 'Branch Manager';
-            document.getElementById('userAvatar').textContent = user.avatar;
-            
-            // Update all user info sections
-            document.querySelectorAll('.user-name-top').forEach(el => el.textContent = user.fullName);
-            document.querySelectorAll('.user-role-top').forEach(el => el.textContent = user.userType === 'admin' ? 'Administrator' : 'Branch Manager');
-            document.querySelectorAll('.user-avatar-top').forEach(el => el.textContent = user.avatar);
-        }
-
-        // Load sales orders data (for demo purposes)
-        function loadSalesOrdersData() {
-            // Demo data for sales orders
-            const salesOrders = [
-                {
-                    orderNo: 'SO-2024-001245',
-                    date: '2024-01-15',
-                    customer: 'Juan Dela Cruz',
-                    items: '3 items',
-                    amount: '₱ 25,500.00',
-                    paymentStatus: 'Paid',
-                    orderStatus: 'Completed'
-                },
-                {
-                    orderNo: 'SO-2024-001244',
-                    date: '2024-01-15',
-                    customer: 'Maria Santos',
-                    items: '2 items',
-                    amount: '₱ 18,750.00',
-                    paymentStatus: 'Pending',
-                    orderStatus: 'Processing'
-                },
-                {
-                    orderNo: 'SO-2024-001243',
-                    date: '2024-01-14',
-                    customer: 'ABC Corporation',
-                    items: '5 items',
-                    amount: '₱ 45,200.00',
-                    paymentStatus: 'Paid',
-                    orderStatus: 'For Delivery'
-                },
-                {
-                    orderNo: 'SO-2024-001242',
-                    date: '2024-01-14',
-                    customer: 'XYZ Enterprises',
-                    items: '1 item',
-                    amount: '₱ 8,500.00',
-                    paymentStatus: 'Overdue',
-                    orderStatus: 'Pending'
-                },
-                {
-                    orderNo: 'SO-2024-001241',
-                    date: '2024-01-13',
-                    customer: 'John Smith',
-                    items: '4 items',
-                    amount: '₱ 32,150.00',
-                    paymentStatus: 'Paid',
-                    orderStatus: 'Completed'
-                }
-            ];
-            
-            const table = document.getElementById('salesOrdersTable');
-            let html = '';
-            
-            salesOrders.forEach(order => {
-                const paymentClass = order.paymentStatus === 'Paid' ? 'badge-success' : 
-                                    order.paymentStatus === 'Pending' ? 'badge-warning' : 'badge-danger';
-                const orderClass = order.orderStatus === 'Completed' ? 'badge-success' : 
-                                  order.orderStatus === 'Processing' ? 'badge-warning' : 
-                                  order.orderStatus === 'For Delivery' ? 'badge-info' : 'badge-warning';
-                
-                html += `
-                    <tr>
-                        <td><strong>${order.orderNo}</strong></td>
-                        <td>${order.date}</td>
-                        <td>${order.customer}</td>
-                        <td>${order.items}</td>
-                        <td>${order.amount}</td>
-                        <td><span class="badge ${paymentClass}">${order.paymentStatus}</span></td>
-                        <td><span class="badge ${orderClass}">${order.orderStatus}</span></td>
-                        <td>
-                            <div class="action-buttons">
-                                <button class="btn-icon btn-view"><i class="bi bi-eye"></i></button>
-                                <button class="btn-icon btn-edit"><i class="bi bi-pencil"></i></button>
-                                <button class="btn-icon btn-delete"><i class="bi bi-trash"></i></button>
-                            </div>
-                        </td>
-                    </tr>
-                `;
-            });
-            
-            table.innerHTML = html;
-            
-            // Add event listeners to action buttons
-            document.querySelectorAll('.btn-icon.btn-view').forEach(button => {
-                button.addEventListener('click', function() {
-                    const orderNo = this.closest('tr').querySelector('td:first-child strong').textContent;
-                    alert('View order: ' + orderNo);
-                });
-            });
-            
-            document.querySelectorAll('.btn-icon.btn-edit').forEach(button => {
-                button.addEventListener('click', function() {
-                    const orderNo = this.closest('tr').querySelector('td:first-child strong').textContent;
-                    alert('Edit order: ' + orderNo);
-                });
-            });
-            
-            document.querySelectorAll('.btn-icon.btn-delete').forEach(button => {
-                button.addEventListener('click', function() {
-                    const orderNo = this.closest('tr').querySelector('td:first-child strong').textContent;
-                    if (confirm('Delete order: ' + orderNo + '?')) {
-                        alert('Order ' + orderNo + ' would be deleted.');
-                    }
-                });
+        // New Order Button functionality
+        const newOrderBtn = document.getElementById('newOrderBtn');
+        if (newOrderBtn) {
+            newOrderBtn.addEventListener('click', function() {
+                alert('Create New Sales Order functionality would open here.');
+                // In a real application, this would open a modal or redirect to a form
             });
         }
 
-        // Handle window resize
-        window.addEventListener('resize', function() {
+        // Load sales orders data
+        loadSalesOrdersData();
+
+        // Load sidebar preference from localStorage
+        const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+        if (savedCollapsed === 'true' && window.innerWidth > 992) {
             const sidebar = document.getElementById('sidebar');
-            const toggleIcon = document.getElementById('toggleIcon');
-            const overlay = document.querySelector('.sidebar-overlay');
+            sidebar.classList.add('collapsed');
+            // Hide all nav-text when collapsed
+            document.querySelectorAll('.nav-text').forEach(text => {
+                text.style.display = 'none';
+            });
+        } else {
+            // Show all nav-text by default when expanded
+            document.querySelectorAll('.nav-text').forEach(text => {
+                text.style.display = 'inline-block';
+            });
+        }
+    });
+
+    // Handle window resize
+    window.addEventListener('resize', function() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.querySelector('.sidebar-overlay');
+        
+        if (window.innerWidth > 992) {
+            // Desktop mode - remove mobile overlay
+            if (overlay) {
+                overlay.remove();
+            }
+            sidebar.classList.remove('active');
             
-            if (window.innerWidth > 992) {
-                // Desktop mode - remove mobile overlay
-                if (overlay) {
-                    overlay.remove();
-                }
-                sidebar.classList.remove('active');
-                
-                // Load saved preference
-                const savedCollapsed = localStorage.getItem('sidebarCollapsed');
-                if (savedCollapsed === 'true') {
-                    sidebar.classList.add('collapsed');
-                    toggleIcon.classList.remove('bi-chevron-left');
-                    toggleIcon.classList.add('bi-chevron-right');
-                    // Hide all nav-text when collapsed
-                    document.querySelectorAll('.nav-text').forEach(text => {
-                        text.style.display = 'none';
-                    });
-                } else {
-                    sidebar.classList.remove('collapsed');
-                    toggleIcon.classList.remove('bi-chevron-right');
-                    toggleIcon.classList.add('bi-chevron-left');
-                    // Show all nav-text when expanded
-                    document.querySelectorAll('.nav-text').forEach(text => {
-                        text.style.display = 'inline-block';
-                    });
-                }
+            // Load saved preference
+            const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+            if (savedCollapsed === 'true') {
+                sidebar.classList.add('collapsed');
+                // Hide all nav-text when collapsed
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'none';
+                });
             } else {
-                // Mobile mode - always show expanded
                 sidebar.classList.remove('collapsed');
-                toggleIcon.classList.remove('bi-chevron-right');
-                toggleIcon.classList.add('bi-chevron-left');
-                // Show all nav-text on mobile
+                // Show all nav-text when expanded
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = 'inline-block';
                 });
             }
-        });
+        } else {
+            // Mobile mode - always show expanded
+            sidebar.classList.remove('collapsed');
+            // Show all nav-text on mobile
+            document.querySelectorAll('.nav-text').forEach(text => {
+                text.style.display = 'inline-block';
+            });
+        }
+    });
 
-        // Demo Info Card Styling (add if not in CSS)
-        const style = document.createElement('style');
-        style.textContent = `
-            .demo-info-card {
-                background: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(16, 185, 129, 0.05));
-                border: 1px solid rgba(16, 185, 129, 0.2);
-                border-radius: 12px;
-                padding: 1.25rem;
-                margin-bottom: 1.5rem;
-                display: flex;
-                align-items: flex-start;
-                gap: 1rem;
+    // Load sales orders data (for demo purposes)
+    function loadSalesOrdersData() {
+        // Demo data for sales orders
+        const salesOrders = [
+            {
+                orderNo: 'SO-2024-001245',
+                date: '2024-01-15',
+                customer: 'Juan Dela Cruz',
+                items: '3 items',
+                amount: '₱ 25,500.00',
+                paymentStatus: 'Paid',
+                orderStatus: 'Completed'
+            },
+            {
+                orderNo: 'SO-2024-001244',
+                date: '2024-01-15',
+                customer: 'Maria Santos',
+                items: '2 items',
+                amount: '₱ 18,750.00',
+                paymentStatus: 'Pending',
+                orderStatus: 'Processing'
+            },
+            {
+                orderNo: 'SO-2024-001243',
+                date: '2024-01-14',
+                customer: 'ABC Corporation',
+                items: '5 items',
+                amount: '₱ 45,200.00',
+                paymentStatus: 'Paid',
+                orderStatus: 'For Delivery'
+            },
+            {
+                orderNo: 'SO-2024-001242',
+                date: '2024-01-14',
+                customer: 'XYZ Enterprises',
+                items: '1 item',
+                amount: '₱ 8,500.00',
+                paymentStatus: 'Overdue',
+                orderStatus: 'Pending'
+            },
+            {
+                orderNo: 'SO-2024-001241',
+                date: '2024-01-13',
+                customer: 'John Smith',
+                items: '4 items',
+                amount: '₱ 32,150.00',
+                paymentStatus: 'Paid',
+                orderStatus: 'Completed'
             }
+        ];
+        
+        const table = document.getElementById('salesOrdersTable');
+        if (!table) return;
+        
+        let html = '';
+        
+        salesOrders.forEach(order => {
+            const paymentClass = order.paymentStatus === 'Paid' ? 'badge-success' : 
+                                order.paymentStatus === 'Pending' ? 'badge-warning' : 'badge-danger';
+            const orderClass = order.orderStatus === 'Completed' ? 'badge-success' : 
+                              order.orderStatus === 'Processing' ? 'badge-warning' : 
+                              order.orderStatus === 'For Delivery' ? 'badge-info' : 'badge-warning';
             
-            .demo-info-icon {
-                background: rgba(16, 185, 129, 0.2);
-                border-radius: 8px;
-                width: 40px;
-                height: 40px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                flex-shrink: 0;
-            }
-            
-            .demo-info-icon i {
-                color: var(--primary-green);
-                font-size: 1.25rem;
-            }
-            
-            .demo-info-content h5 {
-                color: var(--primary-green);
-                margin-bottom: 0.25rem;
-                font-size: 1rem;
-            }
-            
-            .demo-info-content p {
-                color: #6b7280;
-                font-size: 0.875rem;
-                margin-bottom: 0;
-            }
-        `;
-        document.head.appendChild(style);
-    </script>
+            html += `
+                <tr>
+                    <td><strong>${order.orderNo}</strong></td>
+                    <td>${order.date}</td>
+                    <td>${order.customer}</td>
+                    <td>${order.items}</td>
+                    <td>${order.amount}</td>
+                    <td><span class="badge ${paymentClass}">${order.paymentStatus}</span></td>
+                    <td><span class="badge ${orderClass}">${order.orderStatus}</span></td>
+                    <td>
+                        <div class="action-buttons">
+                            <button class="btn-icon btn-view"><i class="bi bi-eye"></i></button>
+                            <button class="btn-icon btn-edit"><i class="bi bi-pencil"></i></button>
+                            <button class="btn-icon btn-delete"><i class="bi bi-trash"></i></button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        table.innerHTML = html;
+        
+        // Add event listeners to action buttons
+        document.querySelectorAll('.btn-icon.btn-view').forEach(button => {
+            button.addEventListener('click', function() {
+                const orderNo = this.closest('tr').querySelector('td:first-child strong').textContent;
+                alert('View order: ' + orderNo);
+            });
+        });
+        
+        document.querySelectorAll('.btn-icon.btn-edit').forEach(button => {
+            button.addEventListener('click', function() {
+                const orderNo = this.closest('tr').querySelector('td:first-child strong').textContent;
+                alert('Edit order: ' + orderNo);
+            });
+        });
+        
+        document.querySelectorAll('.btn-icon.btn-delete').forEach(button => {
+            button.addEventListener('click', function() {
+                const orderNo = this.closest('tr').querySelector('td:first-child strong').textContent;
+                if (confirm('Delete order: ' + orderNo + '?')) {
+                    alert('Order ' + orderNo + ' would be deleted.');
+                }
+            });
+        });
+    }
+
+    // Logout Function
+    function logout() {
+        if (confirm('Reset demo to initial state?')) {
+            localStorage.removeItem('sidebarCollapsed');
+            location.reload();
+        }
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+        // Ctrl + R for reset
+        if (e.ctrlKey && e.key === 'r') {
+            e.preventDefault();
+            logout();
+        }
+        // Ctrl + B to toggle sidebar (desktop only)
+        else if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
+            e.preventDefault();
+            toggleSidebar();
+        }
+    });
+</script>
 </body>
 </html>

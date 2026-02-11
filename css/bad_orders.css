@@ -1,8 +1,16 @@
-  /* Main Container */
+  * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        /* Main Container */
+        .page-content {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
         .page-content.active {
-            padding: 20px;
-            max-width: 1400px;
-            margin: 0 auto;
+          display: block;
         }
         
         /* Bad Order Cards */
