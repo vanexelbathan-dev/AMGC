@@ -97,7 +97,7 @@
                         <i class="bi bi-list"></i>
                     </button>
                     <div class="page-title">
-                        <h2><i class="bi bi-box me-2"></i>Purchase Orders</h2>
+                        <h2>Purchase Orders</h2>
                         <p>Manage and track all purchase orders</p>
                     </div>
                 </div>
