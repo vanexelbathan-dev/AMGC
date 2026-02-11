@@ -344,11 +344,7 @@
         
         /* Responsive Design */
         @media (max-width: 768px) {
-            .navbar-top {
-                flex-direction: column;
-                align-items: stretch;
-                gap: 1rem;
-            }
+
             
             .user-info-top {
                 justify-content: space-between;

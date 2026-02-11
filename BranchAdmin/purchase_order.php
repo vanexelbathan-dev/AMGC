@@ -90,7 +90,7 @@
         <!-- Main Content -->
         <div class="main-content" id="mainContent">
             <!-- PURCHASE ORDERS TABLE CONTENT -->
-            <div class="page-content active">
+            <div id="dashboardContent" class="page-content active">
                 <!-- Navbar Top - Same as Trip Tickets -->
                 <div class="navbar-top">
                     <button class="mobile-menu-btn" id="mobileMenuBtn">
@@ -98,7 +98,7 @@
                     </button>
                     <div class="page-title">
                         <h2>Purchase Orders</h2>
-                        <p>Manage and track all purchase orders</p>
+                        <p id="dashboardSubtitle">Manage and track all purchase orders</p>
                     </div>
                 </div>
 
