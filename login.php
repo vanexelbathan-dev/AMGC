@@ -34,11 +34,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_SESSION['user_email'] = $user['email'];
                 $_SESSION['role'] = $user['role'];
                 $_SESSION['department'] = $user['department'];
+                $_SESSION['branch_id'] = isset($user['branch_id']) ? $user['branch_id'] : 0; // Add branch_id to session
                 $_SESSION['logged_in'] = true;
 
                 // Debug: Check what's being set
                 error_log("Login successful for user ID: " . $user['user_id']);
-                error_log("Session variables set: user_id=" . $_SESSION['user_id'] . ", first_name=" . $_SESSION['first_name']);
+                error_log("Session variables set: user_id=" . $_SESSION['user_id'] . ", branch_id=" . $_SESSION['branch_id']);
 
                 // Redirect based on user role
                 $redirect_page = getDashboardByRole($user['role']);

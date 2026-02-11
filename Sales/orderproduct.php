@@ -1,4 +1,3 @@
-<!DOCTYPE html>
 <?php
 require_once '../config/database.php';
 require_once '../config/session_handler.php';
@@ -7,13 +6,11 @@ require_once '../config/session_handler.php';
 requireLogin();
 requireRole(['sales']);
 
-// Get all items with available stock
-$items_result = $conn->query("SELECT i.*, 
-                              COALESCE(SUM(inv.quantity_available), 0) as stock
+// Get all items with available stock from items table
+$items_result = $conn->query("SELECT i.item_id, i.item_code, i.item_name, i.description, i.category, 
+                              i.stock, i.unit_type, i.unit_price, i.reorder_level, i.status
                               FROM items i
-                              LEFT JOIN inventory inv ON i.item_id = inv.item_id
                               WHERE i.status = 'active'
-                              GROUP BY i.item_id
                               ORDER BY i.item_code ASC");
 $items = [];
 if ($items_result) {
@@ -21,18 +18,22 @@ if ($items_result) {
 }
 
 // Get all customers for dropdown
-$customers_result = $conn->query("SELECT customer_id, customer_name FROM customers WHERE status = 'active' ORDER BY customer_name ASC");
+$customers_result = $conn->query("SELECT customer_id, customer_name, email, phone_number, address FROM customers WHERE status = 'active' ORDER BY customer_name ASC");
 $customers = [];
 if ($customers_result) {
     $customers = $customers_result->fetch_all(MYSQLI_ASSOC);
 }
-
+ 
 // Handle order submission via AJAX
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'submit_order') {
     header('Content-Type: application/json');
     
     try {
         $conn->begin_transaction();
+        
+        // Log incoming data for debugging
+        error_log("Order submission started");
+        error_log("POST data: " . print_r($_POST, true));
         
         $customer_id = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
         $customer_name = isset($_POST['customer_name']) ? trim($_POST['customer_name']) : '';
@@ -41,24 +42,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $address = isset($_POST['address']) ? trim($_POST['address']) : '';
         $items_data = isset($_POST['items']) ? json_decode($_POST['items'], true) : [];
         
+        error_log("Customer ID: $customer_id, Customer Name: $customer_name");
+        error_log("Items data count: " . count($items_data));
+        
         if (empty($items_data)) {
             throw new Exception("No items in cart");
         }
+        
+        // If customer_id is 0 and customer_name is provided, create new customer
+        if ($customer_id === 0 && !empty($customer_name)) {
+            error_log("Creating/updating customer: $customer_name");
+            
+            // Check if customer already exists with this name
+            $check_sql = "SELECT customer_id FROM customers WHERE customer_name = ? AND status = 'active'";
+            $check_stmt = $conn->prepare($check_sql);
+            $check_stmt->bind_param('s', $customer_name);
+            $check_stmt->execute();
+            $check_result = $check_stmt->get_result();
+            
+            if ($check_result->num_rows > 0) {
+                $existing_customer = $check_result->fetch_assoc();
+                $customer_id = $existing_customer['customer_id'];
+                
+                // Update existing customer info
+                $update_sql = "UPDATE customers SET email = ?, phone_number = ?, address = ? WHERE customer_id = ?";
+                $update_stmt = $conn->prepare($update_sql);
+                $update_stmt->bind_param('sssi', $email, $phone, $address, $customer_id);
+                if (!$update_stmt->execute()) {
+                    throw new Exception("Failed to update customer: " . $update_stmt->error);
+                }
+                error_log("Updated existing customer ID: $customer_id");
+            } else {
+                // Create new customer - generate customer code
+                $customer_code = 'CUST' . str_pad(rand(1000, 9999), 4, '0', STR_PAD_LEFT);
+                $sql_new_cust = "INSERT INTO customers (customer_name, customer_code, email, phone_number, address, status) VALUES (?, ?, ?, ?, ?, 'active')";
+                $stmt_new_cust = $conn->prepare($sql_new_cust);
+                if (!$stmt_new_cust) {
+                    throw new Exception("Database error preparing new customer: " . $conn->error);
+                }
+                $stmt_new_cust->bind_param('sssss', $customer_name, $customer_code, $email, $phone, $address);
+                if (!$stmt_new_cust->execute()) {
+                    throw new Exception("Failed to create new customer: " . $stmt_new_cust->error);
+                }
+                $customer_id = $stmt_new_cust->insert_id;
+                error_log("Created new customer ID: $customer_id");
+            }
+        }
+        
+        if ($customer_id === 0) {
+            throw new Exception("Customer is required");
+        }
+        
+        error_log("Using customer ID: $customer_id");
         
         // Validate stock availability before processing
         foreach ($items_data as $item) {
             $item_id = (int)$item['id'];
             $quantity = (int)$item['quantity'];
             
-            // Check current stock
-            $stock_check = $conn->query("SELECT COALESCE(SUM(quantity_available), 0) as stock 
-                                        FROM inventory 
-                                        WHERE item_id = $item_id AND warehouse_id = 1");
+            // Check current stock from items table
+            $stock_check = $conn->query("SELECT stock FROM items WHERE item_id = $item_id");
             $stock_row = $stock_check->fetch_assoc();
-            $current_stock = (int)$stock_row['stock'];
+            $current_stock = $stock_row ? (int)$stock_row['stock'] : 0;
             
             if ($quantity > $current_stock) {
-                throw new Exception("Insufficient stock for item ID: $item_id. Available: $current_stock, Requested: $quantity");
+                $item_name = isset($item['name']) ? $item['name'] : "Item ID: $item_id";
+                throw new Exception("Insufficient stock for $item_name. Available: $current_stock, Requested: $quantity");
             }
         }
         
@@ -71,24 +120,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $so_number = 'SO-' . date('Ymd') . '-' . substr(time(), -4) . rand(100, 999);
         $order_date = date('Y-m-d H:i:s');
         $user_id = getUserId();
-        $branch_id = 1; // Default branch
-        
+        $branch_id = getUserBranchId();
+
+        error_log("Creating sales order: SO Number: $so_number, User ID: $user_id, Branch ID: $branch_id, Customer ID: $customer_id, Total: $total_amount");
+
+        if ($user_id === 0) {
+            throw new Exception("User session invalid. Please log in again.");
+        }
+
         $sql = "INSERT INTO sales_orders (so_number, customer_id, branch_id, order_date, total_amount, order_status, created_by)
                 VALUES (?, ?, ?, ?, ?, ?, ?)";
         $stmt = $conn->prepare($sql);
-        $status = 'pending';
-        $stmt->bind_param('siisdsi', $so_number, $customer_id, $branch_id, $order_date, $total_amount, $status, $user_id);
+        if (!$stmt) {
+            throw new Exception("Prepare failed: " . $conn->error);
+        }
         
+        $status = 'pending';
+        // Fixed: Using 'siisdss' format
+        // s = string (so_number)
+        // i = integer (customer_id)
+        // i = integer (branch_id)
+        // s = string (order_date)
+        // d = double (total_amount)
+        // s = string (order_status)
+        // i = integer (created_by)
+        $stmt->bind_param('siisdss', $so_number, $customer_id, $branch_id, $order_date, $total_amount, $status, $user_id);
+
         if (!$stmt->execute()) {
             throw new Exception("Error creating order: " . $stmt->error);
         }
         
         $so_id = $stmt->insert_id;
+        error_log("Sales order created with ID: $so_id");
         
         // Insert order items and deduct inventory
         $sql_items = "INSERT INTO sales_order_items (so_id, item_id, quantity_ordered, unit_price)
                      VALUES (?, ?, ?, ?)";
         $stmt_items = $conn->prepare($sql_items);
+        if (!$stmt_items) {
+            throw new Exception("Prepare failed for order items: " . $conn->error);
+        }
         
         foreach ($items_data as $item) {
             $item_id = (int)$item['id'];
@@ -100,12 +171,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 throw new Exception("Error adding order item: " . $stmt_items->error);
             }
             
-            // Deduct inventory with proper locking
-            $sql_deduct = "UPDATE inventory 
-                          SET quantity_available = quantity_available - ? 
-                          WHERE item_id = ? AND warehouse_id = 1 
-                          AND quantity_available >= ?";
+            error_log("Added order item: Item ID: $item_id, Qty: $quantity, Price: $unit_price");
+            
+            // Deduct inventory from items table stock column
+            $sql_deduct = "UPDATE items 
+                          SET stock = stock - ? 
+                          WHERE item_id = ? 
+                          AND stock >= ?";
             $stmt_deduct = $conn->prepare($sql_deduct);
+            if (!$stmt_deduct) {
+                throw new Exception("Prepare failed for stock update: " . $conn->error);
+            }
             $stmt_deduct->bind_param('iii', $quantity, $item_id, $quantity);
             
             if (!$stmt_deduct->execute()) {
@@ -115,16 +191,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             if ($stmt_deduct->affected_rows === 0) {
                 throw new Exception("Failed to deduct inventory for item ID: $item_id. Stock may have changed.");
             }
+            
+            error_log("Updated item stock: Item ID: $item_id, Deducted: $quantity");
         }
         
         $conn->commit();
-        echo json_encode(['success' => true, 'message' => 'Order submitted successfully!', 'so_number' => $so_number]);
+        error_log("Order submitted successfully! SO Number: $so_number");
+        
+        echo json_encode([
+            'success' => true, 
+            'message' => 'Order submitted successfully!', 
+            'so_number' => $so_number,
+            'so_id' => $so_id
+        ]);
+        exit;
         
     } catch (Exception $e) {
         $conn->rollback();
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        error_log("Order submission error: " . $e->getMessage());
+        echo json_encode([
+            'success' => false, 
+            'message' => $e->getMessage()
+        ]);
+        exit;
     }
-    exit;
 }
 ?>
 <html lang="en">
@@ -303,6 +393,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         @keyframes slideOut {
             from { transform: translateX(0); opacity: 1; }
             to { transform: translateX(100%); opacity: 0; }
+        }
+        
+        /* Success Modal Styles */
+        .success-icon {
+            font-size: 4rem;
+            color: #28a745;
+            margin-bottom: 20px;
+        }
+        
+        .order-details {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        
+        .order-details h6 {
+            color: #495057;
+            margin-bottom: 10px;
         }
         
         /* MOBILE PREVIEW STYLES ONLY */
@@ -511,16 +620,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             
             <div class="sidebar-menu">
                 <ul class="nav flex-column">
-                    <li class="nav-item">
+                   <li class="nav-item">
                         <a class="nav-link" href="currentinventory.php">
                             <i class="bi bi-boxes"></i>
                             <span class="nav-text">Current Inventory</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link active" href="orderproduct.php">
+                        <a class="nav-link" href="orderproduct.php">
                             <i class="bi bi-bag"></i>
                             <span class="nav-text">Order Product</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="sales_order.php">
+                            <i class="bi bi-list-check"></i>
+                            <span class="nav-text">Sales Orders</span>
                         </a>
                     </li>
                     <li class="nav-item">
@@ -590,7 +705,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                     <select class="form-select" id="customerSelect">
                                         <option value="">-- Choose Customer --</option>
                                         <?php foreach ($customers as $customer): ?>
-                                            <option value="<?php echo $customer['customer_id']; ?>"><?php echo htmlspecialchars($customer['customer_name']); ?></option>
+                                            <option value="<?php echo $customer['customer_id']; ?>" 
+                                                    data-email="<?php echo htmlspecialchars($customer['email']); ?>"
+                                                    data-phone="<?php echo htmlspecialchars($customer['phone_number']); ?>"
+                                                    data-address="<?php echo htmlspecialchars($customer['address']); ?>">
+                                                <?php echo htmlspecialchars($customer['customer_name']); ?>
+                                            </option>
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
@@ -702,10 +822,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         </div>
     </div>
 
+    <!-- Success Modal -->
+    <div class="modal fade" id="successModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header border-0">
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center py-4">
+                    <div class="success-icon">
+                        <i class="bi bi-check-circle-fill"></i>
+                    </div>
+                    <h4 class="modal-title mb-3">Order Submitted Successfully!</h4>
+                    
+                    <div class="order-details">
+                        <h6>Order Details</h6>
+                        <p class="mb-2"><strong>Order Number:</strong> <span id="successSoNumber">-</span></p>
+                        <p class="mb-2"><strong>Date:</strong> <span id="successOrderDate">-</span></p>
+                        <p class="mb-0"><strong>Status:</strong> <span class="badge bg-success">Pending</span></p>
+                    </div>
+                    
+                    <p class="text-muted">Your order has been submitted and is being processed. You can track its status in the orders section.</p>
+                </div>
+                <div class="modal-footer border-0 justify-content-center">
+                    <button type="button" class="btn btn-primary" onclick="createNewOrder()">
+                        <i class="bi bi-plus-circle me-2"></i> Create New Order
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="viewOrders()">
+                        <i class="bi bi-list-ul me-2"></i> View Orders
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Inventory data from database - IMPORTANT: Ensure stock is a number
+        // Inventory data from database
         const inventory = <?php echo json_encode(array_map(function($item) {
             return [
                 'id' => (int)$item['item_id'],
@@ -724,6 +878,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             document.getElementById('mobileMenuBtn').addEventListener('click', function() {
                 document.getElementById('sidebar').classList.toggle('show');
             });
+            
+            // Add customer select change listener for autofill
+            document.getElementById('customerSelect').addEventListener('change', function() {
+                const selectedOption = this.options[this.selectedIndex];
+                if (this.value) {
+                    const email = selectedOption.getAttribute('data-email') || '';
+                    const phone = selectedOption.getAttribute('data-phone') || '';
+                    const address = selectedOption.getAttribute('data-address') || '';
+                    
+                    document.getElementById('customerEmail').value = email;
+                    document.getElementById('customerPhone').value = phone;
+                    document.getElementById('customerAddress').value = address;
+                    document.getElementById('newCustomerName').value = '';
+                } else {
+                    document.getElementById('customerEmail').value = '';
+                    document.getElementById('customerPhone').value = '';
+                    document.getElementById('customerAddress').value = '';
+                }
+            });
+            
+            document.getElementById('newCustomerName').addEventListener('input', function() {
+                if (this.value.trim() !== '') {
+                    document.getElementById('customerSelect').value = '';
+                    document.getElementById('customerEmail').value = '';
+                    document.getElementById('customerPhone').value = '';
+                    document.getElementById('customerAddress').value = '';
+                }
+            });
+            
             updateCart();
         }
 
@@ -738,7 +921,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             return Math.max(0, product.stock - inCart);
         }
 
-        // Render product cards with plus/minus buttons - FIXED VERSION
+        // Render product cards with plus/minus buttons
         function renderProducts() {
             const container = document.getElementById('productsContainer');
             container.innerHTML = inventory.map(product => {
@@ -792,7 +975,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }).join('');
         }
 
-        // Decrease quantity - FIXED
+        // Decrease quantity
         function decreaseQuantity(productId) {
             const qtyInput = document.getElementById(`qty-${productId}`);
             let currentValue = parseInt(qtyInput.value) || 0;
@@ -802,7 +985,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
         }
 
-        // Increase quantity - FIXED
+        // Increase quantity
         function increaseQuantity(productId) {
             const qtyInput = document.getElementById(`qty-${productId}`);
             const availableStock = getAvailableStock(productId);
@@ -822,7 +1005,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             qtyInput.max = availableStock;
         }
 
-        // Validate quantity input and update button state - FIXED
+        // Validate quantity input and update button state
         function validateQuantity(productId) {
             const qtyInput = document.getElementById(`qty-${productId}`);
             const addButton = document.getElementById(`btn-add-${productId}`);
@@ -852,7 +1035,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             return value;
         }
 
-        // Add to cart with validation - FIXED
+        // Add to cart with validation
         function addToCart(productId) {
             const product = inventory.find(p => p.id === productId);
             const qtyInput = document.getElementById(`qty-${productId}`);
@@ -873,7 +1056,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             const existingItem = cart.find(item => item.id === productId);
             
             if (existingItem) {
-                // Check if adding more would exceed stock
                 const newTotal = existingItem.quantity + quantity;
                 if (newTotal > product.stock) {
                     errorDiv.textContent = `Cannot add more than ${product.stock} total`;
@@ -890,18 +1072,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 });
             }
 
-            // Reset quantity input and update UI
             qtyInput.value = '0';
             updateCart();
-            renderProducts(); // Re-render to update available stock
+            renderProducts();
             
-            // Show success feedback
             showToast(`${quantity} × ${product.name} added to cart!`);
         }
 
         // Show toast notification
         function showToast(message) {
-            // Remove existing toast if any
             const existingToast = document.querySelector('.toast-notification');
             if (existingToast) {
                 existingToast.remove();
@@ -918,14 +1097,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             
             document.body.appendChild(toast);
             
-            // Auto remove after 3 seconds
             setTimeout(() => {
                 toast.style.animation = 'slideOut 0.3s ease-out';
                 setTimeout(() => toast.remove(), 300);
             }, 3000);
         }
 
-        // Update cart display - FIXED
+        // Update cart display
         function updateCart() {
             const cartItemsDiv = document.getElementById('cartItems');
             const subtotalDiv = document.getElementById('subtotal');
@@ -971,15 +1149,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             totalPriceDiv.textContent = `₱${subtotal.toFixed(2)}`;
         }
 
-        // Remove from cart - FIXED
+        // Remove from cart
         function removeFromCart(productId) {
             cart = cart.filter(item => item.id !== productId);
             updateCart();
-            renderProducts(); // Re-render to update available stock
+            renderProducts();
             showToast('Item removed from cart');
         }
 
-        // Clear cart - FIXED
+        // Clear cart
         function clearCart() {
             if (cart.length === 0) {
                 showToast('Cart is already empty');
@@ -989,19 +1167,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             if (confirm('Clear all items from cart?')) {
                 cart = [];
                 updateCart();
-                renderProducts(); // Re-render all products
+                renderProducts();
                 showToast('Cart cleared');
             }
         }
 
-        // View cart and confirm - UPDATED for proper validation
+        // View cart and confirm
         function viewCart() {
             if (cart.length === 0) {
                 showToast('Please add items to cart first');
                 return;
             }
 
-            // Validate customer information
             const customerSelect = document.getElementById('customerSelect');
             const newCustomer = document.getElementById('newCustomerName').value.trim();
             const email = document.getElementById('customerEmail').value.trim();
@@ -1031,14 +1208,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 return;
             }
 
-            // Populate review modal
             populateReviewModal(customerName, email, phone, address);
             
             const modal = new bootstrap.Modal(document.getElementById('cartModal'));
             modal.show();
         }
 
-        // Populate review modal - SEPARATED FUNCTION
+        // Populate review modal
         function populateReviewModal(customerName, email, phone, address) {
             const reviewItems = document.getElementById('reviewItems');
             reviewItems.innerHTML = `
@@ -1086,7 +1262,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             document.getElementById('reviewTotal').textContent = `₱${subtotal.toFixed(2)}`;
         }
 
-        // Submit order - FIXED with better error handling
+        // Submit order - FIXED VERSION
         function submitOrder() {
             const customerSelect = document.getElementById('customerSelect');
             const customer_id = customerSelect.value ? parseInt(customerSelect.value) : 0;
@@ -1095,7 +1271,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             const phone = document.getElementById('customerPhone').value.trim();
             const address = document.getElementById('customerAddress').value.trim();
             
-            // Validate required fields
             if (!customer_id && !customer_name) {
                 showToast('Please select or enter a customer');
                 return;
@@ -1111,6 +1286,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 return;
             }
             
+            const cartData = cart.map(item => ({
+                id: item.id,
+                name: item.name,
+                price: item.price,
+                quantity: item.quantity,
+                sku: item.sku
+            }));
+            
             const formData = new FormData();
             formData.append('action', 'submit_order');
             formData.append('customer_id', customer_id);
@@ -1118,50 +1301,99 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             formData.append('email', email);
             formData.append('phone', phone);
             formData.append('address', address);
-            formData.append('items', JSON.stringify(cart));
+            formData.append('items', JSON.stringify(cartData));
             
-            // Show loading state
             const submitBtn = document.querySelector('#cartModal .btn-success');
             const originalText = submitBtn.innerHTML;
             submitBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Processing...';
             submitBtn.disabled = true;
             
-            fetch('', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    showToast(`Order ${data.so_number} submitted successfully!`);
-                    
-                    // Reset everything
-                    cart = [];
-                    updateCart();
-                    document.getElementById('customerSelect').value = '';
-                    document.getElementById('newCustomerName').value = '';
-                    document.getElementById('customerEmail').value = '';
-                    document.getElementById('customerPhone').value = '';
-                    document.getElementById('customerAddress').value = '';
-                    
-                    // Close modal
-                    const modal = bootstrap.Modal.getInstance(document.getElementById('cartModal'));
-                    modal.hide();
-                    
-                    // Reload page to refresh stock data
-                    setTimeout(() => location.reload(), 1000);
-                } else {
-                    showToast('Error: ' + (data.message || 'Failed to submit order'));
-                    submitBtn.innerHTML = originalText;
-                    submitBtn.disabled = false;
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                showToast('Error submitting order. Please try again.');
-                submitBtn.innerHTML = originalText;
-                submitBtn.disabled = false;
-            });
+            console.log('Submitting order...');
+
+fetch('', {
+    method: 'POST',
+    body: formData
+})
+.then(response => {
+    console.log('Response status:', response.status);
+    if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    return response.text();
+})
+.then(text => {
+    console.log('Raw response:', text);
+    
+    // Check if response is empty or contains HTML error
+    if (!text || text.trim() === '') {
+        throw new Error('Empty response from server');
+    }
+    
+    // If response starts with '<', it's probably an HTML error page
+    if (text.trim().startsWith('<')) {
+        console.error('HTML response received instead of JSON:', text.substring(0, 500));
+        throw new Error('Server returned HTML instead of JSON');
+    }
+    
+    try {
+        return JSON.parse(text);
+    } catch (e) {
+        console.error('JSON parse error:', e);
+        console.error('Response text:', text);
+        throw new Error('Invalid JSON response from server');
+    }
+})
+.then(data => {
+    console.log('Parsed response:', data);
+    
+    const cartModal = bootstrap.Modal.getInstance(document.getElementById('cartModal'));
+    if (cartModal) {
+        cartModal.hide();
+    }
+    
+    if (data.success) {
+        cart = [];
+        updateCart();
+        renderProducts();
+        
+        document.getElementById('successSoNumber').textContent = data.so_number;
+        document.getElementById('successOrderDate').textContent = new Date().toLocaleDateString();
+        const successModal = new bootstrap.Modal(document.getElementById('successModal'));
+        successModal.show();
+        
+        setTimeout(() => {
+            document.getElementById('customerSelect').value = '';
+            document.getElementById('newCustomerName').value = '';
+            document.getElementById('customerEmail').value = '';
+            document.getElementById('customerPhone').value = '';
+            document.getElementById('customerAddress').value = '';
+        }, 500);
+        
+    } else {
+        showToast('Error: ' + (data.message || 'Failed to submit order'));
+        submitBtn.innerHTML = originalText;
+        submitBtn.disabled = false;
+    }
+})
+.catch(error => {
+    console.error('Error:', error.message);
+    showToast('Error: ' + error.message);
+    submitBtn.innerHTML = originalText;
+    submitBtn.disabled = false;
+});
+        }
+
+        // Create new order
+        function createNewOrder() {
+            const successModal = bootstrap.Modal.getInstance(document.getElementById('successModal'));
+            if (successModal) {
+                successModal.hide();
+            }
+        }
+
+        // View orders
+        function viewOrders() {
+            window.location.href = 'sales_order.php';
         }
 
         // Initialize on page load

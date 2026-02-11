@@ -201,13 +201,19 @@ $success = '';
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link active" href="sales_order.php">
+                            <i class="bi bi-list-check"></i>
+                            <span class="nav-text">Sales Orders</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="customer.php">
                             <i class="bi bi-people"></i>
                             <span class="nav-text">Customer</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link active" href="returnedmerchandise.php">
+                        <a class="nav-link" href="returnedmerchandise.php">
                             <i class="bi bi-arrow-counterclockwise"></i>
                             <span class="nav-text">Returned Merchandise</span>
                         </a>
