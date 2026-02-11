@@ -12,7 +12,12 @@ function getUserName() {
 function getUserRole() {
     return $_SESSION['role'] ?? '';
 }
-
+function getUserId() {
+    return isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 0; // Return user_id from session or 0 if not set
+}
+function getUserBranchId() {
+    return isset($_SESSION['branch_id']) ? $_SESSION['branch_id'] : 0; // Return branch_id from session or 0 if not set
+}
 /* Check role */
 function hasRole($required_roles) {
     if (!isLoggedIn()) return false;

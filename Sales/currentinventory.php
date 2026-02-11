@@ -7,11 +7,17 @@ require_once '../config/template_helper.php';
 requireLogin();
 requireRole(['sales']);
 
-// Get inventory for sales view (all available inventory across branches or just this branch)
-$query = "SELECT inv.*, i.item_code, i.item_name, i.category, i.unit_price, i.reorder_level
-          FROM inventory inv
-          JOIN items i ON inv.item_id = i.item_id
-          WHERE i.status = 'active' AND inv.quantity_available > 0
+// Get inventory for sales view - from items table with stock tracking
+$query = "SELECT 
+            i.item_id,
+            i.item_code, 
+            i.item_name, 
+            i.category, 
+            i.unit_price, 
+            i.reorder_level,
+            COALESCE(i.stock, 0) as current_stock
+          FROM items i
+          WHERE i.status = 'active'
           ORDER BY i.item_name ASC";
 
 $stmt = $conn->prepare($query);
@@ -35,7 +41,7 @@ $total_qty_available = 0;
 $total_value = 0;
 
 foreach ($inventory_items as $item) {
-    $qty_available = $item['quantity_on_hand'] - $item['quantity_reserved'];
+    $qty_available = $item['current_stock'];
     $total_qty_available += $qty_available;
     $total_value += ($qty_available * $item['unit_price']);
 }
@@ -70,7 +76,7 @@ foreach ($inventory_items as $item) {
             <div class="sidebar-menu">
                 <ul class="nav flex-column">
                     <li class="nav-item">
-                        <a class="nav-link active" href="currentinventory.php">
+                        <a class="nav-link" href="currentinventory.php">
                             <i class="bi bi-boxes"></i>
                             <span class="nav-text">Current Inventory</span>
                         </a>
@@ -79,6 +85,12 @@ foreach ($inventory_items as $item) {
                         <a class="nav-link" href="orderproduct.php">
                             <i class="bi bi-bag"></i>
                             <span class="nav-text">Order Product</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="sales_order.php">
+                            <i class="bi bi-list-check"></i>
+                            <span class="nav-text">Sales Orders</span>
                         </a>
                     </li>
                     <li class="nav-item">
@@ -223,7 +235,7 @@ foreach ($inventory_items as $item) {
                             <?php if (count($inventory_items) > 0): ?>
                                 <?php foreach ($inventory_items as $item): ?>
                                     <?php 
-                                        $qty_available = $item['quantity_on_hand'] - $item['quantity_reserved'];
+                                        $qty_available = $item['current_stock'];
                                         $line_value = $qty_available * $item['unit_price'];
                                         $status_badge = ($qty_available < $item['reorder_level']) ? 'bg-warning' : 'bg-success';
                                         $status_text = ($qty_available < $item['reorder_level']) ? 'Low Stock' : 'In Stock';
@@ -235,8 +247,8 @@ foreach ($inventory_items as $item) {
                                         <td>
                                             <span class="badge bg-info"><?php echo $qty_available; ?> units</span>
                                         </td>
-                                        <td>$<?php echo number_format($item['unit_price'], 2); ?></td>
-                                        <td>$<?php echo number_format($line_value, 2); ?></td>
+                                        <td>₱<?php echo number_format($item['unit_price'], 2); ?></td>
+                                        <td>₱<?php echo number_format($line_value, 2); ?></td>
                                         <td><span class="badge <?php echo $status_badge; ?>"><?php echo $status_text; ?></span></td>
                                     </tr>
                                 <?php endforeach; ?>
@@ -245,61 +257,6 @@ foreach ($inventory_items as $item) {
                                     <td colspan="7" class="text-center text-muted py-4">No inventory items available</td>
                                 </tr>
                             <?php endif; ?>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">SKU-004</span></td>
-                                <td>Wireless Mouse</td>
-                                <td>Electronics</td>
-                                <td>
-                                    <span class="badge bg-danger">2 units</span>
-                                </td>
-                                <td>$19.99</td>
-                                <td>$39.98</td>
-                                <td><span class="badge bg-danger">Critical Stock</span></td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">SKU-005</span></td>
-                                <td>USB-C Cable</td>
-                                <td>Electronics</td>
-                                <td>
-                                    <span class="badge bg-success">256 units</span>
-                                </td>
-                                <td>$9.99</td>
-                                <td>$2,557.44</td>
-                                <td><span class="badge bg-success">In Stock</span></td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">SKU-006</span></td>
-                                <td>Desk Organizer</td>
-                                <td>Furniture</td>
-                                <td>
-                                    <span class="badge bg-success">75 units</span>
-                                </td>
-                                <td>$29.99</td>
-                                <td>$2,249.25</td>
-                                <td><span class="badge bg-success">In Stock</span></td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">SKU-007</span></td>
-                                <td>Notebook Set</td>
-                                <td>Food</td>
-                                <td>
-                                    <span class="badge bg-warning">5 units</span>
-                                </td>
-                                <td>$12.99</td>
-                                <td>$64.95</td>
-                                <td><span class="badge bg-warning">Low Stock</span></td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">SKU-008</span></td>
-                                <td>Coffee Maker</td>
-                                <td>Electronics</td>
-                                <td>
-                                    <span class="badge bg-success">18 units</span>
-                                </td>
-                                <td>$79.99</td>
-                                <td>$1,439.82</td>
-                                <td><span class="badge bg-success">In Stock</span></td>
-                            </tr>
                         </tbody>
                     </table>
                 </div>
