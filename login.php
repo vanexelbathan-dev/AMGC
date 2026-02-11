@@ -26,12 +26,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if (password_verify($password, $user['password_hash'])) {
 
+                // Set ALL necessary session variables
                 $_SESSION['user_id'] = $user['user_id'];
+                $_SESSION['first_name'] = $user['first_name'];
+                $_SESSION['last_name'] = $user['last_name'];
                 $_SESSION['user_name'] = $user['first_name'] . " " . $user['last_name'];
                 $_SESSION['user_email'] = $user['email'];
                 $_SESSION['role'] = $user['role'];
                 $_SESSION['department'] = $user['department'];
                 $_SESSION['logged_in'] = true;
+
+                // Debug: Check what's being set
+                error_log("Login successful for user ID: " . $user['user_id']);
+                error_log("Session variables set: user_id=" . $_SESSION['user_id'] . ", first_name=" . $_SESSION['first_name']);
 
                 // Redirect based on user role
                 $redirect_page = getDashboardByRole($user['role']);
@@ -473,7 +480,7 @@ function getDashboardByRole($role) {
             <div class="mobile-logo">
                 <!-- Mobile Logo - Replace with your mobile logo image -->
                 <img src="Pictures/amgc3DLogo.png" alt="AMGC Logo">
-</div>
+            </div>
 
             <!-- Header -->
             <div class="form-header">

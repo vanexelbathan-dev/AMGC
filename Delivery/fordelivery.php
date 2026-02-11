@@ -107,6 +107,76 @@
     </style>
 </head>
 <body>
+    <?php
+    // Start session and include database connection
+    session_start();
+    require_once '../config/database.php';
+    
+    // Check if user is logged in
+    if (!isset($_SESSION['user_id']) || !isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
+        header("Location: ../login.php");
+        exit();
+    }
+    
+    // Get current user info
+    $user_id = $_SESSION['user_id'];
+    $user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Driver User';
+    $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'delivery';
+    
+    // Get delivery statistics
+    try {
+        // Total for delivery (sales orders with status 'ready' or 'processing')
+        $query = "SELECT COUNT(*) as total_for_delivery FROM sales_orders WHERE order_status IN ('processing', 'ready')";
+        $result = $conn->query($query);
+        $total_for_delivery = $result->fetch_assoc()['total_for_delivery'];
+        
+        // In transit (trip tickets in progress)
+        $query = "SELECT COUNT(*) as in_transit FROM trip_tickets WHERE trip_status = 'in-progress'";
+        $result = $conn->query($query);
+        $in_transit = $result->fetch_assoc()['in_transit'];
+        
+        // Completed today (deliveries completed today)
+        $query = "
+            SELECT COUNT(DISTINCT d.delivery_id) as completed_today 
+            FROM deliveries d
+            JOIN sales_orders so ON d.so_id = so.so_id
+            WHERE d.delivery_status = 'delivered' 
+            AND DATE(d.delivery_date) = CURDATE()
+        ";
+        $result = $conn->query($query);
+        $completed_today = $result->fetch_assoc()['completed_today'];
+        
+        // Get delivery orders data
+        $query = "
+            SELECT 
+                so.so_id,
+                so.so_number,
+                c.customer_name,
+                c.contact_person,
+                c.phone_number,
+                c.address,
+                c.city,
+                so.order_status,
+                so.total_amount,
+                so.order_date,
+                so.delivery_date,
+                GROUP_CONCAT(CONCAT(i.item_name, ' (', soi.quantity_ordered, ')') SEPARATOR '; ') as items
+            FROM sales_orders so
+            JOIN customers c ON so.customer_id = c.customer_id
+            LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
+            LEFT JOIN items i ON soi.item_id = i.item_id
+            WHERE so.order_status IN ('processing', 'ready', 'confirmed')
+            GROUP BY so.so_id
+            ORDER BY so.delivery_date ASC, so.order_date ASC
+        ";
+        $result = $conn->query($query);
+        $delivery_orders = $result->fetch_all(MYSQLI_ASSOC);
+        
+    } catch (Exception $e) {
+        die("Database error: " . $e->getMessage());
+    }
+    ?>
+
     <!-- MOBILE MENU BUTTON -->
     <button class="mobile-menu-btn" id="mobileMenuBtn">
         <i class="bi bi-list"></i>
@@ -149,10 +219,10 @@
                 
                 <div class="user-info-top">
                     <div class="user-profile-top">
-                        <div class="user-avatar-top" id="userAvatar">AD</div>
+                        <div class="user-avatar-top" id="userAvatar"><?php echo substr($user_name, 0, 2); ?></div>
                         <div class="user-details-top">
-                            <span class="user-name-top" id="userName">Driver User</span>
-                            <span class="user-role-top" id="userRole">Delivery Driver</span>
+                            <span class="user-name-top" id="userName"><?php echo htmlspecialchars($user_name); ?></span>
+                            <span class="user-role-top" id="userRole"><?php echo htmlspecialchars(ucfirst($user_role)); ?></span>
                         </div>
                     </div>
                     
@@ -162,7 +232,7 @@
                 </div>
             </div>
 
-            <!-- Delivery Stats - Added delivery-stats class for specific targeting -->
+            <!-- Delivery Stats -->
             <div class="row g-3 mb-4 delivery-stats">
 
                 <!-- Total for Delivery -->
@@ -172,7 +242,7 @@
                             <i class="bi bi-truck"></i>
                         </div>
                         <div>
-                            <div class="stat-value">12</div>
+                            <div class="stat-value"><?php echo $total_for_delivery; ?></div>
                             <div class="stat-label">Total for Delivery</div>
                         </div>
                     </div>
@@ -185,7 +255,7 @@
                             <i class="bi bi-hourglass-split"></i>
                         </div>
                         <div>
-                            <div class="stat-value">5</div>
+                            <div class="stat-value"><?php echo $in_transit; ?></div>
                             <div class="stat-label">In Transit</div>
                         </div>
                     </div>
@@ -198,7 +268,7 @@
                             <i class="bi bi-check-circle"></i>
                         </div>
                         <div>
-                            <div class="stat-value">28</div>
+                            <div class="stat-value"><?php echo $completed_today; ?></div>
                             <div class="stat-label">Completed Today</div>
                         </div>
                     </div>
@@ -221,17 +291,16 @@
                         <div class="col-md-6">
                             <select class="form-select" id="statusFilter">
                                 <option value="">All Status</option>
-                                <option value="Preparing">Preparing</option>
-                                <option value="Packed">Packed</option>
-                                <option value="En-route">En-route</option>
-                                <option value="Delivered">Delivered</option>
+                                <option value="processing">Processing</option>
+                                <option value="ready">Ready</option>
+                                <option value="confirmed">Confirmed</option>
                             </select>
                         </div>
                     </div>
                 </div>
             </div>
 
-            <!-- Trip Tickets Table -->
+            <!-- Delivery Orders Table -->
             <div class="card">
                 <div class="table-responsive">
                     <table class="table table-hover mb-0">
@@ -247,100 +316,71 @@
                             </tr>
                         </thead>
                         <tbody>
+                            <?php foreach ($delivery_orders as $order): ?>
                             <tr>
-                                <td><span class="badge bg-light text-dark">ORD-001</span></td>
-                                <td>John Doe</td>
-                                <td>123 Main St, New York, NY 10001</td>
-                                <td>(555) 123-4567</td>
+                                <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($order['so_number']); ?></span></td>
+                                <td><?php echo htmlspecialchars($order['customer_name']); ?></td>
+                                <td><?php echo htmlspecialchars($order['address'] . ', ' . $order['city']); ?></td>
+                                <td><?php echo htmlspecialchars($order['phone_number']); ?></td>
                                 <td>
-                                    <small class="d-block">Laptop Computer (1)</small>
-                                    <small class="d-block text-muted">Office Chair (2)</small>
+                                    <?php 
+                                    if (!empty($order['items'])) {
+                                        $items = explode('; ', $order['items']);
+                                        foreach ($items as $index => $item):
+                                            if ($index == 0):
+                                    ?>
+                                        <small class="d-block"><?php echo htmlspecialchars($item); ?></small>
+                                    <?php else: ?>
+                                        <small class="d-block text-muted"><?php echo htmlspecialchars($item); ?></small>
+                                    <?php 
+                                            endif;
+                                        endforeach; 
+                                    } else {
+                                        echo '<small class="text-muted">No items listed</small>';
+                                    }
+                                    ?>
                                 </td>
-                                <td><span class="badge bg-warning">Preparing</span></td>
                                 <td>
-                                    <button class="btn btn-sm btn-info" title="View" onclick="viewDelivery('ORD-001')">
+                                    <?php
+                                    $status_badge = '';
+                                    switch ($order['order_status']) {
+                                        case 'processing':
+                                            $status_badge = 'bg-warning';
+                                            break;
+                                        case 'ready':
+                                            $status_badge = 'bg-info';
+                                            break;
+                                        case 'confirmed':
+                                            $status_badge = 'bg-primary';
+                                            break;
+                                        default:
+                                            $status_badge = 'bg-secondary';
+                                    }
+                                    ?>
+                                    <span class="badge <?php echo $status_badge; ?>">
+                                        <?php echo ucfirst($order['order_status']); ?>
+                                    </span>
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-info" title="View" onclick="viewDelivery(<?php echo $order['so_id']; ?>)">
                                         <i class="bi bi-eye"></i>
                                     </button>
-                                    <button class="btn btn-sm btn-success" title="Mark as Packed" onclick="updateStatus(this, 'Packed')">
+                                    <?php if ($order['order_status'] == 'processing'): ?>
+                                    <button class="btn btn-sm btn-success" title="Mark as Ready" onclick="updateStatus(this, <?php echo $order['so_id']; ?>, 'ready')">
                                         <i class="bi bi-box-seam"></i>
                                     </button>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">ORD-002</span></td>
-                                <td>Jane Smith</td>
-                                <td>456 Oak Ave, Los Angeles, CA 90001</td>
-                                <td>(555) 987-6543</td>
-                                <td>
-                                    <small class="d-block">Desk Lamp (5)</small>
-                                    <small class="d-block text-muted">USB-C Cable (10)</small>
-                                </td>
-                                <td><span class="badge bg-info">Packed</span></td>
-                                <td>
-                                    <button class="btn btn-sm btn-info" title="View" onclick="viewDelivery('ORD-002')">
-                                        <i class="bi bi-eye"></i>
-                                    </button>
-                                    <button class="btn btn-sm btn-primary" title="Mark as En-route" onclick="updateStatus(this, 'En-route')">
+                                    <?php elseif ($order['order_status'] == 'ready'): ?>
+                                    <button class="btn btn-sm btn-primary" title="Mark as En-route" onclick="updateStatus(this, <?php echo $order['so_id']; ?>, 'confirmed')">
                                         <i class="bi bi-truck"></i>
                                     </button>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">ORD-003</span></td>
-                                <td>ABC Corporation</td>
-                                <td>789 Business Blvd, Chicago, IL 60601</td>
-                                <td>(555) 444-7890</td>
-                                <td>
-                                    <small class="d-block">Wireless Mouse (8)</small>
-                                    <small class="d-block text-muted">Desk Organizer (4)</small>
-                                </td>
-                                <td><span class="badge bg-primary">En-route</span></td>
-                                <td>
-                                    <button class="btn btn-sm btn-info" title="View" onclick="viewDelivery('ORD-003')">
-                                        <i class="bi bi-eye"></i>
-                                    </button>
-                                    <button class="btn btn-sm btn-success" title="Mark as Delivered" onclick="showPaymentModal('ORD-003')">
+                                    <?php elseif ($order['order_status'] == 'confirmed'): ?>
+                                    <button class="btn btn-sm btn-success" title="Mark as Delivered" onclick="showDeliveryModal(<?php echo $order['so_id']; ?>, '<?php echo $order['so_number']; ?>')">
                                         <i class="bi bi-check-lg"></i>
                                     </button>
+                                    <?php endif; ?>
                                 </td>
                             </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">ORD-004</span></td>
-                                <td>Michael Johnson</td>
-                                <td>321 Pine Rd, Houston, TX 77001</td>
-                                <td>(555) 555-5555</td>
-                                <td>
-                                    <small class="d-block">Coffee Maker (1)</small>
-                                    <small class="d-block text-muted">Desk Lamp (3)</small>
-                                </td>
-                                <td><span class="badge bg-primary">En-route</span></td>
-                                <td>
-                                    <button class="btn btn-sm btn-info" title="View" onclick="viewDelivery('ORD-004')">
-                                        <i class="bi bi-eye"></i>
-                                    </button>
-                                    <button class="btn btn-sm btn-success" title="Mark as Delivered" onclick="showPaymentModal('ORD-004')">
-                                        <i class="bi bi-check-lg"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">ORD-005</span></td>
-                                <td>Sarah Williams</td>
-                                <td>654 Elm St, Phoenix, AZ 85001</td>
-                                <td>(555) 222-3333</td>
-                                <td>
-                                    <small class="d-block">Notebook Set (5)</small>
-                                </td>
-                                <td><span class="badge bg-warning">Preparing</span></td>
-                                <td>
-                                    <button class="btn btn-sm btn-info" title="View" onclick="viewDelivery('ORD-005')">
-                                        <i class="bi bi-eye"></i>
-                                    </button>
-                                    <button class="btn btn-sm btn-success" title="Mark as Packed" onclick="updateStatus(this, 'Packed')">
-                                        <i class="bi bi-box-seam"></i>
-                                    </button>
-                                </td>
-                            </tr>
+                            <?php endforeach; ?>
                         </tbody>
                     </table>
                 </div>
@@ -348,68 +388,59 @@
         </div>
     </div>
 
-    <!-- Payment Modal for Delivered Packages -->
-    <div class="modal fade" id="paymentModal" tabindex="-1">
+    <!-- Delivery Modal -->
+    <div class="modal fade" id="deliveryModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Delivery Completion & Payment</h5>
+                    <h5 class="modal-title">Delivery Completion</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <form id="paymentForm">
+                    <form id="deliveryForm" enctype="multipart/form-data" action="update_delivery.php" method="POST">
+                        <input type="hidden" name="so_id" id="modalSoId">
+                        <input type="hidden" name="so_number" id="modalSoNumber">
+                        
                         <div class="alert alert-info">
-                            <strong id="orderIdDisplay">ORD-001</strong> - Delivery Confirmation Required
+                            <strong id="orderIdDisplay"></strong> - Delivery Confirmation Required
+                        </div>
+
+                        <h6 class="mb-3">Delivery Information</h6>
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label class="form-label">Delivery Date</label>
+                                <input type="datetime-local" class="form-control" name="delivery_date" required value="<?php echo date('Y-m-d\TH:i'); ?>">
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Signed By (Customer Name)</label>
+                                <input type="text" class="form-control" name="signed_by" placeholder="Customer name">
+                            </div>
                         </div>
 
                         <h6 class="mb-3">Photo Documentation</h6>
                         <div class="mb-3">
                             <label class="form-label">Upload Proof of Delivery Photo</label>
-                            <input type="file" class="form-control" id="proofPhoto" accept="image/*" required>
+                            <input type="file" class="form-control" name="proof_photo" accept="image/*" required>
                             <small class="text-muted">Please upload a photo showing the delivered package at the delivery location</small>
                         </div>
 
-                        <hr>
-
-                        <h6 class="mb-3">Payment Information</h6>
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Payment Method</label>
-                                <select class="form-select" id="paymentMethod" required>
-                                    <option value="">-- Select Method --</option>
-                                    <option value="Cash">Cash</option>
-                                    <option value="Card">Card</option>
-                                    <option value="Cheque">Cheque</option>
-                                    <option value="Bank Transfer">Bank Transfer</option>
-                                </select>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Amount Received</label>
-                                <input type="number" class="form-control" id="amountReceived" required step="0.01" placeholder="0.00">
-                            </div>
-                        </div>
-
                         <div class="mb-3">
-                            <label class="form-label">Reference/Transaction ID</label>
-                            <input type="text" class="form-control" id="transactionRef" placeholder="e.g., Check number, transaction ID">
-                        </div>
-
-                        <div class="mb-3">
-                            <label class="form-label">Customer Signature/Notes</label>
-                            <textarea class="form-control" id="signatureNotes" rows="3" placeholder="Any notes from customer, signature confirmation, etc."></textarea>
+                            <label class="form-label">Remarks</label>
+                            <textarea class="form-control" name="remarks" rows="3" placeholder="Any notes about the delivery..."></textarea>
                         </div>
 
                         <div class="form-check mb-3">
-                            <input class="form-check-input" type="checkbox" id="confirmDelivery" required>
-                            <label class="form-check-label" for="confirmDelivery">
+                            <input class="form-check-input" type="checkbox" name="confirm_delivery" required>
+                            <label class="form-check-label">
                                 I confirm this delivery has been completed successfully
                             </label>
                         </div>
+                        
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-primary">Confirm Delivery</button>
+                        </div>
                     </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="submitPayment()">Confirm Delivery</button>
                 </div>
             </div>
         </div>
@@ -419,6 +450,7 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         let currentOrderId = null;
+        let currentOrderNumber = null;
 
         // Mobile menu toggle
         document.getElementById('mobileMenuBtn').addEventListener('click', function() {
@@ -449,91 +481,49 @@
 
         // View delivery details
         function viewDelivery(orderId) {
-            alert('Viewing details for ' + orderId);
+            window.location.href = 'order_details.php?id=' + orderId;
         }
 
         // Update delivery status
-        function updateStatus(button, newStatus) {
-            const row = button.closest('tr');
-            const orderCell = row.cells[0];
-            const statusCell = row.cells[5];
-            const actionCell = row.cells[6];
-
-            // Update status badge
-            let badgeClass = 'bg-warning';
-            if (newStatus === 'Packed') badgeClass = 'bg-info';
-            if (newStatus === 'En-route') badgeClass = 'bg-primary';
-            if (newStatus === 'Delivered') badgeClass = 'bg-success';
-
-            statusCell.innerHTML = `<span class="badge ${badgeClass}">${newStatus}</span>`;
-
-            // Update action buttons
-            if (newStatus === 'Packed') {
-                actionCell.innerHTML = `
-                    <button class="btn btn-sm btn-info" title="View" onclick="viewDelivery('${orderCell.textContent}')">
-                        <i class="bi bi-eye"></i>
-                    </button>
-                    <button class="btn btn-sm btn-primary" title="Mark as En-route" onclick="updateStatus(this, 'En-route')">
-                        <i class="bi bi-truck"></i>
-                    </button>
-                `;
-            } else if (newStatus === 'En-route') {
-                actionCell.innerHTML = `
-                    <button class="btn btn-sm btn-info" title="View" onclick="viewDelivery('${orderCell.textContent}')">
-                        <i class="bi bi-eye"></i>
-                    </button>
-                    <button class="btn btn-sm btn-success" title="Mark as Delivered" onclick="showPaymentModal('${orderCell.textContent}')">
-                        <i class="bi bi-check-lg"></i>
-                    </button>
-                `;
+        function updateStatus(button, orderId, newStatus) {
+            if (confirm('Are you sure you want to update the status?')) {
+                fetch('update_order_status.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: 'so_id=' + orderId + '&new_status=' + newStatus
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        location.reload();
+                    } else {
+                        alert('Error: ' + data.message);
+                    }
+                })
+                .catch(error => {
+                    alert('Error updating status');
+                });
             }
-
-            alert(`Order ${orderCell.textContent.trim()} status updated to ${newStatus}`);
         }
 
-        // Show payment modal
-        function showPaymentModal(orderId) {
+        // Show delivery modal
+        function showDeliveryModal(orderId, orderNumber) {
             currentOrderId = orderId;
-            document.getElementById('orderIdDisplay').textContent = orderId;
-            document.getElementById('paymentForm').reset();
-            const modal = new bootstrap.Modal(document.getElementById('paymentModal'));
+            currentOrderNumber = orderNumber;
+            document.getElementById('orderIdDisplay').textContent = orderNumber;
+            document.getElementById('modalSoId').value = orderId;
+            document.getElementById('modalSoNumber').value = orderNumber;
+            document.getElementById('deliveryForm').reset();
+            const modal = new bootstrap.Modal(document.getElementById('deliveryModal'));
             modal.show();
-        }
-
-        // Submit payment
-        function submitPayment() {
-            const photo = document.getElementById('proofPhoto').value;
-            const method = document.getElementById('paymentMethod').value;
-            const amount = document.getElementById('amountReceived').value;
-            const confirm = document.getElementById('confirmDelivery').checked;
-
-            if (!photo || !method || !amount || !confirm) {
-                alert('Please fill in all required fields');
-                return;
-            }
-
-            // Mark as delivered
-            const rows = document.querySelectorAll('tbody tr');
-            rows.forEach(row => {
-                const orderCell = row.cells[0];
-                if (orderCell.textContent.includes(currentOrderId)) {
-                    row.cells[5].innerHTML = `<span class="badge bg-success">Delivered</span>`;
-                    row.cells[6].innerHTML = `
-                        <button class="btn btn-sm btn-info" title="View" onclick="viewDelivery('${currentOrderId}')">
-                            <i class="bi bi-eye"></i>
-                        </button>
-                    `;
-                }
-            });
-
-            bootstrap.Modal.getInstance(document.getElementById('paymentModal')).hide();
-            alert(`Delivery ${currentOrderId} completed successfully! Payment recorded.`);
         }
 
         // Logout function
         function logout() {
             if (confirm('Are you sure you want to logout?')) {
-                window.location.href = '../login.php';
+                window.location.href = '../logout.php';
             }
         }
     </script>
