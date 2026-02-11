@@ -110,12 +110,6 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="trip_tickets.php">
-                            <i class="bi bi-ticket"></i>
-                            <span class="nav-text">Trip Tickets</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
                         <a class="nav-link" href="pick_list_items.php">
                             <i class="bi bi-clipboard-check"></i>
                             <span class="nav-text">Pick List Items</span>
@@ -155,30 +149,57 @@
                 </div>
             </div>
 
+            <?php
+            require_once '../config/database.php';
+            
+            // Get warehouse statistics from database
+            $stats = [];
+            
+            // Total Items - Count of distinct items from items table
+            $total_items_query = "SELECT COUNT(*) as total_items FROM items WHERE status = 'active'";
+            $result = $conn->query($total_items_query);
+            $stats['total_items'] = $result->fetch_assoc()['total_items'] ?? 0;
+            
+            // Current Stock - SUM of stock column from items table
+            $current_stock_query = "SELECT SUM(stock) as current_stock FROM items WHERE status = 'active'";
+            $result = $conn->query($current_stock_query);
+            $stats['current_stock'] = $result->fetch_assoc()['current_stock'] ?? 0;
+            
+            // Pending Deliveries (trip tickets with pending or planned status)
+            $pending_deliveries_query = "SELECT COUNT(*) as count FROM trip_tickets WHERE trip_status IN ('planned', 'in-progress')";
+            $result = $conn->query($pending_deliveries_query);
+            $stats['pending_deliveries'] = $result->fetch_assoc()['count'] ?? 0;
+            
+            // Active Drivers
+            $active_drivers_query = "SELECT COUNT(*) as count FROM drivers WHERE status = 'active'";
+            $result = $conn->query($active_drivers_query);
+            $stats['active_drivers'] = $result->fetch_assoc()['count'] ?? 0;
+            ?>
+
             <!-- Warehouse Stats - UPDATED FOR MOBILE -->
             <div class="row g-3 mb-4">
-                <!-- Total Inventory Items -->
+                <!-- Total Items -->
                 <div class="col-6 col-md-3 mb-3">
                     <div class="stat-card inventory">
                         <div class="stat-icon">
                             <i class="bi bi-boxes"></i>
                         </div>
                         <div>
-                            <div class="stat-value">2,450</div>
+                            <div class="stat-value"><?php echo number_format($stats['total_items']); ?></div>
                             <div class="stat-label">Total Items</div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Pending Deliveries -->
+                <!-- Current Stock -->
                 <div class="col-6 col-md-3 mb-3">
-                    <div class="stat-card pending">
+                    <div class="stat-card stock">
                         <div class="stat-icon">
-                            <i class="bi bi-truck"></i>
+                            <i class="bi bi-box-seam"></i>
                         </div>
                         <div>
-                            <div class="stat-value">18</div>
-                            <div class="stat-label">Pending Deliveries</div>
+                            <div class="stat-value"><?php echo number_format($stats['current_stock']); ?></div>
+                            <div class="stat-label">Current Stock</div>
                         </div>
                     </div>
                 </div>
@@ -190,21 +211,21 @@
                             <i class="bi bi-person-badge"></i>
                         </div>
                         <div>
-                            <div class="stat-value">12</div>
+                            <div class="stat-value"><?php echo $stats['active_drivers']; ?></div>
                             <div class="stat-label">Active Drivers</div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Warehouse Capacity -->
+                <!-- Pending Deliveries -->
                 <div class="col-6 col-md-3 mb-3">
-                    <div class="stat-card sales">
+                    <div class="stat-card pending">
                         <div class="stat-icon">
-                            <i class="bi bi-graph-up"></i>
+                            <i class="bi bi-truck"></i>
                         </div>
                         <div>
-                            <div class="stat-value">88%</div>
-                            <div class="stat-label">Warehouse Capacity</div>
+                            <div class="stat-value"><?php echo $stats['pending_deliveries']; ?></div>
+                            <div class="stat-label">Pending Deliveries</div>
                         </div>
                     </div>
                 </div>
@@ -222,37 +243,43 @@
                             <table class="table table-hover mb-0">
                                 <thead class="table-light">
                                     <tr>
-                                        <th>Item ID</th>
-                                        <th>Product</th>
-                                        <th>Quantity</th>
+                                        <th>Pick List #</th>
                                         <th>Status</th>
+                                        <th>Date</th>
+                                        <th>Items</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr>
-                                        <td><span class="badge bg-light text-dark">PLI-001</span></td>
-                                        <td>Widget A</td>
-                                        <td>50</td>
-                                        <td><span class="badge bg-success">Picked</span></td>
-                                    </tr>
-                                    <tr>
-                                        <td><span class="badge bg-light text-dark">PLI-002</span></td>
-                                        <td>Gadget B</td>
-                                        <td>30</td>
-                                        <td><span class="badge bg-warning">Pending</span></td>
-                                    </tr>
-                                    <tr>
-                                        <td><span class="badge bg-light text-dark">PLI-003</span></td>
-                                        <td>Device C</td>
-                                        <td>25</td>
-                                        <td><span class="badge bg-success">Picked</span></td>
-                                    </tr>
-                                    <tr>
-                                        <td><span class="badge bg-light text-dark">PLI-004</span></td>
-                                        <td>Tool D</td>
-                                        <td>15</td>
-                                        <td><span class="badge bg-info">In Progress</span></td>
-                                    </tr>
+                                    <?php
+                                    $pick_lists_query = "SELECT pl.*, b.branch_name, 
+                                                        (SELECT COUNT(*) FROM pick_list_items WHERE pick_list_id = pl.pick_list_id) as item_count
+                                                        FROM pick_lists pl
+                                                        LEFT JOIN branches b ON pl.branch_id = b.branch_id
+                                                        ORDER BY pl.created_at DESC LIMIT 5";
+                                    $result = $conn->query($pick_lists_query);
+                                    
+                                    if ($result->num_rows > 0) {
+                                        while($row = $result->fetch_assoc()) {
+                                            $status_badge = '';
+                                            switch($row['pick_status']) {
+                                                case 'completed': $status_badge = 'bg-success'; break;
+                                                case 'in-progress': $status_badge = 'bg-info'; break;
+                                                case 'cancelled': $status_badge = 'bg-danger'; break;
+                                                default: $status_badge = 'bg-warning';
+                                            }
+                                            ?>
+                                            <tr>
+                                                <td><span class="badge bg-light text-dark"><?php echo $row['pick_list_number']; ?></span></td>
+                                                <td><span class="badge <?php echo $status_badge; ?>"><?php echo ucfirst($row['pick_status']); ?></span></td>
+                                                <td><?php echo date('Y-m-d', strtotime($row['pick_date'])); ?></td>
+                                                <td><?php echo $row['item_count']; ?></td>
+                                            </tr>
+                                            <?php
+                                        }
+                                    } else {
+                                        echo '<tr><td colspan="4" class="text-center">No pick lists found</td></tr>';
+                                    }
+                                    ?>
                                 </tbody>
                             </table>
                         </div>
@@ -271,35 +298,40 @@
                                     <tr>
                                         <th>Ticket ID</th>
                                         <th>Driver</th>
-                                        <th>Destination</th>
                                         <th>Status</th>
+                                        <th>Date</th>
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    <tr>
-                                        <td><span class="badge bg-light text-dark">TT-001</span></td>
-                                        <td>John Smith</td>
-                                        <td>New York</td>
-                                        <td><span class="badge bg-success">Completed</span></td>
-                                    </tr>
-                                    <tr>
-                                        <td><span class="badge bg-light text-dark">TT-002</span></td>
-                                        <td>Sarah Jones</td>
-                                        <td>Boston</td>
-                                        <td><span class="badge bg-warning">In Transit</span></td>
-                                    </tr>
-                                    <tr>
-                                        <td><span class="badge bg-light text-dark">TT-003</span></td>
-                                        <td>Mike Davis</td>
-                                        <td>Philadelphia</td>
-                                        <td><span class="badge bg-info">Pending</span></td>
-                                    </tr>
-                                    <tr>
-                                        <td><span class="badge bg-light text-dark">TT-004</span></td>
-                                        <td>Jessica White</td>
-                                        <td>Chicago</td>
-                                        <td><span class="badge bg-success">Completed</span></td>
-                                    </tr>
+                                    <?php
+                                    $trip_tickets_query = "SELECT tt.*, d.driver_name 
+                                                          FROM trip_tickets tt
+                                                          LEFT JOIN drivers d ON tt.driver_id = d.driver_id
+                                                          ORDER BY tt.trip_date DESC LIMIT 5";
+                                    $result = $conn->query($trip_tickets_query);
+                                    
+                                    if ($result->num_rows > 0) {
+                                        while($row = $result->fetch_assoc()) {
+                                            $status_badge = '';
+                                            switch($row['trip_status']) {
+                                                case 'completed': $status_badge = 'bg-success'; break;
+                                                case 'in-progress': $status_badge = 'bg-warning'; break;
+                                                case 'cancelled': $status_badge = 'bg-danger'; break;
+                                                default: $status_badge = 'bg-info';
+                                            }
+                                            ?>
+                                            <tr>
+                                                <td><span class="badge bg-light text-dark"><?php echo $row['trip_number']; ?></span></td>
+                                                <td><?php echo $row['driver_name'] ?? 'N/A'; ?></td>
+                                                <td><span class="badge <?php echo $status_badge; ?>"><?php echo ucfirst(str_replace('-', ' ', $row['trip_status'])); ?></span></td>
+                                                <td><?php echo date('Y-m-d', strtotime($row['trip_date'])); ?></td>
+                                            </tr>
+                                            <?php
+                                        }
+                                    } else {
+                                        echo '<tr><td colspan="4" class="text-center">No trip tickets found</td></tr>';
+                                    }
+                                    ?>
                                 </tbody>
                             </table>
                         </div>
@@ -313,12 +345,23 @@
                     <h5 class="mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Low Stock Alerts</h5>
                 </div>
                 <div class="card-body">
-                    <div class="alert alert-warning mb-2">
-                        <strong>Widget A:</strong> Stock level at 45 units (Below threshold of 50)
-                    </div>
-                    <div class="alert alert-warning mb-0">
-                        <strong>Gadget B:</strong> Stock level at 30 units (Below threshold of 75)
-                    </div>
+                    <?php
+                    $low_stock_query = "SELECT i.item_name, i.stock, i.reorder_level 
+                                       FROM items i
+                                       WHERE i.stock <= i.reorder_level AND i.status = 'active'
+                                       LIMIT 5";
+                    $result = $conn->query($low_stock_query);
+                    
+                    if ($result->num_rows > 0) {
+                        while($row = $result->fetch_assoc()) {
+                            echo '<div class="alert alert-warning mb-2">';
+                            echo '<strong>' . $row['item_name'] . ':</strong> Stock level at ' . $row['stock'] . ' units (Below threshold of ' . $row['reorder_level'] . ')';
+                            echo '</div>';
+                        }
+                    } else {
+                        echo '<div class="alert alert-success">All items are adequately stocked</div>';
+                    }
+                    ?>
                 </div>
             </div>
         </div>

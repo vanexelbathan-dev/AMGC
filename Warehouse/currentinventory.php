@@ -110,12 +110,6 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="trip_tickets.php">
-                            <i class="bi bi-ticket"></i>
-                            <span class="nav-text">Trip Tickets</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
                         <a class="nav-link" href="pick_list_items.php">
                             <i class="bi bi-clipboard-check"></i>
                             <span class="nav-text">Pick List Items</span>
@@ -137,7 +131,7 @@
             <div class="navbar-top">
                 <div class="page-title">
                     <h2><i class="bi bi-boxes me-2"></i>Current Inventory</h2>
-                    <p>Manage and add items to warehouse inventory</p>
+                    <p>Manage and view warehouse inventory</p>
                 </div>
                 
                 <div class="user-info-top">
@@ -155,56 +149,66 @@
                 </div>
             </div>
 
-            <!-- Inventory Stats - UPDATED SAME AS WAREHOUSE.PHP -->
+            <?php
+            require_once '../config/database.php';
+            
+            // Get inventory statistics
+            $stats = [];
+            
+            // Total Items - Count of distinct items from items table
+            $total_items_query = "SELECT COUNT(*) as total_items FROM items WHERE status = 'active'";
+            $result = $conn->query($total_items_query);
+            $stats['total_items'] = $result->fetch_assoc()['total_items'] ?? 0;
+            
+            // Current Stock - SUM of stock column from items table
+            $current_stock_query = "SELECT SUM(stock) as current_stock FROM items WHERE status = 'active'";
+            $result = $conn->query($current_stock_query);
+            $stats['current_stock'] = $result->fetch_assoc()['current_stock'] ?? 0;
+            
+            // Low Stock Items (based on items table stock)
+            $low_stock_query = "SELECT COUNT(*) as count FROM items 
+                               WHERE stock <= reorder_level AND status = 'active'";
+            $result = $conn->query($low_stock_query);
+            $stats['low_stock'] = $result->fetch_assoc()['count'] ?? 0;
+            ?>
+
+            <!-- Inventory Stats - UPDATED: Removed Inventory Value card -->
             <div class="row g-3 mb-4">
                 <!-- Total Items -->
-                <div class="col-md-3 mb-3">
+                <div class="col-md-4 mb-3">
                     <div class="stat-card inventory">
                         <div class="stat-icon">
                             <i class="bi bi-boxes"></i>
                         </div>
                         <div>
-                            <div class="stat-value">2,450</div>
+                            <div class="stat-value"><?php echo number_format($stats['total_items']); ?></div>
                             <div class="stat-label">Total Items</div>
                         </div>
                     </div>
                 </div>
 
+                <!-- Current Stock -->
+                <div class="col-md-4 mb-3">
+                    <div class="stat-card stock">
+                        <div class="stat-icon">
+                            <i class="bi bi-box-seam"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value"><?php echo number_format($stats['current_stock']); ?></div>
+                            <div class="stat-label">Current Stock</div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Low Stock Items -->
-                <div class="col-md-3 mb-3">
+                <div class="col-md-4 mb-3">
                     <div class="stat-card pending">
                         <div class="stat-icon">
                             <i class="bi bi-exclamation-triangle"></i>
                         </div>
                         <div>
-                            <div class="stat-value">8</div>
+                            <div class="stat-value"><?php echo $stats['low_stock']; ?></div>
                             <div class="stat-label">Low Stock Items</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Inventory Value -->
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card sales">
-                        <div class="stat-icon">
-                            <i class="bi bi-graph-up"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">$145K</div>
-                            <div class="stat-label">Inventory Value</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Capacity Used -->
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card delivery">
-                        <div class="stat-icon">
-                            <i class="bi bi-percent"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">87%</div>
-                            <div class="stat-label">Capacity Used</div>
                         </div>
                     </div>
                 </div>
@@ -225,10 +229,13 @@
                         <div class="col-md-4 col-12">
                             <select class="form-select" id="categoryFilter">
                                 <option value="">All Categories</option>
-                                <option value="Electronics">Electronics</option>
-                                <option value="Tools">Tools</option>
-                                <option value="Hardware">Hardware</option>
-                                <option value="Other">Other</option>
+                                <?php
+                                $categories_query = "SELECT DISTINCT category FROM items WHERE category IS NOT NULL AND category != ''";
+                                $result = $conn->query($categories_query);
+                                while($row = $result->fetch_assoc()) {
+                                    echo '<option value="' . $row['category'] . '">' . $row['category'] . '</option>';
+                                }
+                                ?>
                             </select>
                         </div>
                         <div class="col-md-2 col-12">
@@ -240,99 +247,65 @@
                 </div>
             </div>
 
-            <!-- Inventory Table -->
+            <!-- Inventory Table - UPDATED: Removed Unit Price column -->
             <div class="card">
                 <div class="table-responsive">
                     <table class="table table-hover mb-0">
                         <thead class="table-light">
                             <tr>
-                                <th>Item ID</th>
+                                <th>Item Code</th>
                                 <th>Item Name</th>
-                                <th>SKU</th>
                                 <th>Category</th>
-                                <th>Quantity</th>
-                                <th>Unit Price</th>
-                                <th>Total Value</th>
+                                <th>Total Stock</th>
+                                <th>Reorder Level</th>
                                 <th>Status</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">INV-001</span></td>
-                                <td>Widget A</td>
-                                <td>WGT-A-100</td>
-                                <td>Electronics</td>
-                                <td>150</td>
-                                <td>$45.00</td>
-                                <td>$6,750.00</td>
-                                <td><span class="badge bg-success">In Stock</span></td>
-                                <td>
-                                    <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#editInventoryModal" onclick="loadEditForm('INV-001', 'Widget A', 'WGT-A-100', 'Electronics', 150, 45)">
-                                        <i class="bi bi-pencil"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">INV-002</span></td>
-                                <td>Gadget B</td>
-                                <td>GDG-B-200</td>
-                                <td>Tools</td>
-                                <td>45</td>
-                                <td>$65.00</td>
-                                <td>$2,925.00</td>
-                                <td><span class="badge bg-warning">Low Stock</span></td>
-                                <td>
-                                    <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#editInventoryModal" onclick="loadEditForm('INV-002', 'Gadget B', 'GDG-B-200', 'Tools', 45, 65)">
-                                        <i class="bi bi-pencil"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">INV-003</span></td>
-                                <td>Device C</td>
-                                <td>DEV-C-300</td>
-                                <td>Hardware</td>
-                                <td>320</td>
-                                <td>$28.50</td>
-                                <td>$9,120.00</td>
-                                <td><span class="badge bg-success">In Stock</span></td>
-                                <td>
-                                    <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#editInventoryModal" onclick="loadEditForm('INV-003', 'Device C', 'DEV-C-300', 'Hardware', 320, 28.50)">
-                                        <i class="bi bi-pencil"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">INV-004</span></td>
-                                <td>Tool D</td>
-                                <td>TOL-D-400</td>
-                                <td>Tools</td>
-                                <td>85</td>
-                                <td>$75.00</td>
-                                <td>$6,375.00</td>
-                                <td><span class="badge bg-success">In Stock</span></td>
-                                <td>
-                                    <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#editInventoryModal" onclick="loadEditForm('INV-004', 'Tool D', 'TOL-D-400', 'Tools', 85, 75)">
-                                        <i class="bi bi-pencil"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">INV-005</span></td>
-                                <td>Component E</td>
-                                <td>CMP-E-500</td>
-                                <td>Electronics</td>
-                                <td>12</td>
-                                <td>$120.00</td>
-                                <td>$1,440.00</td>
-                                <td><span class="badge bg-danger">Critical</span></td>
-                                <td>
-                                    <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#editInventoryModal" onclick="loadEditForm('INV-005', 'Component E', 'CMP-E-500', 'Electronics', 12, 120)">
-                                        <i class="bi bi-pencil"></i>
-                                    </button>
-                                </td>
-                            </tr>
+                            <?php
+                            $inventory_query = "SELECT i.item_code, i.item_name, i.category, i.stock, 
+                                               i.reorder_level, i.status, i.item_id
+                                               FROM items i
+                                               WHERE i.status = 'active'
+                                               ORDER BY i.item_name";
+                            $result = $conn->query($inventory_query);
+                            
+                            if ($result->num_rows > 0) {
+                                while($row = $result->fetch_assoc()) {
+                                    $status_badge = 'bg-success';
+                                    $status_text = 'In Stock';
+                                    
+                                    if ($row['stock'] <= 0) {
+                                        $status_badge = 'bg-danger';
+                                        $status_text = 'Out of Stock';
+                                    } elseif ($row['stock'] <= $row['reorder_level']) {
+                                        $status_badge = 'bg-warning';
+                                        $status_text = 'Low Stock';
+                                    }
+                                    ?>
+                                    <tr>
+                                        <td><span class="badge bg-light text-dark"><?php echo $row['item_code']; ?></span></td>
+                                        <td><?php echo $row['item_name']; ?></td>
+                                        <td><?php echo $row['category'] ?? 'N/A'; ?></td>
+                                        <td><?php echo number_format($row['stock']); ?></td>
+                                        <td><?php echo number_format($row['reorder_level']); ?></td>
+                                        <td><span class="badge <?php echo $status_badge; ?>"><?php echo $status_text; ?></span></td>
+                                        <td>
+                                            <button class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#viewItemModal" onclick="loadItemDetails(<?php echo $row['item_id']; ?>)">
+                                                <i class="bi bi-eye"></i> View
+                                            </button>
+                                            <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#editInventoryModal" onclick="loadItemForEdit('<?php echo $row['item_code']; ?>')">
+                                                <i class="bi bi-pencil"></i> Edit
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    <?php
+                                }
+                            } else {
+                                echo '<tr><td colspan="7" class="text-center">No inventory items found</td></tr>';
+                            }
+                            ?>
                         </tbody>
                     </table>
                 </div>
@@ -340,7 +313,7 @@
         </div>
     </div>
 
-    <!-- Add Inventory Modal -->
+    <!-- Add Inventory Modal - UPDATED: Removed Unit Price field -->
     <div class="modal fade" id="addInventoryModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
@@ -349,48 +322,71 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <form id="addInventoryForm">
+                    <form id="addInventoryForm" action="add_inventory.php" method="POST">
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label class="form-label">Item Name</label>
-                                <input type="text" class="form-control" id="itemName" required placeholder="Item name">
+                                <label class="form-label">Item Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="item_name" required placeholder="Item name">
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label class="form-label">SKU</label>
-                                <input type="text" class="form-control" id="itemSku" required placeholder="e.g., WGT-A-100">
+                                <label class="form-label">Item Code <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="item_code" required placeholder="e.g., ITEM-001">
+                                <small class="text-muted">Must be unique</small>
                             </div>
                         </div>
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label class="form-label">Category</label>
-                                <select class="form-select" id="itemCategory" required>
-                                    <option value="">Select Category</option>
-                                    <option value="Electronics">Electronics</option>
-                                    <option value="Tools">Tools</option>
-                                    <option value="Hardware">Hardware</option>
-                                    <option value="Other">Other</option>
+                                <label class="form-label">Category <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="category" required placeholder="Category">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Initial Stock <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control" name="stock" required placeholder="0" min="0" value="0">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Reorder Level <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control" name="reorder_level" required placeholder="0" min="0" value="50">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Unit Type <span class="text-danger">*</span></label>
+                                <select class="form-select" name="unit_type" required>
+                                    <option value="piece" selected>Piece</option>
+                                    <option value="case">Case</option>
+                                    <option value="inner-pack">Inner Pack</option>
+                                    <option value="box">Box</option>
+                                    <option value="carton">Carton</option>
                                 </select>
                             </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Quantity</label>
-                                <input type="number" class="form-control" id="itemQuantity" required placeholder="0" min="0">
-                            </div>
                         </div>
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Unit Price</label>
-                                <input type="number" class="form-control" id="itemPrice" required placeholder="0.00" min="0" step="0.01">
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Minimum Stock Level</label>
-                                <input type="number" class="form-control" id="minStock" required placeholder="0" min="0">
-                            </div>
+                        <div class="mb-3">
+                            <label class="form-label">Description</label>
+                            <textarea class="form-control" name="description" placeholder="Item description" rows="3"></textarea>
                         </div>
                     </form>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="addNewItem()">Add Item</button>
+                    <button type="submit" form="addInventoryForm" class="btn btn-primary">Add Item</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- View Item Details Modal -->
+    <div class="modal fade" id="viewItemModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Item Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="itemDetailsContent">
+                    <!-- Content will be loaded by JavaScript from get_item_details.php -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
         </div>
@@ -404,45 +400,8 @@
                     <h5 class="modal-title">Edit Inventory Item</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body">
-                    <form id="editInventoryForm">
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Item Name</label>
-                                <input type="text" class="form-control" id="editItemName" required>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">SKU</label>
-                                <input type="text" class="form-control" id="editItemSku" required disabled>
-                            </div>
-                        </div>
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Category</label>
-                                <select class="form-select" id="editItemCategory" required>
-                                    <option value="">Select Category</option>
-                                    <option value="Electronics">Electronics</option>
-                                    <option value="Tools">Tools</option>
-                                    <option value="Hardware">Hardware</option>
-                                    <option value="Other">Other</option>
-                                </select>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Quantity</label>
-                                <input type="number" class="form-control" id="editItemQuantity" required min="0">
-                            </div>
-                        </div>
-                        <div class="row">
-                            <div class="col-md-12 mb-3">
-                                <label class="form-label">Unit Price</label>
-                                <input type="number" class="form-control" id="editItemPrice" required min="0" step="0.01">
-                            </div>
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="updateItem()">Update Item</button>
+                <div class="modal-body" id="editInventoryFormContent">
+                    <!-- Content will be loaded by JavaScript from get_item_details.php -->
                 </div>
             </div>
         </div>
@@ -455,68 +414,6 @@
         document.getElementById('mobileMenuBtn').addEventListener('click', function() {
             document.getElementById('sidebar').classList.toggle('show');
         });
-
-        // Add new item
-        function addNewItem() {
-            const name = document.getElementById('itemName').value;
-            const sku = document.getElementById('itemSku').value;
-            const category = document.getElementById('itemCategory').value;
-            const quantity = document.getElementById('itemQuantity').value;
-            const price = parseFloat(document.getElementById('itemPrice').value);
-
-            if (!name || !sku || !category || !quantity || !price) {
-                alert('Please fill in all required fields');
-                return;
-            }
-
-            // Generate item ID
-            const itemId = 'INV-' + String(Math.floor(Math.random() * 1000)).padStart(3, '0');
-            const totalValue = (quantity * price).toFixed(2);
-            const status = quantity > 50 ? 'In Stock' : (quantity > 0 ? 'Low Stock' : 'Out of Stock');
-            let statusBadge = 'bg-success';
-            if (quantity <= 0) statusBadge = 'bg-danger';
-            else if (quantity <= 50) statusBadge = 'bg-warning';
-
-            // Add row to table
-            const table = document.querySelector('tbody');
-            const newRow = table.insertRow(0);
-            
-            newRow.innerHTML = `
-                <td><span class="badge bg-light text-dark">${itemId}</span></td>
-                <td>${name}</td>
-                <td>${sku}</td>
-                <td>${category}</td>
-                <td>${quantity}</td>
-                <td>$${price.toFixed(2)}</td>
-                <td>$${totalValue}</td>
-                <td><span class="badge ${statusBadge}">${status}</span></td>
-                <td>
-                    <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#editInventoryModal" onclick="loadEditForm('${itemId}', '${name}', '${sku}', '${category}', ${quantity}, ${price})">
-                        <i class="bi bi-pencil"></i>
-                    </button>
-                </td>
-            `;
-
-            // Reset form and close modal
-            document.getElementById('addInventoryForm').reset();
-            bootstrap.Modal.getInstance(document.getElementById('addInventoryModal')).hide();
-            alert(`Item ${itemId} - ${name} has been added successfully!`);
-        }
-
-        // Load edit form
-        function loadEditForm(itemId, name, sku, category, quantity, price) {
-            document.getElementById('editItemName').value = name;
-            document.getElementById('editItemSku').value = sku;
-            document.getElementById('editItemCategory').value = category;
-            document.getElementById('editItemQuantity').value = quantity;
-            document.getElementById('editItemPrice').value = price;
-        }
-
-        // Update item
-        function updateItem() {
-            alert('Item has been updated successfully!');
-            bootstrap.Modal.getInstance(document.getElementById('editInventoryModal')).hide();
-        }
 
         // Search functionality
         document.getElementById('searchInput').addEventListener('keyup', function() {
@@ -535,10 +432,36 @@
             const rows = document.querySelectorAll('tbody tr');
             
             rows.forEach(row => {
-                const category = row.cells[3].textContent.toLowerCase();
+                const category = row.cells[2].textContent.toLowerCase();
                 row.style.display = (filter === '' || category.includes(filter)) ? '' : 'none';
             });
         });
+
+        // Load item details for viewing
+        function loadItemDetails(itemId) {
+            fetch('get_item_details.php?action=view&item_id=' + itemId)
+                .then(response => response.text())
+                .then(data => {
+                    document.getElementById('itemDetailsContent').innerHTML = data;
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('itemDetailsContent').innerHTML = '<div class="alert alert-danger">Failed to load item details</div>';
+                });
+        }
+
+        // Load item data for editing
+        function loadItemForEdit(itemCode) {
+            fetch('get_item_details.php?action=edit&item_code=' + encodeURIComponent(itemCode))
+                .then(response => response.text())
+                .then(data => {
+                    document.getElementById('editInventoryFormContent').innerHTML = data;
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('editInventoryFormContent').innerHTML = '<div class="alert alert-danger">Failed to load item details</div>';
+                });
+        }
 
         // Logout function
         function logout() {

@@ -48,7 +48,6 @@
             }
         }
         
-        /* Extra small devices (phones, less than 576px) */
         @media (max-width: 576px) {
             .stat-card {
                 min-height: 80px;
@@ -110,12 +109,6 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="trip_tickets.php">
-                            <i class="bi bi-ticket"></i>
-                            <span class="nav-text">Trip Tickets</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
                         <a class="nav-link" href="pick_list_items.php">
                             <i class="bi bi-clipboard-check"></i>
                             <span class="nav-text">Pick List Items</span>
@@ -155,9 +148,30 @@
                 </div>
             </div>
 
+            <?php
+            require_once '../config/database.php';
+            
+            // Get driver statistics
+            $stats = [];
+            
+            // Total Drivers
+            $total_drivers_query = "SELECT COUNT(*) as count FROM drivers";
+            $result = $conn->query($total_drivers_query);
+            $stats['total_drivers'] = $result->fetch_assoc()['count'] ?? 0;
+            
+            // Active Drivers
+            $active_drivers_query = "SELECT COUNT(*) as count FROM drivers WHERE status = 'active'";
+            $result = $conn->query($active_drivers_query);
+            $stats['active_drivers'] = $result->fetch_assoc()['count'] ?? 0;
+            
+            // Trips Completed
+            $trips_completed_query = "SELECT COUNT(*) as count FROM trip_tickets WHERE trip_status = 'completed'";
+            $result = $conn->query($trips_completed_query);
+            $stats['trips_completed'] = $result->fetch_assoc()['count'] ?? 0;
+            ?>
+
             <!-- Driver Stats -->
             <div class="row g-3 mb-4">
-
                 <!-- Total Drivers -->
                 <div class="col-md-3 mb-3">
                     <div class="stat-card drivers">
@@ -165,7 +179,7 @@
                             <i class="bi bi-person-badge"></i>
                         </div>
                         <div>
-                            <div class="stat-value">15</div>
+                            <div class="stat-value"><?php echo $stats['total_drivers']; ?></div>
                             <div class="stat-label">Total Drivers</div>
                         </div>
                     </div>
@@ -178,7 +192,7 @@
                             <i class="bi bi-check-circle"></i>
                         </div>
                         <div>
-                            <div class="stat-value">12</div>
+                            <div class="stat-value"><?php echo $stats['active_drivers']; ?></div>
                             <div class="stat-label">Active Drivers</div>
                         </div>
                     </div>
@@ -191,13 +205,13 @@
                             <i class="bi bi-truck"></i>
                         </div>
                         <div>
-                            <div class="stat-value">145</div>
+                            <div class="stat-value"><?php echo $stats['trips_completed']; ?></div>
                             <div class="stat-label">Trips Completed</div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Avg Rating -->
+                <!-- Avg Rating (static for now) -->
                 <div class="col-md-3 mb-3">
                     <div class="stat-card stock">
                         <div class="stat-icon">
@@ -209,7 +223,6 @@
                         </div>
                     </div>
                 </div>
-
             </div>
 
             <!-- Search and Filter -->
@@ -227,9 +240,9 @@
                         <div class="col-md-3">
                             <select class="form-select" id="statusFilter">
                                 <option value="">All Status</option>
-                                <option value="Active">Active</option>
-                                <option value="Inactive">Inactive</option>
-                                <option value="On Leave">On Leave</option>
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                                <option value="on-leave">On Leave</option>
                             </select>
                         </div>
                         <div class="col-md-3">
@@ -247,108 +260,55 @@
                     <table class="table table-hover mb-0">
                         <thead class="table-light">
                             <tr>
-                                <th>Driver ID</th>
                                 <th>Driver Name</th>
-                                <th>Phone</th>
-                                <th>License #</th>
-                                <th>Vehicle</th>
-                                <th>Trips</th>
+                                <th>License Number</th>
+                                <th>Contact Number</th>
+                                <th>Vehicle Type</th>
+                                <th>Vehicle Plate</th>
+                                <th>Branch</th>
                                 <th>Status</th>
-                                <th>Rating</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">DRV-001</span></td>
-                                <td>John Smith</td>
-                                <td>(555) 123-4567</td>
-                                <td>DL-789456</td>
-                                <td>Van-001 (Ford Transit)</td>
-                                <td>32</td>
-                                <td><span class="badge bg-success">Active</span></td>
-                                <td><i class="bi bi-star-fill text-warning"></i> 4.8</td>
-                                <td>
-                                    <button class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#viewDriverModal">
-                                        <i class="bi bi-eye"></i> View
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">DRV-002</span></td>
-                                <td>Sarah Jones</td>
-                                <td>(555) 234-5678</td>
-                                <td>DL-987654</td>
-                                <td>Van-002 (Ford Transit)</td>
-                                <td>28</td>
-                                <td><span class="badge bg-success">Active</span></td>
-                                <td><i class="bi bi-star-fill text-warning"></i> 4.5</td>
-                                <td>
-                                    <button class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#viewDriverModal">
-                                        <i class="bi bi-eye"></i> View
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">DRV-003</span></td>
-                                <td>Mike Davis</td>
-                                <td>(555) 345-6789</td>
-                                <td>DL-456789</td>
-                                <td>Truck-001 (Freightliner)</td>
-                                <td>45</td>
-                                <td><span class="badge bg-success">Active</span></td>
-                                <td><i class="bi bi-star-fill text-warning"></i> 4.7</td>
-                                <td>
-                                    <button class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#viewDriverModal">
-                                        <i class="bi bi-eye"></i> View
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">DRV-004</span></td>
-                                <td>Jessica White</td>
-                                <td>(555) 456-7890</td>
-                                <td>DL-321654</td>
-                                <td>Van-003 (Mercedes Sprinter)</td>
-                                <td>35</td>
-                                <td><span class="badge bg-success">Active</span></td>
-                                <td><i class="bi bi-star-fill text-warning"></i> 4.6</td>
-                                <td>
-                                    <button class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#viewDriverModal">
-                                        <i class="bi bi-eye"></i> View
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">DRV-005</span></td>
-                                <td>David Brown</td>
-                                <td>(555) 567-8901</td>
-                                <td>DL-654321</td>
-                                <td>Truck-002 (Volvo)</td>
-                                <td>38</td>
-                                <td><span class="badge bg-warning">On Leave</span></td>
-                                <td><i class="bi bi-star-fill text-warning"></i> 4.4</td>
-                                <td>
-                                    <button class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#viewDriverModal">
-                                        <i class="bi bi-eye"></i> View
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">DRV-006</span></td>
-                                <td>Robert Martinez</td>
-                                <td>(555) 678-9012</td>
-                                <td>DL-159753</td>
-                                <td>Van-004 (Ford Transit)</td>
-                                <td>12</td>
-                                <td><span class="badge bg-secondary">Inactive</span></td>
-                                <td><i class="bi bi-star-fill text-warning"></i> 4.2</td>
-                                <td>
-                                    <button class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#viewDriverModal">
-                                        <i class="bi bi-eye"></i> View
-                                    </button>
-                                </td>
-                            </tr>
+                            <?php
+                            $drivers_query = "SELECT d.*, b.branch_name 
+                                             FROM drivers d
+                                             LEFT JOIN branches b ON d.branch_id = b.branch_id
+                                             ORDER BY d.driver_name";
+                            $result = $conn->query($drivers_query);
+                            
+                            if ($result->num_rows > 0) {
+                                while($row = $result->fetch_assoc()) {
+                                    $status_badge = '';
+                                    switch($row['status']) {
+                                        case 'active': $status_badge = 'bg-success'; break;
+                                        case 'inactive': $status_badge = 'bg-secondary'; break;
+                                        case 'on-leave': $status_badge = 'bg-warning'; break;
+                                        default: $status_badge = 'bg-light text-dark';
+                                    }
+                                    ?>
+                                    <tr>
+                                        <td><?php echo $row['driver_name']; ?></td>
+                                        <td><?php echo $row['license_number']; ?></td>
+                                        <td><?php echo $row['contact_number'] ?? 'N/A'; ?></td>
+                                        <td><?php echo $row['vehicle_type'] ?? 'N/A'; ?></td>
+                                        <td><?php echo $row['vehicle_plate_number'] ?? 'N/A'; ?></td>
+                                        <td><?php echo $row['branch_name'] ?? 'N/A'; ?></td>
+                                        <td><span class="badge <?php echo $status_badge; ?>"><?php echo ucfirst(str_replace('-', ' ', $row['status'])); ?></span></td>
+                                        <td>
+                                            <button class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#viewDriverModal" 
+                                                    onclick="loadDriverDetails('<?php echo $row['driver_id']; ?>')">
+                                                <i class="bi bi-eye"></i> View
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    <?php
+                                }
+                            } else {
+                                echo '<tr><td colspan="8" class="text-center">No drivers found</td></tr>';
+                            }
+                            ?>
                         </tbody>
                     </table>
                 </div>
@@ -365,60 +325,69 @@
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <form id="addDriverForm">
+                    <form id="addDriverForm" action="add_driver.php" method="POST">
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Driver Name</label>
-                                <input type="text" class="form-control" id="driverName" required placeholder="Full name">
+                                <input type="text" class="form-control" name="driver_name" required placeholder="Full name">
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label class="form-label">Phone Number</label>
-                                <input type="tel" class="form-control" id="driverPhone" required placeholder="(555) 000-0000">
+                                <label class="form-label">License Number</label>
+                                <input type="text" class="form-control" name="license_number" required placeholder="e.g., DL-123456">
                             </div>
                         </div>
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label class="form-label">License Number</label>
-                                <input type="text" class="form-control" id="licenseNo" required placeholder="e.g., DL-123456">
+                                <label class="form-label">Contact Number</label>
+                                <input type="tel" class="form-control" name="contact_number" placeholder="Phone number">
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">License Expiry Date</label>
-                                <input type="date" class="form-control" id="licenseExpiry" required>
+                                <input type="date" class="form-control" name="license_expiry">
                             </div>
                         </div>
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label class="form-label">Vehicle Assignment</label>
-                                <select class="form-select" id="vehicleAssignment" required>
-                                    <option value="">Select Vehicle</option>
-                                    <option value="Van-001 (Ford Transit)">Van-001 (Ford Transit)</option>
-                                    <option value="Van-002 (Mercedes Sprinter)">Van-002 (Mercedes Sprinter)</option>
-                                    <option value="Truck-001 (Freightliner)">Truck-001 (Freightliner)</option>
-                                    <option value="Truck-002 (Volvo)">Truck-002 (Volvo)</option>
+                                <label class="form-label">Vehicle Type</label>
+                                <input type="text" class="form-control" name="vehicle_type" placeholder="e.g., Van, Truck">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Vehicle Plate Number</label>
+                                <input type="text" class="form-control" name="vehicle_plate_number" placeholder="e.g., ABC-1234">
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Branch</label>
+                                <select class="form-select" name="branch_id">
+                                    <option value="">Select Branch</option>
+                                    <?php
+                                    $branches_query = "SELECT branch_id, branch_name FROM branches WHERE status = 'active'";
+                                    $result = $conn->query($branches_query);
+                                    while($branch = $result->fetch_assoc()) {
+                                        echo '<option value="' . $branch['branch_id'] . '">' . $branch['branch_name'] . '</option>';
+                                    }
+                                    ?>
                                 </select>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Status</label>
-                                <select class="form-select" id="driverStatus" required>
-                                    <option value="Active" selected>Active</option>
-                                    <option value="Inactive">Inactive</option>
-                                    <option value="On Leave">On Leave</option>
+                                <select class="form-select" name="status" required>
+                                    <option value="active" selected>Active</option>
+                                    <option value="inactive">Inactive</option>
+                                    <option value="on-leave">On Leave</option>
                                 </select>
                             </div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Address</label>
-                            <input type="text" class="form-control" id="driverAddress" required placeholder="Street address">
                         </div>
                     </form>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="addNewDriver()">Add Driver</button>
+                    <button type="submit" form="addDriverForm" class="btn btn-primary">Add Driver</button>
                 </div>
             </div>
         </div>
-    </modal>
+    </div>
 
     <!-- View Driver Details Modal -->
     <div class="modal fade" id="viewDriverModal" tabindex="-1">
@@ -428,60 +397,11 @@
                     <h5 class="modal-title">Driver Profile</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body">
-                    <div class="row mb-4">
-                        <div class="col-md-8">
-                            <h6 class="text-muted">Personal Information</h6>
-                            <p><strong>Driver Name:</strong> John Smith</p>
-                            <p><strong>Driver ID:</strong> DRV-001</p>
-                            <p><strong>Phone:</strong> (555) 123-4567</p>
-                            <p><strong>Address:</strong> 123 Main St, New York, NY 10001</p>
-                        </div>
-                        <div class="col-md-4">
-                            <h6 class="text-muted">Current Status</h6>
-                            <p class="mb-2"><span class="badge bg-success">Active</span></p>
-                            <p><strong>Rating:</strong> <i class="bi bi-star-fill text-warning"></i> 4.8/5</p>
-                        </div>
-                    </div>
-                    <hr>
-                    <div class="row mb-4">
-                        <div class="col-md-6">
-                            <h6 class="text-muted">License Information</h6>
-                            <p><strong>License #:</strong> DL-789456</p>
-                            <p><strong>Expiry Date:</strong> 05/15/2027</p>
-                        </div>
-                        <div class="col-md-6">
-                            <h6 class="text-muted">Vehicle Assignment</h6>
-                            <p><strong>Vehicle:</strong> Van-001</p>
-                            <p><strong>Type:</strong> Ford Transit</p>
-                        </div>
-                    </div>
-                    <hr>
-                    <h6 class="text-muted mb-3">Performance Statistics</h6>
-                    <div class="row">
-                        <div class="col-md-4">
-                            <div class="bg-light p-3 rounded text-center">
-                                <p class="text-muted mb-1">Total Trips</p>
-                                <p class="fs-5 fw-bold">32</p>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="bg-light p-3 rounded text-center">
-                                <p class="text-muted mb-1">Completed</p>
-                                <p class="fs-5 fw-bold">31</p>
-                            </div>
-                        </div>
-                        <div class="col-md-4">
-                            <div class="bg-light p-3 rounded text-center">
-                                <p class="text-muted mb-1">On-Time %</p>
-                                <p class="fs-5 fw-bold">96%</p>
-                            </div>
-                        </div>
-                    </div>
+                <div class="modal-body" id="driverDetailsContent">
+                    <!-- Content will be loaded by JavaScript -->
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button type="button" class="btn btn-warning">Edit Profile</button>
                 </div>
             </div>
         </div>
@@ -495,50 +415,17 @@
             document.getElementById('sidebar').classList.toggle('show');
         });
 
-        // Add new driver
-        function addNewDriver() {
-            const driverName = document.getElementById('driverName').value;
-            const phone = document.getElementById('driverPhone').value;
-            const licenseNo = document.getElementById('licenseNo').value;
-            const vehicle = document.getElementById('vehicleAssignment').value;
-            const status = document.getElementById('driverStatus').value;
-
-            if (!driverName || !phone || !licenseNo || !vehicle || !status) {
-                alert('Please fill in all required fields');
-                return;
-            }
-
-            // Generate driver ID
-            const driverId = 'DRV-' + String(Math.floor(Math.random() * 1000)).padStart(3, '0');
-            const rating = (Math.random() * 0.8 + 4.0).toFixed(1); // Random rating between 4.0 and 4.8
-            let statusBadge = 'bg-success';
-            if (status === 'Inactive') statusBadge = 'bg-secondary';
-            if (status === 'On Leave') statusBadge = 'bg-warning';
-
-            // Add row to table
-            const table = document.querySelector('tbody');
-            const newRow = table.insertRow(0);
-            
-            newRow.innerHTML = `
-                <td><span class="badge bg-light text-dark">${driverId}</span></td>
-                <td>${driverName}</td>
-                <td>${phone}</td>
-                <td>${licenseNo}</td>
-                <td>${vehicle}</td>
-                <td>0</td>
-                <td><span class="badge ${statusBadge}">${status}</span></td>
-                <td><i class="bi bi-star-fill text-warning"></i> ${rating}</td>
-                <td>
-                    <button class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#viewDriverModal">
-                        <i class="bi bi-eye"></i> View
-                    </button>
-                </td>
-            `;
-
-            // Reset form and close modal
-            document.getElementById('addDriverForm').reset();
-            bootstrap.Modal.getInstance(document.getElementById('addDriverModal')).hide();
-            alert(`Driver ${driverId} - ${driverName} has been added successfully!`);
+        // Load driver details via AJAX
+        function loadDriverDetails(driverId) {
+            fetch('get_driver_details.php?driver_id=' + driverId)
+                .then(response => response.text())
+                .then(data => {
+                    document.getElementById('driverDetailsContent').innerHTML = data;
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('driverDetailsContent').innerHTML = '<div class="alert alert-danger">Failed to load driver details</div>';
+                });
         }
 
         // Search functionality

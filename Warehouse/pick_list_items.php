@@ -9,7 +9,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
-        <style>
+    <style>
     /* Mobile responsive adjustments ONLY - same as warehouse.php */
         @media (max-width: 768px) {
             .stat-card {
@@ -82,6 +82,70 @@
     </style>
 </head>
 <body>
+    <?php
+    session_start();
+    require_once '../config/database.php';
+    
+    // Check if user is logged in
+    if (!isset($_SESSION['user_id'])) {
+        header("Location: ../login.php");
+        exit();
+    }
+    
+    // Handle form submission
+    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_pick_item') {
+        // Get form data
+        $pick_list_id = $_POST['pick_list_id'];
+        $item_id = $_POST['item_id'];
+        $quantity_to_pick = $_POST['quantity_to_pick'];
+        $location_bin = $_POST['location_bin'] ?: NULL;
+        
+        // Check if item already exists in the pick list
+        $check_query = "SELECT * FROM pick_list_items WHERE pick_list_id = ? AND item_id = ?";
+        $stmt = $conn->prepare($check_query);
+        $stmt->bind_param("ii", $pick_list_id, $item_id);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        
+        if ($result->num_rows > 0) {
+            $error_message = "This item already exists in the selected pick list!";
+        } else {
+            // Insert into database
+            $insert_query = "INSERT INTO pick_list_items (pick_list_id, item_id, quantity_to_pick, location_bin) VALUES (?, ?, ?, ?)";
+            $stmt = $conn->prepare($insert_query);
+            $stmt->bind_param("iiis", $pick_list_id, $item_id, $quantity_to_pick, $location_bin);
+            
+            if ($stmt->execute()) {
+                // Update inventory reserved quantity
+                // First get the branch_id from pick_list
+                $branch_query = "SELECT branch_id FROM pick_lists WHERE pick_list_id = ?";
+                $branch_stmt = $conn->prepare($branch_query);
+                $branch_stmt->bind_param("i", $pick_list_id);
+                $branch_stmt->execute();
+                $branch_result = $branch_stmt->get_result();
+                
+                if ($branch_row = $branch_result->fetch_assoc()) {
+                    $branch_id = $branch_row['branch_id'];
+                    
+                    // Update inventory reserved quantity
+                    $update_inventory_query = "UPDATE inventory SET quantity_reserved = quantity_reserved + ? WHERE branch_id = ? AND item_id = ?";
+                    $update_stmt = $conn->prepare($update_inventory_query);
+                    $update_stmt->bind_param("iii", $quantity_to_pick, $branch_id, $item_id);
+                    $update_stmt->execute();
+                    $update_stmt->close();
+                }
+                
+                $branch_stmt->close();
+                
+                $success_message = "Pick list item added successfully!";
+            } else {
+                $error_message = "Error adding pick list item: " . $conn->error;
+            }
+        }
+        $stmt->close();
+    }
+    ?>
+    
     <!-- MOBILE MENU BUTTON -->
     <button class="mobile-menu-btn" id="mobileMenuBtn">
         <i class="bi bi-list"></i>
@@ -110,12 +174,6 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="trip_tickets.php">
-                            <i class="bi bi-ticket"></i>
-                            <span class="nav-text">Trip Tickets</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
                         <a class="nav-link active" href="pick_list_items.php">
                             <i class="bi bi-clipboard-check"></i>
                             <span class="nav-text">Pick List Items</span>
@@ -137,15 +195,15 @@
             <div class="navbar-top">
                 <div class="page-title">
                     <h2><i class="bi bi-clipboard-check me-2"></i>Pick List Items</h2>
-                    <p>Manage and track invoice items for shipments with trip ticket details</p>
+                    <p>Manage and track pick list items for shipments</p>
                 </div>
                 
                 <div class="user-info-top">
                     <div class="user-profile-top">
                         <div class="user-avatar-top" id="userAvatar">WM</div>
                         <div class="user-details-top">
-                            <span class="user-name-top" id="userName">Warehouse Manager</span>
-                            <span class="user-role-top" id="userRole">Warehouse</span>
+                            <span class="user-name-top" id="userName"><?php echo isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Warehouse Manager'; ?></span>
+                            <span class="user-role-top" id="userRole"><?php echo isset($_SESSION['role']) ? ucfirst($_SESSION['role']) : 'Warehouse'; ?></span>
                         </div>
                     </div>
                     
@@ -155,9 +213,55 @@
                 </div>
             </div>
 
+            <?php
+            // Get pick list statistics
+            $stats = [];
+            
+            // Total Pick List Items
+            $total_items_query = "SELECT COUNT(*) as count FROM pick_list_items";
+            $result = $conn->query($total_items_query);
+            $stats['total_items'] = $result->fetch_assoc()['count'] ?? 0;
+            
+            // Picked Items
+            $picked_query = "SELECT COUNT(*) as count FROM pick_list_items WHERE quantity_picked >= quantity_to_pick";
+            $result = $conn->query($picked_query);
+            $stats['picked'] = $result->fetch_assoc()['count'] ?? 0;
+            
+            // Pending Pickup
+            $pending_query = "SELECT COUNT(*) as count FROM pick_list_items WHERE quantity_picked = 0";
+            $result = $conn->query($pending_query);
+            $stats['pending'] = $result->fetch_assoc()['count'] ?? 0;
+            
+            // Partial Pickup
+            $partial_query = "SELECT COUNT(*) as count FROM pick_list_items WHERE quantity_picked > 0 AND quantity_picked < quantity_to_pick";
+            $result = $conn->query($partial_query);
+            $stats['partial'] = $result->fetch_assoc()['count'] ?? 0;
+            
+            // Total Value (estimated)
+            $value_query = "SELECT SUM(pli.quantity_to_pick * i.unit_price) as total_value 
+                           FROM pick_list_items pli
+                           JOIN items i ON pli.item_id = i.item_id";
+            $result = $conn->query($value_query);
+            $total_value = $result->fetch_assoc()['total_value'] ?? 0;
+            ?>
+
+            <!-- Success/Error Messages -->
+            <?php if (isset($success_message)): ?>
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    <?php echo $success_message; ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
+            
+            <?php if (isset($error_message)): ?>
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <?php echo $error_message; ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
+
             <!-- Pick List Stats -->
             <div class="row g-3 mb-4">
-
                 <!-- Total Items -->
                 <div class="col-md-3 mb-3">
                     <div class="stat-card inventory">
@@ -165,7 +269,7 @@
                             <i class="bi bi-clipboard-check"></i>
                         </div>
                         <div>
-                            <div class="stat-value">156</div>
+                            <div class="stat-value"><?php echo $stats['total_items']; ?></div>
                             <div class="stat-label">Total Items</div>
                         </div>
                     </div>
@@ -173,12 +277,12 @@
 
                 <!-- Picked -->
                 <div class="col-md-3 mb-3">
-                    <div class="stat-card complete">
+                    <div class="stat-card sales">
                         <div class="stat-icon">
                             <i class="bi bi-check-circle"></i>
                         </div>
                         <div>
-                            <div class="stat-value">128</div>
+                            <div class="stat-value"><?php echo $stats['picked']; ?></div>
                             <div class="stat-label">Picked</div>
                         </div>
                     </div>
@@ -191,7 +295,7 @@
                             <i class="bi bi-hourglass-split"></i>
                         </div>
                         <div>
-                            <div class="stat-value">20</div>
+                            <div class="stat-value"><?php echo $stats['pending']; ?></div>
                             <div class="stat-label">Pending Pickup</div>
                         </div>
                     </div>
@@ -199,43 +303,37 @@
 
                 <!-- Total Value -->
                 <div class="col-md-3 mb-3">
-                    <div class="stat-card stock">
+                    <div class="stat-card delivery">
                         <div class="stat-icon">
-                            <i class="bi bi-currency-dollar"></i>
+                            <i class="bi bi-currency-exchange"></i>
                         </div>
                         <div>
-                            <div class="stat-value">$32.5K</div>
+                            <div class="stat-value">₱<?php echo number_format($total_value, 0); ?></div>
                             <div class="stat-label">Total Value</div>
                         </div>
                     </div>
                 </div>
-
             </div>
 
             <!-- Search and Filter -->
             <div class="card mb-4">
                 <div class="card-body">
                     <div class="row g-3">
-                        <div class="col-md-5">
+                        <div class="col-md-6">
                             <div class="input-group">
                                 <span class="input-group-text">
                                     <i class="bi bi-search"></i>
                                 </span>
-                                <input type="text" class="form-control" id="searchInput" placeholder="Search by invoice or item...">
+                                <input type="text" class="form-control" id="searchInput" placeholder="Search by item or pick list...">
                             </div>
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-6">
                             <select class="form-select" id="statusFilter">
                                 <option value="">All Status</option>
-                                <option value="Picked">Picked</option>
-                                <option value="Pending">Pending</option>
-                                <option value="In Progress">In Progress</option>
+                                <option value="complete">Complete</option>
+                                <option value="partial">Partial</option>
+                                <option value="pending">Pending</option>
                             </select>
-                        </div>
-                        <div class="col-md-2">
-                            <button class="btn btn-primary w-100" data-bs-toggle="modal" data-bs-target="#addPickListModal">
-                                <i class="bi bi-plus-lg"></i> Add Item
-                            </button>
                         </div>
                     </div>
                 </div>
@@ -247,93 +345,73 @@
                     <table class="table table-hover mb-0">
                         <thead class="table-light">
                             <tr>
-                                <th>Item ID</th>
-                                <th>Invoice #</th>
-                                <th>Product Name</th>
-                                <th>Quantity</th>
-                                <th>Unit Price</th>
-                                <th>Total</th>
-                                <th>Trip Ticket</th>
+                                <th>Pick List #</th>
+                                <th>Item Name</th>
+                                <th>Quantity to Pick</th>
+                                <th>Quantity Picked</th>
+                                <th>Location Bin</th>
                                 <th>Status</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">PLI-001</span></td>
-                                <td>INV-2025-001</td>
-                                <td>Widget A</td>
-                                <td>50</td>
-                                <td>$45.00</td>
-                                <td>$2,250.00</td>
-                                <td><span class="badge bg-info">TT-001</span></td>
-                                <td><span class="badge bg-success">Picked</span></td>
-                                <td>
-                                    <button class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#viewItemModal">
-                                        <i class="bi bi-eye"></i> View
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">PLI-002</span></td>
-                                <td>INV-2025-002</td>
-                                <td>Gadget B</td>
-                                <td>30</td>
-                                <td>$65.00</td>
-                                <td>$1,950.00</td>
-                                <td><span class="badge bg-info">TT-002</span></td>
-                                <td><span class="badge bg-warning">Pending</span></td>
-                                <td>
-                                    <button class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#viewItemModal">
-                                        <i class="bi bi-eye"></i> View
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">PLI-003</span></td>
-                                <td>INV-2025-003</td>
-                                <td>Device C</td>
-                                <td>25</td>
-                                <td>$28.50</td>
-                                <td>$712.50</td>
-                                <td><span class="badge bg-info">TT-003</span></td>
-                                <td><span class="badge bg-success">Picked</span></td>
-                                <td>
-                                    <button class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#viewItemModal">
-                                        <i class="bi bi-eye"></i> View
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">PLI-004</span></td>
-                                <td>INV-2025-004</td>
-                                <td>Tool D</td>
-                                <td>15</td>
-                                <td>$75.00</td>
-                                <td>$1,125.00</td>
-                                <td><span class="badge bg-info">TT-004</span></td>
-                                <td><span class="badge bg-info">In Progress</span></td>
-                                <td>
-                                    <button class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#viewItemModal">
-                                        <i class="bi bi-eye"></i> View
-                                    </button>
-                                </td>
-                            </tr>
-                            <tr>
-                                <td><span class="badge bg-light text-dark">PLI-005</span></td>
-                                <td>INV-2025-005</td>
-                                <td>Component E</td>
-                                <td>12</td>
-                                <td>$120.00</td>
-                                <td>$1,440.00</td>
-                                <td><span class="badge bg-info">TT-005</span></td>
-                                <td><span class="badge bg-warning">Pending</span></td>
-                                <td>
-                                    <button class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#viewItemModal">
-                                        <i class="bi bi-eye"></i> View
-                                    </button>
-                                </td>
-                            </tr>
+                            <?php
+                            $pick_list_items_query = "SELECT pli.*, pl.pick_list_number, i.item_name, i.item_code,
+                                                     CASE 
+                                                         WHEN pli.quantity_picked >= pli.quantity_to_pick THEN 'Complete'
+                                                         WHEN pli.quantity_picked > 0 THEN 'Partial'
+                                                         ELSE 'Pending'
+                                                     END as pick_status
+                                                     FROM pick_list_items pli
+                                                     JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
+                                                     JOIN items i ON pli.item_id = i.item_id
+                                                     ORDER BY pli.pick_item_id DESC";
+                            $result = $conn->query($pick_list_items_query);
+                            
+                            if ($result->num_rows > 0) {
+                                while($row = $result->fetch_assoc()) {
+                                    $status_badge = '';
+                                    switch($row['pick_status']) {
+                                        case 'Complete': $status_badge = 'bg-success'; break;
+                                        case 'Partial': $status_badge = 'bg-info'; break;
+                                        default: $status_badge = 'bg-warning';
+                                    }
+                                    
+                                    // Calculate completion percentage
+                                    $completion = $row['quantity_to_pick'] > 0 ? ($row['quantity_picked'] / $row['quantity_to_pick']) * 100 : 0;
+                                    ?>
+                                    <tr>
+                                        <td><span class="badge bg-light text-dark"><?php echo $row['pick_list_number']; ?></span></td>
+                                        <td>
+                                            <div><?php echo $row['item_name']; ?></div>
+                                            <small class="text-muted"><?php echo $row['item_code']; ?></small>
+                                        </td>
+                                        <td><?php echo $row['quantity_to_pick']; ?></td>
+                                        <td>
+                                            <div><?php echo $row['quantity_picked']; ?></div>
+                                            <small class="text-muted"><?php echo number_format($completion, 0); ?>%</small>
+                                        </td>
+                                        <td><?php echo $row['location_bin'] ?? 'N/A'; ?></td>
+                                        <td><span class="badge <?php echo $status_badge; ?>"><?php echo $row['pick_status']; ?></span></td>
+                                        <td>
+                                            <div class="btn-group" role="group">
+                                                <button class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#viewItemModal" 
+                                                        onclick="loadPickItemDetails('<?php echo $row['pick_item_id']; ?>')">
+                                                    <i class="bi bi-eye"></i>
+                                                </button>
+                                                <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#updatePickModal"
+                                                        onclick="setUpdatePickItem('<?php echo $row['pick_item_id']; ?>', '<?php echo $row['quantity_to_pick']; ?>', '<?php echo $row['quantity_picked']; ?>')">
+                                                    <i class="bi bi-pencil"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <?php
+                                }
+                            } else {
+                                echo '<tr><td colspan="7" class="text-center">No pick list items found</td></tr>';
+                            }
+                            ?>
                         </tbody>
                     </table>
                 </div>
@@ -349,49 +427,169 @@
                     <h5 class="modal-title">Add Pick List Item</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body">
-                    <form id="addPickListForm">
+                <form id="addPickListForm" method="POST">
+                    <input type="hidden" name="action" value="add_pick_item">
+                    <div class="modal-body">
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label class="form-label">Invoice Number</label>
-                                <input type="text" class="form-control" id="invoiceNo" required placeholder="e.g., INV-2025-001">
+                                <label class="form-label">Pick List <span class="text-danger">*</span></label>
+                                <select class="form-select" name="pick_list_id" required>
+                                    <option value="">Select Pick List</option>
+                                    <?php
+                                    $pick_lists_query = "SELECT pl.pick_list_id, pl.pick_list_number, b.branch_name 
+                                                        FROM pick_lists pl
+                                                        JOIN branches b ON pl.branch_id = b.branch_id
+                                                        WHERE pl.pick_status IN ('open', 'in-progress')
+                                                        ORDER BY pl.created_at DESC";
+                                    $result = $conn->query($pick_lists_query);
+                                    if ($result->num_rows > 0) {
+                                        while($pick_list = $result->fetch_assoc()) {
+                                            echo '<option value="' . $pick_list['pick_list_id'] . '">' . 
+                                                 $pick_list['pick_list_number'] . ' - ' . $pick_list['branch_name'] . '</option>';
+                                        }
+                                    } else {
+                                        echo '<option value="">No active pick lists available</option>';
+                                    }
+                                    ?>
+                                </select>
+                                <small class="text-muted">Only open or in-progress pick lists are shown</small>
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label class="form-label">Trip Ticket ID</label>
-                                <input type="text" class="form-control" id="tripTicketId" required placeholder="e.g., TT-001">
-                            </div>
-                        </div>
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Product Name</label>
-                                <input type="text" class="form-control" id="productName" required placeholder="Product name">
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Quantity</label>
-                                <input type="number" class="form-control" id="quantity" required placeholder="0" min="0">
-                            </div>
-                        </div>
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Unit Price</label>
-                                <input type="number" class="form-control" id="unitPrice" required placeholder="0.00" min="0" step="0.01">
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Status</label>
-                                <select class="form-select" id="itemStatus" required>
-                                    <option value="">Select Status</option>
-                                    <option value="Picked">Picked</option>
-                                    <option value="Pending">Pending</option>
-                                    <option value="In Progress">In Progress</option>
+                                <label class="form-label">Item <span class="text-danger">*</span></label>
+                                <select class="form-select" name="item_id" required>
+                                    <option value="">Select Item</option>
+                                    <?php
+                                    $items_query = "SELECT item_id, item_name, item_code FROM items WHERE status = 'active' ORDER BY item_name";
+                                    $result = $conn->query($items_query);
+                                    while($item = $result->fetch_assoc()) {
+                                        echo '<option value="' . $item['item_id'] . '">' . 
+                                             $item['item_code'] . ' - ' . $item['item_name'] . '</option>';
+                                    }
+                                    ?>
                                 </select>
                             </div>
                         </div>
-                    </form>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Quantity to Pick <span class="text-danger">*</span></label>
+                                <input type="number" class="form-control" name="quantity_to_pick" required placeholder="0" min="1" value="1">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Location Bin</label>
+                                <input type="text" class="form-control" name="location_bin" placeholder="e.g., A-12, B-05">
+                            </div>
+                        </div>
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i> 
+                            Adding an item to a pick list will automatically reserve the quantity in inventory.
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Add Item</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create New Pick List Modal -->
+    <div class="modal fade" id="createPickListModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Create New Pick List</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="addPickListItem()">Add Item</button>
+                <form action="create_pick_list.php" method="POST" target="_blank">
+                    <div class="modal-body">
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Sales Order</label>
+                                <select class="form-select" name="so_id" required>
+                                    <option value="">Select Sales Order</option>
+                                    <?php
+                                    $sales_orders_query = "SELECT so.so_id, so.so_number, c.customer_name 
+                                                          FROM sales_orders so
+                                                          JOIN customers c ON so.customer_id = c.customer_id
+                                                          WHERE so.order_status IN ('confirmed', 'processing')
+                                                          ORDER BY so.order_date DESC";
+                                    $result = $conn->query($sales_orders_query);
+                                    while($so = $result->fetch_assoc()) {
+                                        echo '<option value="' . $so['so_id'] . '">' . 
+                                             $so['so_number'] . ' - ' . $so['customer_name'] . '</option>';
+                                    }
+                                    ?>
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Branch</label>
+                                <select class="form-select" name="branch_id" required>
+                                    <option value="">Select Branch</option>
+                                    <?php
+                                    $branches_query = "SELECT branch_id, branch_name FROM branches WHERE status = 'active'";
+                                    $result = $conn->query($branches_query);
+                                    while($branch = $result->fetch_assoc()) {
+                                        echo '<option value="' . $branch['branch_id'] . '">' . $branch['branch_name'] . '</option>';
+                                    }
+                                    ?>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Pick Date</label>
+                                <input type="date" class="form-control" name="pick_date" value="<?php echo date('Y-m-d'); ?>">
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Status</label>
+                                <select class="form-select" name="pick_status">
+                                    <option value="open" selected>Open</option>
+                                    <option value="in-progress">In Progress</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-success">Create Pick List</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Update Pick Quantity Modal -->
+    <div class="modal fade" id="updatePickModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Update Picked Quantity</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
+                <form id="updatePickForm" method="POST">
+                    <input type="hidden" name="action" value="update_pick_quantity">
+                    <input type="hidden" name="pick_item_id" id="update_pick_item_id">
+                    <div class="modal-body">
+                        <div class="mb-3">
+                            <label class="form-label">Quantity to Pick</label>
+                            <input type="number" class="form-control" id="update_quantity_to_pick" readonly>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Quantity Picked <span class="text-danger">*</span></label>
+                            <input type="number" class="form-control" name="quantity_picked" id="update_quantity_picked" 
+                                   placeholder="Enter picked quantity" min="0" required>
+                        </div>
+                        <div class="alert alert-warning">
+                            <i class="bi bi-exclamation-triangle"></i> 
+                            Make sure the picked quantity is accurate. This cannot be easily reversed.
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-warning">Update Picked Quantity</button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
@@ -404,44 +602,11 @@
                     <h5 class="modal-title">Pick List Item Details</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body">
-                    <div class="row mb-3">
-                        <div class="col-md-6">
-                            <h6 class="text-muted">Item Information</h6>
-                            <p><strong>Item ID:</strong> PLI-001</p>
-                            <p><strong>Product:</strong> Widget A</p>
-                            <p><strong>Status:</strong> <span class="badge bg-success">Picked</span></p>
-                        </div>
-                        <div class="col-md-6">
-                            <h6 class="text-muted">Invoice Details</h6>
-                            <p><strong>Invoice Number:</strong> INV-2025-001</p>
-                            <p><strong>Trip Ticket:</strong> TT-001</p>
-                        </div>
-                    </div>
-                    <hr>
-                    <div class="row mb-3">
-                        <div class="col-md-4">
-                            <h6 class="text-muted">Quantity</h6>
-                            <p class="fs-5"><strong>50 units</strong></p>
-                        </div>
-                        <div class="col-md-4">
-                            <h6 class="text-muted">Unit Price</h6>
-                            <p class="fs-5"><strong>$45.00</strong></p>
-                        </div>
-                        <div class="col-md-4">
-                            <h6 class="text-muted">Total Value</h6>
-                            <p class="fs-5"><strong>$2,250.00</strong></p>
-                        </div>
-                    </div>
-                    <hr>
-                    <h6 class="text-muted mb-3">Associated Trip Information</h6>
-                    <p><strong>Driver:</strong> John Smith (DRV-001)</p>
-                    <p><strong>Destination:</strong> New York</p>
-                    <p><strong>Departure Date:</strong> 02/01/2025</p>
+                <div class="modal-body" id="pickItemDetailsContent">
+                    <!-- Content will be loaded by JavaScript -->
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button type="button" class="btn btn-primary">Print Invoice</button>
                 </div>
             </div>
         </div>
@@ -455,52 +620,51 @@
             document.getElementById('sidebar').classList.toggle('show');
         });
 
-        // Add pick list item
-        function addPickListItem() {
-            const invoiceNo = document.getElementById('invoiceNo').value;
-            const tripTicketId = document.getElementById('tripTicketId').value;
-            const productName = document.getElementById('productName').value;
-            const quantity = parseInt(document.getElementById('quantity').value);
-            const unitPrice = parseFloat(document.getElementById('unitPrice').value);
-            const status = document.getElementById('itemStatus').value;
-
-            if (!invoiceNo || !tripTicketId || !productName || !quantity || !unitPrice || !status) {
-                alert('Please fill in all required fields');
-                return;
-            }
-
-            // Generate item ID
-            const itemId = 'PLI-' + String(Math.floor(Math.random() * 1000)).padStart(3, '0');
-            const totalValue = (quantity * unitPrice).toFixed(2);
-            let statusBadge = 'bg-success';
-            if (status === 'Pending') statusBadge = 'bg-warning';
-            if (status === 'In Progress') statusBadge = 'bg-info';
-
-            // Add row to table
-            const table = document.querySelector('tbody');
-            const newRow = table.insertRow(0);
-            
-            newRow.innerHTML = `
-                <td><span class="badge bg-light text-dark">${itemId}</span></td>
-                <td>${invoiceNo}</td>
-                <td>${productName}</td>
-                <td>${quantity}</td>
-                <td>$${unitPrice.toFixed(2)}</td>
-                <td>$${totalValue}</td>
-                <td><span class="badge bg-info">${tripTicketId}</span></td>
-                <td><span class="badge ${statusBadge}">${status}</span></td>
-                <td>
-                    <button class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#viewItemModal">
-                        <i class="bi bi-eye"></i> View
-                    </button>
-                </td>
-            `;
-
-            // Reset form and close modal
-            document.getElementById('addPickListForm').reset();
-            bootstrap.Modal.getInstance(document.getElementById('addPickListModal')).hide();
-            alert(`Pick List Item ${itemId} has been added successfully!`);
+        // Load pick item details via AJAX
+        function loadPickItemDetails(pickItemId) {
+            fetch('get_pick_item_details.php?pick_item_id=' + pickItemId)
+                .then(response => response.text())
+                .then(data => {
+                    document.getElementById('pickItemDetailsContent').innerHTML = data;
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    document.getElementById('pickItemDetailsContent').innerHTML = '<div class="alert alert-danger">Failed to load item details</div>';
+                });
         }
+
+        // Set values for update pick modal
+        function setUpdatePickItem(pickItemId, quantityToPick, quantityPicked) {
+            document.getElementById('update_pick_item_id').value = pickItemId;
+            document.getElementById('update_quantity_to_pick').value = quantityToPick;
+            document.getElementById('update_quantity_picked').value = quantityPicked;
+            document.getElementById('update_quantity_picked').max = quantityToPick;
+        }
+
+        // Handle update pick form submission
+        document.getElementById('updatePickForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            
+            fetch('update_pick_quantity.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert('Pick quantity updated successfully!');
+                    window.location.reload();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Failed to update pick quantity');
+            });
+        });
 
         // Search functionality
         document.getElementById('searchInput').addEventListener('keyup', function() {
@@ -519,7 +683,7 @@
             const rows = document.querySelectorAll('tbody tr');
             
             rows.forEach(row => {
-                const status = row.cells[7].textContent.toLowerCase();
+                const status = row.cells[5].textContent.toLowerCase();
                 row.style.display = (filter === '' || status.includes(filter)) ? '' : 'none';
             });
         });
@@ -527,9 +691,39 @@
         // Logout function
         function logout() {
             if (confirm('Are you sure you want to logout?')) {
-                window.location.href = '../login.php';
+                window.location.href = '../logout.php';
             }
         }
+
+        // Form validation
+        document.getElementById('addPickListForm').addEventListener('submit', function(e) {
+            const pickListSelect = this.querySelector('select[name="pick_list_id"]');
+            const itemSelect = this.querySelector('select[name="item_id"]');
+            const quantityInput = this.querySelector('input[name="quantity_to_pick"]');
+            
+            if (!pickListSelect.value) {
+                e.preventDefault();
+                alert('Please select a pick list');
+                pickListSelect.focus();
+                return false;
+            }
+            
+            if (!itemSelect.value) {
+                e.preventDefault();
+                alert('Please select an item');
+                itemSelect.focus();
+                return false;
+            }
+            
+            if (!quantityInput.value || quantityInput.value <= 0) {
+                e.preventDefault();
+                alert('Please enter a valid quantity (minimum 1)');
+                quantityInput.focus();
+                return false;
+            }
+            
+            return confirm('Are you sure you want to add this item to the pick list?');
+        });
     </script>
 </body>
 </html>

@@ -184,29 +184,35 @@
 
     <!-- MAIN APPLICATION -->
     <div id="appPage">
-        <!-- Sidebar -->
-        <div class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <h3><i class="bi bi-box-seam logo-icon"></i> <span class="nav-text">Delivery</span></h3>
-            </div>
-            
-            <div class="sidebar-menu">
-                <ul class="nav flex-column">
-                    <li class="nav-item">
-                        <a class="nav-link active" href="fordelivery.php">
-                            <i class="bi bi-truck"></i>
-                            <span class="nav-text">For Delivery</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="rejecteddelivery.php">
-                            <i class="bi bi-exclamation-circle"></i>
-                            <span class="nav-text">Rejected Delivery Advice</span>
-                        </a>
-                    </li>
-                </ul>
-            </div>
-        </div>
+<!-- Sidebar -->
+<div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+        <h3><i class="bi bi-box-seam logo-icon"></i> <span class="nav-text">Delivery</span></h3>
+    </div>
+    
+    <div class="sidebar-menu">
+        <ul class="nav flex-column">
+            <li class="nav-item">
+                <a class="nav-link active" href="fordelivery.php">
+                    <i class="bi bi-truck"></i>
+                    <span class="nav-text">For Delivery</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="trip_tickets.php">
+                    <i class="bi bi-ticket"></i>
+                    <span class="nav-text">Trip Tickets</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="rejecteddelivery.php">
+                    <i class="bi bi-exclamation-circle"></i>
+                    <span class="nav-text">Rejected Delivery Advice</span>
+                </a>
+            </li>
+        </ul>
+    </div>
+</div>
 
         <!-- Main Content Area -->
         <div class="main-content">
