@@ -27,7 +27,7 @@
                         <i class="bi bi-list" id="toggleIcon"></i>
                     </button>
                     <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
-                    <span class="nav-text">Branch Admin</span>
+                    <span class="nav-text">Global</span>
                 </h3>
             </div>
             <div class="sidebar-menu">
