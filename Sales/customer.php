@@ -6,11 +6,36 @@ require_once '../config/session_handler.php';
 requireLogin();
 requireRole(['sales']);
 
+// Function to generate unique customer code
+function generateCustomerCode($conn) {
+    $prefix = 'CUST-';
+    $year = date('Y');
+    $month = date('m');
+    
+    // Get the latest customer code for this year/month
+    $query = "SELECT customer_code FROM customers 
+              WHERE customer_code LIKE '$prefix$year$month%' 
+              ORDER BY customer_code DESC LIMIT 1";
+    $result = $conn->query($query);
+    
+    if ($result && $result->num_rows > 0) {
+        $row = $result->fetch_assoc();
+        $last_code = $row['customer_code'];
+        // Extract the sequence number
+        $sequence = intval(substr($last_code, -4)) + 1;
+    } else {
+        $sequence = 1;
+    }
+    
+    // Format: CUST-YYYYMM-XXXX
+    $new_code = $prefix . $year . $month . '-' . str_pad($sequence, 4, '0', STR_PAD_LEFT);
+    return $new_code;
+}
+
 // Handle Add Customer
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['action']) && $_POST['action'] === 'add_customer') {
         $customer_name = trim($_POST['customer_name']);
-        $customer_code = trim($_POST['customer_code']);
         $contact_person = trim($_POST['contact_person']);
         $email = trim($_POST['email']);
         $phone = trim($_POST['phone_number']);
@@ -19,8 +44,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $latitude = trim($_POST['latitude']);
         $longitude = trim($_POST['longitude']);
         $status = 'active';
+        
+        // Auto-generate customer code
+        $customer_code = generateCustomerCode($conn);
 
-        if (empty($customer_name) || empty($customer_code) || empty($email)) {
+        if (empty($customer_name) || empty($email)) {
             $error = 'Please fill in all required fields';
         } else {
             $sql = "INSERT INTO customers (customer_name, customer_code, contact_person, email, phone_number, address, city, latitude, longitude, status) 
@@ -29,7 +57,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->bind_param('ssssssssss', $customer_name, $customer_code, $contact_person, $email, $phone, $address, $city, $latitude, $longitude, $status);
             
             if ($stmt->execute()) {
-                $success = 'Customer added successfully!';
+                $success = 'Customer added successfully! Customer Code: ' . $customer_code;
             } else {
                 $error = 'Error adding customer: ' . $stmt->error;
             }
@@ -40,7 +68,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['action']) && $_POST['action'] === 'update_customer') {
         $customer_id = (int)$_POST['customer_id'];
         $customer_name = trim($_POST['customer_name']);
-        $customer_code = trim($_POST['customer_code']);
+        $customer_code = trim($_POST['customer_code']); // Keep existing code
         $contact_person = trim($_POST['contact_person']);
         $email = trim($_POST['email']);
         $phone = trim($_POST['phone_number']);
@@ -114,6 +142,9 @@ if ($orders_result) {
     $orders_stats = $orders_result->fetch_assoc();
     $total_orders = $orders_stats['total_orders'];
 }
+
+// Generate a preview code for the modal
+$preview_code = generateCustomerCode($conn);
 
 $error = '';
 $success = '';
@@ -295,6 +326,34 @@ $success = '';
             margin-bottom: 15px;
             font-size: 0.9em;
         }
+        
+        /* Auto-generated code styling */
+        .code-preview {
+            background-color: #e9ecef;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            padding: 10px 15px;
+            font-family: monospace;
+            font-size: 1.1em;
+            color: #0d6efd;
+            font-weight: bold;
+        }
+        
+        .code-label {
+            font-size: 0.85em;
+            color: #6c757d;
+            margin-bottom: 5px;
+        }
+        
+        .refresh-code {
+            cursor: pointer;
+            color: #0d6efd;
+            margin-left: 10px;
+        }
+        
+        .refresh-code:hover {
+            color: #0a58ca;
+        }
     </style>
 </head>
 <body>
@@ -371,64 +430,61 @@ $success = '';
                 </div>
             </div>
 
-<!-- Messages -->
-<?php if (!empty($success)): ?>
-    <div class="alert alert-success alert-dismissible fade show" role="alert">
-        <i class="bi bi-check-circle"></i> <?php echo $success; ?>
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
-<?php endif; ?>
-<?php if (!empty($error)): ?>
-    <div class="alert alert-danger alert-dismissible fade show" role="alert">
-        <i class="bi bi-exclamation-triangle"></i> <?php echo $error; ?>
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
-<?php endif; ?>
+            <!-- Messages -->
+            <?php if (!empty($success)): ?>
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    <i class="bi bi-check-circle"></i> <?php echo $success; ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
+            <?php if (!empty($error)): ?>
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <i class="bi bi-exclamation-triangle"></i> <?php echo $error; ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
 
-<!-- Customer Stats -->
-<div class="row g-3 mb-4">
+            <!-- Customer Stats -->
+            <div class="row g-3 mb-4">
+                <!-- Total Customers -->
+                <div class="col-md-4 mb-3">
+                    <div class="stat-card customers">
+                        <div class="stat-icon">
+                            <i class="bi bi-people"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value"><?php echo $total_customers; ?></div>
+                            <div class="stat-label">Total Customers</div>
+                        </div>
+                    </div>
+                </div>
 
-    <!-- Total Customers -->
-    <div class="col-md-4 mb-3">
-        <div class="stat-card customers">
-            <div class="stat-icon">
-                <i class="bi bi-people"></i>
-            </div>
-            <div>
-                <div class="stat-value"><?php echo $total_customers; ?></div>
-                <div class="stat-label">Total Customers</div>
-            </div>
-        </div>
-    </div>
+                <!-- Active Customers -->
+                <div class="col-md-4 mb-3">
+                    <div class="stat-card complete">
+                        <div class="stat-icon">
+                            <i class="bi bi-check-circle"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value"><?php echo $active_customers; ?></div>
+                            <div class="stat-label">Active Customers</div>
+                        </div>
+                    </div>
+                </div>
 
-    <!-- Active Customers -->
-    <div class="col-md-4 mb-3">
-        <div class="stat-card complete">
-            <div class="stat-icon">
-                <i class="bi bi-check-circle"></i>
+                <!-- Total Orders -->
+                <div class="col-md-4 mb-3">
+                    <div class="stat-card sales">
+                        <div class="stat-icon">
+                            <i class="bi bi-bag-check"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value"><?php echo $total_orders; ?></div>
+                            <div class="stat-label">Total Orders</div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div>
-                <div class="stat-value"><?php echo $active_customers; ?></div>
-                <div class="stat-label">Active Customers</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Total Orders -->
-    <div class="col-md-4 mb-3">
-        <div class="stat-card sales">
-            <div class="stat-icon">
-                <i class="bi bi-bag-check"></i>
-            </div>
-            <div>
-                <div class="stat-value"><?php echo $total_orders; ?></div>
-                <div class="stat-label">Total Orders</div>
-            </div>
-        </div>
-    </div>
-
-</div>
-
 
             <!-- Search and Filter with Add Button -->
             <div class="card mb-4">
@@ -465,7 +521,7 @@ $success = '';
                     <table class="table table-hover mb-0">
                         <thead class="table-light">
                             <tr>
-                                <th>Customer ID</th>
+                                <th>Customer Code</th>
                                 <th>Customer Name</th>
                                 <th>Email</th>
                                 <th>Phone</th>
@@ -541,31 +597,40 @@ $success = '';
                 <form method="POST" id="addCustomerForm">
                     <input type="hidden" name="action" value="add_customer">
                     <div class="modal-body">
+                        <!-- Auto-generated Customer Code Display -->
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <div class="code-label">Customer Code (Auto-generated)</div>
+                                <div class="code-preview" id="customerCodePreview">
+                                    <?php echo $preview_code; ?>
+                                    <i class="bi bi-arrow-repeat refresh-code" onclick="refreshCustomerCode()" title="Generate new code"></i>
+                                </div>
+                                <input type="hidden" name="customer_code" id="customerCodeInput" value="<?php echo $preview_code; ?>">
+                                <small class="text-muted">This code will be automatically generated and assigned to the customer</small>
+                            </div>
+                        </div>
+                        
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Customer Name *</label>
                                 <input type="text" class="form-control" name="customer_name" required placeholder="Full name">
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label class="form-label">Customer Code *</label>
-                                <input type="text" class="form-control" name="customer_code" required placeholder="e.g., CUST-001">
-                            </div>
-                        </div>
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
                                 <label class="form-label">Contact Person</label>
                                 <input type="text" class="form-control" name="contact_person" placeholder="Contact person name">
                             </div>
+                        </div>
+                        <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Email *</label>
                                 <input type="email" class="form-control" name="email" required placeholder="customer@example.com">
                             </div>
-                        </div>
-                        <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Phone</label>
                                 <input type="tel" class="form-control" name="phone_number" placeholder="(555) 000-0000">
                             </div>
+                        </div>
+                        <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">City</label>
                                 <input type="text" class="form-control" name="city" placeholder="City">
@@ -583,7 +648,7 @@ $success = '';
                         
                         <div id="locationMap"></div>
                         
-                        <div class="row">
+                        <div class="row mt-3">
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Latitude</label>
                                 <input type="text" class="form-control" name="latitude" id="latitudeInput" placeholder="14.5995" value="14.5995">
@@ -717,6 +782,21 @@ $success = '';
             }, 5000);
         });
 
+        // Refresh customer code via AJAX
+        function refreshCustomerCode() {
+            fetch('generate_customer_code.php')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        document.getElementById('customerCodePreview').innerHTML = data.code + ' <i class="bi bi-arrow-repeat refresh-code" onclick="refreshCustomerCode()" title="Generate new code"></i>';
+                        document.getElementById('customerCodeInput').value = data.code;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+        }
+
         // Map variables
         let map;
         let marker;
@@ -848,7 +928,7 @@ $success = '';
                         document.getElementById('customerDetailsContent').innerHTML = `
                             <div class="row">
                                 <div class="col-md-6">
-                                    <p><strong>Customer ID:</strong><br>${customer.customer_code}</p>
+                                    <p><strong>Customer Code:</strong><br>${customer.customer_code}</p>
                                     <p><strong>Name:</strong><br>${customer.customer_name}</p>
                                     <p><strong>Contact Person:</strong><br>${customer.contact_person || 'N/A'}</p>
                                     <p><strong>Email:</strong><br>${customer.email}</p>
@@ -901,8 +981,9 @@ $success = '';
                                     <input type="text" class="form-control" name="customer_name" value="${customer.customer_name}" required>
                                 </div>
                                 <div class="col-md-6 mb-3">
-                                    <label class="form-label">Customer Code *</label>
-                                    <input type="text" class="form-control" name="customer_code" value="${customer.customer_code}" required>
+                                    <label class="form-label">Customer Code</label>
+                                    <input type="text" class="form-control" name="customer_code" value="${customer.customer_code}" readonly>
+                                    <small class="text-muted">Customer code cannot be changed</small>
                                 </div>
                             </div>
                             <div class="row">
