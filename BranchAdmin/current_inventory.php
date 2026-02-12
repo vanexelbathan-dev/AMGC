@@ -1,3 +1,71 @@
+<?php
+require_once '../config/database.php';
+
+// FETCH ALL ITEMS FROM items TABLE
+$items_query = "
+    SELECT 
+        item_id,
+        item_code,
+        item_name,
+        description,
+        category,
+        stock as quantity_on_hand,
+        unit_type,
+        unit_price,
+        reorder_level,
+        status,
+        created_at,
+        updated_at
+    FROM items
+    ORDER BY item_code ASC
+";
+$items_result = $conn->query($items_query);
+$items = $items_result->fetch_all(MYSQLI_ASSOC);
+
+// GET NEXT ITEM CODE FOR AUTO-GENERATION
+$next_number = 1;
+if (!empty($items)) {
+    // Extract numbers from existing item codes (ITEM001, ITEM002, etc.)
+    $numbers = [];
+    foreach ($items as $item) {
+        if (preg_match('/ITEM(\d+)/', $item['item_code'], $matches)) {
+            $numbers[] = intval($matches[1]);
+        }
+    }
+    if (!empty($numbers)) {
+        $next_number = max($numbers) + 1;
+    }
+}
+$next_item_code = 'ITEM' . str_pad($next_number, 3, '0', STR_PAD_LEFT);
+
+// CALCULATE STATISTICS FROM REAL DATA
+$total_items = count($items);
+$total_stock = array_sum(array_column($items, 'quantity_on_hand'));
+$total_value = array_sum(array_map(function($item) {
+    return $item['quantity_on_hand'] * $item['unit_price'];
+}, $items));
+
+$low_stock_items = array_filter($items, function($item) {
+    return $item['quantity_on_hand'] <= $item['reorder_level'] && $item['quantity_on_hand'] > 0;
+});
+$low_stock_count = count($low_stock_items);
+
+$out_of_stock = count(array_filter($items, fn($item) => $item['quantity_on_hand'] <= 0));
+
+// STAT CARD VALUES - WITH PROPER LABELS
+$statInventoryValue = '₱' . number_format($total_value / 1000, 1) . 'K';
+$statTotalSKUs = $total_items;
+$statNeedsAttention = $low_stock_count + $out_of_stock;
+$statHealthyStock = round(($total_items - $low_stock_count - $out_of_stock) / max($total_items, 1) * 100) . '%';
+
+// Stock status function
+function getStockStatus($stock, $reorder_level) {
+    if ($stock <= 0) return ['label' => 'Out of Stock', 'class' => 'bg-danger text-white'];
+    if ($stock <= $reorder_level) return ['label' => 'Low Stock', 'class' => 'bg-warning text-dark'];
+    if ($stock <= $reorder_level * 2) return ['label' => 'Normal', 'class' => 'bg-info text-white'];
+    return ['label' => 'Adequate', 'class' => 'bg-success text-white'];
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -14,20 +82,16 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
-    <!-- Chart.js -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/inter-ui@3.19.3/inter.css">
-
 </head>
 <body>
     <!-- MAIN APPLICATION -->
     <div id="appPage">
-       <!-- Sidebar -->
+        <!-- Sidebar -->
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <h3>
-                    <!-- Burger icon moved before logo -->
                     <button class="desktop-toggle-btn" id="desktopToggleBtn">
                         <i class="bi bi-list" id="toggleIcon"></i>
                     </button>
@@ -74,25 +138,25 @@
                             <span class="nav-text">Trip Tickets</span>
                         </a>
                     </li>
-
                     <hr class="sidebar-divider">
                 </ul>
             </div>
-              <!-- User Profile Section at the bottom of sidebar -->
-     <div class="sidebar-footer">
-        <div class="user-profile-sidebar">
-            <div class="user-avatar-sidebar">AD</div>
-            <div class="user-details-sidebar">
-                <span class="user-name-sidebar">Quality Control</span>
-                <span class="user-role-sidebar">QC Officer</span>
+            
+            <!-- User Profile Section at the bottom of sidebar -->
+            <div class="sidebar-footer">
+                <div class="user-profile-sidebar">
+                    <div class="user-avatar-sidebar">AD</div>
+                    <div class="user-details-sidebar">
+                        <span class="user-name-sidebar">Quality Control</span>
+                        <span class="user-role-sidebar">QC Officer</span>
+                    </div>
+                </div>
+                
+                <button class="logout-btn-sidebar" onclick="logout()">
+                    <i class="bi bi-box-arrow-right"></i>
+                    <span class="logout-text">Logout</span>
+                </button>
             </div>
-        </div>
-        
-        <button class="logout-btn-sidebar" onclick="logout()">
-            <i class="bi bi-box-arrow-right"></i>
-            <span class="logout-text">Logout</span>
-        </button>
-    </div>
         </div>
 
         <!-- Main Content -->
@@ -105,211 +169,486 @@
                         <i class="bi bi-list"></i>
                     </button>
                     <div class="page-title">
-                        <h2></i>Current Inventory</h2>
-                        <p id="dashboardSubtitle">Welcome to Inventory System Demo Mode</p>
+                        <h2>Current Inventory</h2>
+                        <p id="dashboardSubtitle">Real-time inventory from database</p>
                     </div>
                 </div>
 
-
-                <!-- Quick Stats -->
+                <!-- QUICK STATS - WITH PROPER ICONS FOR EACH METRIC -->
                 <div class="row g-3 mb-4">
+                    <!-- Stat 1: Total Inventory Value -->
                     <div class="col-xl-3 col-md-6">
                         <div class="stat-card total">
-                            <i class="bi bi-bar-chart stat-icon"></i>
-                            <div class="stat-value" id="statMonthlySales">₱ 1.2M</div>
-                            <div class="stat-label">Monthly Sales</div>
-                            <small class="d-block mt-2"><i class="bi bi-arrow-up-right"></i> 12.5% from last month</small>
+                            <i class="bi bi-coin stat-icon"></i>
+                            <div class="stat-value"><?= $statInventoryValue ?></div>
+                            <div class="stat-label">Total Inventory Value</div>
+                            <small class="d-block mt-2"><i class="bi bi-box-seam"></i> <?= number_format($total_stock) ?> units</small>
                         </div>
                     </div>
+                    
+                    <!-- Stat 2: Total SKUs -->
                     <div class="col-xl-3 col-md-6">
                         <div class="stat-card sales">
-                            <i class="bi bi-cash-coin stat-icon"></i>
-                            <div class="stat-value" id="statActiveAccounts">156</div>
-                            <div class="stat-label">Active Accounts</div>
-                            <small class="d-block mt-2"><i class="bi bi-arrow-up-right"></i> 8 new this month</small>
+                            <i class="bi bi-boxes stat-icon"></i>
+                            <div class="stat-value"><?= $statTotalSKUs ?></div>
+                            <div class="stat-label">Total SKUs</div>
+                            <small class="d-block mt-2"><i class="bi bi-tag"></i> <?= count(array_unique(array_column($items, 'category'))) ?> categories</small>
                         </div>
                     </div>
+                    
+                    <!-- Stat 3: Needs Attention -->
                     <div class="col-xl-3 col-md-6">
                         <div class="stat-card pending">
-                            <i class="bi bi-clock stat-icon"></i>
-                            <div class="stat-value" id="statPendingDeliveries">12</div>
-                            <div class="stat-label">Pending Deliveries</div>
-                            <small class="d-block mt-2">3 require immediate attention</small>
+                            <i class="bi bi-exclamation-triangle stat-icon"></i>
+                            <div class="stat-value"><?= $statNeedsAttention ?></div>
+                            <div class="stat-label">Needs Attention</div>
+                            <small class="d-block mt-2"><?= $low_stock_count ?> low stock, <?= $out_of_stock ?> out</small>
                         </div>
                     </div>
+                    
+                    <!-- Stat 4: Healthy Stock -->
                     <div class="col-xl-3 col-md-6">
                         <div class="stat-card complete">
                             <i class="bi bi-check-circle stat-icon"></i>
-                            <div class="stat-value" id="statOrderAccuracy">98%</div>
-                            <div class="stat-label">Order Accuracy</div>
-                            <small class="d-block mt-2">Excellent performance</small>
+                            <div class="stat-value"><?= $statHealthyStock ?></div>
+                            <div class="stat-label">Healthy Stock</div>
+                            <small class="d-block mt-2"><?= $total_items - $low_stock_count - $out_of_stock ?> items OK</small>
                         </div>
                     </div>
                 </div>
 
-                <!-- Recent Activity -->
-                <div class="row g-3">
-                    <div class="col-lg-8">
-                        <div class="data-table">
-                            <div class="table-header">
-                                <h5>Recent Transactions</h5>
-                            </div>
-                            <div class="table-responsive">
-                                <table class="table custom-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Date</th>
-                                            <th>Type</th>
-                                            <th>Reference</th>
-                                            <th>Amount</th>
-                                            <th>Status</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="recentTransactions">
-                                        <tr>
-                                            <td>2024-01-15</td>
-                                            <td><span class="badge badge-success">Sale</span></td>
-                                            <td>SALE-001245</td>
-                                            <td>₱ 25,000</td>
-                                            <td><span class="badge badge-success">Completed</span></td>
-                                        </tr>
-                                        <tr>
-                                            <td>2024-01-15</td>
-                                            <td><span class="badge badge-info">Purchase</span></td>
-                                            <td>PO-001244</td>
-                                            <td>₱ 45,000</td>
-                                            <td><span class="badge badge-warning">Pending</span></td>
-                                        </tr>
-                                        <tr>
-                                            <td>2024-01-14</td>
-                                            <td><span class="badge badge-primary">Delivery</span></td>
-                                            <td>DEL-001243</td>
-                                            <td>₱ 18,750</td>
-                                            <td><span class="badge badge-info">In Transit</span></td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
+                <!-- SEARCH AND FILTER CONTROLS -->
+                <div class="row g-3 mb-4">
+                    <div class="col-md-4">
+                        <div class="search-box">
+                            <i class="bi bi-search"></i>
+                            <input type="text" class="form-control" id="searchInput" placeholder="Search by item code, name, or category..." onkeyup="filterItems()">
                         </div>
                     </div>
-                    <div class="col-lg-4">
-                        <div class="chart-container">
-                            <h5>Monthly Sales Trend</h5>
-                            <canvas id="dashboardChart"></canvas>
+                    <div class="col-md-3">
+                        <select class="form-select" id="categoryFilter" onchange="filterItems()">
+                            <option value="">All Categories</option>
+                            <?php 
+                            $unique_categories = array_unique(array_column($items, 'category'));
+                            foreach ($unique_categories as $cat): 
+                                if (!empty($cat)):
+                            ?>
+                                <option value="<?= htmlspecialchars($cat) ?>"><?= htmlspecialchars($cat) ?></option>
+                            <?php 
+                                endif;
+                            endforeach; 
+                            ?>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <select class="form-select" id="statusFilter" onchange="filterItems()">
+                            <option value="">All Status</option>
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                            <option value="discontinued">Discontinued</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <select class="form-select" id="stockFilter" onchange="filterItems()">
+                            <option value="">Stock Level</option>
+                            <option value="low">Low Stock</option>
+                            <option value="normal">Normal</option>
+                            <option value="adequate">Adequate</option>
+                            <option value="out">Out of Stock</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- INVENTORY TABLE - REAL DATA FROM DATABASE -->
+                <div class="data-table">
+                    <div class="table-header d-flex justify-content-between align-items-center">
+                        <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>Current Inventory Items</h5>
+                        <div class="d-flex gap-2">
+                            <span class="text-muted me-2">Total Value: ₱<?= number_format($total_value, 2) ?></span>
+                            <button class="btn btn-sm btn-outline-primary" onclick="exportToCSV()">
+                                <i class="bi bi-download"></i> Export
+                            </button>
+                            <button class="btn btn-sm btn-primary" onclick="showAddItemModal()">
+                                <i class="bi bi-plus-circle"></i> Add Item
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table custom-table" id="inventoryTable">
+                            <thead>
+                                <tr>
+                                    <th>Item Code</th>
+                                    <th>Item Name</th>
+                                    <th>Category</th>
+                                    <th>Stock</th>
+                                    <th>Unit</th>
+                                    <th>Unit Price</th>
+                                    <th>Reorder Level</th>
+                                    <th>Status</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="inventoryTableBody">
+                                <?php if (empty($items)): ?>
+                                <tr>
+                                    <td colspan="9" class="text-center py-4">
+                                        <i class="bi bi-inbox fs-1 d-block text-muted mb-2"></i>
+                                        <p class="text-muted mb-0">No items found in database</p>
+                                        <button class="btn btn-sm btn-primary mt-2" onclick="showAddItemModal()">
+                                            <i class="bi bi-plus-circle"></i> Add First Item
+                                        </button>
+                                    </td>
+                                </tr>
+                                <?php else: ?>
+                                    <?php foreach ($items as $item): 
+                                        $stock_status = getStockStatus($item['quantity_on_hand'], $item['reorder_level']);
+                                    ?>
+                                    <tr class="inventory-row" 
+                                        data-id="<?= $item['item_id'] ?>"
+                                        data-code="<?= htmlspecialchars($item['item_code']) ?>"
+                                        data-name="<?= htmlspecialchars($item['item_name']) ?>"
+                                        data-category="<?= htmlspecialchars($item['category']) ?>"
+                                        data-status="<?= $item['status'] ?>"
+                                        data-stock="<?= $item['quantity_on_hand'] ?>"
+                                        data-reorder="<?= $item['reorder_level'] ?>"
+                                        data-price="<?= $item['unit_price'] ?>"
+                                        data-unit="<?= $item['unit_type'] ?>"
+                                        data-description="<?= htmlspecialchars($item['description'] ?? '') ?>">
+                                        <td><strong><?= htmlspecialchars($item['item_code']) ?></strong></td>
+                                        <td>
+                                            <?= htmlspecialchars($item['item_name']) ?>
+                                            <?php if (!empty($item['description'])): ?>
+                                                <small class="d-block text-muted"><?= htmlspecialchars($item['description']) ?></small>
+                                            <?php endif; ?>
+                                        </td>
+                                        <td><?= htmlspecialchars($item['category'] ?? 'Uncategorized') ?></td>
+                                        <td>
+                                            <span class="<?= $item['quantity_on_hand'] <= $item['reorder_level'] ? 'text-danger fw-bold' : '' ?>">
+                                                <?= number_format($item['quantity_on_hand']) ?>
+                                            </span>
+                                            <span class="badge <?= $stock_status['class'] ?> ms-1"><?= $stock_status['label'] ?></span>
+                                        </td>
+                                        <td><?= ucfirst(str_replace('-', ' ', $item['unit_type'])) ?></td>
+                                        <td>₱<?= number_format($item['unit_price'], 2) ?></td>
+                                        <td><?= $item['reorder_level'] ?></td>
+                                        <td>
+                                            <?php
+                                            $status_class = match($item['status']) {
+                                                'active' => 'bg-success',
+                                                'inactive' => 'bg-secondary',
+                                                'discontinued' => 'bg-danger',
+                                                default => 'bg-warning'
+                                            };
+                                            ?>
+                                            <span class="badge <?= $status_class ?>"><?= ucfirst($item['status']) ?></span>
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-primary" onclick="viewItem(<?= $item['item_id'] ?>)" title="View">
+                                                <i class="bi bi-eye"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-warning" onclick="editItem(<?= $item['item_id'] ?>)" title="Edit">
+                                                <i class="bi bi-pencil"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-danger" onclick="deleteItem(<?= $item['item_id'] ?>)" title="Delete">
+                                                <i class="bi bi-trash"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- LOW STOCK ALERT - REAL DATA -->
+                <?php if ($low_stock_count > 0): ?>
+                <div class="row g-3 mt-3">
+                    <div class="col-12">
+                        <div class="alert alert-warning alert-dismissible fade show mb-0" role="alert">
+                            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                            <strong>Low Stock Alert!</strong> <?= $low_stock_count ?> item(s) are below reorder level.
+                            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                         </div>
                     </div>
                 </div>
+                <?php endif; ?>
             </div>
         </div>
-    </div> 
+    </div>
+
+    <!-- ADD ITEM MODAL -->
+    <div class="modal fade" id="itemModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="itemModalTitle">Add New Item</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="itemForm">
+                        <input type="hidden" id="itemId">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="itemCode" class="form-label">Item Code *</label>
+                                <input type="text" class="form-control" id="itemCode" value="<?= $next_item_code ?>" readonly required>
+                                <small class="text-muted">Auto-generated</small>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="itemName" class="form-label">Item Name *</label>
+                                <input type="text" class="form-control" id="itemName" required>
+                            </div>
+                            <div class="col-12">
+                                <label for="description" class="form-label">Description</label>
+                                <textarea class="form-control" id="description" rows="2"></textarea>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="category" class="form-label">Category</label>
+                                <input type="text" class="form-control" id="category">
+                            </div>
+                            <div class="col-md-4">
+                                <label for="stock" class="form-label">Current Stock *</label>
+                                <input type="number" class="form-control" id="stock" min="0" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="unitType" class="form-label">Unit Type *</label>
+                                <select class="form-select" id="unitType" required>
+                                    <option value="piece">Piece</option>
+                                    <option value="case">Case</option>
+                                    <option value="box">Box</option>
+                                    <option value="carton">Carton</option>
+                                    <option value="inner-pack">Inner Pack</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="unitPrice" class="form-label">Unit Price (₱) *</label>
+                                <input type="number" class="form-control" id="unitPrice" min="0" step="0.01" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="reorderLevel" class="form-label">Reorder Level *</label>
+                                <input type="number" class="form-control" id="reorderLevel" min="0" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="status" class="form-label">Status</label>
+                                <select class="form-select" id="status">
+                                    <option value="active">Active</option>
+                                    <option value="inactive">Inactive</option>
+                                    <option value="discontinued">Discontinued</option>
+                                </select>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="saveItem()">Save Item</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- VIEW ITEM MODAL -->
+    <div class="modal fade" id="viewItemModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-info text-white">
+                    <h5 class="modal-title"><i class="bi bi-eye me-2"></i>Item Details</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row" id="viewItemContent">
+                        <!-- Content will be populated by JavaScript -->
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- EDIT ITEM MODAL -->
+    <div class="modal fade" id="editItemModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Edit Item</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="editItemForm">
+                        <input type="hidden" id="editItemId">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="editItemCode" class="form-label">Item Code</label>
+                                <input type="text" class="form-control" id="editItemCode" readonly>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="editItemName" class="form-label">Item Name *</label>
+                                <input type="text" class="form-control" id="editItemName" required>
+                            </div>
+                            <div class="col-12">
+                                <label for="editDescription" class="form-label">Description</label>
+                                <textarea class="form-control" id="editDescription" rows="2"></textarea>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="editCategory" class="form-label">Category</label>
+                                <input type="text" class="form-control" id="editCategory">
+                            </div>
+                            <div class="col-md-4">
+                                <label for="editStock" class="form-label">Current Stock *</label>
+                                <input type="number" class="form-control" id="editStock" min="0" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="editUnitType" class="form-label">Unit Type *</label>
+                                <select class="form-select" id="editUnitType" required>
+                                    <option value="piece">Piece</option>
+                                    <option value="case">Case</option>
+                                    <option value="box">Box</option>
+                                    <option value="carton">Carton</option>
+                                    <option value="inner-pack">Inner Pack</option>
+                                </select>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="editUnitPrice" class="form-label">Unit Price (₱) *</label>
+                                <input type="number" class="form-control" id="editUnitPrice" min="0" step="0.01" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="editReorderLevel" class="form-label">Reorder Level *</label>
+                                <input type="number" class="form-control" id="editReorderLevel" min="0" required>
+                            </div>
+                            <div class="col-md-4">
+                                <label for="editStatus" class="form-label">Status</label>
+                                <select class="form-select" id="editStatus">
+                                    <option value="active">Active</option>
+                                    <option value="inactive">Inactive</option>
+                                    <option value="discontinued">Discontinued</option>
+                                </select>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="updateItem()">Update Item</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- DELETE CONFIRMATION MODAL -->
+    <div class="modal fade" id="deleteItemModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title"><i class="bi bi-trash me-2"></i>Confirm Delete</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete this item?</p>
+                    <p class="fw-bold" id="deleteItemCode"></p>
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        This action cannot be undone.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" onclick="confirmDelete()">Delete Item</button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     
-  <script>
-    // Toggle sidebar collapse/expand on desktop
+    <script>
+    // ========== GLOBAL VARIABLES ==========
+    let currentItemId = null;
+    
+    // ========== SIDEBAR FUNCTIONS ==========
     function toggleSidebar() {
         const sidebar = document.getElementById('sidebar');
         const isMobile = window.innerWidth <= 992;
         
         if (isMobile) {
-            // On mobile, use the existing hamburger functionality
             sidebar.classList.toggle('active');
-            
-            // Create overlay for mobile
             if (!document.querySelector('.sidebar-overlay')) {
                 const overlay = document.createElement('div');
                 overlay.className = 'sidebar-overlay';
                 document.body.appendChild(overlay);
-                
-                overlay.addEventListener('click', () => {
-                    closeMobileSidebar();
-                });
-                
-                setTimeout(() => {
-                    overlay.classList.add('active');
-                }, 10);
+                overlay.addEventListener('click', closeMobileSidebar);
+                setTimeout(() => overlay.classList.add('active'), 10);
             }
         } else {
-            // On desktop, toggle between expanded and collapsed
             sidebar.classList.toggle('collapsed');
-            
-            // Store preference in localStorage
             localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
-            
-            // Show/hide nav text
             document.querySelectorAll('.nav-text').forEach(text => {
                 text.style.display = sidebar.classList.contains('collapsed') ? 'none' : 'inline-block';
             });
         }
     }
 
-    // Close mobile sidebar
     function closeMobileSidebar() {
         const sidebar = document.getElementById('sidebar');
         const overlay = document.querySelector('.sidebar-overlay');
-        
         sidebar.classList.remove('active');
-        
         if (overlay) {
             overlay.classList.remove('active');
-            setTimeout(() => {
-                overlay.remove();
-            }, 300);
+            setTimeout(() => overlay.remove(), 300);
         }
     }
 
-    // Initialize when page loads
+    function initializeSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        if (window.innerWidth > 992) {
+            const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+            if (savedCollapsed === 'true') {
+                sidebar.classList.add('collapsed');
+                document.querySelectorAll('.nav-text').forEach(text => text.style.display = 'none');
+            }
+        }
+    }
+
+    // ========== INVENTORY FUNCTIONS ==========
     document.addEventListener('DOMContentLoaded', function() {
-        console.log("Current Inventory page loaded!");
+        console.log("Current Inventory - Live Database Mode");
         
-        // Setup mobile menu toggle
+        initializeSidebar();
+        
         document.getElementById('mobileMenuBtn').addEventListener('click', function() {
             const sidebar = document.getElementById('sidebar');
             const isMobile = window.innerWidth <= 992;
             
             if (isMobile) {
                 sidebar.classList.toggle('active');
-                
-                // Create overlay for mobile
                 if (!document.querySelector('.sidebar-overlay')) {
                     const overlay = document.createElement('div');
                     overlay.className = 'sidebar-overlay';
                     document.body.appendChild(overlay);
-                    
-                    overlay.addEventListener('click', () => {
-                        closeMobileSidebar();
-                    });
-                    
-                    setTimeout(() => {
-                        overlay.classList.add('active');
-                    }, 10);
+                    overlay.addEventListener('click', closeMobileSidebar);
+                    setTimeout(() => overlay.classList.add('active'), 10);
                 }
             } else {
-                // On desktop, toggle sidebar collapse
                 toggleSidebar();
             }
         });
         
-        // Add event listener for desktop toggle button
         const desktopToggleBtn = document.getElementById('desktopToggleBtn');
         if (desktopToggleBtn) {
             desktopToggleBtn.addEventListener('click', function(e) {
-                e.stopPropagation(); // Prevent event bubbling
+                e.stopPropagation();
                 toggleSidebar();
             });
         }
         
-        // Add click listeners to sidebar links to close on mobile
         document.querySelectorAll('.sidebar .nav-link').forEach(link => {
             link.addEventListener('click', function() {
-                if (window.innerWidth <= 992) {
-                    closeMobileSidebar();
-                }
+                if (window.innerWidth <= 992) closeMobileSidebar();
             });
         });
 
-        // Close sidebar when clicking outside on mobile
         document.addEventListener('click', function(event) {
             const sidebar = document.getElementById('sidebar');
             const mobileBtn = document.getElementById('mobileMenuBtn');
@@ -323,173 +662,242 @@
                 closeMobileSidebar();
             }
         });
-
-        // Initialize charts
-        initializeCharts();
-        
-        // Update dashboard statistics
-        updateDashboardStats();
-        
-        // Update recent transactions
-        updateRecentTransactions();
-
-        // Load sidebar preference from localStorage
-        const savedCollapsed = localStorage.getItem('sidebarCollapsed');
-        if (savedCollapsed === 'true' && window.innerWidth > 992) {
-            const sidebar = document.getElementById('sidebar');
-            sidebar.classList.add('collapsed');
-            // Hide all nav-text when collapsed
-            document.querySelectorAll('.nav-text').forEach(text => {
-                text.style.display = 'none';
-            });
-        } else {
-            // Show all nav-text by default when expanded
-            document.querySelectorAll('.nav-text').forEach(text => {
-                text.style.display = 'inline-block';
-            });
-        }
     });
 
-    // Handle window resize
-    window.addEventListener('resize', function() {
-        const sidebar = document.getElementById('sidebar');
-        const overlay = document.querySelector('.sidebar-overlay');
+    // ========== MODAL FUNCTIONS ==========
+    
+    // Show Add Item Modal
+    function showAddItemModal() {
+        document.getElementById('itemModalTitle').textContent = 'Add New Item';
+        document.getElementById('itemForm').reset();
+        document.getElementById('itemId').value = '';
+        document.getElementById('itemCode').value = '<?= $next_item_code ?>';
+        document.getElementById('status').value = 'active';
+        new bootstrap.Modal(document.getElementById('itemModal')).show();
+    }
+
+    // View Item
+    function viewItem(id) {
+        const row = document.querySelector(`.inventory-row[data-id="${id}"]`);
+        if (!row) return;
         
-        if (window.innerWidth > 992) {
-            // Desktop mode - remove mobile overlay
-            if (overlay) {
-                overlay.remove();
-            }
-            sidebar.classList.remove('active');
+        const code = row.dataset.code;
+        const name = row.dataset.name;
+        const category = row.dataset.category || 'Uncategorized';
+        const stock = row.dataset.stock;
+        const unit = row.dataset.unit;
+        const price = row.dataset.price;
+        const reorder = row.dataset.reorder;
+        const status = row.dataset.status;
+        const description = row.dataset.description || 'No description';
+        
+        const content = document.getElementById('viewItemContent');
+        content.innerHTML = `
+            <div class="col-md-6">
+                <table class="table table-sm table-borderless">
+                    <tr>
+                        <th width="40%">Item Code:</th>
+                        <td><strong>${code}</strong></td>
+                    </tr>
+                    <tr>
+                        <th>Item Name:</th>
+                        <td>${name}</td>
+                    </tr>
+                    <tr>
+                        <th>Category:</th>
+                        <td>${category}</td>
+                    </tr>
+                    <tr>
+                        <th>Description:</th>
+                        <td>${description}</td>
+                    </tr>
+                    <tr>
+                        <th>Status:</th>
+                        <td><span class="badge bg-${status === 'active' ? 'success' : status === 'inactive' ? 'secondary' : 'danger'}">${status.charAt(0).toUpperCase() + status.slice(1)}</span></td>
+                    </tr>
+                </table>
+            </div>
+            <div class="col-md-6">
+                <table class="table table-sm table-borderless">
+                    <tr>
+                        <th width="40%">Stock:</th>
+                        <td>${Number(stock).toLocaleString()} ${unit}</td>
+                    </tr>
+                    <tr>
+                        <th>Unit Price:</th>
+                        <td>₱${Number(price).toFixed(2)}</td>
+                    </tr>
+                    <tr>
+                        <th>Reorder Level:</th>
+                        <td>${reorder}</td>
+                    </tr>
+                    <tr>
+                        <th>Stock Value:</th>
+                        <td>₱${(Number(stock) * Number(price)).toFixed(2)}</td>
+                    </tr>
+                </table>
+            </div>
+        `;
+        
+        new bootstrap.Modal(document.getElementById('viewItemModal')).show();
+    }
+
+    // Edit Item
+    function editItem(id) {
+        const row = document.querySelector(`.inventory-row[data-id="${id}"]`);
+        if (!row) return;
+        
+        document.getElementById('editItemId').value = id;
+        document.getElementById('editItemCode').value = row.dataset.code;
+        document.getElementById('editItemName').value = row.dataset.name;
+        document.getElementById('editDescription').value = row.dataset.description;
+        document.getElementById('editCategory').value = row.dataset.category;
+        document.getElementById('editStock').value = row.dataset.stock;
+        document.getElementById('editUnitType').value = row.dataset.unit;
+        document.getElementById('editUnitPrice').value = row.dataset.price;
+        document.getElementById('editReorderLevel').value = row.dataset.reorder;
+        document.getElementById('editStatus').value = row.dataset.status;
+        
+        currentItemId = id;
+        new bootstrap.Modal(document.getElementById('editItemModal')).show();
+    }
+
+    // Update Item
+    function updateItem() {
+        const id = document.getElementById('editItemId').value;
+        alert('Update item ' + id + ' - AJAX implementation needed');
+        bootstrap.Modal.getInstance(document.getElementById('editItemModal')).hide();
+    }
+
+    // Delete Item
+    function deleteItem(id) {
+        const row = document.querySelector(`.inventory-row[data-id="${id}"]`);
+        if (!row) return;
+        
+        document.getElementById('deleteItemCode').textContent = row.dataset.code;
+        currentItemId = id;
+        new bootstrap.Modal(document.getElementById('deleteItemModal')).show();
+    }
+
+    // Confirm Delete
+    function confirmDelete() {
+        alert('Delete item ' + currentItemId + ' - AJAX implementation needed');
+        bootstrap.Modal.getInstance(document.getElementById('deleteItemModal')).hide();
+    }
+
+    // Save Item (Add)
+    function saveItem() {
+        alert('Save item - AJAX implementation needed');
+        bootstrap.Modal.getInstance(document.getElementById('itemModal')).hide();
+    }
+
+    // ========== FILTER FUNCTIONS ==========
+    
+    // Filter items
+    function filterItems() {
+        const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+        const category = document.getElementById('categoryFilter').value;
+        const status = document.getElementById('statusFilter').value;
+        const stockLevel = document.getElementById('stockFilter').value;
+        
+        const rows = document.querySelectorAll('.inventory-row');
+        let visibleCount = 0;
+        
+        rows.forEach(row => {
+            const code = row.dataset.code.toLowerCase();
+            const name = row.dataset.name.toLowerCase();
+            const rowCategory = row.dataset.category?.toLowerCase() || '';
+            const rowStatus = row.dataset.status;
+            const stock = parseInt(row.dataset.stock);
+            const reorder = parseInt(row.dataset.reorder);
             
-            // Load saved preference
-            const savedCollapsed = localStorage.getItem('sidebarCollapsed');
-            if (savedCollapsed === 'true') {
-                sidebar.classList.add('collapsed');
-                // Hide all nav-text when collapsed
-                document.querySelectorAll('.nav-text').forEach(text => {
-                    text.style.display = 'none';
-                });
+            let matchesSearch = searchTerm === '' || code.includes(searchTerm) || name.includes(searchTerm);
+            let matchesCategory = category === '' || rowCategory === category.toLowerCase();
+            let matchesStatus = status === '' || rowStatus === status;
+            
+            let matchesStock = true;
+            if (stockLevel === 'low') matchesStock = stock <= reorder && stock > 0;
+            else if (stockLevel === 'normal') matchesStock = stock > reorder && stock <= reorder * 2;
+            else if (stockLevel === 'adequate') matchesStock = stock > reorder * 2;
+            else if (stockLevel === 'out') matchesStock = stock <= 0;
+            
+            if (matchesSearch && matchesCategory && matchesStatus && matchesStock) {
+                row.style.display = '';
+                visibleCount++;
             } else {
-                sidebar.classList.remove('collapsed');
-                // Show all nav-text when expanded
-                document.querySelectorAll('.nav-text').forEach(text => {
-                    text.style.display = 'inline-block';
-                });
+                row.style.display = 'none';
             }
-        } else {
-            // Mobile mode - always show expanded
-            sidebar.classList.remove('collapsed');
-            // Show all nav-text on mobile
-            document.querySelectorAll('.nav-text').forEach(text => {
-                text.style.display = 'inline-block';
-            });
-        }
-    });
-
-    // Initialize Charts
-    function initializeCharts() {
-        // Dashboard Chart
-        const dashboardCtx = document.getElementById('dashboardChart');
-        if (dashboardCtx) {
-            new Chart(dashboardCtx, {
-                type: 'line',
-                data: {
-                    labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'],
-                    datasets: [{
-                        label: 'Sales (₱)',
-                        data: [850000, 920000, 1010000, 980000, 1120000, 1250000],
-                        borderColor: '#10b981',
-                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                        fill: true,
-                        tension: 0.4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: {
-                            display: false
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: true,
-                            ticks: {
-                                callback: function(value) {
-                                    return '₱ ' + (value / 1000).toFixed(0) + 'K';
-                                }
-                            }
-                        }
-                    }
-                }
-            });
-        }
+        });
     }
 
-    // Update dashboard statistics
-    function updateDashboardStats() {
-        // Mock data for demo
-        document.getElementById('statMonthlySales').textContent = '₱ 1.2M';
-        document.getElementById('statActiveAccounts').textContent = '156';
-        document.getElementById('statPendingDeliveries').textContent = '12';
-        document.getElementById('statOrderAccuracy').textContent = '98%';
+    // Filter low stock
+    function filterLowStock() {
+        document.getElementById('stockFilter').value = 'low';
+        filterItems();
     }
 
-    // Update recent transactions
-    function updateRecentTransactions() {
-        const transactionsTable = document.getElementById('recentTransactions');
+    // ========== EXPORT FUNCTIONS ==========
+    
+    // Export to CSV
+    function exportToCSV() {
+        const rows = document.querySelectorAll('.inventory-row:not([style*="display: none"])');
+        if (rows.length === 0) {
+            alert('No items to export');
+            return;
+        }
         
-        // Mock transactions data
-        const transactions = [
-            { date: '2024-01-15', type: 'Sale', ref: 'SALE-001245', amount: '₱ 25,000', status: 'Completed' },
-            { date: '2024-01-15', type: 'Purchase', ref: 'PO-001244', amount: '₱ 45,000', status: 'Pending' },
-            { date: '2024-01-14', type: 'Delivery', ref: 'DEL-001243', amount: '₱ 18,750', status: 'In Transit' }
-        ];
+        let csv = 'Item Code,Item Name,Category,Stock,Unit Type,Unit Price (₱),Reorder Level,Status,Stock Value (₱)\n';
         
-        // Update table
-        let html = '';
-        transactions.forEach(transaction => {
-            const typeClass = transaction.type === 'Sale' ? 'badge-success' : 
-                             transaction.type === 'Purchase' ? 'badge-info' : 'badge-primary';
-            const statusClass = transaction.status === 'Completed' ? 'badge-success' :
-                               transaction.status === 'Pending' ? 'badge-warning' : 'badge-info';
-            
-            html += `
-                <tr>
-                    <td>${transaction.date}</td>
-                    <td><span class="badge ${typeClass}">${transaction.type}</span></td>
-                    <td>${transaction.ref}</td>
-                    <td>${transaction.amount}</td>
-                    <td><span class="badge ${statusClass}">${transaction.status}</span></td>
-                </tr>
-            `;
+        rows.forEach(row => {
+            if (row.style.display !== 'none') {
+                const code = row.dataset.code;
+                const name = `"${row.dataset.name}"`;
+                const category = row.dataset.category || 'Uncategorized';
+                const stock = row.dataset.stock;
+                const unit = row.querySelector('td:nth-child(5)')?.innerText || '';
+                const price = row.dataset.price;
+                const reorder = row.dataset.reorder;
+                const status = row.dataset.status;
+                const value = parseFloat(stock) * parseFloat(price);
+                
+                csv += `${code},${name},${category},${stock},${unit},${price},${reorder},${status},${value.toFixed(2)}\n`;
+            }
         });
         
-        transactionsTable.innerHTML = html;
+        const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `inventory_export_<?= date('Ymd') ?>.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        
+        alert('Export completed!');
     }
 
-    // Logout Function - Now just refreshes the page for demo reset
+    // ========== LOGOUT FUNCTION ==========
     function logout() {
-        if (confirm('Reset demo to initial state?')) {
+        if (confirm('Are you sure you want to logout?')) {
             localStorage.removeItem('sidebarCollapsed');
-            location.reload();
+            window.location.href = '../login.php';
         }
     }
 
-    // Keyboard shortcuts
+    // ========== KEYBOARD SHORTCUTS ==========
     document.addEventListener('keydown', function(e) {
-        // Ctrl + R for reset
-        if (e.ctrlKey && e.key === 'r') {
-            e.preventDefault();
-            logout();
-        }
-        // Ctrl + B to toggle sidebar (desktop only)
-        else if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
+        if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
             e.preventDefault();
             toggleSidebar();
+        } else if (e.ctrlKey && e.key === 'f') {
+            e.preventDefault();
+            document.getElementById('searchInput').focus();
+        } else if (e.ctrlKey && e.key === 'n') {
+            e.preventDefault();
+            showAddItemModal();
         }
     });
-</script>
+    </script>
 </body>
 </html>

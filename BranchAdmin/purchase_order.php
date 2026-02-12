@@ -1,3 +1,76 @@
+<?php
+require_once '../config/database.php';
+
+// FETCH PURCHASE ORDERS FROM DATABASE
+$po_query = "
+    SELECT 
+        po.po_id,
+        po.po_number,
+        po.order_date,
+        po.expected_delivery,
+        po.total_amount,
+        po.po_status,
+        po.supplier_name,
+        po.created_at,
+        po.updated_at,
+        COUNT(poi.po_item_id) as total_items,
+        SUM(poi.quantity_ordered) as total_quantity
+    FROM purchase_orders po
+    LEFT JOIN purchase_order_items poi ON po.po_id = poi.po_id
+    GROUP BY po.po_id
+    ORDER BY po.created_at DESC, po.po_id DESC
+";
+$po_result = $conn->query($po_query);
+$purchase_orders = $po_result->fetch_all(MYSQLI_ASSOC);
+
+// CALCULATE STATISTICS FROM REAL DATA
+$total_po = count($purchase_orders);
+$draft_po = count(array_filter($purchase_orders, fn($po) => $po['po_status'] === 'draft'));
+$submitted_po = count(array_filter($purchase_orders, fn($po) => $po['po_status'] === 'submitted'));
+$approved_po = count(array_filter($purchase_orders, fn($po) => $po['po_status'] === 'approved'));
+$received_po = count(array_filter($purchase_orders, fn($po) => $po['po_status'] === 'received'));
+$cancelled_po = count(array_filter($purchase_orders, fn($po) => $po['po_status'] === 'cancelled'));
+
+// STAT CARD VALUES
+$statTotalPO = $total_po;
+$statProcessingPO = $submitted_po + $approved_po;
+$statDeliveredPO = $received_po;
+$statReturnedPO = 0;
+
+// Get unique suppliers for filter
+$suppliers_query = "SELECT DISTINCT supplier_name FROM purchase_orders WHERE supplier_name IS NOT NULL AND supplier_name != '' ORDER BY supplier_name";
+$suppliers_result = $conn->query($suppliers_query);
+$suppliers = $suppliers_result->fetch_all(MYSQLI_ASSOC);
+
+// Helper function for PO status badge
+function getPOStatusClass($status) {
+    return match($status) {
+        'draft' => 'status-draft',
+        'submitted' => 'status-processing',
+        'approved' => 'status-processing',
+        'received' => 'status-delivered',
+        'cancelled' => 'status-cancelled',
+        default => 'status-draft'
+    };
+}
+
+function getPOStatusText($status) {
+    return match($status) {
+        'draft' => 'Draft',
+        'submitted' => 'Processing',
+        'approved' => 'Approved',
+        'received' => 'Delivered',
+        'cancelled' => 'Cancelled',
+        default => ucfirst($status)
+    };
+}
+
+function formatDate($dateStr) {
+    if (!$dateStr) return '';
+    $date = new DateTime($dateStr);
+    return $date->format('M d, Y');
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -19,7 +92,7 @@
 <body>
     <!-- MAIN APPLICATION -->
     <div id="appPage">
-        <!-- Sidebar (SAME AS CURRENT INVENTORY) -->
+        <!-- Sidebar -->
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
                  <h3>
@@ -38,7 +111,7 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="sales_orders.php">
+                        <a class="nav-link" href="sales_order.php">
                             <i class="bi bi-bag"></i>
                             <span class="nav-text">Sales Orders</span>
                         </a>
@@ -56,12 +129,11 @@
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link active" href="purchase_orders.php">
+                        <a class="nav-link active" href="purchase_order.php">
                             <i class="bi bi-box"></i>
                             <span class="nav-text">Purchase Orders</span>
                         </a>
                     </li>
-                    <!-- TRIP TICKETS ACTIVE LINK -->
                     <li class="nav-item">
                         <a class="nav-link" href="trip_tickets.php">
                             <i class="bi bi-ticket-perforated"></i>
@@ -89,9 +161,9 @@
         </div>
         <!-- Main Content -->
         <div class="main-content" id="mainContent">
-            <!-- PURCHASE ORDERS TABLE CONTENT -->
+            <!-- PURCHASE ORDERS CONTENT -->
             <div id="dashboardContent" class="page-content active">
-                <!-- Navbar Top - Same as Trip Tickets -->
+                <!-- Navbar Top -->
                 <div class="navbar-top">
                     <button class="mobile-menu-btn" id="mobileMenuBtn">
                         <i class="bi bi-list"></i>
@@ -102,14 +174,14 @@
                     </div>
                 </div>
 
-                <!-- Stats Section -->
+                <!-- Stats Section - WITH PROPER ICONS -->
                 <div class="stats-row">
                     <div class="stat-card total">
                         <div class="stat-icon">
                             <i class="bi bi-receipt"></i>
                         </div>
                         <div class="stat-content">
-                            <div class="stat-value" id="totalPO">0</div>
+                            <div class="stat-value" id="totalPO"><?= $statTotalPO ?></div>
                             <div class="stat-label">Total POs</div>
                         </div>
                     </div>
@@ -118,7 +190,7 @@
                             <i class="bi bi-clock-history"></i>
                         </div>
                         <div class="stat-content">
-                            <div class="stat-value" id="processingPO">0</div>
+                            <div class="stat-value" id="processingPO"><?= $statProcessingPO ?></div>
                             <div class="stat-label">Processing</div>
                         </div>
                     </div>
@@ -127,7 +199,7 @@
                             <i class="bi bi-truck"></i>
                         </div>
                         <div class="stat-content">
-                            <div class="stat-value" id="deliveredPO">0</div>
+                            <div class="stat-value" id="deliveredPO"><?= $statDeliveredPO ?></div>
                             <div class="stat-label">Delivered</div>
                         </div>
                     </div>
@@ -136,7 +208,7 @@
                             <i class="bi bi-arrow-return-left"></i>
                         </div>
                         <div class="stat-content">
-                            <div class="stat-value" id="returnedPO">0</div>
+                            <div class="stat-value" id="returnedPO"><?= $statReturnedPO ?></div>
                             <div class="stat-label">Returned</div>
                         </div>
                     </div>
@@ -147,14 +219,21 @@
                     <select class="filter-select" id="filterStatus" onchange="filterTable()">
                         <option value="all">All Status</option>
                         <option value="draft">Draft</option>
-                        <option value="processing">Processing</option>
-                        <option value="delivered">Delivered</option>
-                        <option value="returned">Returned</option>
+                        <option value="submitted">Processing</option>
+                        <option value="approved">Approved</option>
+                        <option value="received">Delivered</option>
                         <option value="cancelled">Cancelled</option>
                     </select>
                     
                     <select class="filter-select" id="filterSupplier" onchange="filterTable()">
                         <option value="all">All Suppliers</option>
+                        <?php foreach ($suppliers as $supplier): ?>
+                            <?php if (!empty($supplier['supplier_name'])): ?>
+                                <option value="<?= htmlspecialchars($supplier['supplier_name']) ?>">
+                                    <?= htmlspecialchars($supplier['supplier_name']) ?>
+                                </option>
+                            <?php endif; ?>
+                        <?php endforeach; ?>
                     </select>
                     
                     <select class="filter-select" id="filterMonth" onchange="filterTable()">
@@ -175,65 +254,106 @@
                     
                     <div class="filter-search">
                         <i class="bi bi-search"></i>
-                        <input type="text" id="searchInput" placeholder="Search PO number, supplier, or items..." onkeyup="filterTable()">
+                        <input type="text" id="searchInput" placeholder="Search PO number, supplier..." onkeyup="filterTable()">
                     </div>
                     
-                    <button class="btn btn-outline-primary" onclick="exportToExcel()">
-                        <i class="bi bi-download me-1"></i> Export Excel
-                    </button>
-                    <button class="btn btn-primary" onclick="showNewPOModal()">
-                        <i class="bi bi-plus-circle me-1"></i> New PO
-                    </button>
-                </div>
-
-                <!-- Table Container -->
-                <div class="table-container">
-                    <table class="table po-table">
-                        <thead>
-                            <tr>
-                                <th width="5%">
-                                    <input type="checkbox" id="selectAll" onclick="toggleSelectAll()">
-                                </th>
-                                <th width="10%">PO No.</th>
-                                <th width="15%">Supplier</th>
-                                <th width="10%">Date</th>
-                                <th width="10%">Items</th>
-                                <th width="10%">Total Qty</th>
-                                <th width="10%">Amount</th>
-                                <th width="10%">Status</th>
-                                <th width="15%">Expected Date</th>
-                                <th width="15%">Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="poTableBody">
-                            <!-- Table rows will be populated here -->
-                        </tbody>
-                    </table>
-                    
-                    <!-- Empty State -->
-                    <div class="empty-state" id="emptyState" style="display: none;">
-                        <div class="empty-state-icon">
-                            <i class="bi bi-inbox"></i>
-                        </div>
-                        <h4>No Purchase Orders Found</h4>
-                        <p class="text-muted mb-4">Try adjusting your filters or create a new purchase order</p>
+                    <div class="filter-buttons">
+                        <button class="btn btn-outline-primary" onclick="exportToExcel()">
+                            <i class="bi bi-download me-1"></i> Export
+                        </button>
                         <button class="btn btn-primary" onclick="showNewPOModal()">
-                            <i class="bi bi-plus-circle me-1"></i> Create New PO
+                            <i class="bi bi-plus-circle me-1"></i> New PO
                         </button>
                     </div>
                 </div>
 
-                <!-- Pagination -->
-                <div class="pagination-container">
-                    <div class="pagination-info" id="paginationInfo">
-                        Showing 0 of 0 entries
+                <!-- Table Container - WITHOUT CHECKBOX COLUMN -->
+                <div class="table-wrapper">
+                    <div class="table-container">
+                        <table class="table po-table">
+                            <thead>
+                                <tr>
+                                    <!-- CHECKBOX HEADER REMOVED -->
+                                    <th class="col-po">PO NUMBER</th>
+                                    <th class="col-supplier">SUPPLIER</th>
+                                    <th class="col-date">ORDER DATE</th>
+                                    <th class="col-items">ITEMS</th>
+                                    <th class="col-qty">QUANTITY</th>
+                                    <th class="col-amount">TOTAL AMOUNT</th>
+                                    <th class="col-status">STATUS</th>
+                                    <th class="col-expected">EXPECTED DELIVERY</th>
+                                    <th class="col-actions">ACTIONS</th>
+                                </tr>
+                            </thead>
+                            <tbody id="poTableBody">
+                                <?php if (empty($purchase_orders)): ?>
+                                <tr>
+                                    <td colspan="9" class="text-center py-5">
+                                        <i class="bi bi-inbox fs-1 d-block text-muted mb-3"></i>
+                                        <h5>No Purchase Orders Found</h5>
+                                        <p class="text-muted mb-0">No purchase orders in the database.</p>
+                                        <p class="text-muted">Click "New PO" to create your first purchase order.</p>
+                                    </td>
+                                </tr>
+                                <?php else: ?>
+                                    <?php foreach ($purchase_orders as $po): ?>
+                                    <tr class="po-row" 
+                                        data-po-number="<?= htmlspecialchars($po['po_number']) ?>"
+                                        data-supplier="<?= htmlspecialchars($po['supplier_name'] ?? '') ?>"
+                                        data-status="<?= $po['po_status'] ?>"
+                                        data-date="<?= $po['order_date'] ?>">
+                                        <!-- CHECKBOX CELL REMOVED -->
+                                        <td class="col-po">
+                                            <strong><?= htmlspecialchars($po['po_number']) ?></strong>
+                                        </td>
+                                        <td class="col-supplier">
+                                            <?= htmlspecialchars($po['supplier_name'] ?? 'N/A') ?>
+                                        </td>
+                                        <td class="col-date"><?= formatDate($po['order_date']) ?></td>
+                                        <td class="col-items"><?= $po['total_items'] ?? 0 ?></td>
+                                        <td class="col-qty"><?= $po['total_quantity'] ?? 0 ?></td>
+                                        <td class="col-amount">₱<?= number_format($po['total_amount'] ?? 0, 2) ?></td>
+                                        <td class="col-status">
+                                            <span class="status-badge <?= getPOStatusClass($po['po_status']) ?>">
+                                                <?= getPOStatusText($po['po_status']) ?>
+                                            </span>
+                                        </td>
+                                        <td class="col-expected"><?= formatDate($po['expected_delivery']) ?></td>
+                                        <td class="col-actions">
+                                            <div class="action-buttons">
+                                                <button class="table-btn btn-view" onclick="viewPO(<?= $po['po_id'] ?>)" title="View">
+                                                    <i class="bi bi-eye"></i>
+                                                </button>
+                                                <button class="table-btn btn-edit" onclick="editPO(<?= $po['po_id'] ?>)" title="Edit">
+                                                    <i class="bi bi-pencil"></i>
+                                                </button>
+                                                <button class="table-btn btn-delete" onclick="deletePO(<?= $po['po_id'] ?>)" title="Delete">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                        
+                        <!-- Empty State (hidden if there are items) -->
+                        <div class="empty-state" id="emptyState" style="display: none;">
+                            <div class="empty-state-icon">
+                                <i class="bi bi-inbox"></i>
+                            </div>
+                            <h4>No Purchase Orders Found</h4>
+                            <p class="text-muted mb-4">Try adjusting your filters or create a new purchase order</p>
+                            <button class="btn btn-primary" onclick="showNewPOModal()">
+                                <i class="bi bi-plus-circle me-1"></i> Create New PO
+                            </button>
+                        </div>
                     </div>
-                    <nav>
-                        <ul class="pagination" id="pagination">
-                            <!-- Pagination will be generated here -->
-                        </ul>
-                    </nav>
                 </div>
+
+                <!-- PAGINATION - REMOVED COMPLETELY -->
+                
             </div>
         </div>
     </div>
@@ -242,132 +362,89 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     
     <script>
-    // Sample data for Purchase Orders
-    let purchaseOrders = [
-        {
-            id: 1,
-            poNumber: 'PO-2024-001',
-            supplierName: 'Coca-Cola Philippines',
-            supplierContact: 'Juan Dela Cruz',
-            poDate: '2024-01-15',
-            expectedDate: '2024-01-20',
-            status: 'delivered',
-            totalAmount: 75000,
-            items: [
-                { code: 'SC', description: 'SWAKTO COKE 190MLX12', quantity: 50, unit: 'case', unitPrice: 1500, total: 75000 }
-            ],
-            remarks: 'Regular monthly order'
-        },
-        // ... (rest of your purchaseOrders array remains the same)
-    ];
-
-    let currentPage = 1;
-    const itemsPerPage = 10;
-    let filteredOrders = [...purchaseOrders];
-
-    // Toggle sidebar collapse/expand on desktop
+    // ========== SIDEBAR FUNCTIONS ==========
     function toggleSidebar() {
         const sidebar = document.getElementById('sidebar');
         const isMobile = window.innerWidth <= 992;
         
         if (isMobile) {
-            // On mobile, use the existing hamburger functionality
             sidebar.classList.toggle('active');
-            
-            // Create overlay for mobile
             if (!document.querySelector('.sidebar-overlay')) {
                 const overlay = document.createElement('div');
                 overlay.className = 'sidebar-overlay';
                 document.body.appendChild(overlay);
-                
-                overlay.addEventListener('click', () => {
-                    closeMobileSidebar();
-                });
-                
-                setTimeout(() => {
-                    overlay.classList.add('active');
-                }, 10);
+                overlay.addEventListener('click', closeMobileSidebar);
+                setTimeout(() => overlay.classList.add('active'), 10);
             }
         } else {
-            // On desktop, toggle between expanded and collapsed
             sidebar.classList.toggle('collapsed');
-            
-            // Store preference in localStorage
             localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
-            
-            // Show/hide nav text
             document.querySelectorAll('.nav-text').forEach(text => {
                 text.style.display = sidebar.classList.contains('collapsed') ? 'none' : 'inline-block';
             });
         }
     }
 
-    // Close mobile sidebar
     function closeMobileSidebar() {
         const sidebar = document.getElementById('sidebar');
         const overlay = document.querySelector('.sidebar-overlay');
-        
         sidebar.classList.remove('active');
-        
         if (overlay) {
             overlay.classList.remove('active');
-            setTimeout(() => {
-                overlay.remove();
-            }, 300);
+            setTimeout(() => overlay.remove(), 300);
         }
     }
 
-    // Initialize when page loads
+    function initializeSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        if (window.innerWidth > 992) {
+            const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+            if (savedCollapsed === 'true') {
+                sidebar.classList.add('collapsed');
+                document.querySelectorAll('.nav-text').forEach(text => text.style.display = 'none');
+            }
+        }
+    }
+
+    // ========== PURCHASE ORDER FUNCTIONS ==========
     document.addEventListener('DOMContentLoaded', function() {
-        console.log("Purchase Orders page loaded!");
+        console.log("Purchase Orders - Live Database Mode");
         
-        // Setup mobile menu toggle
+        initializeSidebar();
+        
+        // Mobile menu toggle
         document.getElementById('mobileMenuBtn').addEventListener('click', function() {
             const sidebar = document.getElementById('sidebar');
             const isMobile = window.innerWidth <= 992;
             
             if (isMobile) {
                 sidebar.classList.toggle('active');
-                
-                // Create overlay for mobile
                 if (!document.querySelector('.sidebar-overlay')) {
                     const overlay = document.createElement('div');
                     overlay.className = 'sidebar-overlay';
                     document.body.appendChild(overlay);
-                    
-                    overlay.addEventListener('click', () => {
-                        closeMobileSidebar();
-                    });
-                    
-                    setTimeout(() => {
-                        overlay.classList.add('active');
-                    }, 10);
+                    overlay.addEventListener('click', closeMobileSidebar);
+                    setTimeout(() => overlay.classList.add('active'), 10);
                 }
             } else {
-                // On desktop, toggle sidebar collapse
                 toggleSidebar();
             }
         });
         
-        // Add event listener for desktop toggle button
         const desktopToggleBtn = document.getElementById('desktopToggleBtn');
         if (desktopToggleBtn) {
             desktopToggleBtn.addEventListener('click', function(e) {
-                e.stopPropagation(); // Prevent event bubbling
+                e.stopPropagation();
                 toggleSidebar();
             });
         }
         
-        // Add click listeners to sidebar links to close on mobile
         document.querySelectorAll('.sidebar .nav-link').forEach(link => {
             link.addEventListener('click', function() {
-                if (window.innerWidth <= 992) {
-                    closeMobileSidebar();
-                }
+                if (window.innerWidth <= 992) closeMobileSidebar();
             });
         });
 
-        // Close sidebar when clicking outside on mobile
         document.addEventListener('click', function(event) {
             const sidebar = document.getElementById('sidebar');
             const mobileBtn = document.getElementById('mobileMenuBtn');
@@ -382,529 +459,415 @@
             }
         });
 
-        // Setup search functionality
-        const searchPO = document.getElementById('searchPO');
-        let searchTimeout;
-        
-        if (searchPO) {
-            searchPO.addEventListener('input', function(e) {
-                clearTimeout(searchTimeout);
-                searchTimeout = setTimeout(() => {
-                    document.getElementById('searchInput').value = e.target.value;
-                    filterTable();
-                }, 300);
-            });
-        }
-        
-        // Load from localStorage if available
-        loadFromLocalStorage();
-        
-        // Initialize supplier filter options
-        initializeSupplierFilter();
-        
-        // Initialize UI
-        updateStats();
-        renderTable();
+        window.addEventListener('resize', function() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.querySelector('.sidebar-overlay');
+            
+            if (window.innerWidth > 992) {
+                if (overlay) overlay.remove();
+                sidebar.classList.remove('active');
+                const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+                if (savedCollapsed === 'true') {
+                    sidebar.classList.add('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => text.style.display = 'none');
+                } else {
+                    sidebar.classList.remove('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => text.style.display = 'inline-block');
+                }
+            } else {
+                sidebar.classList.remove('collapsed');
+                document.querySelectorAll('.nav-text').forEach(text => text.style.display = 'inline-block');
+            }
+        });
 
-        // Load sidebar preference from localStorage
+        // Load sidebar preference
         const savedCollapsed = localStorage.getItem('sidebarCollapsed');
         if (savedCollapsed === 'true' && window.innerWidth > 992) {
             const sidebar = document.getElementById('sidebar');
             sidebar.classList.add('collapsed');
-            // Hide all nav-text when collapsed
-            document.querySelectorAll('.nav-text').forEach(text => {
-                text.style.display = 'none';
-            });
-        } else {
-            // Show all nav-text by default when expanded
-            document.querySelectorAll('.nav-text').forEach(text => {
-                text.style.display = 'inline-block';
-            });
+            document.querySelectorAll('.nav-text').forEach(text => text.style.display = 'none');
         }
     });
 
-    // Handle window resize
-    window.addEventListener('resize', function() {
-        const sidebar = document.getElementById('sidebar');
-        const overlay = document.querySelector('.sidebar-overlay');
-        
-        if (window.innerWidth > 992) {
-            // Desktop mode - remove mobile overlay
-            if (overlay) {
-                overlay.remove();
-            }
-            sidebar.classList.remove('active');
-            
-            // Load saved preference
-            const savedCollapsed = localStorage.getItem('sidebarCollapsed');
-            if (savedCollapsed === 'true') {
-                sidebar.classList.add('collapsed');
-                // Hide all nav-text when collapsed
-                document.querySelectorAll('.nav-text').forEach(text => {
-                    text.style.display = 'none';
-                });
-            } else {
-                sidebar.classList.remove('collapsed');
-                // Show all nav-text when expanded
-                document.querySelectorAll('.nav-text').forEach(text => {
-                    text.style.display = 'inline-block';
-                });
-            }
-        } else {
-            // Mobile mode - always show expanded
-            sidebar.classList.remove('collapsed');
-            // Show all nav-text on mobile
-            document.querySelectorAll('.nav-text').forEach(text => {
-                text.style.display = 'inline-block';
-            });
-        }
-    });
-
-    // Initialize supplier filter dropdown
-    function initializeSupplierFilter() {
-        const supplierSelect = document.getElementById('filterSupplier');
-        const suppliers = [...new Set(purchaseOrders.map(po => po.supplierName))];
-        
-        suppliers.forEach(supplier => {
-            const option = document.createElement('option');
-            option.value = supplier;
-            option.textContent = supplier;
-            supplierSelect.appendChild(option);
-        });
-    }
-
-    // Render table with pagination
-    function renderTable() {
-        const tbody = document.getElementById('poTableBody');
-        const emptyState = document.getElementById('emptyState');
-        
-        if (filteredOrders.length === 0) {
-            tbody.innerHTML = '';
-            emptyState.style.display = 'block';
-            updatePaginationInfo();
-            return;
-        }
-        
-        emptyState.style.display = 'none';
-        
-        // Calculate pagination
-        const startIndex = (currentPage - 1) * itemsPerPage;
-        const endIndex = Math.min(startIndex + itemsPerPage, filteredOrders.length);
-        const currentOrders = filteredOrders.slice(startIndex, endIndex);
-        
-        // Clear table
-        tbody.innerHTML = '';
-        
-        // Add rows
-        currentOrders.forEach(po => {
-            const totalItems = po.items ? po.items.length : 0;
-            const totalQuantity = po.items ? po.items.reduce((sum, item) => sum + item.quantity, 0) : 0;
-            const statusClass = getStatusClass(po.status);
-            const statusText = getStatusText(po.status);
-            
-            const row = document.createElement('tr');
-            row.innerHTML = `
-                <td>
-                    <input type="checkbox" class="po-checkbox" value="${po.id}">
-                </td>
-                <td>
-                    <strong>${po.poNumber}</strong>
-                </td>
-                <td>
-                    <div class="fw-medium">${po.supplierName}</div>
-                    <small class="text-muted">${po.supplierContact || 'No contact'}</small>
-                </td>
-                <td>${formatDate(po.poDate)}</td>
-                <td>${totalItems}</td>
-                <td>${totalQuantity}</td>
-                <td>₱${po.totalAmount.toLocaleString()}</td>
-                <td>
-                    <span class="status-badge ${statusClass}">${statusText}</span>
-                </td>
-                <td>${formatDate(po.expectedDate)}</td>
-                <td>
-                    <div class="action-buttons">
-                        <button class="table-btn btn-view" onclick="viewPO(${po.id})" title="View">
-                            <i class="bi bi-eye"></i>
-                        </button>
-                        <button class="table-btn btn-edit" onclick="editPO(${po.id})" title="Edit">
-                            <i class="bi bi-pencil"></i>
-                        </button>
-                        <button class="table-btn btn-delete" onclick="deletePO(${po.id})" title="Delete">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </div>
-                </td>
-            `;
-            
-            tbody.appendChild(row);
-        });
-        
-        updatePaginationInfo();
-        renderPagination();
-    }
-
-    // Filter table based on criteria
+    // Filter table function
     function filterTable() {
         const statusFilter = document.getElementById('filterStatus').value;
         const supplierFilter = document.getElementById('filterSupplier').value;
         const monthFilter = document.getElementById('filterMonth').value;
         const searchTerm = document.getElementById('searchInput').value.toLowerCase();
         
-        filteredOrders = purchaseOrders.filter(po => {
-            // Status filter
-            if (statusFilter !== 'all' && po.status !== statusFilter) {
-                return false;
+        const rows = document.querySelectorAll('.po-row');
+        
+        rows.forEach(row => {
+            const poNumber = row.dataset.poNumber?.toLowerCase() || '';
+            const supplier = row.dataset.supplier?.toLowerCase() || '';
+            const status = row.dataset.status || '';
+            const dateStr = row.dataset.date || '';
+            
+            let matchesStatus = statusFilter === 'all' || status === statusFilter;
+            let matchesSupplier = supplierFilter === 'all' || row.dataset.supplier === supplierFilter;
+            
+            let matchesMonth = true;
+            if (monthFilter !== 'all' && dateStr) {
+                const poMonth = new Date(dateStr).getMonth() + 1;
+                matchesMonth = poMonth === parseInt(monthFilter);
             }
             
-            // Supplier filter
-            if (supplierFilter !== 'all' && po.supplierName !== supplierFilter) {
-                return false;
-            }
+            let matchesSearch = searchTerm === '' || 
+                poNumber.includes(searchTerm) || 
+                supplier.includes(searchTerm);
             
-            // Month filter
-            if (monthFilter !== 'all') {
-                const poMonth = new Date(po.poDate).getMonth() + 1;
-                if (poMonth !== parseInt(monthFilter)) {
-                    return false;
-                }
+            if (matchesStatus && matchesSupplier && matchesMonth && matchesSearch) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
             }
-            
-            // Search filter
-            if (searchTerm) {
-                const searchText = `
-                    ${po.poNumber.toLowerCase()}
-                    ${po.supplierName.toLowerCase()}
-                    ${po.supplierContact ? po.supplierContact.toLowerCase() : ''}
-                    ${po.remarks ? po.remarks.toLowerCase() : ''}
-                    ${po.items ? po.items.map(item => 
-                        item.description.toLowerCase() + 
-                        (item.code ? item.code.toLowerCase() : '')
-                    ).join(' ') : ''}
-                `;
-                
-                if (!searchText.includes(searchTerm)) {
-                    return false;
-                }
-            }
-            
-            return true;
-        });
-        
-        currentPage = 1; // Reset to first page
-        updateStats();
-        renderTable();
-    }
-
-    // Update pagination information
-    function updatePaginationInfo() {
-        const startIndex = (currentPage - 1) * itemsPerPage + 1;
-        const endIndex = Math.min(currentPage * itemsPerPage, filteredOrders.length);
-        const total = filteredOrders.length;
-        
-        document.getElementById('paginationInfo').textContent = 
-            `Showing ${startIndex} to ${endIndex} of ${total} entries`;
-    }
-
-    // Render pagination controls
-    function renderPagination() {
-        const totalPages = Math.ceil(filteredOrders.length / itemsPerPage);
-        const pagination = document.getElementById('pagination');
-        
-        pagination.innerHTML = '';
-        
-        if (totalPages <= 1) return;
-        
-        // Previous button
-        const prevLi = document.createElement('li');
-        prevLi.className = `page-item ${currentPage === 1 ? 'disabled' : ''}`;
-        prevLi.innerHTML = `<a class="page-link" href="#" onclick="changePage(${currentPage - 1})">Previous</a>`;
-        pagination.appendChild(prevLi);
-        
-        // Page numbers
-        const maxVisiblePages = 5;
-        let startPage = Math.max(1, currentPage - Math.floor(maxVisiblePages / 2));
-        let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
-        
-        if (endPage - startPage + 1 < maxVisiblePages) {
-            startPage = Math.max(1, endPage - maxVisiblePages + 1);
-        }
-        
-        for (let i = startPage; i <= endPage; i++) {
-            const pageLi = document.createElement('li');
-            pageLi.className = `page-item ${currentPage === i ? 'active' : ''}`;
-            pageLi.innerHTML = `<a class="page-link" href="#" onclick="changePage(${i})">${i}</a>`;
-            pagination.appendChild(pageLi);
-        }
-        
-        // Next button
-        const nextLi = document.createElement('li');
-        nextLi.className = `page-item ${currentPage === totalPages ? 'disabled' : ''}`;
-        nextLi.innerHTML = `<a class="page-link" href="#" onclick="changePage(${currentPage + 1})">Next</a>`;
-        pagination.appendChild(nextLi);
-    }
-
-    // Change page
-    function changePage(page) {
-        if (page < 1 || page > Math.ceil(filteredOrders.length / itemsPerPage)) return;
-        
-        currentPage = page;
-        renderTable();
-        
-        // Scroll to top
-        const tableContainer = document.querySelector('.table-container');
-        if (tableContainer) {
-            tableContainer.scrollIntoView({ behavior: 'smooth' });
-        }
-    }
-
-    // Toggle select all checkboxes
-    function toggleSelectAll() {
-        const selectAll = document.getElementById('selectAll');
-        const checkboxes = document.querySelectorAll('.po-checkbox');
-        
-        checkboxes.forEach(checkbox => {
-            checkbox.checked = selectAll.checked;
         });
     }
 
-    // Get selected PO IDs
-    function getSelectedPOs() {
-        const checkboxes = document.querySelectorAll('.po-checkbox:checked');
-        return Array.from(checkboxes).map(cb => parseInt(cb.value));
-    }
+    // TOGGLE SELECT ALL - REMOVED (no checkboxes)
 
-    // View PO details
+    // GET SELECTED PO IDs - REMOVED (no checkboxes)
+
+    // CRUD Operations
     function viewPO(id) {
-        const po = purchaseOrders.find(p => p.id === id);
-        if (!po) return;
-        
-        alert(`Viewing PO: ${po.poNumber}\nSupplier: ${po.supplierName}\nAmount: ₱${po.totalAmount.toLocaleString()}\nStatus: ${getStatusText(po.status)}`);
-        // You can implement a modal or separate page for viewing details
+        alert('View PO ' + id + ' - AJAX implementation needed');
     }
 
-    // Edit PO
     function editPO(id) {
-        const po = purchaseOrders.find(p => p.id === id);
-        if (!po) return;
-        
-        alert(`Editing PO: ${po.poNumber}`);
-        // You can implement edit functionality here
+        alert('Edit PO ' + id + ' - AJAX implementation needed');
     }
 
-    // Delete PO
     function deletePO(id) {
-        if (!confirm('Are you sure you want to delete this purchase order?')) return;
-        
-        const index = purchaseOrders.findIndex(p => p.id === id);
-        if (index !== -1) {
-            purchaseOrders.splice(index, 1);
-            saveToLocalStorage();
-            showNotification('Purchase order deleted successfully', 'success');
-            filterTable();
+        if (confirm('Are you sure you want to delete this purchase order?')) {
+            alert('Delete PO ' + id + ' - AJAX implementation needed');
         }
     }
 
-    // Delete selected POs
-    function deleteSelectedPOs() {
-        const selectedIds = getSelectedPOs();
-        if (selectedIds.length === 0) {
-            showNotification('No purchase orders selected', 'warning');
+    // DELETE SELECTED POS - REMOVED (no checkboxes)
+
+    // Show new PO modal
+    function showNewPOModal() {
+        alert('New PO modal - AJAX implementation needed');
+    }
+
+    // Export to Excel (CSV)
+    function exportToExcel() {
+        const rows = document.querySelectorAll('.po-row:not([style*="display: none"])');
+        if (rows.length === 0) {
+            alert('No purchase orders to export');
             return;
         }
         
-        if (!confirm(`Are you sure you want to delete ${selectedIds.length} selected purchase order(s)?`)) return;
+        let csv = 'PO Number,Supplier,Order Date,Expected Delivery,Status,Items,Quantity,Total Amount\n';
         
-        purchaseOrders = purchaseOrders.filter(po => !selectedIds.includes(po.id));
-        saveToLocalStorage();
-        showNotification(`${selectedIds.length} purchase order(s) deleted successfully`, 'success');
-        filterTable();
-    }
-
-    // Update stats
-    function updateStats() {
-        const totalPO = purchaseOrders.length;
-        const processingPO = purchaseOrders.filter(po => po.status === 'processing').length;
-        const deliveredPO = purchaseOrders.filter(po => po.status === 'delivered').length;
-        const returnedPO = purchaseOrders.filter(po => po.status === 'returned').length;
-        
-        document.getElementById('totalPO').textContent = totalPO;
-        document.getElementById('processingPO').textContent = processingPO;
-        document.getElementById('deliveredPO').textContent = deliveredPO;
-        document.getElementById('returnedPO').textContent = returnedPO;
-    }
-
-    // Export to Excel
-    function exportToExcel() {
-        try {
-            const headers = ['PO_Number', 'Supplier_Name', 'PO_Date', 'Expected_Date', 
-                            'Status', 'Total_Items', 'Total_Quantity', 'Total_Amount', 'Remarks'];
-            
-            const csvData = filteredOrders.map(po => {
-                const totalItems = po.items ? po.items.length : 0;
-                const totalQuantity = po.items ? po.items.reduce((sum, item) => sum + item.quantity, 0) : 0;
+        rows.forEach(row => {
+            if (row.style.display !== 'none') {
+                const cells = row.querySelectorAll('td');
+                // ADJUSTED CELL INDEXES - checkbox column removed
+                const poNumber = cells[0]?.innerText || '';
+                const supplier = cells[1]?.innerText || '';
+                const orderDate = cells[2]?.innerText || '';
+                const items = cells[3]?.innerText || '0';
+                const qty = cells[4]?.innerText || '0';
+                const amount = cells[5]?.innerText.replace('₱', '').replace(',', '') || '0';
+                const status = cells[6]?.innerText || '';
+                const expectedDate = cells[7]?.innerText || '';
                 
-                return [
-                    po.poNumber,
-                    `"${po.supplierName.replace(/"/g, '""')}"`,
-                    po.poDate,
-                    po.expectedDate,
-                    getStatusText(po.status),
-                    totalItems,
-                    totalQuantity,
-                    po.totalAmount,
-                    `"${(po.remarks || '').replace(/"/g, '""')}"`
-                ];
-            });
-            
-            const csvContent = [
-                headers.join(','),
-                ...csvData.map(row => row.join(','))
-            ].join('\n');
-            
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            const fileName = `po_table_${new Date().toISOString().slice(0, 10)}.csv`;
-            link.setAttribute('download', fileName);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            showNotification(`Exported ${filteredOrders.length} PO records`, 'success');
-        } catch (error) {
-            console.error('Export error:', error);
-            showNotification('Failed to export data', 'warning');
-        }
-    }
-
-    // Show new PO modal (placeholder)
-    function showNewPOModal() {
-        alert('New PO modal would open here');
-        // Implement your modal logic here
-    }
-
-    // Helper functions
-    function getStatusClass(status) {
-        switch(status) {
-            case 'draft': return 'status-draft';
-            case 'processing': return 'status-processing';
-            case 'delivered': return 'status-delivered';
-            case 'returned': return 'status-returned';
-            case 'cancelled': return 'status-cancelled';
-            default: return 'status-draft';
-        }
-    }
-
-    function getStatusText(status) {
-        switch(status) {
-            case 'draft': return 'Draft';
-            case 'processing': return 'Processing';
-            case 'delivered': return 'Delivered';
-            case 'returned': return 'Returned';
-            case 'cancelled': return 'Cancelled';
-            default: return 'Draft';
-        }
-    }
-
-    function formatDate(dateStr) {
-        const date = new Date(dateStr);
-        return date.toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            year: 'numeric'
-        });
-    }
-
-    function showNotification(message, type = 'success') {
-        // Create notification element
-        const notification = document.createElement('div');
-        notification.className = 'notification';
-        notification.textContent = message;
-        
-        // Style the notification
-        notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 12px 20px;
-            background: ${type === 'success' ? '#10b981' : 
-                         type === 'warning' ? '#f59e0b' : 
-                         '#3b82f6'};
-            color: white;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            z-index: 10000;
-            animation: slideIn 0.3s ease;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            font-size: 14px;
-        `;
-        
-        document.body.appendChild(notification);
-        
-        // Add animation styles
-        if (!document.querySelector('#notification-styles')) {
-            const style = document.createElement('style');
-            style.id = 'notification-styles';
-            style.textContent = `
-                @keyframes slideIn {
-                    from {
-                        transform: translateX(100%);
-                        opacity: 0;
-                    }
-                    to {
-                        transform: translateX(0);
-                        opacity: 1;
-                    }
-                }
-                @keyframes slideOut {
-                    from {
-                        transform: translateX(0);
-                        opacity: 1;
-                    }
-                    to {
-                        transform: translateX(100%);
-                        opacity: 0;
-                    }
-                }
-            `;
-            document.head.appendChild(style);
-        }
-        
-        // Remove after 3 seconds
-        setTimeout(() => {
-            notification.style.animation = 'slideOut 0.3s ease';
-            setTimeout(() => {
-                if (notification.parentNode) {
-                    document.body.removeChild(notification);
-                }
-            }, 300);
-        }, 3000);
-    }
-
-    // Data persistence
-    function saveToLocalStorage() {
-        try {
-            localStorage.setItem('purchaseOrders', JSON.stringify(purchaseOrders));
-        } catch (error) {
-            console.error('Failed to save to localStorage:', error);
-        }
-    }
-
-    function loadFromLocalStorage() {
-        try {
-            const savedPO = localStorage.getItem('purchaseOrders');
-            if (savedPO) {
-                const parsed = JSON.parse(savedPO);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                    purchaseOrders = parsed;
-                }
+                csv += `${poNumber},"${supplier}",${orderDate},${expectedDate},${status},${items},${qty},${amount}\n`;
             }
-        } catch (error) {
-            console.error('Failed to load from localStorage:', error);
+        });
+        
+        const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `purchase_orders_export_<?= date('Ymd') ?>.csv`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+        
+        alert('Export completed!');
+    }
+
+    // Logout Function
+    function logout() {
+        if (confirm('Are you sure you want to logout?')) {
+            localStorage.removeItem('sidebarCollapsed');
+            window.location.href = 'login.php';
         }
     }
-</script>
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+        if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
+            e.preventDefault();
+            toggleSidebar();
+        } else if (e.ctrlKey && e.key === 'f') {
+            e.preventDefault();
+            document.getElementById('searchInput')?.focus();
+        } else if (e.ctrlKey && e.key === 'n') {
+            e.preventDefault();
+            showNewPOModal();
+        }
+    });
+    </script>
+    
+    <style>
+    /* Main layout */
+    .main-content {
+        padding: 20px 30px;
+        transition: margin-left 0.3s ease;
+    }
+    
+    /* Filter controls layout */
+    .filter-controls {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 25px;
+        padding: 16px 20px;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+    }
+    
+    .filter-select {
+        width: 160px;
+        padding: 8px 12px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        background-color: white;
+        height: 40px;
+    }
+    
+    .filter-search {
+        position: relative;
+        flex: 0 0 240px;
+    }
+    
+    .filter-search i {
+        position: absolute;
+        left: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #6c757d;
+        font-size: 15px;
+        z-index: 10;
+        pointer-events: none;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .filter-search input {
+        width: 100%;
+        padding: 8px 12px 8px 38px;
+        border: 1px solid #ced4da;
+        border-radius: 4px;
+        height: 40px;
+        font-size: 14px;
+    }
+    
+    .filter-buttons {
+        display: flex;
+        gap: 10px;
+        margin-left: auto;
+    }
+    
+    .filter-buttons .btn {
+        height: 40px;
+        padding: 8px 16px;
+        font-size: 14px;
+    }
+    
+    /* Table wrapper - adds margins on both sides */
+    .table-wrapper {
+        margin: 0 0 30px 0;
+        width: 100%;
+    }
+    
+    /* Table container */
+    .table-container {
+        background-color: white;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        overflow-x: auto;
+        width: 100%;
+    }
+    
+    /* Table styling */
+    .po-table {
+        margin-bottom: 0;
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+    }
+    
+    /* Column width definitions - CHECKBOX COLUMN REMOVED */
+    .col-po { width: 11%; }
+    .col-supplier { width: 13%; }
+    .col-date { width: 10%; }
+    .col-items { width: 7%; }
+    .col-qty { width: 8%; }
+    .col-amount { width: 12%; }
+    .col-status { width: 10%; }
+    .col-expected { width: 12%; }
+    .col-actions { width: 12%; }
+    
+    /* Table header styling */
+    .po-table thead th {
+        background-color: #f8f9fa;
+        font-weight: 600;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #495057;
+        padding: 16px 12px;
+        border-bottom: 2px solid #dee2e6;
+        white-space: nowrap;
+        vertical-align: middle;
+        text-align: left;
+    }
+    
+    /* Table cell styling */
+    .po-table tbody td {
+        padding: 14px 12px;
+        vertical-align: middle;
+        border-bottom: 1px solid #e9ecef;
+        font-size: 13px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    /* Column-specific alignments */
+    .col-items,
+    .col-qty {
+        text-align: center !important;
+    }
+    
+    .col-items th,
+    .col-qty th {
+        text-align: center !important;
+    }
+    
+    .col-amount {
+        text-align: right !important;
+    }
+    
+    .col-amount th {
+        text-align: right !important;
+        padding-right: 20px !important;
+    }
+    
+    .col-actions {
+        text-align: center !important;
+    }
+    
+    .col-actions th {
+        text-align: center !important;
+    }
+    
+    /* Hover effect */
+    .po-table tbody tr:hover {
+        background-color: #f8f9fa;
+    }
+    
+    /* Status badge styling */
+    .status-badge {
+        display: inline-block;
+        padding: 5px 12px;
+        font-size: 12px;
+        font-weight: 500;
+        border-radius: 20px;
+        text-align: center;
+        min-width: 85px;
+        white-space: nowrap;
+    }
+    
+    .status-draft {
+        background-color: #e9ecef;
+        color: #495057;
+    }
+    
+    .status-processing {
+        background-color: #cfe2ff;
+        color: #084298;
+    }
+    
+    .status-delivered {
+        background-color: #d1e7dd;
+        color: #0a3622;
+    }
+    
+    .status-cancelled {
+        background-color: #f8d7da;
+        color: #58151c;
+    }
+    
+    /* Action buttons styling */
+    .action-buttons {
+        display: flex;
+        gap: 6px;
+        justify-content: center;
+        align-items: center;
+    }
+    
+    .table-btn {
+        background: none;
+        border: none;
+        padding: 6px;
+        border-radius: 4px;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        font-size: 14px;
+    }
+    
+    .table-btn:hover {
+        background-color: #e9ecef;
+    }
+    
+    .btn-view { color: #0d6efd; }
+    .btn-edit { color: #ffc107; }
+    .btn-delete { color: #dc3545; }
+    
+    /* Text alignment utilities */
+    .text-center {
+        text-align: center;
+    }
+    
+    .text-end {
+        text-align: right;
+    }
+    
+    /* CHECKBOX STYLING - REMOVED */
+    
+    /* Responsive adjustments */
+    @media (max-width: 1600px) {
+        .col-po { width: 11%; }
+        .col-supplier { width: 13%; }
+        .col-amount { width: 12%; }
+    }
+    
+    @media (max-width: 1400px) {
+        .filter-select { width: 140px; }
+        .filter-search { flex: 0 0 200px; }
+        
+        .col-po { width: 11%; }
+        .col-supplier { width: 12%; }
+        .col-amount { width: 12%; }
+        .col-expected { width: 11%; }
+    }
+    
+    @media (max-width: 1200px) {
+        .po-table { table-layout: auto; }
+        .table-container { overflow-x: auto; }
+    }
+    </style>
 </body>
 </html>

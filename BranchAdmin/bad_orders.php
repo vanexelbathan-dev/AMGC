@@ -1,3 +1,128 @@
+<?php
+require_once '../config/database.php';
+
+// FETCH RMR REQUESTS FROM DATABASE WITH JOINS
+$rmr_query = "
+    SELECT 
+        r.rmr_id,
+        r.rmr_number,
+        r.so_id,
+        r.return_quantity,
+        r.return_reason,
+        r.reason_details,
+        r.rmr_status,
+        r.received_date,
+        r.inspector_name,
+        r.inspection_type,
+        r.disposition_type,
+        r.created_at,
+        r.updated_at,
+        c.customer_name,
+        c.customer_id,
+        i.item_id,
+        i.item_code,
+        i.item_name,
+        i.unit_price,
+        i.unit_type,
+        CONCAT(u.first_name, ' ', u.last_name) as received_by_name
+    FROM rmr_requests r
+    JOIN customers c ON r.customer_id = c.customer_id
+    JOIN items i ON r.item_id = i.item_id
+    LEFT JOIN users u ON r.received_by = u.user_id
+    ORDER BY r.created_at DESC, r.rmr_id DESC
+";
+$rmr_result = $conn->query($rmr_query);
+$rmr_requests = $rmr_result->fetch_all(MYSQLI_ASSOC);
+
+// CALCULATE STATISTICS FROM REAL DATA
+$total_rmr = count($rmr_requests);
+$pending_rmr = count(array_filter($rmr_requests, fn($r) => $r['rmr_status'] === 'pending'));
+$processing_rmr = count(array_filter($rmr_requests, fn($r) => $r['rmr_status'] === 'processing'));
+$approved_rmr = count(array_filter($rmr_requests, fn($r) => $r['rmr_status'] === 'approved'));
+$rejected_rmr = count(array_filter($rmr_requests, fn($r) => $r['rmr_status'] === 'rejected'));
+$resolved_rmr = count(array_filter($rmr_requests, fn($r) => $r['rmr_status'] === 'resolved'));
+
+// STAT CARD VALUES
+$statTotalRMR = $total_rmr;
+$statPendingRMR = $pending_rmr;
+$statProcessingRMR = $processing_rmr;
+$statApprovedRMR = $approved_rmr;
+
+// Helper function for status badge
+function getRMRStatusClass($status) {
+    return match($status) {
+        'pending' => 'status-pending',
+        'processing' => 'status-processing',
+        'approved' => 'status-approved',
+        'rejected' => 'status-rejected',
+        'resolved' => 'status-resolved',
+        default => 'status-pending'
+    };
+}
+
+function getRMRStatusText($status) {
+    return match($status) {
+        'pending' => 'Pending',
+        'processing' => 'Processing',
+        'approved' => 'Approved',
+        'rejected' => 'Rejected',
+        'resolved' => 'Resolved',
+        default => ucfirst($status)
+    };
+}
+
+function getReturnReasonClass($reason) {
+    return match($reason) {
+        'damaged' => 'reason-damaged',
+        'expired' => 'reason-expired',
+        'wrong-item' => 'reason-wrong-item',
+        'quality' => 'reason-quality',
+        'overstock' => 'reason-overstock',
+        'other' => 'reason-other',
+        default => 'reason-other'
+    };
+}
+
+function getReturnReasonText($reason) {
+    return match($reason) {
+        'damaged' => 'Damaged',
+        'expired' => 'Expired',
+        'wrong-item' => 'Wrong Item',
+        'quality' => 'Quality Issue',
+        'overstock' => 'Overstock',
+        'other' => 'Other',
+        default => ucfirst($reason)
+    };
+}
+
+function getUnitText($unit) {
+    return match($unit) {
+        'case' => 'CS',
+        'inner-pack' => 'IP',
+        'piece' => 'PC',
+        'box' => 'BX',
+        'carton' => 'CTN',
+        default => strtoupper(substr($unit, 0, 2))
+    };
+}
+
+function getDispositionText($disposition) {
+    return match($disposition) {
+        'credit' => 'Credit to Customer',
+        'refund' => 'Cash Refund',
+        'replacement' => 'Replacement',
+        'disposal' => 'Destroy Item',
+        'return-to-supplier' => 'Return to Supplier',
+        default => $disposition ? ucfirst(str_replace('-', ' ', $disposition)) : ''
+    };
+}
+
+function formatDate($dateTimeStr) {
+    if (!$dateTimeStr) return '';
+    $date = new DateTime($dateTimeStr);
+    return $date->format('M d, Y H:i');
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -15,6 +140,168 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <style>
+        /* Table styles for RMR */
+        .rmr-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            background-color: white;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+        }
+        
+        .rmr-table thead th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #495057;
+            padding: 14px 12px;
+            border-bottom: 2px solid #dee2e6;
+            white-space: nowrap;
+            vertical-align: middle;
+            text-align: left;
+        }
+        
+        .rmr-table tbody td {
+            padding: 14px 12px;
+            vertical-align: middle;
+            border-bottom: 1px solid #e9ecef;
+            font-size: 13px;
+        }
+        
+        .rmr-table tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+        
+        /* Column widths - CHECKBOX COLUMN REMOVED */
+        .col-rmr { width: 12%; }
+        .col-customer { width: 15%; }
+        .col-item { width: 18%; }
+        .col-qty { width: 8%; text-align: center; }
+        .col-amount { width: 12%; text-align: right; }
+        .col-reason { width: 12%; }
+        .col-status { width: 10%; }
+        .col-received { width: 12%; }
+        .col-actions { width: 13%; text-align: center; }
+        
+        .empty-state-table {
+            text-align: center;
+            padding: 40px 20px;
+            background-color: white;
+            border-radius: 8px;
+        }
+        
+        .empty-state-table i {
+            font-size: 48px;
+            color: #adb5bd;
+            margin-bottom: 16px;
+        }
+        
+        .empty-state-table h5 {
+            color: #495057;
+            margin-bottom: 8px;
+        }
+        
+        .empty-state-table p {
+            color: #6c757d;
+            margin-bottom: 8px;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 5px 12px;
+            font-size: 12px;
+            font-weight: 500;
+            border-radius: 20px;
+            text-align: center;
+            min-width: 85px;
+        }
+        
+        .status-pending { background-color: #fff3cd; color: #856404; }
+        .status-processing { background-color: #cce5ff; color: #004085; }
+        .status-approved { background-color: #d4edda; color: #155724; }
+        .status-rejected { background-color: #f8d7da; color: #721c24; }
+        .status-resolved { background-color: #d1ecf1; color: #0c5460; }
+        
+        .return-reason {
+            display: inline-block;
+            padding: 4px 10px;
+            font-size: 12px;
+            font-weight: 500;
+            border-radius: 4px;
+        }
+        
+        .reason-damaged { background-color: #f8d7da; color: #721c24; }
+        .reason-expired { background-color: #fff3cd; color: #856404; }
+        .reason-wrong-item { background-color: #d1ecf1; color: #0c5460; }
+        .reason-quality { background-color: #cce5ff; color: #004085; }
+        .reason-overstock { background-color: #e2d5f2; color: #533f7c; }
+        .reason-other { background-color: #e9ecef; color: #495057; }
+        
+        /* Filter section layout */
+        .filter-section {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+            margin-bottom: 25px;
+            padding: 16px 20px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .filter-controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+        }
+        
+        .filter-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .sort-controls {
+            display: flex;
+            gap: 5px;
+        }
+        
+        .sort-btn {
+            background: white;
+            border: 1px solid #ced4da;
+            padding: 6px 12px;
+            font-size: 13px;
+            border-radius: 4px;
+            color: #495057;
+            cursor: pointer;
+        }
+        
+        .sort-btn.active {
+            background-color: #0d6efd;
+            color: white;
+            border-color: #0d6efd;
+        }
+        
+        .sort-btn:hover {
+            background-color: #e9ecef;
+        }
+        
+        .sort-btn.active:hover {
+            background-color: #0b5ed7;
+        }
+        
+        .action-bar {
+            margin-bottom: 20px;
+        }
+    </style>
 </head>
 <body>
     <!-- MAIN APPLICATION -->
@@ -23,11 +310,11 @@
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <h3>
-                    <!-- MOBILE MENU BUTTON -->
-                <button class="desktop-toggle-btn" id="desktopToggleBtn">
-                    <i class="bi bi-list"></i>
-                </button>    
-                <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> <span class="nav-text">Branch Admin</span></h3>
+                    <button class="desktop-toggle-btn" id="desktopToggleBtn">
+                        <i class="bi bi-list"></i>
+                    </button>    
+                    <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> <span class="nav-text">Branch Admin</span>
+                </h3>
             </div>
             
             <div class="sidebar-menu">
@@ -68,25 +355,22 @@
                             <span class="nav-text">Trip Tickets</span>
                         </a>
                     </li>
-
                     <hr class="sidebar-divider">
                 </ul>
             </div>
-              <!-- User Profile Section at the bottom of sidebar -->
-     <div class="sidebar-footer">
-        <div class="user-profile-sidebar">
-            <div class="user-avatar-sidebar">AD</div>
-            <div class="user-details-sidebar">
-                <span class="user-name-sidebar">Quality Control</span>
-                <span class="user-role-sidebar">QC Officer</span>
+            <div class="sidebar-footer">
+                <div class="user-profile-sidebar">
+                    <div class="user-avatar-sidebar">AD</div>
+                    <div class="user-details-sidebar">
+                        <span class="user-name-sidebar">Quality Control</span>
+                        <span class="user-role-sidebar">QC Officer</span>
+                    </div>
+                </div>
+                <button class="logout-btn-sidebar" onclick="logout()">
+                    <i class="bi bi-box-arrow-right"></i>
+                    <span class="logout-text">Logout</span>
+                </button>
             </div>
-        </div>
-        
-        <button class="logout-btn-sidebar" onclick="logout()">
-            <i class="bi bi-box-arrow-right"></i>
-            <span class="logout-text">Logout</span>
-        </button>
-    </div>
         </div>
 
         <!-- Main Content -->
@@ -95,24 +379,12 @@
             <div class="page-content active">
                 <!-- Navbar Top -->
                 <div class="navbar-top">
-                    <!-- MOBILE MENU BUTTON -->
                     <button class="mobile-menu-btn" id="mobileMenuBtn">
                         <i class="bi bi-list"></i>
                     </button>
                     <div class="page-title">
-                        <h2></i>Bad Orders</h2>
+                        <h2><i class="bi bi-recycle me-2"></i>Bad Orders</h2>
                         <p>Manage Returned Merchandise Requests (RMR)</p>
-                    </div>
-                </div>
-
-                <!-- Demo Info Card -->
-                <div class="demo-info-card mb-4">
-                    <div class="demo-info-icon">
-                        <i class="bi bi-exclamation-triangle"></i>
-                    </div>
-                    <div class="demo-info-content">
-                        <h5>Returned Merchandise Request (RMR) System</h5>
-                        <p class="mb-0">Process and manage returned items from customers. Track status from receipt to resolution.</p>
                     </div>
                 </div>
 
@@ -121,200 +393,135 @@
                     <div class="col-md-3 col-6">
                         <div class="stat-card total">
                             <i class="bi bi-box-seam stat-icon"></i>
-                            <div class="stat-value" id="totalRMR">8</div>
+                            <div class="stat-value"><?= $statTotalRMR ?></div>
                             <div class="stat-label">Total RMR</div>
                         </div>
                     </div>
                     <div class="col-md-3 col-6">
                         <div class="stat-card pending">
                             <i class="bi bi-clock-history stat-icon"></i>
-                            <div class="stat-value" id="pendingRMR">3</div>
+                            <div class="stat-value"><?= $statPendingRMR ?></div>
                             <div class="stat-label">Pending</div>
                         </div>
                     </div>
                     <div class="col-md-3 col-6">
                         <div class="stat-card processing">
                             <i class="bi bi-gear stat-icon"></i>
-                            <div class="stat-value" id="processingRMR">2</div>
+                            <div class="stat-value"><?= $statProcessingRMR ?></div>
                             <div class="stat-label">Processing</div>
                         </div>
                     </div>
                     <div class="col-md-3 col-6">
                         <div class="stat-card approved">
                             <i class="bi bi-check-circle stat-icon"></i>
-                            <div class="stat-value" id="approvedRMR">3</div>
+                            <div class="stat-value"><?= $statApprovedRMR ?></div>
                             <div class="stat-label">Approved</div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Batch Actions -->
-                <div class="batch-actions" id="batchActions">
-                    <div class="batch-actions-content">
-                        <div>
-                            <span class="selected-count" id="selectedCount">0</span> RMR selected
+                <!-- FILTER SECTION - WITH SORT CONTROLS AND BUTTONS TOGETHER -->
+                <div class="filter-section">
+                    <div class="filter-controls">
+                        <div class="sort-controls">
+                            <button class="sort-btn active" onclick="sortRMR('date')">By Date</button>
+                            <button class="sort-btn" onclick="sortRMR('status')">By Status</button>
+                            <button class="sort-btn" onclick="sortRMR('reason')">By Reason</button>
+                            <button class="sort-btn" onclick="sortRMR('quantity')">By Quantity</button>
                         </div>
-                        <div class="batch-buttons">
-                            <button class="btn btn-sm btn-outline-primary" onclick="processBatchRMR()">
-                                <i class="bi bi-gear me-1"></i> Start Processing
-                            </button>
-                            <button class="btn btn-sm btn-outline-success" onclick="approveBatchRMR()">
-                                <i class="bi bi-check-circle me-1"></i> Approve Selected
-                            </button>
-                            <button class="btn btn-sm btn-outline-danger" onclick="rejectBatchRMR()">
-                                <i class="bi bi-x-circle me-1"></i> Reject Selected
-                            </button>
-                            <button class="btn btn-sm btn-outline-secondary" onclick="clearSelection()">
-                                <i class="bi bi-x-circle me-1"></i> Clear Selection
-                            </button>
-                        </div>
+                    </div>
+                    
+                    <div class="filter-actions">
+                        <button class="btn btn-outline-primary" onclick="printRMRReport()">
+                            <i class="bi bi-printer me-1"></i> Print
+                        </button>
+                        <button class="btn btn-outline-primary" onclick="exportRMRToCSV()">
+                            <i class="bi bi-download me-1"></i> Export
+                        </button>
                     </div>
                 </div>
 
-                <!-- Action Bar -->
-                <div class="action-bar">
-                    <div class="action-bar-content">
-                        <div class="action-left">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" id="selectAllRMR">
-                                <label class="form-check-label" for="selectAllRMR">
-                                    Select All
-                                </label>
-                            </div>
-                            <div class="sort-controls">
-                                <button class="sort-btn active" onclick="sortRMR('date')">By Date</button>
-                                <button class="sort-btn" onclick="sortRMR('status')">By Status</button>
-                                <button class="sort-btn" onclick="sortRMR('reason')">By Reason</button>
-                                <button class="sort-btn" onclick="sortRMR('quantity')">By Quantity</button>
-                            </div>
-                        </div>
-                        
-                        <div class="action-right">
-                            <button class="btn btn-outline-primary" onclick="printRMRReport()">
-                                <i class="bi bi-printer me-1"></i> Print Report
-                            </button>
-                            <button class="btn btn-outline-primary" onclick="exportRMRToCSV()">
-                                <i class="bi bi-download me-1"></i> Export
-                            </button>
-                            <button class="btn btn-primary" onclick="showNewRMRModal()">
-                                <i class="bi bi-plus-circle me-1"></i> New RMR
-                            </button>
-                        </div>
-                    </div>
-                </div>
+                <!-- ACTION BAR - REMOVED (moved to filter section) -->
 
-                <!-- RMR Container -->
-                <div id="rmrContainer">
-                    <!-- RMR items will be loaded here by JavaScript -->
-                </div>
-
-                <!-- Add RMR Card -->
-                <div class="new-bad-order-card" onclick="showNewRMRModal()">
-                    <div class="add-icon">
-                        <i class="bi bi-plus-lg"></i>
-                    </div>
-                    <h5>Create New RMR</h5>
-                    <p>Click to create a new Returned Merchandise Request</p>
-                </div>
-
-                <!-- Empty State -->
-                <div class="empty-state" id="emptyState">
-                    <div class="empty-state-icon">
-                        <i class="bi bi-inbox"></i>
-                    </div>
-                    <h4>No Returned Merchandise Requests</h4>
-                    <p class="text-muted mb-4">Create your first RMR to get started</p>
-                    <button class="btn btn-primary" onclick="showNewRMRModal()">
-                        <i class="bi bi-plus-circle me-1"></i> Create First RMR
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- New RMR Modal -->
-    <div class="modal fade" id="newRMRModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Create Returned Merchandise Request</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="rmrForm">
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <label for="salesOrderNo" class="form-label">Sales Order No. *</label>
-                                <input type="text" class="form-control" id="salesOrderNo" required>
-                            </div>
-                            <div class="col-md-6">
-                                <label for="customerName" class="form-label">Customer Name *</label>
-                                <input type="text" class="form-control" id="customerName" required>
-                            </div>
-                            
-                            <div class="col-md-6">
-                                <label for="itemCode" class="form-label">Item Code *</label>
-                                <input type="text" class="form-control" id="itemCode" required>
-                            </div>
-                            <div class="col-md-6">
-                                <label for="itemName" class="form-label">Item Name *</label>
-                                <input type="text" class="form-control" id="itemName" required>
-                            </div>
-                            
-                            <div class="col-md-4">
-                                <label for="returnQuantity" class="form-label">Return Quantity *</label>
-                                <input type="number" class="form-control" id="returnQuantity" min="1" required>
-                            </div>
-                            <div class="col-md-4">
-                                <label for="unitType" class="form-label">Unit Type *</label>
-                                <select class="form-select" id="unitType" required>
-                                    <option value="case">Case</option>
-                                    <option value="inner-pack">Inner Pack</option>
-                                    <option value="piece">Piece</option>
-                                </select>
-                            </div>
-                            <div class="col-md-4">
-                                <label for="unitPrice" class="form-label">Unit Price *</label>
-                                <input type="number" class="form-control" id="unitPrice" min="0" step="0.01" required>
-                            </div>
-                            
-                            <div class="col-12">
-                                <label for="returnReason" class="form-label">Return Reason *</label>
-                                <select class="form-select" id="returnReason" required>
-                                    <option value="">Select Reason</option>
-                                    <option value="damaged">Damaged/Defective</option>
-                                    <option value="expired">Expired Product</option>
-                                    <option value="wrong-item">Wrong Item Delivered</option>
-                                    <option value="quality">Quality Issues</option>
-                                    <option value="overstock">Customer Overstock</option>
-                                    <option value="other">Other</option>
-                                </select>
-                            </div>
-                            
-                            <div class="col-12">
-                                <label for="reasonDetails" class="form-label">Reason Details *</label>
-                                <textarea class="form-control" id="reasonDetails" rows="3" required></textarea>
-                            </div>
-                            
-                            <div class="col-md-6">
-                                <label for="receivedBy" class="form-label">Received By *</label>
-                                <input type="text" class="form-control" id="receivedBy" value="marinellemacalir" required>
-                            </div>
-                            <div class="col-md-6">
-                                <label for="receivedDate" class="form-label">Received Date *</label>
-                                <input type="datetime-local" class="form-control" id="receivedDate" required>
-                            </div>
-                            
-                            <div class="col-12">
-                                <label for="remarks" class="form-label">Additional Remarks</label>
-                                <textarea class="form-control" id="remarks" rows="2"></textarea>
-                            </div>
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="saveRMR()">Create RMR</button>
+                <!-- RMR Table - WITHOUT CHECKBOX COLUMN -->
+                <div class="table-responsive">
+                    <table class="table rmr-table">
+                        <thead>
+                            <tr>
+                                <!-- CHECKBOX HEADER REMOVED -->
+                                <th class="col-rmr">RMR NUMBER</th>
+                                <th class="col-customer">CUSTOMER</th>
+                                <th class="col-item">ITEM</th>
+                                <th class="col-qty">QTY</th>
+                                <th class="col-amount">TOTAL AMOUNT</th>
+                                <th class="col-reason">REASON</th>
+                                <th class="col-status">STATUS</th>
+                                <th class="col-received">RECEIVED DATE</th>
+                                <th class="col-actions">ACTIONS</th>
+                            </tr>
+                        </thead>
+                        <tbody id="rmrTableBody">
+                            <?php if (empty($rmr_requests)): ?>
+                            <tr>
+                                <td colspan="9" class="empty-state-table">
+                                    <i class="bi bi-inbox"></i>
+                                    <h5>No Returned Merchandise Requests</h5>
+                                    <p class="text-muted">RMR requests are created by the Sales team.</p>
+                                    <p class="text-muted">No requests available at this time.</p>
+                                </td>
+                            </tr>
+                            <?php else: ?>
+                                <?php foreach ($rmr_requests as $rmr): 
+                                    $totalAmount = $rmr['return_quantity'] * $rmr['unit_price'];
+                                ?>
+                                <tr class="rmr-row" 
+                                    data-id="<?= $rmr['rmr_id'] ?>"
+                                    data-rmr-number="<?= htmlspecialchars($rmr['rmr_number']) ?>"
+                                    data-status="<?= $rmr['rmr_status'] ?>">
+                                    <!-- CHECKBOX CELL REMOVED -->
+                                    <td class="col-rmr"><strong><?= htmlspecialchars($rmr['rmr_number']) ?></strong></td>
+                                    <td class="col-customer"><?= htmlspecialchars($rmr['customer_name']) ?></td>
+                                    <td class="col-item">
+                                        <?= htmlspecialchars($rmr['item_name']) ?>
+                                        <small class="d-block text-muted"><?= htmlspecialchars($rmr['item_code']) ?></small>
+                                    </td>
+                                    <td class="col-qty"><?= $rmr['return_quantity'] ?> <?= getUnitText($rmr['unit_type']) ?></td>
+                                    <td class="col-amount">₱<?= number_format($totalAmount, 2) ?></td>
+                                    <td class="col-reason">
+                                        <span class="return-reason <?= getReturnReasonClass($rmr['return_reason']) ?>">
+                                            <?= getReturnReasonText($rmr['return_reason']) ?>
+                                        </span>
+                                    </td>
+                                    <td class="col-status">
+                                        <span class="status-badge <?= getRMRStatusClass($rmr['rmr_status']) ?>">
+                                            <?= getRMRStatusText($rmr['rmr_status']) ?>
+                                        </span>
+                                    </td>
+                                    <td class="col-received"><?= formatDate($rmr['received_date']) ?></td>
+                                    <td class="col-actions">
+                                        <div class="action-buttons">
+                                            <?php if ($rmr['rmr_status'] === 'pending'): ?>
+                                                <button class="table-btn btn-process" onclick="processRMR(<?= $rmr['rmr_id'] ?>)" title="Process">
+                                                    <i class="bi bi-gear"></i>
+                                                </button>
+                                            <?php elseif ($rmr['rmr_status'] === 'processing'): ?>
+                                                <button class="table-btn btn-approve" onclick="showApprovalModal(<?= $rmr['rmr_id'] ?>, 'approve')" title="Approve">
+                                                    <i class="bi bi-check-circle"></i>
+                                                </button>
+                                                <button class="table-btn btn-reject" onclick="showApprovalModal(<?= $rmr['rmr_id'] ?>, 'reject')" title="Reject">
+                                                    <i class="bi bi-x-circle"></i>
+                                                </button>
+                                            <?php endif; ?>
+                                            <button class="table-btn btn-view" onclick="viewRMR(<?= $rmr['rmr_id'] ?>)" title="View">
+                                                <i class="bi bi-eye"></i>
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -345,7 +552,7 @@
                     </div>
                     <div class="alert alert-info mb-0">
                         <i class="bi bi-info-circle me-2"></i>
-                        This will change RMR status to "Processing" and assign to quality inspector.
+                        This will change RMR status to "Processing".
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -369,10 +576,10 @@
                     <div class="mb-3">
                         <label class="form-label">Disposition *</label>
                         <select class="form-select" id="dispositionType">
-                            <option value="credit">Credit to Customer Account</option>
+                            <option value="credit">Credit to Customer</option>
                             <option value="refund">Cash Refund</option>
                             <option value="replacement">Replacement Item</option>
-                            <option value="destroy">Destroy Item</option>
+                            <option value="disposal">Destroy Item</option>
                             <option value="return-to-supplier">Return to Supplier</option>
                         </select>
                     </div>
@@ -418,399 +625,78 @@
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     
-   <script>
-    // Sample data for RMR (Returned Merchandise Request)
-    let rmrs = [
-        {
-            id: 1,
-            rmrNumber: 'RMR-2024-001',
-            salesOrderNo: 'SO-2024-001245',
-            customerName: 'Juan Dela Cruz',
-            itemCode: 'SC',
-            itemName: 'SWAKTO COKE 190MLX12',
-            returnQuantity: 5,
-            unitType: 'case',
-            unitPrice: 1500,
-            totalAmount: 7500,
-            returnReason: 'damaged',
-            reasonDetails: 'Bottles arrived broken during delivery',
-            status: 'pending',
-            receivedBy: 'marinellemacalir',
-            receivedDate: '2024-01-15T14:30',
-            dateCreated: '2024-01-15T14:30',
-            isSelected: false,
-            inspector: '',
-            inspectionDate: '',
-            disposition: '',
-            approvalDate: '',
-            approvalNotes: ''
-        },
-        {
-            id: 2,
-            rmrNumber: 'RMR-2024-002',
-            salesOrderNo: 'SO-2024-001244',
-            customerName: 'Maria Santos',
-            itemCode: 'COBRA YLW',
-            itemName: 'COBRA YELLOW 290MLX12',
-            returnQuantity: 2,
-            unitType: 'case',
-            unitPrice: 2800,
-            totalAmount: 5600,
-            returnReason: 'expired',
-            reasonDetails: 'Product near expiration date',
-            status: 'processing',
-            receivedBy: 'marinellemacalir',
-            receivedDate: '2024-01-14T10:15',
-            dateCreated: '2024-01-14T10:15',
-            isSelected: false,
-            inspector: 'Quality Control Dept',
-            inspectionDate: '2024-01-14T15:30',
-            disposition: '',
-            approvalDate: '',
-            approvalNotes: ''
-        },
-        {
-            id: 3,
-            rmrNumber: 'RMR-2024-003',
-            salesOrderNo: 'SO-2024-001243',
-            customerName: 'ABC Corporation',
-            itemCode: 'FRASCO',
-            itemName: 'GINEBRA FRASCO 700MLX12',
-            returnQuantity: 1,
-            unitType: 'case',
-            unitPrice: 4200,
-            totalAmount: 4200,
-            returnReason: 'wrong-item',
-            reasonDetails: 'Wrong product variant delivered',
-            status: 'approved',
-            receivedBy: 'marinellemacalir',
-            receivedDate: '2024-01-13T09:45',
-            dateCreated: '2024-01-13T09:45',
-            isSelected: false,
-            inspector: 'Quality Control Dept',
-            inspectionDate: '2024-01-13T14:20',
-            disposition: 'credit',
-            approvalDate: '2024-01-14T11:00',
-            approvalNotes: 'Approved for credit to customer account',
-            approvedAmount: 4200
-        },
-        {
-            id: 4,
-            rmrNumber: 'RMR-2024-004',
-            salesOrderNo: 'SO-2024-001242',
-            customerName: 'XYZ Enterprises',
-            itemCode: 'REDHORSE',
-            itemName: 'RED HORSE 500MLX12',
-            returnQuantity: 3,
-            unitType: 'case',
-            unitPrice: 3200,
-            totalAmount: 9600,
-            returnReason: 'damaged',
-            reasonDetails: 'Water damage to packaging',
-            status: 'pending',
-            receivedBy: 'marinellemacalir',
-            receivedDate: '2024-01-12T16:20',
-            dateCreated: '2024-01-12T16:20',
-            isSelected: false,
-            inspector: '',
-            inspectionDate: '',
-            disposition: '',
-            approvalDate: '',
-            approvalNotes: ''
-        },
-        {
-            id: 5,
-            rmrNumber: 'RMR-2024-005',
-            salesOrderNo: 'SO-2024-001241',
-            customerName: 'John Smith',
-            itemCode: 'PALE PILSEN',
-            itemName: 'SAN MIGUEL PALE PILSEN 330MLX24',
-            returnQuantity: 10,
-            unitType: 'case',
-            unitPrice: 1800,
-            totalAmount: 18000,
-            returnReason: 'quality',
-            reasonDetails: 'Product taste not consistent',
-            status: 'processing',
-            receivedBy: 'marinellemacalir',
-            receivedDate: '2024-01-11T13:45',
-            dateCreated: '2024-01-11T13:45',
-            isSelected: false,
-            inspector: 'Quality Control Dept',
-            inspectionDate: '2024-01-12T09:15',
-            disposition: '',
-            approvalDate: '',
-            approvalNotes: ''
-        },
-        {
-            id: 6,
-            rmrNumber: 'RMR-2024-006',
-            salesOrderNo: 'SO-2024-001240',
-            customerName: 'DEF Supermarket',
-            itemCode: 'ROYAL',
-            itemName: 'ROYAL TRU-ORANGE 240MLX24',
-            returnQuantity: 8,
-            unitType: 'inner-pack',
-            unitPrice: 450,
-            totalAmount: 3600,
-            returnReason: 'expired',
-            reasonDetails: 'Expired product returned',
-            status: 'approved',
-            receivedBy: 'marinellemacalir',
-            receivedDate: '2024-01-10T11:30',
-            dateCreated: '2024-01-10T11:30',
-            isSelected: false,
-            inspector: 'Quality Control Dept',
-            inspectionDate: '2024-01-11T10:45',
-            disposition: 'refund',
-            approvalDate: '2024-01-12T14:30',
-            approvalNotes: 'Approved for cash refund',
-            approvedAmount: 3600
-        },
-        {
-            id: 7,
-            rmrNumber: 'RMR-2024-007',
-            salesOrderNo: 'SO-2024-001239',
-            customerName: 'GHI Store',
-            itemCode: 'COKE 1.5L',
-            itemName: 'COCA-COLA 1.5L PET',
-            returnQuantity: 15,
-            unitType: 'piece',
-            unitPrice: 85,
-            totalAmount: 1275,
-            returnReason: 'damaged',
-            reasonDetails: 'Bottles leaking',
-            status: 'rejected',
-            receivedBy: 'marinellemacalir',
-            receivedDate: '2024-01-09T15:20',
-            dateCreated: '2024-01-09T15:20',
-            isSelected: false,
-            inspector: 'Quality Control Dept',
-            inspectionDate: '2024-01-10T11:00',
-            disposition: 'rejected',
-            approvalDate: '2024-01-11T09:45',
-            approvalNotes: 'Rejected - damage caused by improper handling',
-            approvedAmount: 0
-        },
-        {
-            id: 8,
-            rmrNumber: 'RMR-2024-008',
-            salesOrderNo: 'SO-2024-001238',
-            customerName: 'JKL Mart',
-            itemCode: 'SPRITE 500ML',
-            itemName: 'SPRITE 500MLX24',
-            returnQuantity: 4,
-            unitType: 'case',
-            unitPrice: 2100,
-            totalAmount: 8400,
-            returnReason: 'other',
-            reasonDetails: 'Customer ordered wrong product',
-            status: 'approved',
-            receivedBy: 'marinellemacalir',
-            receivedDate: '2024-01-08T10:00',
-            dateCreated: '2024-01-08T10:00',
-            isSelected: false,
-            inspector: 'Quality Control Dept',
-            inspectionDate: '2024-01-09T14:30',
-            disposition: 'replacement',
-            approvalDate: '2024-01-10T16:15',
-            approvalNotes: 'Approved for replacement with correct product',
-            approvedAmount: 0
-        }
-    ];
-
+    <script>
+    // ========== GLOBAL VARIABLES ==========
     let selectedRMR = null;
     let currentSort = 'date';
-    let selectedItems = [];
-
-    // ================= SIDEBAR FUNCTIONS =================
-    // Toggle sidebar collapse/expand
+    
+    // ========== SIDEBAR FUNCTIONS ==========
     function toggleSidebar() {
         const sidebar = document.getElementById('sidebar');
         const isMobile = window.innerWidth <= 992;
         
         if (isMobile) {
-            // On mobile, toggle active state
             sidebar.classList.toggle('active');
-            
-            // Create overlay for mobile
             if (!document.querySelector('.sidebar-overlay')) {
                 const overlay = document.createElement('div');
                 overlay.className = 'sidebar-overlay';
                 document.body.appendChild(overlay);
-                
-                overlay.addEventListener('click', () => {
-                    closeMobileSidebar();
-                });
-                
-                setTimeout(() => {
-                    overlay.classList.add('active');
-                }, 10);
-            } else {
-                // If overlay exists, toggle its active state
-                const overlay = document.querySelector('.sidebar-overlay');
-                overlay.classList.toggle('active');
-                if (!sidebar.classList.contains('active')) {
-                    setTimeout(() => {
-                        if (overlay && overlay.parentNode) {
-                            overlay.remove();
-                        }
-                    }, 300);
-                }
+                overlay.addEventListener('click', closeMobileSidebar);
+                setTimeout(() => overlay.classList.add('active'), 10);
             }
         } else {
-            // On desktop, toggle between expanded and collapsed
             sidebar.classList.toggle('collapsed');
-            
-            // Store preference in localStorage
             localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
-            
-            // Show/hide nav text
             document.querySelectorAll('.nav-text').forEach(text => {
                 text.style.display = sidebar.classList.contains('collapsed') ? 'none' : 'inline-block';
             });
-            
-            // Adjust main content margin
-            const mainContent = document.querySelector('.main-content');
-            if (mainContent) {
-                mainContent.style.marginLeft = sidebar.classList.contains('collapsed') ? '80px' : '250px';
-            }
         }
     }
 
-    // Close mobile sidebar
     function closeMobileSidebar() {
         const sidebar = document.getElementById('sidebar');
         const overlay = document.querySelector('.sidebar-overlay');
-        
         sidebar.classList.remove('active');
-        
         if (overlay) {
             overlay.classList.remove('active');
-            setTimeout(() => {
-                if (overlay.parentNode) {
-                    overlay.remove();
-                }
-            }, 300);
+            setTimeout(() => overlay.remove(), 300);
         }
     }
 
-    // Initialize sidebar when page loads
     function initializeSidebar() {
         const sidebar = document.getElementById('sidebar');
-        
-        // Load saved preference from localStorage for desktop
         if (window.innerWidth > 992) {
             const savedCollapsed = localStorage.getItem('sidebarCollapsed');
             if (savedCollapsed === 'true') {
                 sidebar.classList.add('collapsed');
-                document.querySelectorAll('.nav-text').forEach(text => {
-                    text.style.display = 'none';
-                });
-                
-                // Adjust main content margin
-                const mainContent = document.querySelector('.main-content');
-                if (mainContent) {
-                    mainContent.style.marginLeft = '80px';
-                }
-            } else {
-                sidebar.classList.remove('collapsed');
-                document.querySelectorAll('.nav-text').forEach(text => {
-                    text.style.display = 'inline-block';
-                });
-                
-                // Adjust main content margin
-                const mainContent = document.querySelector('.main-content');
-                if (mainContent) {
-                    mainContent.style.marginLeft = '250px';
-                }
-            }
-        } else {
-            // On mobile, always start with closed sidebar
-            sidebar.classList.remove('active');
-            sidebar.classList.remove('collapsed');
-            document.querySelectorAll('.nav-text').forEach(text => {
-                text.style.display = 'inline-block';
-            });
-            
-            // Adjust main content margin
-            const mainContent = document.querySelector('.main-content');
-            if (mainContent) {
-                mainContent.style.marginLeft = '0';
+                document.querySelectorAll('.nav-text').forEach(text => text.style.display = 'none');
             }
         }
     }
 
-    // Handle window resize for sidebar
-    function handleSidebarResize() {
-        const sidebar = document.getElementById('sidebar');
-        const overlay = document.querySelector('.sidebar-overlay');
-        
-        if (window.innerWidth > 992) {
-            // Desktop mode - remove mobile overlay
-            if (overlay) {
-                overlay.remove();
-            }
-            sidebar.classList.remove('active');
-            
-            // Load saved preference
-            const savedCollapsed = localStorage.getItem('sidebarCollapsed');
-            if (savedCollapsed === 'true') {
-                sidebar.classList.add('collapsed');
-                document.querySelectorAll('.nav-text').forEach(text => {
-                    text.style.display = 'none';
-                });
-                
-                // Adjust main content margin
-                const mainContent = document.querySelector('.main-content');
-                if (mainContent) {
-                    mainContent.style.marginLeft = '80px';
-                }
-            } else {
-                sidebar.classList.remove('collapsed');
-                document.querySelectorAll('.nav-text').forEach(text => {
-                    text.style.display = 'inline-block';
-                });
-                
-                // Adjust main content margin
-                const mainContent = document.querySelector('.main-content');
-                if (mainContent) {
-                    mainContent.style.marginLeft = '250px';
-                }
-            }
-        } else {
-            // Mobile mode - always show expanded when visible
-            sidebar.classList.remove('collapsed');
-            document.querySelectorAll('.nav-text').forEach(text => {
-                text.style.display = 'inline-block';
-            });
-            
-            // Adjust main content margin
-            const mainContent = document.querySelector('.main-content');
-            if (mainContent) {
-                mainContent.style.marginLeft = '0';
-            }
-        }
-    }
-    // ================= END SIDEBAR FUNCTIONS =================
-
-    // Initialize when page loads
+    // ========== RMR FUNCTIONS ==========
     document.addEventListener('DOMContentLoaded', function() {
-        console.log("RMR Management page loaded!");
+        console.log("Bad Orders - Live Database Mode");
         
-        // Initialize sidebar
         initializeSidebar();
         
-        // Setup mobile menu toggle button
-        const mobileMenuBtn = document.getElementById('mobileMenuBtn');
-        if (mobileMenuBtn) {
-            mobileMenuBtn.addEventListener('click', function(e) {
-                e.stopPropagation();
+        document.getElementById('mobileMenuBtn').addEventListener('click', function() {
+            const sidebar = document.getElementById('sidebar');
+            const isMobile = window.innerWidth <= 992;
+            if (isMobile) {
+                sidebar.classList.toggle('active');
+                if (!document.querySelector('.sidebar-overlay')) {
+                    const overlay = document.createElement('div');
+                    overlay.className = 'sidebar-overlay';
+                    document.body.appendChild(overlay);
+                    overlay.addEventListener('click', closeMobileSidebar);
+                    setTimeout(() => overlay.classList.add('active'), 10);
+                }
+            } else {
                 toggleSidebar();
-            });
-        }
+            }
+        });
         
-        // Setup desktop toggle button (if exists)
         const desktopToggleBtn = document.getElementById('desktopToggleBtn');
         if (desktopToggleBtn) {
             desktopToggleBtn.addEventListener('click', function(e) {
@@ -819,16 +705,12 @@
             });
         }
         
-        // Add click listeners to sidebar links to close on mobile
         document.querySelectorAll('.sidebar .nav-link').forEach(link => {
             link.addEventListener('click', function() {
-                if (window.innerWidth <= 992) {
-                    closeMobileSidebar();
-                }
+                if (window.innerWidth <= 992) closeMobileSidebar();
             });
         });
-        
-        // Close sidebar when clicking outside on mobile
+
         document.addEventListener('click', function(event) {
             const sidebar = document.getElementById('sidebar');
             const mobileBtn = document.getElementById('mobileMenuBtn');
@@ -842,991 +724,75 @@
                 closeMobileSidebar();
             }
         });
-
-        // Add resize event listener
-        window.addEventListener('resize', handleSidebarResize);
-
-        // Search functionality with debounce
-        let searchTimeout;
-        document.getElementById('searchRMR').addEventListener('input', function(e) {
-            clearTimeout(searchTimeout);
-            searchTimeout = setTimeout(() => {
-                filterRMR(e.target.value);
-            }, 300);
-        });
-
-        // Add select all functionality
-        document.getElementById('selectAllRMR').addEventListener('change', function(e) {
-            const isChecked = e.target.checked;
-            rmrs.forEach(rmr => {
-                rmr.isSelected = isChecked;
-            });
-            updateSelection();
-            renderRMR();
-        });
-
-        // Initialize with current date/time
-        const now = new Date();
-        const formattedDateTime = now.toISOString().slice(0, 16);
-        document.getElementById('receivedDate').value = formattedDateTime;
-
-        // Load from localStorage if available
-        loadFromLocalStorage();
-        
-        // Initialize UI
-        updateStats();
-        renderRMR();
-
-        // Keyboard shortcuts
-        document.addEventListener('keydown', function(e) {
-            // Ctrl + B to toggle sidebar (desktop only)
-            if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
-                e.preventDefault();
-                toggleSidebar();
-            }
-            // Escape to close sidebar on mobile
-            else if (e.key === 'Escape' && window.innerWidth <= 992) {
-                closeMobileSidebar();
-            }
-            // Ctrl + N for new RMR
-            else if (e.ctrlKey && e.key === 'n') {
-                e.preventDefault();
-                showNewRMRModal();
-            }
-            // Ctrl + F for focus search
-            else if (e.ctrlKey && e.key === 'f') {
-                e.preventDefault();
-                document.getElementById('searchRMR').focus();
-            }
-            // Escape to close modals
-            else if (e.key === 'Escape') {
-                const openModals = document.querySelectorAll('.modal.show');
-                if (openModals.length > 0) {
-                    const modal = bootstrap.Modal.getInstance(openModals[0]);
-                    if (modal) modal.hide();
-                }
-            }
-            // Ctrl + A to select all
-            else if (e.ctrlKey && e.key === 'a') {
-                e.preventDefault();
-                const selectAll = document.getElementById('selectAllRMR');
-                selectAll.checked = !selectAll.checked;
-                selectAll.dispatchEvent(new Event('change'));
-            }
-        });
     });
 
-    // Render RMR items
-    function renderRMR(items = rmrs) {
-        const container = document.getElementById('rmrContainer');
-        const emptyState = document.getElementById('emptyState');
-        
-        if (items.length === 0) {
-            container.style.display = 'none';
-            emptyState.style.display = 'block';
-            return;
-        }
-        
-        container.style.display = 'block';
-        emptyState.style.display = 'none';
-        container.innerHTML = '';
-        
-        items.forEach(rmr => {
-            const statusClass = getStatusClass(rmr.status);
-            const statusText = getStatusText(rmr.status);
-            const reasonClass = getReasonClass(rmr.returnReason);
-            const reasonText = getReasonText(rmr.returnReason);
-            
-            const card = document.createElement('div');
-            card.className = 'bad-order-card';
-            card.innerHTML = `
-                <div class="card-header-row">
-                    <div class="card-left-header">
-                        <input type="checkbox" class="form-check-input item-checkbox" 
-                               ${rmr.isSelected ? 'checked' : ''} 
-                               onchange="toggleRMRSelection(${rmr.id}, this.checked)">
-                        <div class="rmr-number">${rmr.rmrNumber}</div>
-                        <span class="return-reason ${reasonClass}">${reasonText}</span>
-                    </div>
-                    
-                    <div class="bad-order-actions">
-                        ${getRMRActions(rmr)}
-                    </div>
-                </div>
-                
-                <div class="item-details">
-                    <div class="item-name">
-                        ${rmr.itemName}
-                        <span class="item-code">(${rmr.itemCode})</span>
-                    </div>
-                    
-                    <div class="quantities">
-                        <div class="quantity-badge">
-                            <span class="quantity-label">Return Qty</span>
-                            <span class="quantity-value">${rmr.returnQuantity} ${getUnitText(rmr.unitType)}</span>
-                        </div>
-                        <div class="quantity-badge">
-                            <span class="quantity-label">Unit Price</span>
-                            <span class="quantity-value">₱${rmr.unitPrice.toLocaleString()}</span>
-                        </div>
-                        <div class="quantity-badge">
-                            <span class="quantity-label">Total Amount</span>
-                            <span class="quantity-value">₱${rmr.totalAmount.toLocaleString()}</span>
-                        </div>
-                    </div>
-                    
-                    <div class="return-details">
-                        <div><strong>Customer:</strong> ${rmr.customerName}</div>
-                        <div><strong>Sales Order:</strong> ${rmr.salesOrderNo}</div>
-                        <div><strong>Reason:</strong> ${rmr.reasonDetails}</div>
-                    </div>
-                    
-                    ${getAdditionalRMRInfo(rmr)}
-                    
-                    <div class="item-meta-row">
-                        <div class="item-meta">
-                            <span><i class="bi bi-person"></i> ${rmr.receivedBy}</span>
-                            <span><i class="bi bi-calendar"></i> ${formatDate(rmr.receivedDate)}</span>
-                        </div>
-                        <span class="status-badge ${statusClass}">${statusText}</span>
-                    </div>
-                </div>
-            `;
-            
-            container.appendChild(card);
-        });
+    function sortRMR(criteria) {
+        currentSort = criteria;
+        document.querySelectorAll('.sort-btn').forEach(btn => btn.classList.remove('active'));
+        if (event && event.target) event.target.classList.add('active');
+        alert('Sort by ' + criteria + ' - AJAX implementation needed');
     }
 
-    // Get RMR action buttons based on status
-    function getRMRActions(rmr) {
-        let buttons = '';
-        
-        if (rmr.status === 'pending') {
-            buttons = `
-                <button class="bad-order-btn btn-process" onclick="processRMR(${rmr.id})">
-                    <i class="bi bi-gear"></i> Process
-                </button>
-                <button class="bad-order-btn btn-view" onclick="viewRMR(${rmr.id})">
-                    <i class="bi bi-eye"></i> View
-                </button>
-            `;
-        } else if (rmr.status === 'processing') {
-            buttons = `
-                <button class="bad-order-btn btn-approve" onclick="showApprovalModal(${rmr.id}, 'approve')">
-                    <i class="bi bi-check-circle"></i> Approve
-                </button>
-                <button class="bad-order-btn btn-reject" onclick="showApprovalModal(${rmr.id}, 'reject')">
-                    <i class="bi bi-x-circle"></i> Reject
-                </button>
-                <button class="bad-order-btn btn-view" onclick="viewRMR(${rmr.id})">
-                    <i class="bi bi-eye"></i> View
-                </button>
-            `;
-        } else {
-            buttons = `
-                <button class="bad-order-btn btn-completed">
-                    <i class="bi bi-check-circle"></i> ${rmr.status === 'approved' ? 'Approved' : 'Rejected'}
-                </button>
-                <button class="bad-order-btn btn-view" onclick="viewRMR(${rmr.id})">
-                    <i class="bi bi-eye"></i> View
-                </button>
-            `;
-        }
-        
-        return buttons;
-    }
-
-    // Get additional RMR information
-    function getAdditionalRMRInfo(rmr) {
-        let info = '';
-        
-        if (rmr.inspector || rmr.approvalDate || rmr.disposition) {
-            info = '<div class="additional-info">';
-            
-            if (rmr.inspector) {
-                info += `<div><i class="bi bi-person-check"></i> Inspector: ${rmr.inspector}</div>`;
-            }
-            
-            if (rmr.approvalDate) {
-                info += `<div><i class="bi bi-calendar-check"></i> ${rmr.status === 'approved' ? 'Approved' : 'Rejected'}: ${formatDate(rmr.approvalDate)}</div>`;
-            }
-            
-            if (rmr.disposition && rmr.status === 'approved') {
-                info += `<div><i class="bi bi-arrow-repeat"></i> Disposition: ${getDispositionText(rmr.disposition)}</div>`;
-            }
-            
-            if (rmr.approvedAmount && rmr.status === 'approved') {
-                info += `<div><i class="bi bi-cash-coin"></i> Approved Amount: ₱${rmr.approvedAmount.toLocaleString()}</div>`;
-            }
-            
-            info += '</div>';
-        }
-        
-        return info;
-    }
-
-    // Show new RMR modal
-    function showNewRMRModal() {
-        const now = new Date();
-        const formattedDateTime = now.toISOString().slice(0, 16);
-        document.getElementById('receivedDate').value = formattedDateTime;
-        document.getElementById('receivedBy').value = 'marinellemacalir';
-        
-        const modal = new bootstrap.Modal(document.getElementById('newRMRModal'));
-        modal.show();
-    }
-
-    // Save new RMR
-    function saveRMR() {
-        const rmr = {
-            salesOrderNo: document.getElementById('salesOrderNo').value.trim(),
-            customerName: document.getElementById('customerName').value.trim(),
-            itemCode: document.getElementById('itemCode').value.trim(),
-            itemName: document.getElementById('itemName').value.trim(),
-            returnQuantity: parseInt(document.getElementById('returnQuantity').value) || 0,
-            unitType: document.getElementById('unitType').value,
-            unitPrice: parseFloat(document.getElementById('unitPrice').value) || 0,
-            returnReason: document.getElementById('returnReason').value,
-            reasonDetails: document.getElementById('reasonDetails').value.trim(),
-            receivedBy: document.getElementById('receivedBy').value.trim(),
-            receivedDate: document.getElementById('receivedDate').value,
-            remarks: document.getElementById('remarks').value.trim(),
-            status: 'pending',
-            isSelected: false
-        };
-        
-        // Validation
-        const errors = validateRMR(rmr);
-        if (errors.length > 0) {
-            showNotification(errors.join(', '), 'warning');
-            return;
-        }
-        
-        // Calculate total amount
-        rmr.totalAmount = rmr.returnQuantity * rmr.unitPrice;
-        
-        // Generate RMR number
-        const newId = rmrs.length > 0 ? Math.max(...rmrs.map(r => r.id)) + 1 : 1;
-        rmr.id = newId;
-        rmr.rmrNumber = `RMR-${new Date().getFullYear()}-${String(newId).padStart(3, '0')}`;
-        rmr.dateCreated = new Date().toISOString();
-        
-        rmrs.push(rmr);
-        saveToLocalStorage();
-        
-        bootstrap.Modal.getInstance(document.getElementById('newRMRModal')).hide();
-        showNotification('RMR created successfully', 'success');
-        
-        updateStats();
-        renderRMR();
-    }
-
-    // Validate RMR
-    function validateRMR(rmr) {
-        const errors = [];
-        
-        if (!rmr.salesOrderNo) errors.push('Sales Order No. is required');
-        if (!rmr.customerName) errors.push('Customer Name is required');
-        if (!rmr.itemCode) errors.push('Item Code is required');
-        if (!rmr.itemName) errors.push('Item Name is required');
-        if (rmr.returnQuantity <= 0) errors.push('Return Quantity must be greater than 0');
-        if (rmr.unitPrice <= 0) errors.push('Unit Price must be greater than 0');
-        if (!rmr.returnReason) errors.push('Return Reason is required');
-        if (!rmr.reasonDetails) errors.push('Reason Details are required');
-        if (!rmr.receivedBy) errors.push('Received By is required');
-        if (!rmr.receivedDate) errors.push('Received Date is required');
-        
-        return errors;
-    }
-
-    // Process single RMR
     function processRMR(id) {
         selectedRMR = id;
-        const modal = new bootstrap.Modal(document.getElementById('processRMRModal'));
-        modal.show();
+        new bootstrap.Modal(document.getElementById('processRMRModal')).show();
     }
 
-    // Confirm process RMR
     function confirmProcessRMR() {
-        const inspector = document.getElementById('inspectorName').value;
-        const inspectionType = document.getElementById('inspectionType').value;
-        
-        const rmr = rmrs.find(r => r.id === selectedRMR);
-        if (rmr) {
-            rmr.status = 'processing';
-            rmr.inspector = inspector;
-            rmr.inspectionDate = new Date().toISOString();
-            rmr.inspectionType = inspectionType;
-            
-            saveToLocalStorage();
-            showNotification('RMR processing started', 'success');
-        }
-        
-        updateStats();
-        renderRMR();
+        alert('Process RMR ' + selectedRMR + ' - AJAX implementation needed');
         bootstrap.Modal.getInstance(document.getElementById('processRMRModal')).hide();
         selectedRMR = null;
     }
 
-    // Show approval modal
     function showApprovalModal(id, action) {
         selectedRMR = id;
-        const rmr = rmrs.find(r => r.id === id);
-        
-        if (rmr) {
-            document.getElementById('approvalModalTitle').textContent = 
-                action === 'approve' ? 'Approve RMR' : 'Reject RMR';
-            document.getElementById('approvalMessage').textContent = 
-                action === 'approve' 
-                ? 'Approve the selected RMR for credit/refund?' 
-                : 'Reject the selected RMR?';
-            document.getElementById('approvedAmount').value = rmr.totalAmount;
-        }
-        
-        const modal = new bootstrap.Modal(document.getElementById('approvalModal'));
-        modal.show();
+        document.getElementById('approvalModalTitle').textContent = action === 'approve' ? 'Approve RMR' : 'Reject RMR';
+        document.getElementById('approvalMessage').textContent = action === 'approve' 
+            ? 'Approve the selected RMR for credit/refund?' 
+            : 'Reject the selected RMR?';
+        new bootstrap.Modal(document.getElementById('approvalModal')).show();
     }
 
-    // Confirm approval/rejection
     function confirmApproval(action) {
-        const disposition = document.getElementById('dispositionType').value;
-        const approvedAmount = parseFloat(document.getElementById('approvedAmount').value) || 0;
-        const approvalNotes = document.getElementById('approvalNotes').value.trim();
-        
-        const rmr = rmrs.find(r => r.id === selectedRMR);
-        if (rmr) {
-            rmr.status = action === 'approve' ? 'approved' : 'rejected';
-            rmr.disposition = action === 'approve' ? disposition : 'rejected';
-            rmr.approvedAmount = action === 'approve' ? approvedAmount : 0;
-            rmr.approvalNotes = approvalNotes;
-            rmr.approvalDate = new Date().toISOString();
-            
-            saveToLocalStorage();
-            showNotification(`RMR ${action === 'approve' ? 'approved' : 'rejected'} successfully`, 'success');
-        }
-        
-        updateStats();
-        renderRMR();
+        alert((action === 'approve' ? 'Approve' : 'Reject') + ' RMR ' + selectedRMR + ' - AJAX implementation needed');
         bootstrap.Modal.getInstance(document.getElementById('approvalModal')).hide();
         selectedRMR = null;
     }
 
-    // View RMR details
     function viewRMR(id) {
-        const rmr = rmrs.find(r => r.id === id);
-        if (!rmr) return;
-        
-        const content = document.getElementById('rmrDetailsContent');
-        content.innerHTML = `
-            <div class="rmr-details">
-                <div class="row mb-3">
-                    <div class="col-md-6">
-                        <h6>RMR Information</h6>
-                        <p><strong>RMR Number:</strong> ${rmr.rmrNumber}</p>
-                        <p><strong>Status:</strong> <span class="${getStatusClass(rmr.status)}">${getStatusText(rmr.status)}</span></p>
-                        <p><strong>Date Created:</strong> ${formatDate(rmr.dateCreated)}</p>
-                    </div>
-                    <div class="col-md-6">
-                        <h6>Customer Information</h6>
-                        <p><strong>Customer:</strong> ${rmr.customerName}</p>
-                        <p><strong>Sales Order No:</strong> ${rmr.salesOrderNo}</p>
-                    </div>
-                </div>
-                
-                <div class="row mb-3">
-                    <div class="col-12">
-                        <h6>Item Details</h6>
-                        <div class="table-responsive">
-                            <table class="table table-sm">
-                                <thead>
-                                    <tr>
-                                        <th>Item Code</th>
-                                        <th>Item Description</th>
-                                        <th>Quantity</th>
-                                        <th>Unit Price</th>
-                                        <th>Total Amount</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <tr>
-                                        <td>${rmr.itemCode}</td>
-                                        <td>${rmr.itemName}</td>
-                                        <td>${rmr.returnQuantity} ${getUnitText(rmr.unitType)}</td>
-                                        <td>₱${rmr.unitPrice.toLocaleString()}</td>
-                                        <td>₱${rmr.totalAmount.toLocaleString()}</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="row mb-3">
-                    <div class="col-12">
-                        <h6>Return Information</h6>
-                        <p><strong>Return Reason:</strong> <span class="${getReasonClass(rmr.returnReason)}">${getReasonText(rmr.returnReason)}</span></p>
-                        <p><strong>Reason Details:</strong> ${rmr.reasonDetails}</p>
-                        <p><strong>Received By:</strong> ${rmr.receivedBy}</p>
-                        <p><strong>Received Date:</strong> ${formatDate(rmr.receivedDate)}</p>
-                        ${rmr.remarks ? `<p><strong>Remarks:</strong> ${rmr.remarks}</p>` : ''}
-                    </div>
-                </div>
-                
-                ${rmr.inspector ? `
-                <div class="row mb-3">
-                    <div class="col-12">
-                        <h6>Quality Inspection</h6>
-                        <p><strong>Inspector:</strong> ${rmr.inspector}</p>
-                        <p><strong>Inspection Date:</strong> ${formatDate(rmr.inspectionDate)}</p>
-                        ${rmr.inspectionType ? `<p><strong>Inspection Type:</strong> ${rmr.inspectionType}</p>` : ''}
-                    </div>
-                </div>
-                ` : ''}
-                
-                ${rmr.approvalDate ? `
-                <div class="row">
-                    <div class="col-12">
-                        <h6>Disposition</h6>
-                        <p><strong>Status:</strong> ${rmr.status === 'approved' ? 'Approved' : 'Rejected'}</p>
-                        <p><strong>Disposition:</strong> ${getDispositionText(rmr.disposition)}</p>
-                        ${rmr.approvedAmount > 0 ? `<p><strong>Approved Amount:</strong> ₱${rmr.approvedAmount.toLocaleString()}</p>` : ''}
-                        <p><strong>Approval Date:</strong> ${formatDate(rmr.approvalDate)}</p>
-                        ${rmr.approvalNotes ? `<p><strong>Approval Notes:</strong> ${rmr.approvalNotes}</p>` : ''}
-                    </div>
-                </div>
-                ` : ''}
-            </div>
-        `;
-        
-        const modal = new bootstrap.Modal(document.getElementById('viewRMRModal'));
-        modal.show();
+        alert('View RMR ' + id + ' - AJAX implementation needed');
     }
 
-    // Print RMR details
     function printRMRDetails() {
-        const content = document.getElementById('rmrDetailsContent').innerHTML;
-        const printWindow = window.open('', '_blank');
-        printWindow.document.write(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>RMR Details Print</title>
-                <style>
-                    body { font-family: Arial, sans-serif; margin: 20px; }
-                    h5 { color: #333; margin-bottom: 20px; }
-                    .rmr-details { margin: 0; padding: 0; }
-                    table { width: 100%; border-collapse: collapse; }
-                    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
-                    th { background-color: #f5f5f5; }
-                </style>
-            </head>
-            <body>
-                ${content}
-            </body>
-            </html>
-        `);
-        printWindow.document.close();
-        printWindow.print();
+        alert('Print RMR Details - AJAX implementation needed');
     }
 
-    // Batch process RMR
     function processBatchRMR() {
-        const selected = rmrs.filter(r => r.isSelected && r.status === 'pending');
-        if (selected.length === 0) {
-            showNotification('Please select pending RMRs to process', 'warning');
-            return;
-        }
-        
-        const modal = new bootstrap.Modal(document.getElementById('processRMRModal'));
-        modal.show();
+        alert('Process batch RMR - AJAX implementation needed');
     }
 
-    // Batch approve RMR
     function approveBatchRMR() {
-        const selected = rmrs.filter(r => r.isSelected && r.status === 'processing');
-        if (selected.length === 0) {
-            showNotification('Please select processing RMRs to approve', 'warning');
-            return;
-        }
-        
-        selectedRMR = null; // Indicate batch mode
-        showApprovalModal(null, 'approve');
+        alert('Approve batch RMR - AJAX implementation needed');
     }
 
-    // Batch reject RMR
     function rejectBatchRMR() {
-        const selected = rmrs.filter(r => r.isSelected && r.status === 'processing');
-        if (selected.length === 0) {
-            showNotification('Please select processing RMRs to reject', 'warning');
-            return;
-        }
-        
-        selectedRMR = null; // Indicate batch mode
-        showApprovalModal(null, 'reject');
+        alert('Reject batch RMR - AJAX implementation needed');
     }
 
-    // Toggle RMR selection
-    function toggleRMRSelection(id, isSelected) {
-        const rmr = rmrs.find(r => r.id === id);
-        if (rmr) {
-            rmr.isSelected = isSelected;
-            updateSelection();
-        }
-    }
-
-    // Update selection state
-    function updateSelection() {
-        selectedItems = rmrs.filter(r => r.isSelected);
-        const selectedCount = selectedItems.length;
-        
-        document.getElementById('selectedCount').textContent = selectedCount;
-        
-        const batchActions = document.getElementById('batchActions');
-        const selectAll = document.getElementById('selectAllRMR');
-        
-        if (selectedCount > 0) {
-            batchActions.style.display = 'block';
-            selectAll.checked = selectedCount === rmrs.length;
-            selectAll.indeterminate = selectedCount > 0 && selectedCount < rmrs.length;
-        } else {
-            batchActions.style.display = 'none';
-            selectAll.checked = false;
-            selectAll.indeterminate = false;
-        }
-    }
-
-    // Clear selection
-    function clearSelection() {
-        rmrs.forEach(rmr => {
-            rmr.isSelected = false;
-        });
-        updateSelection();
-        renderRMR();
-    }
-
-    // Update stats
-    function updateStats() {
-        const totalRMR = rmrs.length;
-        const pendingRMR = rmrs.filter(r => r.status === 'pending').length;
-        const processingRMR = rmrs.filter(r => r.status === 'processing').length;
-        const approvedRMR = rmrs.filter(r => r.status === 'approved').length;
-        const rejectedRMR = rmrs.filter(r => r.status === 'rejected').length;
-        
-        document.getElementById('totalRMR').textContent = totalRMR;
-        document.getElementById('pendingRMR').textContent = pendingRMR;
-        document.getElementById('processingRMR').textContent = processingRMR;
-        document.getElementById('approvedRMR').textContent = approvedRMR;
-    }
-
-    // Sort RMR
-    function sortRMR(criteria) {
-        currentSort = criteria;
-        
-        // Update active button
-        document.querySelectorAll('.sort-btn').forEach(btn => btn.classList.remove('active'));
-        event.target.classList.add('active');
-        
-        let sortedRMR = [...rmrs];
-        
-        switch(criteria) {
-            case 'date':
-                sortedRMR.sort((a, b) => new Date(b.dateCreated) - new Date(a.dateCreated));
-                break;
-            case 'status':
-                const statusOrder = { 'pending': 0, 'processing': 1, 'approved': 2, 'rejected': 3 };
-                sortedRMR.sort((a, b) => statusOrder[a.status] - statusOrder[b.status]);
-                break;
-            case 'reason':
-                const reasonOrder = { 'damaged': 0, 'expired': 1, 'wrong-item': 2, 'quality': 3, 'other': 4 };
-                sortedRMR.sort((a, b) => reasonOrder[a.returnReason] - reasonOrder[b.returnReason]);
-                break;
-            case 'quantity':
-                sortedRMR.sort((a, b) => b.returnQuantity - a.returnQuantity);
-                break;
-        }
-        
-        renderRMR(sortedRMR);
-    }
-
-    // Filter RMR
-    function filterRMR(searchTerm) {
-        if (!searchTerm) {
-            renderRMR();
-            return;
-        }
-        
-        const filtered = rmrs.filter(rmr => 
-            rmr.rmrNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            rmr.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            rmr.itemName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            rmr.itemCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            rmr.salesOrderNo.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            rmr.reasonDetails.toLowerCase().includes(searchTerm.toLowerCase())
-        );
-        
-        renderRMR(filtered);
-    }
-
-    // Helper functions
-    function getStatusClass(status) {
-        switch(status) {
-            case 'pending': return 'status-pending';
-            case 'processing': return 'status-processing';
-            case 'approved': return 'status-approved';
-            case 'rejected': return 'status-rejected';
-            case 'completed': return 'status-completed';
-            default: return 'status-pending';
-        }
-    }
-
-    function getStatusText(status) {
-        switch(status) {
-            case 'pending': return 'Pending';
-            case 'processing': return 'Processing';
-            case 'approved': return 'Approved';
-            case 'rejected': return 'Rejected';
-            case 'completed': return 'Completed';
-            default: return 'Pending';
-        }
-    }
-
-    function getReasonClass(reason) {
-        switch(reason) {
-            case 'damaged': return 'reason-damaged';
-            case 'expired': return 'reason-expired';
-            case 'wrong-item': return 'reason-wrong-item';
-            case 'quality': return 'reason-quality';
-            case 'other': return 'reason-other';
-            default: return 'reason-other';
-        }
-    }
-
-    function getReasonText(reason) {
-        switch(reason) {
-            case 'damaged': return 'Damaged';
-            case 'expired': return 'Expired';
-            case 'wrong-item': return 'Wrong Item';
-            case 'quality': return 'Quality Issue';
-            case 'other': return 'Other';
-            default: return 'Other';
-        }
-    }
-
-    function getUnitText(unit) {
-        switch(unit) {
-            case 'case': return 'CS';
-            case 'inner-pack': return 'IP';
-            case 'piece': return 'PC';
-            default: return unit;
-        }
-    }
-
-    function getDispositionText(disposition) {
-        switch(disposition) {
-            case 'credit': return 'Credit to Customer';
-            case 'refund': return 'Cash Refund';
-            case 'replacement': return 'Replacement';
-            case 'destroy': return 'Destroy Item';
-            case 'return-to-supplier': return 'Return to Supplier';
-            case 'rejected': return 'Rejected';
-            default: return disposition;
-        }
-    }
-
-    function formatDate(dateTimeStr) {
-        const date = new Date(dateTimeStr);
-        return date.toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    }
-
-    function showNotification(message, type = 'success') {
-        // Remove existing notifications
-        document.querySelectorAll('.notification').forEach(notif => notif.remove());
-        
-        // Create notification element
-        const notification = document.createElement('div');
-        notification.className = 'notification';
-        notification.innerHTML = `
-            <i class="bi ${type === 'success' ? 'bi-check-circle' : 
-                          type === 'warning' ? 'bi-exclamation-triangle' : 
-                          'bi-info-circle'} me-2"></i>
-            ${message}
-        `;
-        
-        // Style the notification
-        notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 12px 20px;
-            background: ${type === 'success' ? '#10b981' : 
-                         type === 'warning' ? '#f59e0b' : 
-                         '#3b82f6'};
-            color: white;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            z-index: 10000;
-            animation: slideIn 0.3s ease;
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            max-width: 400px;
-        `;
-        
-        document.body.appendChild(notification);
-        
-        // Add animation styles
-        if (!document.querySelector('#notification-styles')) {
-            const style = document.createElement('style');
-            style.id = 'notification-styles';
-            style.textContent = `
-                @keyframes slideIn {
-                    from {
-                        transform: translateX(100%);
-                        opacity: 0;
-                    }
-                    to {
-                        transform: translateX(0);
-                        opacity: 1;
-                    }
-                }
-                @keyframes slideOut {
-                    from {
-                        transform: translateX(0);
-                        opacity: 1;
-                    }
-                    to {
-                        transform: translateX(100%);
-                        opacity: 0;
-                    }
-                }
-            `;
-            document.head.appendChild(style);
-        }
-        
-        // Remove after 3 seconds
-        setTimeout(() => {
-            notification.style.animation = 'slideOut 0.3s ease';
-            setTimeout(() => {
-                if (notification.parentNode) {
-                    document.body.removeChild(notification);
-                }
-            }, 300);
-        }, 3000);
-    }
-
-    // Print RMR report
     function printRMRReport() {
-        const printContent = `
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>RMR Report - ${new Date().toLocaleDateString()}</title>
-                <style>
-                    body { font-family: Arial, sans-serif; margin: 20px; }
-                    h1 { color: #333; margin-bottom: 10px; }
-                    .print-date { color: #666; margin-bottom: 20px; }
-                    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-                    th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
-                    th { background-color: #f5f5f5; font-weight: bold; }
-                    .status { padding: 4px 8px; border-radius: 4px; font-size: 12px; }
-                    .pending { background-color: #fff3cd; color: #856404; }
-                    .processing { background-color: #cce5ff; color: #004085; }
-                    .approved { background-color: #d4edda; color: #155724; }
-                    .rejected { background-color: #f8d7da; color: #721c24; }
-                    .summary { margin-top: 30px; padding: 15px; background-color: #f8f9fa; border-radius: 5px; }
-                    .footer { margin-top: 30px; text-align: center; color: #666; font-size: 12px; }
-                </style>
-            </head>
-            <body>
-                <h1>Returned Merchandise Request (RMR) Report</h1>
-                <div class="print-date">Generated: ${new Date().toLocaleString()}</div>
-                <table>
-                    <thead>
-                        <tr>
-                            <th>RMR No.</th>
-                            <th>Date</th>
-                            <th>Customer</th>
-                            <th>Item</th>
-                            <th>Qty</th>
-                            <th>Amount</th>
-                            <th>Reason</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${rmrs.map(rmr => `
-                            <tr>
-                                <td>${rmr.rmrNumber}</td>
-                                <td>${formatDate(rmr.dateCreated)}</td>
-                                <td>${rmr.customerName}</td>
-                                <td>${rmr.itemName}</td>
-                                <td>${rmr.returnQuantity}</td>
-                                <td>₱${rmr.totalAmount.toLocaleString()}</td>
-                                <td>${getReasonText(rmr.returnReason)}</td>
-                                <td><span class="status ${rmr.status}">${getStatusText(rmr.status)}</span></td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-                <div class="summary">
-                    <h3>Summary</h3>
-                    <p><strong>Total RMR:</strong> ${rmrs.length}</p>
-                    <p><strong>Pending:</strong> ${rmrs.filter(r => r.status === 'pending').length}</p>
-                    <p><strong>Processing:</strong> ${rmrs.filter(r => r.status === 'processing').length}</p>
-                    <p><strong>Approved:</strong> ${rmrs.filter(r => r.status === 'approved').length}</p>
-                    <p><strong>Rejected:</strong> ${rmrs.filter(r => r.status === 'rejected').length}</p>
-                    <p><strong>Total Amount:</strong> ₱${rmrs.reduce((sum, rmr) => sum + rmr.totalAmount, 0).toLocaleString()}</p>
-                </div>
-                <div class="footer">
-                    <p>Returned Merchandise Request System | Printed by: Quality Control Dept</p>
-                </div>
-            </body>
-            </html>
-        `;
-        
-        const printWindow = window.open('', '_blank');
-        printWindow.document.write(printContent);
-        printWindow.document.close();
-        printWindow.print();
+        window.print();
     }
 
-    // Export RMR to CSV
     function exportRMRToCSV() {
-        try {
-            const headers = ['RMR_Number', 'Date_Created', 'Sales_Order_No', 'Customer_Name', 'Item_Code', 'Item_Name', 
-                            'Return_Quantity', 'Unit_Type', 'Unit_Price', 'Total_Amount', 'Return_Reason', 'Reason_Details',
-                            'Status', 'Received_By', 'Received_Date', 'Inspector', 'Inspection_Date', 'Disposition', 
-                            'Approved_Amount', 'Approval_Date', 'Approval_Notes'];
-            
-            const csvData = rmrs.map(rmr => [
-                rmr.rmrNumber,
-                new Date(rmr.dateCreated).toISOString(),
-                rmr.salesOrderNo,
-                rmr.customerName,
-                rmr.itemCode,
-                `"${rmr.itemName.replace(/"/g, '""')}"`,
-                rmr.returnQuantity,
-                rmr.unitType,
-                rmr.unitPrice,
-                rmr.totalAmount,
-                getReasonText(rmr.returnReason),
-                `"${rmr.reasonDetails.replace(/"/g, '""')}"`,
-                getStatusText(rmr.status),
-                rmr.receivedBy,
-                new Date(rmr.receivedDate).toISOString(),
-                rmr.inspector || '',
-                rmr.inspectionDate ? new Date(rmr.inspectionDate).toISOString() : '',
-                getDispositionText(rmr.disposition) || '',
-                rmr.approvedAmount || '0',
-                rmr.approvalDate ? new Date(rmr.approvalDate).toISOString() : '',
-                `"${(rmr.approvalNotes || '').replace(/"/g, '""')}"`
-            ]);
-            
-            const csvContent = [
-                headers.join(','),
-                ...csvData.map(row => row.join(','))
-            ].join('\n');
-            
-            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement('a');
-            link.href = url;
-            const fileName = `rmr_report_${new Date().toISOString().slice(0, 10)}.csv`;
-            link.setAttribute('download', fileName);
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            showNotification(`Exported ${rmrs.length} RMR records to CSV`, 'success');
-        } catch (error) {
-            console.error('Export error:', error);
-            showNotification('Failed to export data', 'warning');
-        }
+        alert('Export RMR to CSV - AJAX implementation needed');
     }
 
-    // Logout function
     function logout() {
         if (confirm('Are you sure you want to logout?')) {
-            showNotification('Logged out successfully', 'info');
-            setTimeout(() => {
-                alert('Redirecting to login page...');
-            }, 1000);
+            localStorage.removeItem('sidebarCollapsed');
+            window.location.href = 'login.php';
         }
     }
-
-    // Data persistence
-    function saveToLocalStorage() {
-        try {
-            localStorage.setItem('badOrdersRMR', JSON.stringify(rmrs));
-        } catch (error) {
-            console.error('Failed to save to localStorage:', error);
-        }
-    }
-
-    function loadFromLocalStorage() {
-        try {
-            const savedRMR = localStorage.getItem('badOrdersRMR');
-            if (savedRMR) {
-                const parsed = JSON.parse(savedRMR);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                    rmrs = parsed;
-                }
-            }
-        } catch (error) {
-            console.error('Failed to load from localStorage:', error);
-        }
-    }
-
-    // Demo info card styling
-    const style = document.createElement('style');
-    style.textContent = `
-        .demo-info-card {
-            background: linear-gradient(135deg, rgba(245, 158, 11, 0.1), rgba(245, 158, 11, 0.05));
-            border: 1px solid rgba(245, 158, 11, 0.2);
-            border-radius: 12px;
-            padding: 1.25rem;
-            margin-bottom: 1.5rem;
-            display: flex;
-            align-items: flex-start;
-            gap: 1rem;
-        }
-        
-        .demo-info-icon {
-            background: rgba(245, 158, 11, 0.2);
-            border-radius: 8px;
-            width: 40px;
-            height: 40px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-        }
-        
-        .demo-info-icon i {
-            color: #d97706;
-            font-size: 1.25rem;
-        }
-        
-        .demo-info-content h5 {
-            color: #d97706;
-            margin-bottom: 0.25rem;
-            font-size: 1rem;
-        }
-        
-        .demo-info-content p {
-            color: #6b7280;
-            font-size: 0.875rem;
-            margin-bottom: 0;
-        }
-    `;
-    document.head.appendChild(style);
-</script>
+    </script>
 </body>
 </html>
