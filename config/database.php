@@ -17,6 +17,7 @@ if ($conn->connect_error) {
 
 // Set charset
 $conn->set_charset(DB_CHARSET);
+$conn->query("SET time_zone = '+08:00'");
 
 // Enable MySQLi error reporting
 mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);

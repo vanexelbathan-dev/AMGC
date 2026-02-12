@@ -6,6 +6,11 @@ require_once '../config/session_handler.php';
 requireLogin();
 requireRole(['sales']);
 
+// Get current user info
+    $user_id = $_SESSION['user_id'];
+    $user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Driver User';
+    $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'delivery';
+
 // Function to generate unique customer code
 function generateCustomerCode($conn) {
     $prefix = 'CUST-';
@@ -155,7 +160,12 @@ $success = '';
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Customer - Sales</title>
-    <link rel="stylesheet" href="../css/style.css">
+    <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
+    <link rel="shortcut icon" href="../Pictures/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="../Pictures/apple-touch-icon.png" />
+    <link rel="manifest" href="../Pictures/site.webmanifest" />
+    <link rel="stylesheet" href="../css/sales.css">
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
@@ -357,17 +367,19 @@ $success = '';
     </style>
 </head>
 <body>
-    <!-- MOBILE MENU BUTTON -->
-    <button class="mobile-menu-btn" id="mobileMenuBtn">
-        <i class="bi bi-list"></i>
-    </button>
-
     <!-- MAIN APPLICATION -->
     <div id="appPage">
         <!-- Sidebar -->
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
-                <h3><i class="bi bi-shop logo-icon"></i> <span class="nav-text">Sales</span></h3>
+                <h3>
+            <!-- Burger icon moved before logo -->
+            <button class="desktop-toggle-btn" id="desktopToggleBtn">
+                <i class="bi bi-list" id="toggleIcon"></i>
+            </button>
+                <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
+                <span class="nav-text">Sales</span>
+        </h3>
             </div>
             
             <div class="sidebar-menu">
@@ -404,29 +416,33 @@ $success = '';
                     </li>
                 </ul>
             </div>
+            <!-- User Profile Section at the bottom of sidebar -->
+        <div class="sidebar-footer">
+            <div class="user-profile-sidebar">
+                <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
+                <div class="user-details-sidebar">
+                    <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
+                    <span class="user-role-sidebar"><?php echo htmlspecialchars(ucfirst($user_role)); ?></span>
+                </div>
+            </div>
+                
+            <button class="logout-btn-sidebar" onclick="logout()">
+                <i class="bi bi-box-arrow-right"></i>
+                <span class="logout-text">Logout</span>
+            </button>
+        </div>
         </div>
 
         <!-- Main Content Area -->
         <div class="main-content">
             <!-- Header Section with User Info and Logout -->
             <div class="navbar-top">
+                <button class="mobile-toggle-btn" id="mobileToggleBtn">
+                    <i class="bi bi-list"></i>
+                </button>
                 <div class="page-title">
-                    <h2><i class="bi bi-people me-2"></i>Customer Information</h2>
+                    <h2></i>Customer Information</h2>
                     <p>Manage customer database and details</p>
-                </div>
-                
-                <div class="user-info-top">
-                    <div class="user-profile-top">
-                        <div class="user-avatar-top" id="userAvatar"><?php echo substr(getUserName(), 0, 2); ?></div>
-                        <div class="user-details-top">
-                            <span class="user-name-top" id="userName"><?php echo getUserName(); ?></span>
-                            <span class="user-role-top" id="userRole"><?php echo ucfirst(str_replace('_', ' ', getUserRole())); ?></span>
-                        </div>
-                    </div>
-                    
-                    <button class="logout-btn-top" onclick="window.location.href='../logout.php'">
-                        <i class="bi bi-box-arrow-right"></i> Logout
-                    </button>
                 </div>
             </div>
 
@@ -745,57 +761,177 @@ $success = '';
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <!-- Leaflet JS for Maps -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script>
-        // Mobile menu toggle
-        document.getElementById('mobileMenuBtn').addEventListener('click', function() {
-            document.getElementById('sidebar').classList.toggle('show');
-        });
-
-        // Search functionality
-        document.getElementById('searchInput').addEventListener('keyup', function() {
-            const filter = this.value.toLowerCase();
-            const rows = document.querySelectorAll('tbody tr');
+   <script>
+        // ================= SIDEBAR FUNCTIONS =================
+        // Toggle sidebar collapse/expand
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const isMobile = window.innerWidth <= 992;
             
-            rows.forEach(row => {
-                const text = row.textContent.toLowerCase();
-                row.style.display = text.includes(filter) ? '' : 'none';
-            });
-        });
-
-        // Status filter
-        document.getElementById('statusFilter').addEventListener('change', function() {
-            const filter = this.value.toLowerCase();
-            const rows = document.querySelectorAll('tbody tr');
-            
-            rows.forEach(row => {
-                if (row.cells.length < 6) return;
-                const status = row.cells[5].textContent.toLowerCase();
-                row.style.display = (filter === '' || status.includes(filter)) ? '' : 'none';
-            });
-        });
-
-        // Auto-hide alerts after 5 seconds
-        document.querySelectorAll('.alert').forEach(function(alert) {
-            setTimeout(function() {
-                let alertInstance = new bootstrap.Alert(alert);
-                alertInstance.close();
-            }, 5000);
-        });
-
-        // Refresh customer code via AJAX
-        function refreshCustomerCode() {
-            fetch('generate_customer_code.php')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        document.getElementById('customerCodePreview').innerHTML = data.code + ' <i class="bi bi-arrow-repeat refresh-code" onclick="refreshCustomerCode()" title="Generate new code"></i>';
-                        document.getElementById('customerCodeInput').value = data.code;
+            if (isMobile) {
+                // On mobile, toggle active state
+                sidebar.classList.toggle('active');
+                
+                // Create overlay for mobile
+                if (!document.querySelector('.sidebar-overlay')) {
+                    const overlay = document.createElement('div');
+                    overlay.className = 'sidebar-overlay';
+                    document.body.appendChild(overlay);
+                    
+                    overlay.addEventListener('click', () => {
+                        closeMobileSidebar();
+                    });
+                    
+                    setTimeout(() => {
+                        overlay.classList.add('active');
+                    }, 10);
+                } else {
+                    // If overlay exists, toggle its active state
+                    const overlay = document.querySelector('.sidebar-overlay');
+                    overlay.classList.toggle('active');
+                    if (!sidebar.classList.contains('active')) {
+                        setTimeout(() => {
+                            if (overlay && overlay.parentNode) {
+                                overlay.remove();
+                            }
+                        }, 300);
                     }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
+                }
+            } else {
+                // On desktop, toggle between expanded and collapsed
+                sidebar.classList.toggle('collapsed');
+                
+                // Store preference in localStorage
+                localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+                
+                // Show/hide nav text
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = sidebar.classList.contains('collapsed') ? 'none' : 'inline-block';
                 });
+                
+                // Adjust main content margin
+                const mainContent = document.querySelector('.main-content');
+                if (mainContent) {
+                    mainContent.style.marginLeft = sidebar.classList.contains('collapsed') ? '80px' : '250px';
+                }
+            }
         }
+
+        // Close mobile sidebar
+        function closeMobileSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.querySelector('.sidebar-overlay');
+            
+            sidebar.classList.remove('active');
+            
+            if (overlay) {
+                overlay.classList.remove('active');
+                setTimeout(() => {
+                    if (overlay.parentNode) {
+                        overlay.remove();
+                    }
+                }, 300);
+            }
+        }
+
+        // Initialize sidebar when page loads
+        function initializeSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            
+            // Load saved preference from localStorage for desktop
+            if (window.innerWidth > 992) {
+                const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+                if (savedCollapsed === 'true') {
+                    sidebar.classList.add('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'none';
+                    });
+                    
+                    // Adjust main content margin
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '80px';
+                    }
+                } else {
+                    sidebar.classList.remove('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'inline-block';
+                    });
+                    
+                    // Adjust main content margin
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '250px';
+                    }
+                }
+            } else {
+                // On mobile, always start with closed sidebar
+                sidebar.classList.remove('active');
+                sidebar.classList.remove('collapsed');
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'inline-block';
+                });
+                
+                // Adjust main content margin
+                const mainContent = document.querySelector('.main-content');
+                if (mainContent) {
+                    mainContent.style.marginLeft = '0';
+                }
+            }
+        }
+
+        // Handle window resize for sidebar
+        function handleSidebarResize() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.querySelector('.sidebar-overlay');
+            
+            if (window.innerWidth > 992) {
+                // Desktop mode - remove mobile overlay
+                if (overlay) {
+                    overlay.remove();
+                }
+                sidebar.classList.remove('active');
+                
+                // Load saved preference
+                const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+                if (savedCollapsed === 'true') {
+                    sidebar.classList.add('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'none';
+                    });
+                    
+                    // Adjust main content margin
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '80px';
+                    }
+                } else {
+                    sidebar.classList.remove('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'inline-block';
+                    });
+                    
+                    // Adjust main content margin
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '250px';
+                    }
+                }
+            } else {
+                // Mobile mode - always show expanded when visible
+                sidebar.classList.remove('collapsed');
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'inline-block';
+                });
+                
+                // Adjust main content margin
+                const mainContent = document.querySelector('.main-content');
+                if (mainContent) {
+                    mainContent.style.marginLeft = '0';
+                }
+            }
+        }
+        // ================= END SIDEBAR FUNCTIONS =================
 
         // Map variables
         let map;
@@ -804,6 +940,176 @@ $success = '';
         let editMarker;
         let viewMap;
         let viewMarker;
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("Customer Management page loaded!");
+            
+            // Initialize sidebar
+            initializeSidebar();
+            
+            // Setup mobile toggle button - support multiple button IDs
+            const mobileToggleBtn = document.getElementById('mobileToggleBtn');
+            if (mobileToggleBtn) {
+                mobileToggleBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleSidebar();
+                });
+            }
+            
+            const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+            if (mobileMenuBtn) {
+                mobileMenuBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleSidebar();
+                });
+            }
+            
+            // Setup desktop toggle button
+            const desktopToggleBtn = document.getElementById('desktopToggleBtn');
+            if (desktopToggleBtn) {
+                desktopToggleBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleSidebar();
+                });
+            }
+            
+            // Add click listeners to sidebar links to close on mobile
+            document.querySelectorAll('.sidebar .nav-link').forEach(link => {
+                link.addEventListener('click', function() {
+                    if (window.innerWidth <= 992) {
+                        closeMobileSidebar();
+                    }
+                });
+            });
+            
+            // Close sidebar when clicking outside on mobile
+            document.addEventListener('click', function(event) {
+                const sidebar = document.getElementById('sidebar');
+                const mobileBtn = document.getElementById('mobileToggleBtn') || document.getElementById('mobileMenuBtn');
+                const overlay = document.querySelector('.sidebar-overlay');
+                const isMobile = window.innerWidth <= 992;
+                
+                if (isMobile && sidebar && sidebar.classList.contains('active') && 
+                    !sidebar.contains(event.target) && 
+                    (!mobileBtn || !mobileBtn.contains(event.target)) &&
+                    (!overlay || !overlay.contains(event.target))) {
+                    closeMobileSidebar();
+                }
+            });
+
+            // Add resize event listener
+            window.addEventListener('resize', handleSidebarResize);
+
+            // Setup event listeners
+            setupEventListeners();
+            
+            // Auto-hide alerts after 5 seconds
+            document.querySelectorAll('.alert').forEach(function(alert) {
+                setTimeout(function() {
+                    try {
+                        let alertInstance = new bootstrap.Alert(alert);
+                        alertInstance.close();
+                    } catch(e) {
+                        console.log('Alert already closed');
+                    }
+                }, 5000);
+            });
+
+            // Initialize add customer map when modal is shown
+            const addCustomerModal = document.getElementById('addCustomerModal');
+            if (addCustomerModal) {
+                addCustomerModal.addEventListener('shown.bs.modal', function() {
+                    initAddCustomerMap();
+                });
+                
+                // Clean up map when modal is hidden
+                addCustomerModal.addEventListener('hidden.bs.modal', function() {
+                    if (map) {
+                        map.remove();
+                        map = null;
+                        marker = null;
+                    }
+                });
+            }
+
+            // Clean up edit map when modal is hidden
+            const editCustomerModal = document.getElementById('editCustomerModal');
+            if (editCustomerModal) {
+                editCustomerModal.addEventListener('hidden.bs.modal', function() {
+                    if (editMap) {
+                        editMap.remove();
+                        editMap = null;
+                        editMarker = null;
+                    }
+                });
+            }
+
+            // Clean up view map when modal is hidden
+            const viewLocationModal = document.getElementById('viewLocationModal');
+            if (viewLocationModal) {
+                viewLocationModal.addEventListener('hidden.bs.modal', function() {
+                    if (viewMap) {
+                        viewMap.remove();
+                        viewMap = null;
+                        viewMarker = null;
+                    }
+                });
+            }
+        });
+
+        // Setup event listeners
+        function setupEventListeners() {
+            // Search functionality
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput) {
+                searchInput.addEventListener('keyup', function() {
+                    const filter = this.value.toLowerCase();
+                    const rows = document.querySelectorAll('tbody tr');
+                    
+                    rows.forEach(row => {
+                        const text = row.textContent.toLowerCase();
+                        row.style.display = text.includes(filter) ? '' : 'none';
+                    });
+                });
+            }
+
+            // Status filter
+            const statusFilter = document.getElementById('statusFilter');
+            if (statusFilter) {
+                statusFilter.addEventListener('change', function() {
+                    const filter = this.value.toLowerCase();
+                    const rows = document.querySelectorAll('tbody tr');
+                    
+                    rows.forEach(row => {
+                        if (row.cells.length < 6) return;
+                        const status = row.cells[5].textContent.toLowerCase();
+                        row.style.display = (filter === '' || status.includes(filter)) ? '' : 'none';
+                    });
+                });
+            }
+        }
+
+        // Refresh customer code via AJAX
+        function refreshCustomerCode() {
+            fetch('generate_customer_code.php')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const customerCodePreview = document.getElementById('customerCodePreview');
+                        if (customerCodePreview) {
+                            customerCodePreview.innerHTML = data.code + ' <i class="bi bi-arrow-repeat refresh-code" onclick="refreshCustomerCode()" title="Generate new code"></i>';
+                        }
+                        const customerCodeInput = document.getElementById('customerCodeInput');
+                        if (customerCodeInput) {
+                            customerCodeInput.value = data.code;
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+        }
 
         // Initialize add customer map
         function initAddCustomerMap() {
@@ -825,27 +1131,39 @@ $success = '';
                 // Update input fields when marker is moved
                 marker.on('dragend', function(e) {
                     const position = marker.getLatLng();
-                    document.getElementById('latitudeInput').value = position.lat.toFixed(6);
-                    document.getElementById('longitudeInput').value = position.lng.toFixed(6);
+                    const latInput = document.getElementById('latitudeInput');
+                    const lngInput = document.getElementById('longitudeInput');
+                    if (latInput) latInput.value = position.lat.toFixed(6);
+                    if (lngInput) lngInput.value = position.lng.toFixed(6);
                 });
                 
                 // Add click event to map to move marker
                 map.on('click', function(e) {
                     marker.setLatLng(e.latlng);
-                    document.getElementById('latitudeInput').value = e.latlng.lat.toFixed(6);
-                    document.getElementById('longitudeInput').value = e.latlng.lng.toFixed(6);
+                    const latInput = document.getElementById('latitudeInput');
+                    const lngInput = document.getElementById('longitudeInput');
+                    if (latInput) latInput.value = e.latlng.lat.toFixed(6);
+                    if (lngInput) lngInput.value = e.latlng.lng.toFixed(6);
                 });
                 
                 // Update marker when coordinates are manually entered
-                document.getElementById('latitudeInput').addEventListener('change', updateMarkerFromInputs);
-                document.getElementById('longitudeInput').addEventListener('change', updateMarkerFromInputs);
+                const latInput = document.getElementById('latitudeInput');
+                const lngInput = document.getElementById('longitudeInput');
+                
+                if (latInput) latInput.addEventListener('change', updateMarkerFromInputs);
+                if (lngInput) lngInput.addEventListener('change', updateMarkerFromInputs);
             }
         }
 
         // Update marker position from input fields
         function updateMarkerFromInputs() {
-            const lat = parseFloat(document.getElementById('latitudeInput').value);
-            const lng = parseFloat(document.getElementById('longitudeInput').value);
+            const latInput = document.getElementById('latitudeInput');
+            const lngInput = document.getElementById('longitudeInput');
+            
+            if (!latInput || !lngInput) return;
+            
+            const lat = parseFloat(latInput.value);
+            const lng = parseFloat(lngInput.value);
             
             if (!isNaN(lat) && !isNaN(lng)) {
                 if (map && marker) {
@@ -863,8 +1181,11 @@ $success = '';
                         const lat = position.coords.latitude;
                         const lng = position.coords.longitude;
                         
-                        document.getElementById('latitudeInput').value = lat.toFixed(6);
-                        document.getElementById('longitudeInput').value = lng.toFixed(6);
+                        const latInput = document.getElementById('latitudeInput');
+                        const lngInput = document.getElementById('longitudeInput');
+                        
+                        if (latInput) latInput.value = lat.toFixed(6);
+                        if (lngInput) lngInput.value = lng.toFixed(6);
                         
                         if (map && marker) {
                             marker.setLatLng([lat, lng]);
@@ -882,15 +1203,15 @@ $success = '';
 
         // Geocode address to coordinates
         function geocodeAddress() {
-            const address = document.getElementById('addressInput').value;
+            const address = document.getElementById('addressInput');
             
-            if (!address) {
+            if (!address || !address.value) {
                 alert('Please enter an address first');
                 return;
             }
             
             // Using Nominatim (OpenStreetMap's geocoding service)
-            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`;
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address.value)}&limit=1`;
             
             fetch(url)
                 .then(response => response.json())
@@ -899,8 +1220,11 @@ $success = '';
                         const lat = parseFloat(data[0].lat);
                         const lng = parseFloat(data[0].lon);
                         
-                        document.getElementById('latitudeInput').value = lat.toFixed(6);
-                        document.getElementById('longitudeInput').value = lng.toFixed(6);
+                        const latInput = document.getElementById('latitudeInput');
+                        const lngInput = document.getElementById('longitudeInput');
+                        
+                        if (latInput) latInput.value = lat.toFixed(6);
+                        if (lngInput) lngInput.value = lng.toFixed(6);
                         
                         if (map && marker) {
                             marker.setLatLng([lat, lng]);
@@ -925,34 +1249,40 @@ $success = '';
                         const customer = data.customer;
                         const modal = new bootstrap.Modal(document.getElementById('viewCustomerModal'));
                         
-                        document.getElementById('customerDetailsContent').innerHTML = `
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <p><strong>Customer Code:</strong><br>${customer.customer_code}</p>
-                                    <p><strong>Name:</strong><br>${customer.customer_name}</p>
-                                    <p><strong>Contact Person:</strong><br>${customer.contact_person || 'N/A'}</p>
-                                    <p><strong>Email:</strong><br>${customer.email}</p>
+                        const customerDetailsContent = document.getElementById('customerDetailsContent');
+                        if (customerDetailsContent) {
+                            customerDetailsContent.innerHTML = `
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <p><strong>Customer Code:</strong><br>${customer.customer_code || 'N/A'}</p>
+                                        <p><strong>Name:</strong><br>${customer.customer_name || 'N/A'}</p>
+                                        <p><strong>Contact Person:</strong><br>${customer.contact_person || 'N/A'}</p>
+                                        <p><strong>Email:</strong><br>${customer.email || 'N/A'}</p>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <p><strong>Phone:</strong><br>${customer.phone_number || 'N/A'}</p>
+                                        <p><strong>Address:</strong><br>${customer.address || 'N/A'}</p>
+                                        <p><strong>City:</strong><br>${customer.city || 'N/A'}</p>
+                                        <p><strong>Status:</strong><br>
+                                            <span class="badge ${customer.status === 'active' ? 'bg-success' : customer.status === 'inactive' ? 'bg-danger' : 'bg-warning'}">
+                                                ${customer.status || 'N/A'}
+                                            </span>
+                                        </p>
+                                    </div>
                                 </div>
-                                <div class="col-md-6">
-                                    <p><strong>Phone:</strong><br>${customer.phone_number || 'N/A'}</p>
-                                    <p><strong>Address:</strong><br>${customer.address || 'N/A'}</p>
-                                    <p><strong>City:</strong><br>${customer.city || 'N/A'}</p>
-                                    <p><strong>Status:</strong><br>
-                                        <span class="badge ${customer.status === 'active' ? 'bg-success' : 'bg-danger'}">
-                                            ${customer.status}
-                                        </span>
-                                    </p>
+                                ${customer.latitude && customer.longitude ? `
+                                <hr>
+                                <div class="location-info">
+                                    <p><strong>Location Coordinates:</strong></p>
+                                    <p>Latitude: ${customer.latitude}</p>
+                                    <p>Longitude: ${customer.longitude}</p>
+                                    <button class="btn btn-sm btn-outline-primary mt-2" onclick="viewLocationOnMap('${customer.customer_id}', '${customer.customer_name.replace(/'/g, "\\'")}', ${customer.latitude}, ${customer.longitude})">
+                                        <i class="bi bi-map"></i> View on Map
+                                    </button>
                                 </div>
-                            </div>
-                            ${customer.latitude && customer.longitude ? `
-                            <hr>
-                            <div class="location-info">
-                                <p><strong>Location Coordinates:</strong></p>
-                                <p>Latitude: ${customer.latitude}</p>
-                                <p>Longitude: ${customer.longitude}</p>
-                            </div>
-                            ` : ''}
-                        `;
+                                ` : ''}
+                            `;
+                        }
                         
                         modal.show();
                     }
@@ -972,80 +1302,84 @@ $success = '';
                         const customer = data.customer;
                         const modal = new bootstrap.Modal(document.getElementById('editCustomerModal'));
                         
-                        document.getElementById('editCustomerId').value = customerId;
+                        const editCustomerId = document.getElementById('editCustomerId');
+                        if (editCustomerId) editCustomerId.value = customerId;
                         
-                        document.getElementById('editCustomerContent').innerHTML = `
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">Customer Name *</label>
-                                    <input type="text" class="form-control" name="customer_name" value="${customer.customer_name}" required>
+                        const editCustomerContent = document.getElementById('editCustomerContent');
+                        if (editCustomerContent) {
+                            editCustomerContent.innerHTML = `
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Customer Name *</label>
+                                        <input type="text" class="form-control" name="customer_name" value="${customer.customer_name || ''}" required>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Customer Code</label>
+                                        <input type="text" class="form-control" name="customer_code" value="${customer.customer_code || ''}" readonly>
+                                        <small class="text-muted">Customer code cannot be changed</small>
+                                    </div>
                                 </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">Customer Code</label>
-                                    <input type="text" class="form-control" name="customer_code" value="${customer.customer_code}" readonly>
-                                    <small class="text-muted">Customer code cannot be changed</small>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Contact Person</label>
+                                        <input type="text" class="form-control" name="contact_person" value="${customer.contact_person || ''}">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Email *</label>
+                                        <input type="email" class="form-control" name="email" value="${customer.email || ''}" required>
+                                    </div>
                                 </div>
-                            </div>
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">Contact Person</label>
-                                    <input type="text" class="form-control" name="contact_person" value="${customer.contact_person || ''}">
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Phone</label>
+                                        <input type="tel" class="form-control" name="phone_number" value="${customer.phone_number || ''}">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">City</label>
+                                        <input type="text" class="form-control" name="city" value="${customer.city || ''}">
+                                    </div>
                                 </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">Email *</label>
-                                    <input type="email" class="form-control" name="email" value="${customer.email}" required>
+                                <div class="mb-3">
+                                    <label class="form-label">Address</label>
+                                    <textarea class="form-control" name="address" rows="2">${customer.address || ''}</textarea>
                                 </div>
-                            </div>
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">Phone</label>
-                                    <input type="tel" class="form-control" name="phone_number" value="${customer.phone_number || ''}">
+                                
+                                <div class="mb-3">
+                                    <label class="form-label">Status</label>
+                                    <select class="form-select" name="status">
+                                        <option value="active" ${customer.status === 'active' ? 'selected' : ''}>Active</option>
+                                        <option value="inactive" ${customer.status === 'inactive' ? 'selected' : ''}>Inactive</option>
+                                        <option value="pending" ${customer.status === 'pending' ? 'selected' : ''}>Pending</option>
+                                    </select>
                                 </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">City</label>
-                                    <input type="text" class="form-control" name="city" value="${customer.city || ''}">
+                                
+                                <div class="location-info">
+                                    <small><i class="bi bi-info-circle"></i> Update location coordinates</small>
                                 </div>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Address</label>
-                                <textarea class="form-control" name="address" rows="2">${customer.address || ''}</textarea>
-                            </div>
-                            
-                            <div class="mb-3">
-                                <label class="form-label">Status</label>
-                                <select class="form-select" name="status">
-                                    <option value="active" ${customer.status === 'active' ? 'selected' : ''}>Active</option>
-                                    <option value="inactive" ${customer.status === 'inactive' ? 'selected' : ''}>Inactive</option>
-                                    <option value="pending" ${customer.status === 'pending' ? 'selected' : ''}>Pending</option>
-                                </select>
-                            </div>
-                            
-                            <div class="location-info">
-                                <small><i class="bi bi-info-circle"></i> Update location coordinates</small>
-                            </div>
-                            
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">Latitude</label>
-                                    <input type="text" class="form-control" name="latitude" id="editLatitude" value="${customer.latitude || '14.5995'}">
+                                
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Latitude</label>
+                                        <input type="text" class="form-control" name="latitude" id="editLatitude" value="${customer.latitude || '14.5995'}">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Longitude</label>
+                                        <input type="text" class="form-control" name="longitude" id="editLongitude" value="${customer.longitude || '120.9842'}">
+                                    </div>
                                 </div>
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">Longitude</label>
-                                    <input type="text" class="form-control" name="longitude" id="editLongitude" value="${customer.longitude || '120.9842'}">
+                                
+                                <div id="editLocationMap" style="height: 250px; margin-bottom: 15px; border-radius: 8px;"></div>
+                                
+                                <div class="location-buttons">
+                                    <button type="button" class="btn btn-outline-secondary" onclick="getCurrentLocationForEdit()">
+                                        <i class="bi bi-geo-alt"></i> Use My Location
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary" onclick="geocodeAddressForEdit()">
+                                        <i class="bi bi-search"></i> Geocode Address
+                                    </button>
                                 </div>
-                            </div>
-                            
-                            <div id="editLocationMap" style="height: 250px; margin-bottom: 15px; border-radius: 8px;"></div>
-                            
-                            <div class="location-buttons">
-                                <button type="button" class="btn btn-outline-secondary" onclick="getCurrentLocationForEdit()">
-                                    <i class="bi bi-geo-alt"></i> Use My Location
-                                </button>
-                                <button type="button" class="btn btn-outline-secondary" onclick="geocodeAddressForEdit()">
-                                    <i class="bi bi-search"></i> Geocode Address
-                                </button>
-                            </div>
-                        `;
+                            `;
+                        }
                         
                         modal.show();
                         initEditCustomerMap(customer);
@@ -1077,28 +1411,40 @@ $success = '';
                     // Update input fields when marker is moved
                     editMarker.on('dragend', function(e) {
                         const position = editMarker.getLatLng();
-                        document.getElementById('editLatitude').value = position.lat.toFixed(6);
-                        document.getElementById('editLongitude').value = position.lng.toFixed(6);
+                        const editLatitude = document.getElementById('editLatitude');
+                        const editLongitude = document.getElementById('editLongitude');
+                        if (editLatitude) editLatitude.value = position.lat.toFixed(6);
+                        if (editLongitude) editLongitude.value = position.lng.toFixed(6);
                     });
                     
                     // Add click event to map to move marker
                     editMap.on('click', function(e) {
                         editMarker.setLatLng(e.latlng);
-                        document.getElementById('editLatitude').value = e.latlng.lat.toFixed(6);
-                        document.getElementById('editLongitude').value = e.latlng.lng.toFixed(6);
+                        const editLatitude = document.getElementById('editLatitude');
+                        const editLongitude = document.getElementById('editLongitude');
+                        if (editLatitude) editLatitude.value = e.latlng.lat.toFixed(6);
+                        if (editLongitude) editLongitude.value = e.latlng.lng.toFixed(6);
                     });
                     
                     // Update marker when coordinates are manually entered
-                    document.getElementById('editLatitude').addEventListener('change', updateEditMarkerFromInputs);
-                    document.getElementById('editLongitude').addEventListener('change', updateEditMarkerFromInputs);
+                    const editLatitude = document.getElementById('editLatitude');
+                    const editLongitude = document.getElementById('editLongitude');
+                    
+                    if (editLatitude) editLatitude.addEventListener('change', updateEditMarkerFromInputs);
+                    if (editLongitude) editLongitude.addEventListener('change', updateEditMarkerFromInputs);
                 }
             }, 300);
         }
 
         // Update edit marker position from input fields
         function updateEditMarkerFromInputs() {
-            const lat = parseFloat(document.getElementById('editLatitude').value);
-            const lng = parseFloat(document.getElementById('editLongitude').value);
+            const editLatitude = document.getElementById('editLatitude');
+            const editLongitude = document.getElementById('editLongitude');
+            
+            if (!editLatitude || !editLongitude) return;
+            
+            const lat = parseFloat(editLatitude.value);
+            const lng = parseFloat(editLongitude.value);
             
             if (!isNaN(lat) && !isNaN(lng) && editMap && editMarker) {
                 editMarker.setLatLng([lat, lng]);
@@ -1114,8 +1460,11 @@ $success = '';
                         const lat = position.coords.latitude;
                         const lng = position.coords.longitude;
                         
-                        document.getElementById('editLatitude').value = lat.toFixed(6);
-                        document.getElementById('editLongitude').value = lng.toFixed(6);
+                        const editLatitude = document.getElementById('editLatitude');
+                        const editLongitude = document.getElementById('editLongitude');
+                        
+                        if (editLatitude) editLatitude.value = lat.toFixed(6);
+                        if (editLongitude) editLongitude.value = lng.toFixed(6);
                         
                         if (editMap && editMarker) {
                             editMarker.setLatLng([lat, lng]);
@@ -1133,14 +1482,14 @@ $success = '';
 
         // Geocode address for edit form
         function geocodeAddressForEdit() {
-            const address = document.querySelector('#editCustomerContent textarea[name="address"]').value;
+            const addressField = document.querySelector('#editCustomerContent textarea[name="address"]');
             
-            if (!address) {
+            if (!addressField || !addressField.value) {
                 alert('Please enter an address first');
                 return;
             }
             
-            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address)}&limit=1`;
+            const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addressField.value)}&limit=1`;
             
             fetch(url)
                 .then(response => response.json())
@@ -1149,8 +1498,11 @@ $success = '';
                         const lat = parseFloat(data[0].lat);
                         const lng = parseFloat(data[0].lon);
                         
-                        document.getElementById('editLatitude').value = lat.toFixed(6);
-                        document.getElementById('editLongitude').value = lng.toFixed(6);
+                        const editLatitude = document.getElementById('editLatitude');
+                        const editLongitude = document.getElementById('editLongitude');
+                        
+                        if (editLatitude) editLatitude.value = lat.toFixed(6);
+                        if (editLongitude) editLongitude.value = lng.toFixed(6);
                         
                         if (editMap && editMarker) {
                             editMarker.setLatLng([lat, lng]);
@@ -1168,9 +1520,13 @@ $success = '';
 
         // View location on map
         function viewLocationOnMap(customerId, customerName, latitude, longitude) {
-            document.getElementById('locationCustomerName').textContent = customerName;
-            document.getElementById('viewLatitude').textContent = latitude;
-            document.getElementById('viewLongitude').textContent = longitude;
+            const locationCustomerName = document.getElementById('locationCustomerName');
+            const viewLatitude = document.getElementById('viewLatitude');
+            const viewLongitude = document.getElementById('viewLongitude');
+            
+            if (locationCustomerName) locationCustomerName.textContent = customerName;
+            if (viewLatitude) viewLatitude.textContent = latitude;
+            if (viewLongitude) viewLongitude.textContent = longitude;
             
             const modal = new bootstrap.Modal(document.getElementById('viewLocationModal'));
             modal.show();
@@ -1197,33 +1553,32 @@ $success = '';
             }, 300);
         }
 
-        // Initialize add customer map when modal is shown
-        document.getElementById('addCustomerModal').addEventListener('shown.bs.modal', function() {
-            initAddCustomerMap();
-        });
-
-        // Clean up maps when modals are hidden
-        document.getElementById('addCustomerModal').addEventListener('hidden.bs.modal', function() {
-            if (map) {
-                map.remove();
-                map = null;
-                marker = null;
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Ctrl + B to toggle sidebar (desktop only)
+            if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
+                e.preventDefault();
+                toggleSidebar();
             }
-        });
-
-        document.getElementById('editCustomerModal').addEventListener('hidden.bs.modal', function() {
-            if (editMap) {
-                editMap.remove();
-                editMap = null;
-                editMarker = null;
+            // Escape to close sidebar on mobile
+            else if (e.key === 'Escape' && window.innerWidth <= 992) {
+                closeMobileSidebar();
             }
-        });
-
-        document.getElementById('viewLocationModal').addEventListener('hidden.bs.modal', function() {
-            if (viewMap) {
-                viewMap.remove();
-                viewMap = null;
-                viewMarker = null;
+            // Ctrl + F to focus search
+            else if (e.ctrlKey && e.key === 'f') {
+                e.preventDefault();
+                const searchInput = document.getElementById('searchInput');
+                if (searchInput) {
+                    searchInput.focus();
+                }
+            }
+            // Ctrl + N to add new customer
+            else if (e.ctrlKey && e.key === 'n') {
+                e.preventDefault();
+                const addButton = document.querySelector('[data-bs-target="#addCustomerModal"]');
+                if (addButton) {
+                    addButton.click();
+                }
             }
         });
     </script>

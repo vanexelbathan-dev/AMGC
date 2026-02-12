@@ -6,6 +6,11 @@ require_once '../config/session_handler.php';
 requireLogin();
 requireRole(['sales']);
 
+// Get current user info
+    $user_id = $_SESSION['user_id'];
+    $user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Driver User';
+    $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'delivery';
+
 // Get user ID for filtering
 $user_id = getUserId();
 $branch_id = getUserBranchId();
@@ -206,306 +211,34 @@ $stats = $stats_result->fetch_assoc();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sales Orders - Sales Dashboard</title>
-    <link rel="stylesheet" href="../css/style.css">
+     <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
+    <link rel="shortcut icon" href="../Pictures/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="../Pictures/apple-touch-icon.png" />
+    <link rel="manifest" href="../Pictures/site.webmanifest" />
+    <link rel="stylesheet" href="../css/sales.css">
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <!-- DataTables CSS -->
     <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap5.min.css">
-    <style>
-        /* TABLE DESIGN - GAYA NG CUSTOMER.PHP */
-        .card {
-            border: none;
-            border-radius: 10px;
-            box-shadow: 0 0 20px rgba(0,0,0,0.05);
-        }
-        
-        .card-body {
-            padding: 1.5rem;
-        }
-        
-        .table {
-            margin-bottom: 0;
-        }
-        
-        .table thead th {
-            background-color: #f8f9fc;
-            border-bottom: 2px solid #e3e6f0;
-            color: #4e73df;
-            font-weight: 700;
-            font-size: 0.8rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            padding: 1rem;
-            border-top: none;
-        }
-        
-        .table tbody tr {
-            transition: all 0.15s;
-        }
-        
-        .table tbody tr:hover {
-            background-color: #f8f9fc;
-            transform: translateY(-1px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.02);
-        }
-        
-        .table td {
-            padding: 1rem;
-            vertical-align: middle;
-            border-bottom: 1px solid #e3e6f0;
-            color: #5a5c69;
-            font-size: 0.85rem;
-        }
-        
-        .badge {
-            padding: 0.5em 1em;
-            font-weight: 600;
-            font-size: 0.75rem;
-            border-radius: 50px;
-        }
-        
-        .badge.bg-light {
-            background-color: #eaecf4 !important;
-            color: #4e73df !important;
-        }
-        
-        .badge.bg-warning {
-            background-color: #fff3cd !important;
-            color: #856404 !important;
-        }
-        
-        .badge.bg-info {
-            background-color: #d1ecf1 !important;
-            color: #0c5460 !important;
-        }
-        
-        .badge.bg-primary {
-            background-color: #cce5ff !important;
-            color: #004085 !important;
-        }
-        
-        .badge.bg-success {
-            background-color: #d4edda !important;
-            color: #155724 !important;
-        }
-        
-        .badge.bg-danger {
-            background-color: #f8d7da !important;
-            color: #721c24 !important;
-        }
-        
-        .btn-group .btn {
-            padding: 0.25rem 0.5rem;
-            border-radius: 4px;
-            margin: 0 2px;
-        }
-        
-        .btn-outline-primary {
-            color: #4e73df;
-            border-color: #4e73df;
-        }
-        
-        .btn-outline-primary:hover {
-            background-color: #4e73df;
-            border-color: #4e73df;
-            color: white;
-        }
-        
-        .btn-outline-secondary {
-            color: #858796;
-            border-color: #858796;
-        }
-        
-        .btn-outline-secondary:hover {
-            background-color: #858796;
-            border-color: #858796;
-            color: white;
-        }
-        
-        /* Statistics Cards - gaya ng customer.php */
-        .stat-card {
-            background: white;
-            border-radius: 10px;
-            padding: 1.5rem;
-            box-shadow: 0 0 15px rgba(0,0,0,0.02);
-            display: flex;
-            align-items: center;
-            transition: all 0.3s;
-            border: 1px solid #e3e6f0;
-        }
-        
-        .stat-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 5px 20px rgba(78,115,223,0.1);
-            border-color: #4e73df;
-        }
-        
-        .stat-icon {
-            width: 50px;
-            height: 50px;
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-right: 1rem;
-            font-size: 1.5rem;
-        }
-        
-        .stat-card.inventory .stat-icon {
-            background: linear-gradient(135deg, #4e73df 0%, #224abe 100%);
-            color: white;
-        }
-        
-        .stat-card.pending .stat-icon {
-            background: linear-gradient(135deg, #f6c23e 0%, #f4b619 100%);
-            color: white;
-        }
-        
-        .stat-card.sales .stat-icon {
-            background: linear-gradient(135deg, #36b9cc 0%, #1a8a9c 100%);
-            color: white;
-        }
-        
-        .stat-card.complete .stat-icon {
-            background: linear-gradient(135deg, #1cc88a 0%, #13855c 100%);
-            color: white;
-        }
-        
-        .stat-value {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: #2c3e50;
-            line-height: 1.2;
-        }
-        
-        .stat-label {
-            font-size: 0.8rem;
-            color: #858796;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-        }
-        
-        /* Search and Filter */
-        .form-control, .form-select, .input-group-text {
-            border-radius: 8px;
-            border: 1px solid #e3e6f0;
-            padding: 0.5rem 1rem;
-            font-size: 0.85rem;
-        }
-        
-        .form-control:focus, .form-select:focus {
-            border-color: #4e73df;
-            box-shadow: 0 0 0 0.2rem rgba(78,115,223,0.1);
-        }
-        
-        .input-group-text {
-            background-color: #f8f9fc;
-            color: #4e73df;
-        }
-        
-        .btn-primary {
-            background: linear-gradient(135deg, #4e73df 0%, #224abe 100%);
-            border: none;
-            border-radius: 8px;
-            padding: 0.5rem 1.2rem;
-            font-weight: 600;
-            font-size: 0.85rem;
-        }
-        
-        .btn-success {
-            background: linear-gradient(135deg, #1cc88a 0%, #13855c 100%);
-            border: none;
-            border-radius: 8px;
-            padding: 0.5rem 1.2rem;
-            font-weight: 600;
-            font-size: 0.85rem;
-        }
-        
-        .btn-info {
-            background: linear-gradient(135deg, #36b9cc 0%, #1a8a9c 100%);
-            border: none;
-            border-radius: 8px;
-            padding: 0.5rem 1.2rem;
-            font-weight: 600;
-            font-size: 0.85rem;
-            color: white;
-        }
-        
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
-        }
-
-        /* PRINT STYLES - PARA HINDI LUMIPAT NG PAGE */
-        @media print {
-            @page {
-                size: portrait;
-                margin: 1cm;
-            }
-            
-            body {
-                font-family: 'Courier New', Courier, monospace;
-                font-size: 11pt;
-                line-height: 1.3;
-                color: #000;
-                background: #fff;
-            }
-            
-            .no-print, .sidebar, .mobile-menu-btn, .navbar-top, 
-            .stat-card, .card:first-of-type, .btn-group, 
-            .btn, .modal, .dataTables_length, .dataTables_filter,
-            .dataTables_info, .dataTables_paginate, #mobileMenuBtn {
-                display: none !important;
-            }
-            
-            .main-content, .card, .table, .table-responsive {
-                margin: 0 !important;
-                padding: 0 !important;
-                border: none !important;
-                box-shadow: none !important;
-            }
-            
-            .card {
-                page-break-inside: avoid;
-            }
-            
-            table {
-                page-break-inside: auto;
-                width: 100%;
-                border-collapse: collapse;
-            }
-            
-            tr {
-                page-break-inside: avoid;
-                page-break-after: auto;
-            }
-            
-            thead {
-                display: table-header-group;
-            }
-            
-            tfoot {
-                display: table-footer-group;
-            }
-        }
-    </style>
 </head>
 <body>
-    <!-- MOBILE MENU BUTTON -->
-    <button class="mobile-menu-btn no-print" id="mobileMenuBtn">
-        <i class="bi bi-list"></i>
-    </button>
-
     <!-- MAIN APPLICATION -->
     <div id="appPage">
         <!-- Sidebar - No Print -->
         <div class="sidebar no-print" id="sidebar">
             <div class="sidebar-header">
-                <h3><i class="bi bi-shop logo-icon"></i> <span class="nav-text">Sales</span></h3>
+               <h3>
+            <!-- Burger icon moved before logo -->
+            <button class="desktop-toggle-btn" id="desktopToggleBtn">
+                <i class="bi bi-list" id="toggleIcon"></i>
+            </button>
+                <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
+                <span class="nav-text">Sales</span>
+        </h3>
             </div>
-            
             <div class="sidebar-menu">
                 <ul class="nav flex-column">
                     <li class="nav-item">
@@ -540,29 +273,33 @@ $stats = $stats_result->fetch_assoc();
                     </li>
                 </ul>
             </div>
+             <!-- User Profile Section at the bottom of sidebar -->
+            <div class="sidebar-footer">
+                <div class="user-profile-sidebar">
+                    <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
+                    <div class="user-details-sidebar">
+                        <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
+                        <span class="user-role-sidebar"><?php echo htmlspecialchars(ucfirst($user_role)); ?></span>
+                    </div>
+                </div>
+                    
+                <button class="logout-btn-sidebar" onclick="logout()">
+                    <i class="bi bi-box-arrow-right"></i>
+                    <span class="logout-text">Logout</span>
+                </button>
+            </div>
         </div>
 
         <!-- Main Content Area -->
         <div class="main-content">
             <!-- Header Section with User Info and Logout - No Print -->
             <div class="navbar-top no-print">
+                <button class="mobile-toggle-btn" id="mobileToggleBtn">
+                    <i class="bi bi-list"></i>
+                </button>
                 <div class="page-title">
-                    <h2><i class="bi bi-list-check me-2"></i>Sales Orders</h2>
+                    <h2></i>Sales Orders</h2>
                     <p>View and manage customer orders</p>
-                </div>
-                
-                <div class="user-info-top">
-                    <div class="user-profile-top">
-                        <div class="user-avatar-top" id="userAvatar"><?php echo substr(getUserName(), 0, 2); ?></div>
-                        <div class="user-details-top">
-                            <span class="user-name-top" id="userName"><?php echo getUserName(); ?></span>
-                            <span class="user-role-top" id="userRole"><?php echo ucfirst(str_replace('_', ' ', getUserRole())); ?></span>
-                        </div>
-                    </div>
-                    
-                    <button class="logout-btn-top" onclick="window.location.href='../logout.php'">
-                        <i class="bi bi-box-arrow-right"></i> Logout
-                    </button>
                 </div>
             </div>
 
@@ -638,14 +375,6 @@ $stats = $stats_result->fetch_assoc();
                         <div class="col-md-3">
                             <input type="date" class="form-control" name="end_date" id="endDate" 
                                    value="<?php echo isset($_GET['end_date']) ? $_GET['end_date'] : ''; ?>">
-                        </div>
-                        <div class="col-md-3">
-                            <div class="input-group">
-                                <span class="input-group-text">
-                                    <i class="bi bi-search"></i>
-                                </span>
-                                <input type="text" class="form-control" id="searchInput" placeholder="Search orders or customers...">
-                            </div>
                         </div>
                     </div>
                 </div>
@@ -770,12 +499,241 @@ $stats = $stats_result->fetch_assoc();
     <!-- DataTables -->
     <script type="text/javascript" src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
     <script type="text/javascript" src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap5.min.js"></script>
-    <script>
+ <script>
+        // ================= SIDEBAR FUNCTIONS =================
+        // Toggle sidebar collapse/expand
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const isMobile = window.innerWidth <= 992;
+            
+            if (isMobile) {
+                // On mobile, toggle active state
+                sidebar.classList.toggle('active');
+                
+                // Create overlay for mobile
+                if (!document.querySelector('.sidebar-overlay')) {
+                    const overlay = document.createElement('div');
+                    overlay.className = 'sidebar-overlay';
+                    document.body.appendChild(overlay);
+                    
+                    overlay.addEventListener('click', () => {
+                        closeMobileSidebar();
+                    });
+                    
+                    setTimeout(() => {
+                        overlay.classList.add('active');
+                    }, 10);
+                } else {
+                    // If overlay exists, toggle its active state
+                    const overlay = document.querySelector('.sidebar-overlay');
+                    overlay.classList.toggle('active');
+                    if (!sidebar.classList.contains('active')) {
+                        setTimeout(() => {
+                            if (overlay && overlay.parentNode) {
+                                overlay.remove();
+                            }
+                        }, 300);
+                    }
+                }
+            } else {
+                // On desktop, toggle between expanded and collapsed
+                sidebar.classList.toggle('collapsed');
+                
+                // Store preference in localStorage
+                localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+                
+                // Show/hide nav text
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = sidebar.classList.contains('collapsed') ? 'none' : 'inline-block';
+                });
+                
+                // Adjust main content margin
+                const mainContent = document.querySelector('.main-content');
+                if (mainContent) {
+                    mainContent.style.marginLeft = sidebar.classList.contains('collapsed') ? '80px' : '250px';
+                }
+            }
+        }
+
+        // Close mobile sidebar
+        function closeMobileSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.querySelector('.sidebar-overlay');
+            
+            sidebar.classList.remove('active');
+            
+            if (overlay) {
+                overlay.classList.remove('active');
+                setTimeout(() => {
+                    if (overlay.parentNode) {
+                        overlay.remove();
+                    }
+                }, 300);
+            }
+        }
+
+        // Initialize sidebar when page loads
+        function initializeSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            
+            // Load saved preference from localStorage for desktop
+            if (window.innerWidth > 992) {
+                const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+                if (savedCollapsed === 'true') {
+                    sidebar.classList.add('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'none';
+                    });
+                    
+                    // Adjust main content margin
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '80px';
+                    }
+                } else {
+                    sidebar.classList.remove('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'inline-block';
+                    });
+                    
+                    // Adjust main content margin
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '250px';
+                    }
+                }
+            } else {
+                // On mobile, always start with closed sidebar
+                sidebar.classList.remove('active');
+                sidebar.classList.remove('collapsed');
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'inline-block';
+                });
+                
+                // Adjust main content margin
+                const mainContent = document.querySelector('.main-content');
+                if (mainContent) {
+                    mainContent.style.marginLeft = '0';
+                }
+            }
+        }
+
+        // Handle window resize for sidebar
+        function handleSidebarResize() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.querySelector('.sidebar-overlay');
+            
+            if (window.innerWidth > 992) {
+                // Desktop mode - remove mobile overlay
+                if (overlay) {
+                    overlay.remove();
+                }
+                sidebar.classList.remove('active');
+                
+                // Load saved preference
+                const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+                if (savedCollapsed === 'true') {
+                    sidebar.classList.add('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'none';
+                    });
+                    
+                    // Adjust main content margin
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '80px';
+                    }
+                } else {
+                    sidebar.classList.remove('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'inline-block';
+                    });
+                    
+                    // Adjust main content margin
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '250px';
+                    }
+                }
+            } else {
+                // Mobile mode - always show expanded when visible
+                sidebar.classList.remove('collapsed');
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'inline-block';
+                });
+                
+                // Adjust main content margin
+                const mainContent = document.querySelector('.main-content');
+                if (mainContent) {
+                    mainContent.style.marginLeft = '0';
+                }
+            }
+        }
+        // ================= END SIDEBAR FUNCTIONS =================
+
         // Global variables
         let currentOrderId = null;
 
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
+            console.log("Sales Orders page loaded!");
+            
+            // Initialize sidebar
+            initializeSidebar();
+            
+            // Setup mobile toggle button - support multiple button IDs
+            const mobileToggleBtn = document.getElementById('mobileToggleBtn');
+            if (mobileToggleBtn) {
+                mobileToggleBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleSidebar();
+                });
+            }
+            
+            const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+            if (mobileMenuBtn) {
+                mobileMenuBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleSidebar();
+                });
+            }
+            
+            // Setup desktop toggle button
+            const desktopToggleBtn = document.getElementById('desktopToggleBtn');
+            if (desktopToggleBtn) {
+                desktopToggleBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleSidebar();
+                });
+            }
+            
+            // Add click listeners to sidebar links to close on mobile
+            document.querySelectorAll('.sidebar .nav-link').forEach(link => {
+                link.addEventListener('click', function() {
+                    if (window.innerWidth <= 992) {
+                        closeMobileSidebar();
+                    }
+                });
+            });
+            
+            // Close sidebar when clicking outside on mobile
+            document.addEventListener('click', function(event) {
+                const sidebar = document.getElementById('sidebar');
+                const mobileBtn = document.getElementById('mobileToggleBtn') || document.getElementById('mobileMenuBtn');
+                const overlay = document.querySelector('.sidebar-overlay');
+                const isMobile = window.innerWidth <= 992;
+                
+                if (isMobile && sidebar && sidebar.classList.contains('active') && 
+                    !sidebar.contains(event.target) && 
+                    (!mobileBtn || !mobileBtn.contains(event.target)) &&
+                    (!overlay || !overlay.contains(event.target))) {
+                    closeMobileSidebar();
+                }
+            });
+
+            // Add resize event listener
+            window.addEventListener('resize', handleSidebarResize);
+
             // Initialize DataTable - gaya ng customer.php
             try {
                 if ($('#ordersTable tbody tr').length > 1 || 
@@ -796,60 +754,76 @@ $stats = $stats_result->fetch_assoc();
             }
 
             // Set default date range (last 30 days)
-            if (!document.getElementById('startDate').value) {
-                const endDate = new Date();
-                const startDate = new Date();
-                startDate.setDate(startDate.getDate() - 30);
-                
-                document.getElementById('startDate').value = startDate.toISOString().split('T')[0];
-                document.getElementById('endDate').value = endDate.toISOString().split('T')[0];
+            const startDate = document.getElementById('startDate');
+            const endDate = document.getElementById('endDate');
+            
+            if (startDate && !startDate.value) {
+                const startDateObj = new Date();
+                startDateObj.setDate(startDateObj.getDate() - 30);
+                startDate.value = startDateObj.toISOString().split('T')[0];
             }
-        });
-
-        // Mobile menu toggle
-        document.getElementById('mobileMenuBtn').addEventListener('click', function() {
-            document.getElementById('sidebar').classList.toggle('show');
-        });
-
-        // Search functionality
-        document.getElementById('searchInput').addEventListener('keyup', function() {
-            const filter = this.value.toLowerCase();
-            const rows = document.querySelectorAll('#ordersTable tbody tr');
             
-            rows.forEach(row => {
-                if (row.cells.length > 1 && !row.querySelector('td[colspan]')) {
-                    const text = row.textContent.toLowerCase();
-                    row.style.display = text.includes(filter) ? '' : 'none';
-                }
-            });
+            if (endDate && !endDate.value) {
+                endDate.value = new Date().toISOString().split('T')[0];
+            }
+
+            // Setup event listeners for search and filters
+            setupEventListeners();
         });
 
-        // Status filter
-        document.getElementById('statusFilter').addEventListener('change', function() {
-            const filter = this.value;
-            const rows = document.querySelectorAll('#ordersTable tbody tr');
-            
-            rows.forEach(row => {
-                if (row.cells.length > 1 && !row.querySelector('td[colspan]')) {
-                    if (filter === 'all') {
-                        row.style.display = '';
-                        return;
-                    }
+        // Setup event listeners
+        function setupEventListeners() {
+            // Search functionality
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput) {
+                searchInput.addEventListener('keyup', function() {
+                    const filter = this.value.toLowerCase();
+                    const rows = document.querySelectorAll('#ordersTable tbody tr');
                     
-                    const statusCell = row.cells[5];
-                    const statusText = statusCell.textContent.toLowerCase().trim();
-                    row.style.display = statusText.includes(filter) ? '' : 'none';
-                }
-            });
-        });
+                    rows.forEach(row => {
+                        if (row.cells.length > 1 && !row.querySelector('td[colspan]')) {
+                            const text = row.textContent.toLowerCase();
+                            row.style.display = text.includes(filter) ? '' : 'none';
+                        }
+                    });
+                });
+            }
 
-        // Date filters
-        document.getElementById('startDate').addEventListener('change', filterByDate);
-        document.getElementById('endDate').addEventListener('change', filterByDate);
+            // Status filter
+            const statusFilter = document.getElementById('statusFilter');
+            if (statusFilter) {
+                statusFilter.addEventListener('change', function() {
+                    const filter = this.value;
+                    const rows = document.querySelectorAll('#ordersTable tbody tr');
+                    
+                    rows.forEach(row => {
+                        if (row.cells.length > 1 && !row.querySelector('td[colspan]')) {
+                            if (filter === 'all') {
+                                row.style.display = '';
+                                return;
+                            }
+                            
+                            const statusCell = row.cells[5];
+                            const statusText = statusCell.textContent.toLowerCase().trim();
+                            row.style.display = statusText.includes(filter) ? '' : 'none';
+                        }
+                    });
+                });
+            }
+
+            // Date filters
+            const startDate = document.getElementById('startDate');
+            const endDate = document.getElementById('endDate');
+            
+            if (startDate) startDate.addEventListener('change', filterByDate);
+            if (endDate) endDate.addEventListener('change', filterByDate);
+        }
 
         function filterByDate() {
-            const startDate = document.getElementById('startDate').value;
-            const endDate = document.getElementById('endDate').value;
+            const startDate = document.getElementById('startDate');
+            const endDate = document.getElementById('endDate');
+            const startValue = startDate ? startDate.value : '';
+            const endValue = endDate ? endDate.value : '';
             const rows = document.querySelectorAll('#ordersTable tbody tr');
             
             rows.forEach(row => {
@@ -859,11 +833,11 @@ $stats = $stats_result->fetch_assoc();
                     const rowDate = new Date(dateText);
                     
                     let show = true;
-                    if (startDate) {
-                        show = show && rowDate >= new Date(startDate);
+                    if (startValue) {
+                        show = show && rowDate >= new Date(startValue);
                     }
-                    if (endDate) {
-                        const endDateTime = new Date(endDate);
+                    if (endValue) {
+                        const endDateTime = new Date(endValue);
                         endDateTime.setHours(23, 59, 59);
                         show = show && rowDate <= endDateTime;
                     }
@@ -884,14 +858,17 @@ $stats = $stats_result->fetch_assoc();
             const modal = new bootstrap.Modal(document.getElementById('orderDetailsModal'));
             
             // Show loading
-            document.getElementById('orderDetailsContent').innerHTML = `
-                <div class="text-center py-5">
-                    <div class="spinner-border text-success" role="status">
-                        <span class="visually-hidden">Loading...</span>
+            const orderDetailsContent = document.getElementById('orderDetailsContent');
+            if (orderDetailsContent) {
+                orderDetailsContent.innerHTML = `
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-success" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-3">Loading order details...</p>
                     </div>
-                    <p class="mt-3">Loading order details...</p>
-                </div>
-            `;
+                `;
+            }
             
             modal.show();
             
@@ -927,90 +904,99 @@ $stats = $stats_result->fetch_assoc();
                         `).join('');
                     }
                     
-                    document.getElementById('orderDetailsContent').innerHTML = `
-                        <div class="row mb-4">
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="form-label text-muted small mb-1">Order Number</label>
-                                    <p class="h5">${order.so_number}</p>
+                    if (orderDetailsContent) {
+                        orderDetailsContent.innerHTML = `
+                            <div class="row mb-4">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label text-muted small mb-1">Order Number</label>
+                                        <p class="h5">${order.so_number}</p>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label text-muted small mb-1">Order Date</label>
+                                        <p class="mb-0">${new Date(order.order_date).toLocaleString()}</p>
+                                    </div>
                                 </div>
-                                <div class="mb-3">
-                                    <label class="form-label text-muted small mb-1">Order Date</label>
-                                    <p class="mb-0">${new Date(order.order_date).toLocaleString()}</p>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-3">
-                                    <label class="form-label text-muted small mb-1">Status</label>
-                                    <p><span class="badge bg-success fs-6">${order.order_status}</span></p>
-                                </div>
-                                <div class="mb-3">
-                                    <label class="form-label text-muted small mb-1">Created By</label>
-                                    <p class="mb-0">${order.created_by || 'System'}</p>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="row mb-4">
-                            <div class="col-12">
-                                <h6 class="border-bottom pb-2">Customer Information</h6>
-                                <div class="bg-light p-3 rounded">
-                                    <p class="mb-1"><strong>Name:</strong> ${order.customer_name}</p>
-                                    <p class="mb-1"><strong>Email:</strong> ${order.email || 'N/A'}</p>
-                                    <p class="mb-1"><strong>Phone:</strong> ${order.phone_number || 'N/A'}</p>
-                                    <p class="mb-0"><strong>Address:</strong> ${order.address || 'N/A'}</p>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label text-muted small mb-1">Status</label>
+                                        <p><span class="badge bg-success fs-6">${order.order_status}</span></p>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label text-muted small mb-1">Created By</label>
+                                        <p class="mb-0">${order.created_by || 'System'}</p>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        
-                        <h6 class="border-bottom pb-2">Order Items</h6>
-                        <div class="table-responsive mb-4">
-                            <table class="table table-bordered table-sm">
-                                <thead class="table-light">
-                                    <tr>
-                                        <th>Product</th>
-                                        <th class="text-center">Quantity</th>
-                                        <th class="text-end">Unit Price</th>
-                                        <th class="text-end">Total</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${itemsHtml}
-                                    <tr class="table-success fw-bold">
-                                        <td colspan="3" class="text-end">Grand Total</td>
-                                        <td class="text-end">₱${parseFloat(order.total_amount).toFixed(2)}</td>
-                                    </tr>
-                                </tbody>
-                            </table>
-                        </div>
-                        
-                        ${order.notes ? `
-                        <h6 class="border-bottom pb-2">Order Notes</h6>
-                        <div class="alert alert-info">
-                            <i class="bi bi-info-circle"></i> ${order.notes}
-                        </div>
-                        ` : ''}
-                    `;
+                            
+                            <div class="row mb-4">
+                                <div class="col-12">
+                                    <h6 class="border-bottom pb-2">Customer Information</h6>
+                                    <div class="bg-light p-3 rounded">
+                                        <p class="mb-1"><strong>Name:</strong> ${order.customer_name}</p>
+                                        <p class="mb-1"><strong>Email:</strong> ${order.email || 'N/A'}</p>
+                                        <p class="mb-1"><strong>Phone:</strong> ${order.phone_number || 'N/A'}</p>
+                                        <p class="mb-0"><strong>Address:</strong> ${order.address || 'N/A'}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <h6 class="border-bottom pb-2">Order Items</h6>
+                            <div class="table-responsive mb-4">
+                                <table class="table table-bordered table-sm">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Product</th>
+                                            <th class="text-center">Quantity</th>
+                                            <th class="text-end">Unit Price</th>
+                                            <th class="text-end">Total</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${itemsHtml}
+                                        <tr class="table-success fw-bold">
+                                            <td colspan="3" class="text-end">Grand Total</td>
+                                            <td class="text-end">₱${parseFloat(order.total_amount).toFixed(2)}</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            ${order.notes ? `
+                            <h6 class="border-bottom pb-2">Order Notes</h6>
+                            <div class="alert alert-info">
+                                <i class="bi bi-info-circle"></i> ${order.notes}
+                            </div>
+                            ` : ''}
+                        `;
+                    }
                     
                     // Show print button
-                    document.getElementById('printOrderFromDetails').style.display = 'inline-block';
+                    const printButton = document.getElementById('printOrderFromDetails');
+                    if (printButton) printButton.style.display = 'inline-block';
                 } else {
-                    document.getElementById('orderDetailsContent').innerHTML = `
-                        <div class="alert alert-danger">
-                            <i class="bi bi-exclamation-triangle"></i> ${data.message || 'Error loading order details.'}
-                        </div>
-                    `;
-                    document.getElementById('printOrderFromDetails').style.display = 'none';
+                    if (orderDetailsContent) {
+                        orderDetailsContent.innerHTML = `
+                            <div class="alert alert-danger">
+                                <i class="bi bi-exclamation-triangle"></i> ${data.message || 'Error loading order details.'}
+                            </div>
+                        `;
+                    }
+                    const printButton = document.getElementById('printOrderFromDetails');
+                    if (printButton) printButton.style.display = 'none';
                 }
             })
             .catch(error => {
                 console.error('Error:', error);
-                document.getElementById('orderDetailsContent').innerHTML = `
-                    <div class="alert alert-danger">
-                        <i class="bi bi-exclamation-triangle"></i> Network error: ${error.message}
-                    </div>
-                `;
-                document.getElementById('printOrderFromDetails').style.display = 'none';
+                if (orderDetailsContent) {
+                    orderDetailsContent.innerHTML = `
+                        <div class="alert alert-danger">
+                            <i class="bi bi-exclamation-triangle"></i> Network error: ${error.message}
+                        </div>
+                    `;
+                }
+                const printButton = document.getElementById('printOrderFromDetails');
+                if (printButton) printButton.style.display = 'none';
             });
         }
         
@@ -1471,7 +1457,8 @@ $stats = $stats_result->fetch_assoc();
         function printFromDetails() {
             if (currentOrderId) {
                 printSingleOrder(currentOrderId);
-                bootstrap.Modal.getInstance(document.getElementById('orderDetailsModal')).hide();
+                const modal = bootstrap.Modal.getInstance(document.getElementById('orderDetailsModal'));
+                if (modal) modal.hide();
             }
         }
         
@@ -1568,6 +1555,7 @@ $stats = $stats_result->fetch_assoc();
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
+            URL.revokeObjectURL(url);
         }
         
         // Helper function to calculate total amount
@@ -1582,6 +1570,37 @@ $stats = $stats_result->fetch_assoc();
             });
             return total;
         }
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Ctrl + B to toggle sidebar (desktop only)
+            if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
+                e.preventDefault();
+                toggleSidebar();
+            }
+            // Escape to close sidebar on mobile
+            else if (e.key === 'Escape' && window.innerWidth <= 992) {
+                closeMobileSidebar();
+            }
+            // Ctrl + F to focus search
+            else if (e.ctrlKey && e.key === 'f') {
+                e.preventDefault();
+                const searchInput = document.getElementById('searchInput');
+                if (searchInput) {
+                    searchInput.focus();
+                }
+            }
+            // Ctrl + R to refresh
+            else if (e.ctrlKey && e.key === 'r' && !e.target.matches('input, textarea')) {
+                e.preventDefault();
+                refreshOrders();
+            }
+            // Ctrl + P to print all
+            else if (e.ctrlKey && e.key === 'p' && !e.target.matches('input, textarea')) {
+                e.preventDefault();
+                printAllOrders();
+            }
+        });
     </script>
 </body>
 </html>

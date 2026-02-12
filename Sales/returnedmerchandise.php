@@ -6,6 +6,11 @@ require_once '../config/session_handler.php';
 requireLogin();
 requireRole(['sales']);
 
+// Get current user info
+    $user_id = $_SESSION['user_id'];
+    $user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Driver User';
+    $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'delivery';
+
 // Handle Add Return
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_return') {
     $customer_id = !empty($_POST['customer_id']) ? (int)$_POST['customer_id'] : null;
@@ -195,122 +200,31 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Returned Merchandise - Sales</title>
-    <link rel="stylesheet" href="../css/style.css">
+    <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
+    <link rel="shortcut icon" href="../Pictures/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="../Pictures/apple-touch-icon.png" />
+    <link rel="manifest" href="../Pictures/site.webmanifest" />
+    <link rel="stylesheet" href="../css/sales.css">
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
-    <style>
-        /* Mobile responsive adjustments */
-        @media (max-width: 768px) {
-            .stat-card {
-                padding: 12px;
-                min-height: 85px;
-                margin-bottom: 8px;
-            }
-            
-            .stat-icon {
-                font-size: 2rem;
-                margin-right: 12px;
-            }
-            
-            .stat-value {
-                font-size: 1.5rem;
-            }
-            
-            .stat-label {
-                font-size: 0.8rem;
-            }
-            
-            .col-md-2 {
-                width: 50%;
-                padding-left: 8px;
-                padding-right: 8px;
-            }
-            
-            .row.g-3 {
-                margin-left: -8px;
-                margin-right: -8px;
-            }
-            
-            .mb-3 {
-                margin-bottom: 8px !important;
-            }
-        }
-        
-        @media (max-width: 576px) {
-            .stat-card {
-                min-height: 80px;
-                padding: 10px;
-            }
-            
-            .stat-icon {
-                font-size: 1.8rem;
-                margin-right: 10px;
-            }
-            
-            .stat-value {
-                font-size: 1.3rem;
-            }
-            
-            .stat-label {
-                font-size: 0.75rem;
-            }
-            
-            .col-md-2 {
-                width: 50%;
-                padding-left: 6px;
-                padding-right: 6px;
-            }
-            
-            .row.g-3 {
-                margin-left: -6px;
-                margin-right: -6px;
-            }
-        }
-        
-        .order-info-card {
-            background-color: #f8f9fa;
-            border-left: 4px solid #0d6efd;
-            border-radius: 4px;
-            padding: 15px;
-            margin-bottom: 20px;
-            display: none;
-        }
-        
-        .order-info-card.show {
-            display: block;
-        }
-        
-        .product-select-group {
-            display: none;
-        }
-        
-        .product-select-group.show {
-            display: block;
-        }
-        
-        .customer-badge {
-            background-color: #e7f1ff;
-            color: #0d6efd;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 0.85rem;
-        }
-    </style>
 </head>
 <body>
-    <!-- MOBILE MENU BUTTON -->
-    <button class="mobile-menu-btn" id="mobileMenuBtn">
-        <i class="bi bi-list"></i>
-    </button>
-
     <!-- MAIN APPLICATION -->
     <div id="appPage">
         <!-- Sidebar -->
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
-                <h3><i class="bi bi-shop logo-icon"></i> <span class="nav-text">Sales</span></h3>
+               <h3>
+            <!-- Burger icon moved before logo -->
+            <button class="desktop-toggle-btn" id="desktopToggleBtn">
+                <i class="bi bi-list" id="toggleIcon"></i>
+            </button>
+                <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
+                <span class="nav-text">Sales</span>
+        </h3>
             </div>
             
             <div class="sidebar-menu">
@@ -347,29 +261,33 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                     </li>
                 </ul>
             </div>
+             <!-- User Profile Section at the bottom of sidebar -->
+        <div class="sidebar-footer">
+            <div class="user-profile-sidebar">
+                <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
+                <div class="user-details-sidebar">
+                    <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
+                    <span class="user-role-sidebar"><?php echo htmlspecialchars(ucfirst($user_role)); ?></span>
+                </div>
+            </div>
+                
+            <button class="logout-btn-sidebar" onclick="logout()">
+                <i class="bi bi-box-arrow-right"></i>
+                <span class="logout-text">Logout</span>
+            </button>
+        </div>
         </div>
 
         <!-- Main Content Area -->
         <div class="main-content">
             <!-- Header Section with User Info and Logout -->
             <div class="navbar-top">
+                <button class="mobile-toggle-btn" id="mobileToggleBtn">
+                    <i class="bi bi-list"></i>
+                </button>
                 <div class="page-title">
-                    <h2><i class="bi bi-arrow-counterclockwise me-2"></i>Returned Merchandise Requests</h2>
+                    <h2>Returned Merchandise Requests</h2>
                     <p>Process and manage merchandise returns</p>
-                </div>
-                
-                <div class="user-info-top">
-                    <div class="user-profile-top">
-                        <div class="user-avatar-top" id="userAvatar"><?php echo substr(getUserName(), 0, 2); ?></div>
-                        <div class="user-details-top">
-                            <span class="user-name-top" id="userName"><?php echo getUserName(); ?></span>
-                            <span class="user-role-top" id="userRole"><?php echo ucfirst(str_replace('_', ' ', getUserRole())); ?></span>
-                        </div>
-                    </div>
-                    
-                    <button class="logout-btn-top" onclick="window.location.href='../logout.php'">
-                        <i class="bi bi-box-arrow-right"></i> Logout
-                    </button>
                 </div>
             </div>
 
@@ -387,75 +305,64 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                 </div>
             <?php endif; ?>
 
-            <!-- Return Stats -->
-            <div class="row g-3 mb-4">
-                <div class="col-md-2 mb-3">
-                    <div class="stat-card pending">
-                        <div class="stat-icon">
-                            <i class="bi bi-hourglass-split"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $pending; ?></div>
-                            <div class="stat-label">Pending</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-2 mb-3">
-                    <div class="stat-card processing">
-                        <div class="stat-icon">
-                            <i class="bi bi-gear"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $processing; ?></div>
-                            <div class="stat-label">Processing</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-2 mb-3">
-                    <div class="stat-card complete">
-                        <div class="stat-icon">
-                            <i class="bi bi-check-circle"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $approved; ?></div>
-                            <div class="stat-label">Approved</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-2 mb-3">
-                    <div class="stat-card complete">
-                        <div class="stat-icon">
-                            <i class="bi bi-check-circle-fill"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $completed; ?></div>
-                            <div class="stat-label">Completed</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-2 mb-3">
-                    <div class="stat-card sales">
-                        <div class="stat-icon">
-                            <i class="bi bi-x-circle"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $rejected; ?></div>
-                            <div class="stat-label">Rejected</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col-md-2 mb-3">
-                    <div class="stat-card inventory">
-                        <div class="stat-icon">
-                            <i class="bi bi-cash-coin"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">₱<?php echo number_format($total_refunds, 2); ?></div>
-                            <div class="stat-label">Total Refunds</div>
-                        </div>
-                    </div>
-                </div>
+          <!-- Return Stats -->
+<div class="row g-3 mb-4">
+    <div class="col">
+        <div class="stat-card pending">
+            <div class="stat-icon">
+                <i class="bi bi-hourglass-split"></i>
             </div>
+            <div>
+                <div class="stat-value"><?php echo $pending; ?></div>
+                <div class="stat-label">Pending</div>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="stat-card processing">
+            <div class="stat-icon">
+                <i class="bi bi-gear"></i>
+            </div>
+            <div>
+                <div class="stat-value"><?php echo $processing; ?></div>
+                <div class="stat-label">Processing</div>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="stat-card complete">
+            <div class="stat-icon">
+                <i class="bi bi-check-circle"></i>
+            </div>
+            <div>
+                <div class="stat-value"><?php echo $approved; ?></div>
+                <div class="stat-label">Approved</div>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="stat-card complete">
+            <div class="stat-icon">
+                <i class="bi bi-check-circle-fill"></i>
+            </div>
+            <div>
+                <div class="stat-value"><?php echo $completed; ?></div>
+                <div class="stat-label">Completed</div>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="stat-card sales">
+            <div class="stat-icon">
+                <i class="bi bi-x-circle"></i>
+            </div>
+            <div>
+                <div class="stat-value"><?php echo $rejected; ?></div>
+                <div class="stat-label">Rejected</div>
+            </div>
+        </div>
+    </div>
+</div>
 
             <!-- Search and Filter with Add Button -->
             <div class="card mb-4">
@@ -682,169 +589,526 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
 
     <!-- JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
-        // Mobile menu toggle
-        document.getElementById('mobileMenuBtn').addEventListener('click', function() {
-            document.getElementById('sidebar').classList.toggle('show');
-        });
-
-        // SO Selection Change - Auto Fill Everything using customers table
-        document.getElementById('so_id').addEventListener('change', function() {
-            const soId = this.value;
+<script>
+        // ================= SIDEBAR FUNCTIONS =================
+        // Toggle sidebar collapse/expand
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const isMobile = window.innerWidth <= 992;
             
-            if (soId) {
-                // Get selected option data
-                const selectedOption = this.options[this.selectedIndex];
-                const customerId = selectedOption.dataset.customerId;
-                const customerName = selectedOption.dataset.customerName;
-                const orderDate = selectedOption.dataset.orderDate;
-                const totalAmount = selectedOption.dataset.total;
-                const soNumber = selectedOption.text.split(' - ')[0];
+            if (isMobile) {
+                // On mobile, toggle active state
+                sidebar.classList.toggle('active');
                 
-                // Fill customer info from customers table
-                document.getElementById('customer_id').value = customerId;
-                document.getElementById('display_customer_name').textContent = customerName;
-                document.getElementById('display_so_number').textContent = soNumber;
-                document.getElementById('display_order_date').textContent = orderDate;
-                document.getElementById('display_total_amount').textContent = parseFloat(totalAmount).toFixed(2);
-                
-                // Show order info card
-                document.getElementById('orderInfoCard').classList.add('show');
-                
-                // Show loading indicator
-                document.getElementById('productSelectGroup').classList.add('show');
-                const productSelect = document.getElementById('item_id');
-                productSelect.innerHTML = '<option value="">Loading products...</option>';
-                productSelect.disabled = true;
-                
-                // Disable submit button while loading
-                document.getElementById('submitReturnBtn').disabled = true;
-                
-                // Fetch order items via AJAX
-                fetch(`<?php echo $_SERVER['PHP_SELF']; ?>?action=get_so_details&so_id=${soId}`)
-                    .then(response => {
-                        if (!response.ok) {
-                            throw new Error('Network response was not ok');
-                        }
-                        return response.json();
-                    })
-                    .then(data => {
-                        if (data.success) {
-                            // Populate product dropdown
-                            productSelect.innerHTML = '<option value="">-- Select Product from Order --</option>';
-                            
-                            if (data.items && data.items.length > 0) {
-                                data.items.forEach(item => {
-                                    const option = document.createElement('option');
-                                    option.value = item.item_id;
-                                    option.textContent = `${item.item_code} - ${item.item_name} (Ordered: ${item.quantity_ordered || item.quantity || 0}, Price: ₱${parseFloat(item.unit_price).toFixed(2)})`;
-                                    option.dataset.price = item.unit_price;
-                                    option.dataset.maxQty = item.quantity_ordered || item.quantity || 0;
-                                    productSelect.appendChild(option);
-                                });
-                                
-                                // Enable form fields
-                                productSelect.disabled = false;
-                                document.getElementById('return_qty').disabled = false;
-                                document.getElementById('return_reason').disabled = false;
-                            } else {
-                                productSelect.innerHTML = '<option value="">No products found in this order</option>';
-                                productSelect.disabled = true;
-                            }
-                        } else {
-                            productSelect.innerHTML = '<option value="">Error loading products</option>';
-                            productSelect.disabled = true;
-                            alert('Error: ' + (data.message || 'Failed to load order details'));
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error fetching order details:', error);
-                        productSelect.innerHTML = '<option value="">Error loading products</option>';
-                        productSelect.disabled = true;
-                        alert('Error loading order details. Please try again.');
+                // Create overlay for mobile
+                if (!document.querySelector('.sidebar-overlay')) {
+                    const overlay = document.createElement('div');
+                    overlay.className = 'sidebar-overlay';
+                    document.body.appendChild(overlay);
+                    
+                    overlay.addEventListener('click', () => {
+                        closeMobileSidebar();
                     });
+                    
+                    setTimeout(() => {
+                        overlay.classList.add('active');
+                    }, 10);
+                } else {
+                    // If overlay exists, toggle its active state
+                    const overlay = document.querySelector('.sidebar-overlay');
+                    overlay.classList.toggle('active');
+                    if (!sidebar.classList.contains('active')) {
+                        setTimeout(() => {
+                            if (overlay && overlay.parentNode) {
+                                overlay.remove();
+                            }
+                        }, 300);
+                    }
+                }
             } else {
-                // Reset form
-                resetReturnForm();
+                // On desktop, toggle between expanded and collapsed
+                sidebar.classList.toggle('collapsed');
+                
+                // Store preference in localStorage
+                localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+                
+                // Show/hide nav text
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = sidebar.classList.contains('collapsed') ? 'none' : 'inline-block';
+                });
+                
+                // Adjust main content margin
+                const mainContent = document.querySelector('.main-content');
+                if (mainContent) {
+                    mainContent.style.marginLeft = sidebar.classList.contains('collapsed') ? '80px' : '250px';
+                }
             }
+        }
+
+        // Close mobile sidebar
+        function closeMobileSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.querySelector('.sidebar-overlay');
+            
+            sidebar.classList.remove('active');
+            
+            if (overlay) {
+                overlay.classList.remove('active');
+                setTimeout(() => {
+                    if (overlay.parentNode) {
+                        overlay.remove();
+                    }
+                }, 300);
+            }
+        }
+
+        // Initialize sidebar when page loads
+        function initializeSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            
+            // Load saved preference from localStorage for desktop
+            if (window.innerWidth > 992) {
+                const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+                if (savedCollapsed === 'true') {
+                    sidebar.classList.add('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'none';
+                    });
+                    
+                    // Adjust main content margin
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '80px';
+                    }
+                } else {
+                    sidebar.classList.remove('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'inline-block';
+                    });
+                    
+                    // Adjust main content margin
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '250px';
+                    }
+                }
+            } else {
+                // On mobile, always start with closed sidebar
+                sidebar.classList.remove('active');
+                sidebar.classList.remove('collapsed');
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'inline-block';
+                });
+                
+                // Adjust main content margin
+                const mainContent = document.querySelector('.main-content');
+                if (mainContent) {
+                    mainContent.style.marginLeft = '0';
+                }
+            }
+        }
+
+        // Handle window resize for sidebar
+        function handleSidebarResize() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.querySelector('.sidebar-overlay');
+            
+            if (window.innerWidth > 992) {
+                // Desktop mode - remove mobile overlay
+                if (overlay) {
+                    overlay.remove();
+                }
+                sidebar.classList.remove('active');
+                
+                // Load saved preference
+                const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+                if (savedCollapsed === 'true') {
+                    sidebar.classList.add('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'none';
+                    });
+                    
+                    // Adjust main content margin
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '80px';
+                    }
+                } else {
+                    sidebar.classList.remove('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'inline-block';
+                    });
+                    
+                    // Adjust main content margin
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '250px';
+                    }
+                }
+            } else {
+                // Mobile mode - always show expanded when visible
+                sidebar.classList.remove('collapsed');
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'inline-block';
+                });
+                
+                // Adjust main content margin
+                const mainContent = document.querySelector('.main-content');
+                if (mainContent) {
+                    mainContent.style.marginLeft = '0';
+                }
+            }
+        }
+        // ================= END SIDEBAR FUNCTIONS =================
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("Returns Management page loaded!");
+            
+            // Initialize sidebar
+            initializeSidebar();
+            
+            // Setup mobile toggle button - support multiple button IDs
+            const mobileToggleBtn = document.getElementById('mobileToggleBtn');
+            if (mobileToggleBtn) {
+                mobileToggleBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleSidebar();
+                });
+            }
+            
+            const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+            if (mobileMenuBtn) {
+                mobileMenuBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleSidebar();
+                });
+            }
+            
+            // Setup desktop toggle button
+            const desktopToggleBtn = document.getElementById('desktopToggleBtn');
+            if (desktopToggleBtn) {
+                desktopToggleBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleSidebar();
+                });
+            }
+            
+            // Add click listeners to sidebar links to close on mobile
+            document.querySelectorAll('.sidebar .nav-link').forEach(link => {
+                link.addEventListener('click', function() {
+                    if (window.innerWidth <= 992) {
+                        closeMobileSidebar();
+                    }
+                });
+            });
+            
+            // Close sidebar when clicking outside on mobile
+            document.addEventListener('click', function(event) {
+                const sidebar = document.getElementById('sidebar');
+                const mobileBtn = document.getElementById('mobileToggleBtn') || document.getElementById('mobileMenuBtn');
+                const overlay = document.querySelector('.sidebar-overlay');
+                const isMobile = window.innerWidth <= 992;
+                
+                if (isMobile && sidebar && sidebar.classList.contains('active') && 
+                    !sidebar.contains(event.target) && 
+                    (!mobileBtn || !mobileBtn.contains(event.target)) &&
+                    (!overlay || !overlay.contains(event.target))) {
+                    closeMobileSidebar();
+                }
+            });
+
+            // Add resize event listener
+            window.addEventListener('resize', handleSidebarResize);
+
+            // Setup event listeners
+            setupEventListeners();
+            
+            // Auto-hide alerts after 5 seconds
+            document.querySelectorAll('.alert').forEach(function(alert) {
+                setTimeout(function() {
+                    try {
+                        let alertInstance = new bootstrap.Alert(alert);
+                        alertInstance.close();
+                    } catch(e) {
+                        console.log('Alert already closed');
+                    }
+                }, 5000);
+            });
         });
 
-        // Product Selection Change
-        document.getElementById('item_id').addEventListener('change', function() {
-            if (this.value && this.options[this.selectedIndex].dataset.maxQty) {
-                const selectedOption = this.options[this.selectedIndex];
-                const maxQty = parseInt(selectedOption.dataset.maxQty) || 0;
-                const price = parseFloat(selectedOption.dataset.price) || 0;
-                
-                // Set max quantity
-                const qtyInput = document.getElementById('return_qty');
-                qtyInput.max = maxQty;
-                qtyInput.placeholder = `Max: ${maxQty}`;
-                
-                // Show max quantity hint
-                document.getElementById('max_qty_hint').innerHTML = `<span class="text-primary">Maximum return quantity: ${maxQty}</span>`;
-                
-                // Clear previous quantity
-                qtyInput.value = '';
-                
-                // Enable submit button
-                document.getElementById('submitReturnBtn').disabled = false;
-                
-                // Reset refund
-                document.getElementById('estimated_refund').value = '0.00';
-            } else {
-                document.getElementById('submitReturnBtn').disabled = true;
-                document.getElementById('max_qty_hint').innerHTML = '';
+        // Setup event listeners
+        function setupEventListeners() {
+            // SO Selection Change - Auto Fill Everything using customers table
+            const soSelect = document.getElementById('so_id');
+            if (soSelect) {
+                soSelect.addEventListener('change', function() {
+                    const soId = this.value;
+                    
+                    if (soId) {
+                        // Get selected option data
+                        const selectedOption = this.options[this.selectedIndex];
+                        const customerId = selectedOption.dataset.customerId;
+                        const customerName = selectedOption.dataset.customerName;
+                        const orderDate = selectedOption.dataset.orderDate;
+                        const totalAmount = selectedOption.dataset.total;
+                        const soNumber = selectedOption.text.split(' - ')[0];
+                        
+                        // Fill customer info from customers table
+                        const customerIdField = document.getElementById('customer_id');
+                        const displayCustomerName = document.getElementById('display_customer_name');
+                        const displaySoNumber = document.getElementById('display_so_number');
+                        const displayOrderDate = document.getElementById('display_order_date');
+                        const displayTotalAmount = document.getElementById('display_total_amount');
+                        const orderInfoCard = document.getElementById('orderInfoCard');
+                        const productSelectGroup = document.getElementById('productSelectGroup');
+                        const productSelect = document.getElementById('item_id');
+                        const submitReturnBtn = document.getElementById('submitReturnBtn');
+                        
+                        if (customerIdField) customerIdField.value = customerId;
+                        if (displayCustomerName) displayCustomerName.textContent = customerName;
+                        if (displaySoNumber) displaySoNumber.textContent = soNumber;
+                        if (displayOrderDate) displayOrderDate.textContent = orderDate;
+                        if (displayTotalAmount) displayTotalAmount.textContent = parseFloat(totalAmount).toFixed(2);
+                        
+                        // Show order info card
+                        if (orderInfoCard) orderInfoCard.classList.add('show');
+                        
+                        // Show loading indicator
+                        if (productSelectGroup) productSelectGroup.classList.add('show');
+                        if (productSelect) {
+                            productSelect.innerHTML = '<option value="">Loading products...</option>';
+                            productSelect.disabled = true;
+                        }
+                        
+                        // Disable submit button while loading
+                        if (submitReturnBtn) submitReturnBtn.disabled = true;
+                        
+                        // Fetch order items via AJAX
+                        fetch(`<?php echo $_SERVER['PHP_SELF']; ?>?action=get_so_details&so_id=${soId}`)
+                            .then(response => {
+                                if (!response.ok) {
+                                    throw new Error('Network response was not ok');
+                                }
+                                return response.json();
+                            })
+                            .then(data => {
+                                if (data.success) {
+                                    // Populate product dropdown
+                                    if (productSelect) {
+                                        productSelect.innerHTML = '<option value="">-- Select Product from Order --</option>';
+                                        
+                                        if (data.items && data.items.length > 0) {
+                                            data.items.forEach(item => {
+                                                const option = document.createElement('option');
+                                                option.value = item.item_id;
+                                                option.textContent = `${item.item_code} - ${item.item_name} (Ordered: ${item.quantity_ordered || item.quantity || 0}, Price: ₱${parseFloat(item.unit_price).toFixed(2)})`;
+                                                option.dataset.price = item.unit_price;
+                                                option.dataset.maxQty = item.quantity_ordered || item.quantity || 0;
+                                                productSelect.appendChild(option);
+                                            });
+                                            
+                                            // Enable form fields
+                                            productSelect.disabled = false;
+                                            const returnQty = document.getElementById('return_qty');
+                                            const returnReason = document.getElementById('return_reason');
+                                            if (returnQty) returnQty.disabled = false;
+                                            if (returnReason) returnReason.disabled = false;
+                                        } else {
+                                            productSelect.innerHTML = '<option value="">No products found in this order</option>';
+                                            productSelect.disabled = true;
+                                        }
+                                    }
+                                } else {
+                                    if (productSelect) {
+                                        productSelect.innerHTML = '<option value="">Error loading products</option>';
+                                        productSelect.disabled = true;
+                                    }
+                                    alert('Error: ' + (data.message || 'Failed to load order details'));
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Error fetching order details:', error);
+                                if (productSelect) {
+                                    productSelect.innerHTML = '<option value="">Error loading products</option>';
+                                    productSelect.disabled = true;
+                                }
+                                alert('Error loading order details. Please try again.');
+                            });
+                    } else {
+                        // Reset form
+                        resetReturnForm();
+                    }
+                });
             }
-        });
 
-        // Quantity Input Change
-        document.getElementById('return_qty').addEventListener('input', calculateRefund);
+            // Product Selection Change
+            const itemSelect = document.getElementById('item_id');
+            if (itemSelect) {
+                itemSelect.addEventListener('change', function() {
+                    if (this.value && this.options[this.selectedIndex]?.dataset?.maxQty) {
+                        const selectedOption = this.options[this.selectedIndex];
+                        const maxQty = parseInt(selectedOption.dataset.maxQty) || 0;
+                        const price = parseFloat(selectedOption.dataset.price) || 0;
+                        
+                        // Set max quantity
+                        const qtyInput = document.getElementById('return_qty');
+                        const maxQtyHint = document.getElementById('max_qty_hint');
+                        const submitReturnBtn = document.getElementById('submitReturnBtn');
+                        
+                        if (qtyInput) {
+                            qtyInput.max = maxQty;
+                            qtyInput.placeholder = `Max: ${maxQty}`;
+                        }
+                        
+                        // Show max quantity hint
+                        if (maxQtyHint) maxQtyHint.innerHTML = `<span class="text-primary">Maximum return quantity: ${maxQty}</span>`;
+                        
+                        // Clear previous quantity
+                        if (qtyInput) qtyInput.value = '';
+                        
+                        // Enable submit button
+                        if (submitReturnBtn) submitReturnBtn.disabled = false;
+                        
+                        // Reset refund
+                        const estimatedRefund = document.getElementById('estimated_refund');
+                        if (estimatedRefund) estimatedRefund.value = '0.00';
+                    } else {
+                        const submitReturnBtn = document.getElementById('submitReturnBtn');
+                        const maxQtyHint = document.getElementById('max_qty_hint');
+                        if (submitReturnBtn) submitReturnBtn.disabled = true;
+                        if (maxQtyHint) maxQtyHint.innerHTML = '';
+                    }
+                });
+            }
+
+            // Quantity Input Change
+            const returnQty = document.getElementById('return_qty');
+            if (returnQty) {
+                returnQty.addEventListener('input', calculateRefund);
+            }
+
+            // Search functionality
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput) {
+                searchInput.addEventListener('keyup', function() {
+                    const filter = this.value.toLowerCase();
+                    const rows = document.querySelectorAll('tbody tr');
+                    
+                    rows.forEach(row => {
+                        const text = row.textContent.toLowerCase();
+                        row.style.display = text.includes(filter) ? '' : 'none';
+                    });
+                });
+            }
+
+            // Status filter
+            const statusFilter = document.getElementById('statusFilter');
+            if (statusFilter) {
+                statusFilter.addEventListener('change', function() {
+                    const filter = this.value.toLowerCase();
+                    const rows = document.querySelectorAll('tbody tr');
+                    
+                    rows.forEach(row => {
+                        if (row.cells.length > 1) {
+                            const status = row.cells[7]?.textContent.toLowerCase() || '';
+                            row.style.display = (filter === '' || status.includes(filter)) ? '' : 'none';
+                        }
+                    });
+                });
+            }
+
+            // Reset form when modal is closed
+            const addReturnModal = document.getElementById('addReturnModal');
+            if (addReturnModal) {
+                addReturnModal.addEventListener('hidden.bs.modal', function() {
+                    const soSelect = document.getElementById('so_id');
+                    if (soSelect) soSelect.value = '';
+                    resetReturnForm();
+                });
+            }
+
+            // Prevent double form submission
+            const addReturnForm = document.getElementById('addReturnForm');
+            if (addReturnForm) {
+                addReturnForm.addEventListener('submit', function() {
+                    const submitBtn = document.getElementById('submitReturnBtn');
+                    if (submitBtn) {
+                        submitBtn.disabled = true;
+                        submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Submitting...';
+                    }
+                });
+            }
+        }
 
         // Calculate estimated refund amount
         function calculateRefund() {
             const productSelect = document.getElementById('item_id');
-            const quantity = parseInt(document.getElementById('return_qty').value) || 0;
+            const quantity = parseInt(document.getElementById('return_qty')?.value) || 0;
             
-            if (productSelect.selectedIndex > 0 && productSelect.options[productSelect.selectedIndex].dataset.price) {
+            if (productSelect && productSelect.selectedIndex > 0 && productSelect.options[productSelect.selectedIndex]?.dataset?.price) {
                 const selectedOption = productSelect.options[productSelect.selectedIndex];
                 const price = parseFloat(selectedOption.dataset.price) || 0;
                 const maxQty = parseInt(selectedOption.dataset.maxQty) || 0;
                 
                 // Validate quantity
                 if (quantity > maxQty) {
-                    document.getElementById('return_qty').value = maxQty;
-                    document.getElementById('estimated_refund').value = (price * maxQty).toFixed(2);
+                    const returnQty = document.getElementById('return_qty');
+                    const estimatedRefund = document.getElementById('estimated_refund');
+                    if (returnQty) returnQty.value = maxQty;
+                    if (estimatedRefund) estimatedRefund.value = (price * maxQty).toFixed(2);
                     alert(`Maximum return quantity is ${maxQty}`);
                 } else {
                     const refund = price * quantity;
-                    document.getElementById('estimated_refund').value = refund.toFixed(2);
+                    const estimatedRefund = document.getElementById('estimated_refund');
+                    if (estimatedRefund) estimatedRefund.value = refund.toFixed(2);
                 }
             }
         }
 
         // Reset return form
         function resetReturnForm() {
-            document.getElementById('orderInfoCard').classList.remove('show');
-            document.getElementById('productSelectGroup').classList.remove('show');
-            
-            document.getElementById('customer_id').value = '';
-            document.getElementById('display_customer_name').textContent = '';
-            document.getElementById('display_so_number').textContent = '';
-            document.getElementById('display_order_date').textContent = '';
-            document.getElementById('display_total_amount').textContent = '';
-            
+            const orderInfoCard = document.getElementById('orderInfoCard');
+            const productSelectGroup = document.getElementById('productSelectGroup');
+            const customerId = document.getElementById('customer_id');
+            const displayCustomerName = document.getElementById('display_customer_name');
+            const displaySoNumber = document.getElementById('display_so_number');
+            const displayOrderDate = document.getElementById('display_order_date');
+            const displayTotalAmount = document.getElementById('display_total_amount');
             const productSelect = document.getElementById('item_id');
-            productSelect.innerHTML = '<option value="">-- Select Product from Order --</option>';
-            productSelect.disabled = true;
+            const returnQty = document.getElementById('return_qty');
+            const returnReason = document.getElementById('return_reason');
+            const estimatedRefund = document.getElementById('estimated_refund');
+            const maxQtyHint = document.getElementById('max_qty_hint');
+            const submitReturnBtn = document.getElementById('submitReturnBtn');
             
-            document.getElementById('return_qty').value = '';
-            document.getElementById('return_qty').disabled = true;
-            document.getElementById('return_reason').disabled = true;
-            document.getElementById('return_reason').value = '';
-            document.getElementById('estimated_refund').value = '0.00';
-            document.getElementById('max_qty_hint').innerHTML = '';
-            document.getElementById('submitReturnBtn').disabled = true;
+            if (orderInfoCard) orderInfoCard.classList.remove('show');
+            if (productSelectGroup) productSelectGroup.classList.remove('show');
+            
+            if (customerId) customerId.value = '';
+            if (displayCustomerName) displayCustomerName.textContent = '';
+            if (displaySoNumber) displaySoNumber.textContent = '';
+            if (displayOrderDate) displayOrderDate.textContent = '';
+            if (displayTotalAmount) displayTotalAmount.textContent = '';
+            
+            if (productSelect) {
+                productSelect.innerHTML = '<option value="">-- Select Product from Order --</option>';
+                productSelect.disabled = true;
+            }
+            
+            if (returnQty) {
+                returnQty.value = '';
+                returnQty.disabled = true;
+            }
+            
+            if (returnReason) {
+                returnReason.value = '';
+                returnReason.disabled = true;
+            }
+            
+            if (estimatedRefund) estimatedRefund.value = '0.00';
+            if (maxQtyHint) maxQtyHint.innerHTML = '';
+            if (submitReturnBtn) submitReturnBtn.disabled = true;
         }
 
         // Update return status - Kept for AJAX functionality but not used in UI
@@ -874,49 +1138,42 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
             }
         }
 
-        // Search functionality
-        document.getElementById('searchInput').addEventListener('keyup', function() {
-            const filter = this.value.toLowerCase();
-            const rows = document.querySelectorAll('tbody tr');
-            
-            rows.forEach(row => {
-                const text = row.textContent.toLowerCase();
-                row.style.display = text.includes(filter) ? '' : 'none';
-            });
-        });
-
-        // Status filter
-        document.getElementById('statusFilter').addEventListener('change', function() {
-            const filter = this.value.toLowerCase();
-            const rows = document.querySelectorAll('tbody tr');
-            
-            rows.forEach(row => {
-                if (row.cells.length > 1) {
-                    const status = row.cells[7].textContent.toLowerCase();
-                    row.style.display = (filter === '' || status.includes(filter)) ? '' : 'none';
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Ctrl + B to toggle sidebar (desktop only)
+            if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
+                e.preventDefault();
+                toggleSidebar();
+            }
+            // Escape to close sidebar on mobile
+            else if (e.key === 'Escape' && window.innerWidth <= 992) {
+                closeMobileSidebar();
+            }
+            // Ctrl + F to focus search
+            else if (e.ctrlKey && e.key === 'f') {
+                e.preventDefault();
+                const searchInput = document.getElementById('searchInput');
+                if (searchInput) {
+                    searchInput.focus();
                 }
-            });
-        });
-
-        // Auto-hide alerts after 5 seconds
-        document.querySelectorAll('.alert').forEach(function(alert) {
-            setTimeout(function() {
-                let alertInstance = new bootstrap.Alert(alert);
-                alertInstance.close();
-            }, 5000);
-        });
-
-        // Reset form when modal is closed
-        document.getElementById('addReturnModal').addEventListener('hidden.bs.modal', function() {
-            document.getElementById('so_id').value = '';
-            resetReturnForm();
-        });
-
-        // Prevent double form submission
-        document.getElementById('addReturnForm').addEventListener('submit', function() {
-            const submitBtn = document.getElementById('submitReturnBtn');
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Submitting...';
+            }
+            // Ctrl + N to add new return
+            else if (e.ctrlKey && e.key === 'n') {
+                e.preventDefault();
+                const addButton = document.querySelector('[data-bs-target="#addReturnModal"]');
+                if (addButton) {
+                    addButton.click();
+                }
+            }
+            // Ctrl + R to reset form
+            else if (e.ctrlKey && e.key === 'r' && !e.target.matches('input, textarea')) {
+                e.preventDefault();
+                const soSelect = document.getElementById('so_id');
+                if (soSelect) {
+                    soSelect.value = '';
+                    resetReturnForm();
+                }
+            }
         });
     </script>
 </body>

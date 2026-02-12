@@ -6,6 +6,11 @@ require_once '../config/session_handler.php';
 requireLogin();
 requireRole(['sales']);
 
+// Get current user info
+    $user_id = $_SESSION['user_id'];
+    $user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Driver User';
+    $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'delivery';
+
 // Get all items with available stock from items table
 $items_result = $conn->query("SELECT i.item_id, i.item_code, i.item_name, i.description, i.category, 
                               i.stock, i.unit_type, i.unit_price, i.reorder_level, i.status
@@ -222,7 +227,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Order Product - Sales</title>
-    <link rel="stylesheet" href="../css/style.css">
+    <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
+    <link rel="shortcut icon" href="../Pictures/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="../Pictures/apple-touch-icon.png" />
+    <link rel="manifest" href="../Pictures/site.webmanifest" />
+    <link rel="stylesheet" href="../css/sales.css">
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
@@ -605,19 +615,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     </style>
 </head>
 <body>
-    <!-- MOBILE MENU BUTTON -->
-    <button class="mobile-menu-btn" id="mobileMenuBtn">
-        <i class="bi bi-list"></i>
-    </button>
-
     <!-- MAIN APPLICATION -->
     <div id="appPage">
         <!-- Sidebar -->
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
-                <h3><i class="bi bi-shop logo-icon"></i> <span class="nav-text">Sales</span></h3>
+                <h3>
+            <!-- Burger icon moved before logo -->
+            <button class="desktop-toggle-btn" id="desktopToggleBtn">
+                <i class="bi bi-list" id="toggleIcon"></i>
+            </button>
+                <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
+                <span class="nav-text">Sales</span>
+        </h3>
             </div>
-            
             <div class="sidebar-menu">
                 <ul class="nav flex-column">
                    <li class="nav-item">
@@ -627,13 +638,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="orderproduct.php">
+                        <a class="nav-link active" href="orderproduct.php">
                             <i class="bi bi-bag"></i>
                             <span class="nav-text">Order Product</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link active" href="sales_order.php">
+                        <a class="nav-link" href="sales_order.php">
                             <i class="bi bi-list-check"></i>
                             <span class="nav-text">Sales Orders</span>
                         </a>
@@ -652,29 +663,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     </li>
                 </ul>
             </div>
+             <!-- User Profile Section at the bottom of sidebar -->
+            <div class="sidebar-footer">
+                <div class="user-profile-sidebar">
+                    <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
+                    <div class="user-details-sidebar">
+                        <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
+                        <span class="user-role-sidebar"><?php echo htmlspecialchars(ucfirst($user_role)); ?></span>
+                    </div>
+                </div>
+                    
+                <button class="logout-btn-sidebar" onclick="logout()">
+                    <i class="bi bi-box-arrow-right"></i>
+                    <span class="logout-text">Logout</span>
+                </button>
+            </div>
         </div>
 
         <!-- Main Content Area -->
         <div class="main-content">
             <!-- Header Section with User Info and Logout -->
             <div class="navbar-top">
+                <button class="mobile-toggle-btn" id="mobileToggleBtn">
+                    <i class="bi bi-list"></i>
+                </button>
                 <div class="page-title">
-                    <h2><i class="bi bi-bag me-2"></i>Order Products</h2>
+                    <h2></i>Order Products</h2>
                     <p>Select products and quantities to create an order</p>
-                </div>
-                
-                <div class="user-info-top">
-                    <div class="user-profile-top">
-                        <div class="user-avatar-top" id="userAvatar"><?php echo substr(getUserName(), 0, 2); ?></div>
-                        <div class="user-details-top">
-                            <span class="user-name-top" id="userName"><?php echo getUserName(); ?></span>
-                            <span class="user-role-top" id="userRole"><?php echo ucfirst(str_replace('_', ' ', getUserRole())); ?></span>
-                        </div>
-                    </div>
-                    
-                    <button class="logout-btn-top" onclick="window.location.href='../logout.php'">
-                        <i class="bi bi-box-arrow-right"></i> Logout
-                    </button>
                 </div>
             </div>
 
@@ -858,7 +873,178 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
     <!-- JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
+   <script>
+        // ================= SIDEBAR FUNCTIONS =================
+        // Toggle sidebar collapse/expand
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const isMobile = window.innerWidth <= 992;
+            
+            if (isMobile) {
+                // On mobile, toggle active state
+                sidebar.classList.toggle('active');
+                
+                // Create overlay for mobile
+                if (!document.querySelector('.sidebar-overlay')) {
+                    const overlay = document.createElement('div');
+                    overlay.className = 'sidebar-overlay';
+                    document.body.appendChild(overlay);
+                    
+                    overlay.addEventListener('click', () => {
+                        closeMobileSidebar();
+                    });
+                    
+                    setTimeout(() => {
+                        overlay.classList.add('active');
+                    }, 10);
+                } else {
+                    // If overlay exists, toggle its active state
+                    const overlay = document.querySelector('.sidebar-overlay');
+                    overlay.classList.toggle('active');
+                    if (!sidebar.classList.contains('active')) {
+                        setTimeout(() => {
+                            if (overlay && overlay.parentNode) {
+                                overlay.remove();
+                            }
+                        }, 300);
+                    }
+                }
+            } else {
+                // On desktop, toggle between expanded and collapsed
+                sidebar.classList.toggle('collapsed');
+                
+                // Store preference in localStorage
+                localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+                
+                // Show/hide nav text
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = sidebar.classList.contains('collapsed') ? 'none' : 'inline-block';
+                });
+                
+                // Adjust main content margin
+                const mainContent = document.querySelector('.main-content');
+                if (mainContent) {
+                    mainContent.style.marginLeft = sidebar.classList.contains('collapsed') ? '80px' : '250px';
+                }
+            }
+        }
+
+        // Close mobile sidebar
+        function closeMobileSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.querySelector('.sidebar-overlay');
+            
+            sidebar.classList.remove('active');
+            
+            if (overlay) {
+                overlay.classList.remove('active');
+                setTimeout(() => {
+                    if (overlay.parentNode) {
+                        overlay.remove();
+                    }
+                }, 300);
+            }
+        }
+
+        // Initialize sidebar when page loads
+        function initializeSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            
+            // Load saved preference from localStorage for desktop
+            if (window.innerWidth > 992) {
+                const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+                if (savedCollapsed === 'true') {
+                    sidebar.classList.add('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'none';
+                    });
+                    
+                    // Adjust main content margin
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '80px';
+                    }
+                } else {
+                    sidebar.classList.remove('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'inline-block';
+                    });
+                    
+                    // Adjust main content margin
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '250px';
+                    }
+                }
+            } else {
+                // On mobile, always start with closed sidebar
+                sidebar.classList.remove('active');
+                sidebar.classList.remove('collapsed');
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'inline-block';
+                });
+                
+                // Adjust main content margin
+                const mainContent = document.querySelector('.main-content');
+                if (mainContent) {
+                    mainContent.style.marginLeft = '0';
+                }
+            }
+        }
+
+        // Handle window resize for sidebar
+        function handleSidebarResize() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.querySelector('.sidebar-overlay');
+            
+            if (window.innerWidth > 992) {
+                // Desktop mode - remove mobile overlay
+                if (overlay) {
+                    overlay.remove();
+                }
+                sidebar.classList.remove('active');
+                
+                // Load saved preference
+                const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+                if (savedCollapsed === 'true') {
+                    sidebar.classList.add('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'none';
+                    });
+                    
+                    // Adjust main content margin
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '80px';
+                    }
+                } else {
+                    sidebar.classList.remove('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'inline-block';
+                    });
+                    
+                    // Adjust main content margin
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '250px';
+                    }
+                }
+            } else {
+                // Mobile mode - always show expanded when visible
+                sidebar.classList.remove('collapsed');
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'inline-block';
+                });
+                
+                // Adjust main content margin
+                const mainContent = document.querySelector('.main-content');
+                if (mainContent) {
+                    mainContent.style.marginLeft = '0';
+                }
+            }
+        }
+        // ================= END SIDEBAR FUNCTIONS =================
+
         // Inventory data from database
         const inventory = <?php echo json_encode(array_map(function($item) {
             return [
@@ -875,37 +1061,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         // Initialize page
         function init() {
             renderProducts();
-            document.getElementById('mobileMenuBtn').addEventListener('click', function() {
-                document.getElementById('sidebar').classList.toggle('show');
-            });
             
             // Add customer select change listener for autofill
-            document.getElementById('customerSelect').addEventListener('change', function() {
-                const selectedOption = this.options[this.selectedIndex];
-                if (this.value) {
-                    const email = selectedOption.getAttribute('data-email') || '';
-                    const phone = selectedOption.getAttribute('data-phone') || '';
-                    const address = selectedOption.getAttribute('data-address') || '';
-                    
-                    document.getElementById('customerEmail').value = email;
-                    document.getElementById('customerPhone').value = phone;
-                    document.getElementById('customerAddress').value = address;
-                    document.getElementById('newCustomerName').value = '';
-                } else {
-                    document.getElementById('customerEmail').value = '';
-                    document.getElementById('customerPhone').value = '';
-                    document.getElementById('customerAddress').value = '';
-                }
-            });
+            const customerSelect = document.getElementById('customerSelect');
+            if (customerSelect) {
+                customerSelect.addEventListener('change', function() {
+                    const selectedOption = this.options[this.selectedIndex];
+                    if (this.value) {
+                        const email = selectedOption.getAttribute('data-email') || '';
+                        const phone = selectedOption.getAttribute('data-phone') || '';
+                        const address = selectedOption.getAttribute('data-address') || '';
+                        
+                        document.getElementById('customerEmail').value = email;
+                        document.getElementById('customerPhone').value = phone;
+                        document.getElementById('customerAddress').value = address;
+                        document.getElementById('newCustomerName').value = '';
+                    } else {
+                        document.getElementById('customerEmail').value = '';
+                        document.getElementById('customerPhone').value = '';
+                        document.getElementById('customerAddress').value = '';
+                    }
+                });
+            }
             
-            document.getElementById('newCustomerName').addEventListener('input', function() {
-                if (this.value.trim() !== '') {
-                    document.getElementById('customerSelect').value = '';
-                    document.getElementById('customerEmail').value = '';
-                    document.getElementById('customerPhone').value = '';
-                    document.getElementById('customerAddress').value = '';
-                }
-            });
+            const newCustomerName = document.getElementById('newCustomerName');
+            if (newCustomerName) {
+                newCustomerName.addEventListener('input', function() {
+                    if (this.value.trim() !== '') {
+                        document.getElementById('customerSelect').value = '';
+                        document.getElementById('customerEmail').value = '';
+                        document.getElementById('customerPhone').value = '';
+                        document.getElementById('customerAddress').value = '';
+                    }
+                });
+            }
             
             updateCart();
         }
@@ -924,6 +1113,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         // Render product cards with plus/minus buttons
         function renderProducts() {
             const container = document.getElementById('productsContainer');
+            if (!container) return;
+            
             container.innerHTML = inventory.map(product => {
                 const availableStock = getAvailableStock(product.id);
                 const outOfStock = availableStock === 0;
@@ -978,31 +1169,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         // Decrease quantity
         function decreaseQuantity(productId) {
             const qtyInput = document.getElementById(`qty-${productId}`);
-            let currentValue = parseInt(qtyInput.value) || 0;
-            if (currentValue > 0) {
-                qtyInput.value = currentValue - 1;
-                validateQuantity(productId);
+            if (qtyInput) {
+                let currentValue = parseInt(qtyInput.value) || 0;
+                if (currentValue > 0) {
+                    qtyInput.value = currentValue - 1;
+                    validateQuantity(productId);
+                }
             }
         }
 
         // Increase quantity
         function increaseQuantity(productId) {
             const qtyInput = document.getElementById(`qty-${productId}`);
-            const availableStock = getAvailableStock(productId);
-            let currentValue = parseInt(qtyInput.value) || 0;
-            if (currentValue < availableStock) {
-                qtyInput.value = currentValue + 1;
-                validateQuantity(productId);
-            } else {
-                document.getElementById(`error-${productId}`).textContent = `Only ${availableStock} available`;
+            if (qtyInput) {
+                const availableStock = getAvailableStock(productId);
+                let currentValue = parseInt(qtyInput.value) || 0;
+                if (currentValue < availableStock) {
+                    qtyInput.value = currentValue + 1;
+                    validateQuantity(productId);
+                } else {
+                    document.getElementById(`error-${productId}`).textContent = `Only ${availableStock} available`;
+                }
             }
         }
 
         // Update quantity input max value based on available stock
         function updateQuantityInput(productId) {
             const qtyInput = document.getElementById(`qty-${productId}`);
-            const availableStock = getAvailableStock(productId);
-            qtyInput.max = availableStock;
+            if (qtyInput) {
+                const availableStock = getAvailableStock(productId);
+                qtyInput.max = availableStock;
+            }
         }
 
         // Validate quantity input and update button state
@@ -1011,6 +1208,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             const addButton = document.getElementById(`btn-add-${productId}`);
             const errorDiv = document.getElementById(`error-${productId}`);
             const availableStock = getAvailableStock(productId);
+            
+            if (!qtyInput) return 0;
             
             let value = parseInt(qtyInput.value) || 0;
             
@@ -1022,14 +1221,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             if (value > availableStock) {
                 value = availableStock;
                 qtyInput.value = availableStock;
-                errorDiv.textContent = `Max ${availableStock} units`;
-                addButton.disabled = false;
+                if (errorDiv) errorDiv.textContent = `Max ${availableStock} units`;
+                if (addButton) addButton.disabled = false;
             } else if (value === 0) {
-                errorDiv.textContent = '';
-                addButton.disabled = true;
+                if (errorDiv) errorDiv.textContent = '';
+                if (addButton) addButton.disabled = true;
             } else {
-                errorDiv.textContent = '';
-                addButton.disabled = false;
+                if (errorDiv) errorDiv.textContent = '';
+                if (addButton) addButton.disabled = false;
             }
             
             return value;
@@ -1039,17 +1238,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         function addToCart(productId) {
             const product = inventory.find(p => p.id === productId);
             const qtyInput = document.getElementById(`qty-${productId}`);
-            const quantity = parseInt(qtyInput.value) || 0;
+            const quantity = parseInt(qtyInput?.value) || 0;
             const errorDiv = document.getElementById(`error-${productId}`);
             const availableStock = getAvailableStock(productId);
 
             if (quantity <= 0) {
-                errorDiv.textContent = 'Please enter a quantity';
+                if (errorDiv) errorDiv.textContent = 'Please enter a quantity';
                 return;
             }
 
             if (quantity > availableStock) {
-                errorDiv.textContent = `Only ${availableStock} available`;
+                if (errorDiv) errorDiv.textContent = `Only ${availableStock} available`;
                 return;
             }
 
@@ -1058,7 +1257,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             if (existingItem) {
                 const newTotal = existingItem.quantity + quantity;
                 if (newTotal > product.stock) {
-                    errorDiv.textContent = `Cannot add more than ${product.stock} total`;
+                    if (errorDiv) errorDiv.textContent = `Cannot add more than ${product.stock} total`;
                     return;
                 }
                 existingItem.quantity += quantity;
@@ -1072,7 +1271,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 });
             }
 
-            qtyInput.value = '0';
+            if (qtyInput) qtyInput.value = '0';
             updateCart();
             renderProducts();
             
@@ -1110,11 +1309,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             const totalItemsDiv = document.getElementById('totalItems');
             const totalPriceDiv = document.getElementById('totalPrice');
 
+            if (!cartItemsDiv) return;
+
             if (cart.length === 0) {
                 cartItemsDiv.innerHTML = '<p class="text-white-50 text-center">No items in cart</p>';
-                subtotalDiv.textContent = '₱0.00';
-                totalItemsDiv.textContent = '0';
-                totalPriceDiv.textContent = '₱0.00';
+                if (subtotalDiv) subtotalDiv.textContent = '₱0.00';
+                if (totalItemsDiv) totalItemsDiv.textContent = '0';
+                if (totalPriceDiv) totalPriceDiv.textContent = '₱0.00';
                 return;
             }
 
@@ -1144,9 +1345,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
             const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
 
-            subtotalDiv.textContent = `₱${subtotal.toFixed(2)}`;
-            totalItemsDiv.textContent = totalItems;
-            totalPriceDiv.textContent = `₱${subtotal.toFixed(2)}`;
+            if (subtotalDiv) subtotalDiv.textContent = `₱${subtotal.toFixed(2)}`;
+            if (totalItemsDiv) totalItemsDiv.textContent = totalItems;
+            if (totalPriceDiv) totalPriceDiv.textContent = `₱${subtotal.toFixed(2)}`;
         }
 
         // Remove from cart
@@ -1180,15 +1381,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
 
             const customerSelect = document.getElementById('customerSelect');
-            const newCustomer = document.getElementById('newCustomerName').value.trim();
-            const email = document.getElementById('customerEmail').value.trim();
-            const phone = document.getElementById('customerPhone').value.trim();
-            const address = document.getElementById('customerAddress').value.trim();
+            const newCustomer = document.getElementById('newCustomerName')?.value.trim() || '';
+            const email = document.getElementById('customerEmail')?.value.trim() || '';
+            const phone = document.getElementById('customerPhone')?.value.trim() || '';
+            const address = document.getElementById('customerAddress')?.value.trim() || '';
             
-            const selectedCustomer = customerSelect.options[customerSelect.selectedIndex];
-            const customerName = selectedCustomer.value ? selectedCustomer.text : newCustomer;
+            const selectedCustomer = customerSelect?.options[customerSelect.selectedIndex];
+            const customerName = selectedCustomer?.value ? selectedCustomer.text : newCustomer;
 
-            if (!customerSelect.value && !newCustomer) {
+            if (!customerSelect?.value && !newCustomer) {
                 showToast('Please select or enter a customer');
                 return;
             }
@@ -1217,59 +1418,68 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         // Populate review modal
         function populateReviewModal(customerName, email, phone, address) {
             const reviewItems = document.getElementById('reviewItems');
-            reviewItems.innerHTML = `
-                <div class="table-responsive">
-                    <table class="table table-sm">
-                        <thead class="table-light">
-                            <tr>
-                                <th>Product</th>
-                                <th>SKU</th>
-                                <th>Price</th>
-                                <th>Qty</th>
-                                <th>Total</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${cart.map(item => {
-                                const product = inventory.find(p => p.id === item.id);
-                                const remainingStock = product ? product.stock - item.quantity : 0;
-                                return `
+            if (reviewItems) {
+                reviewItems.innerHTML = `
+                    <div class="table-responsive">
+                        <table class="table table-sm">
+                            <thead class="table-light">
                                 <tr>
-                                    <td>
-                                        ${item.name}
-                                        ${remainingStock < 10 ? 
-                                            `<br><small class="text-warning">${remainingStock} left in stock</small>` : ''}
-                                    </td>
-                                    <td>${item.sku}</td>
-                                    <td>₱${item.price.toFixed(2)}</td>
-                                    <td>${item.quantity}</td>
-                                    <td>₱${(item.price * item.quantity).toFixed(2)}</td>
+                                    <th>Product</th>
+                                    <th>SKU</th>
+                                    <th>Price</th>
+                                    <th>Qty</th>
+                                    <th>Total</th>
                                 </tr>
-                                `;
-                            }).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            `;
+                            </thead>
+                            <tbody>
+                                ${cart.map(item => {
+                                    const product = inventory.find(p => p.id === item.id);
+                                    const remainingStock = product ? product.stock - item.quantity : 0;
+                                    return `
+                                    <tr>
+                                        <td>
+                                            ${item.name}
+                                            ${remainingStock < 10 ? 
+                                                `<br><small class="text-warning">${remainingStock} left in stock</small>` : ''}
+                                        </td>
+                                        <td>${item.sku}</td>
+                                        <td>₱${item.price.toFixed(2)}</td>
+                                        <td>${item.quantity}</td>
+                                        <td>₱${(item.price * item.quantity).toFixed(2)}</td>
+                                    </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
+            }
 
-            document.getElementById('reviewCustomer').textContent = customerName;
-            document.getElementById('reviewEmail').textContent = email;
-            document.getElementById('reviewPhone').textContent = phone;
-            document.getElementById('reviewAddress').textContent = address;
+            const reviewCustomer = document.getElementById('reviewCustomer');
+            const reviewEmail = document.getElementById('reviewEmail');
+            const reviewPhone = document.getElementById('reviewPhone');
+            const reviewAddress = document.getElementById('reviewAddress');
+            const reviewSubtotal = document.getElementById('reviewSubtotal');
+            const reviewTotal = document.getElementById('reviewTotal');
+            
+            if (reviewCustomer) reviewCustomer.textContent = customerName;
+            if (reviewEmail) reviewEmail.textContent = email;
+            if (reviewPhone) reviewPhone.textContent = phone;
+            if (reviewAddress) reviewAddress.textContent = address;
 
             const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-            document.getElementById('reviewSubtotal').textContent = `₱${subtotal.toFixed(2)}`;
-            document.getElementById('reviewTotal').textContent = `₱${subtotal.toFixed(2)}`;
+            if (reviewSubtotal) reviewSubtotal.textContent = `₱${subtotal.toFixed(2)}`;
+            if (reviewTotal) reviewTotal.textContent = `₱${subtotal.toFixed(2)}`;
         }
 
         // Submit order - FIXED VERSION
         function submitOrder() {
             const customerSelect = document.getElementById('customerSelect');
-            const customer_id = customerSelect.value ? parseInt(customerSelect.value) : 0;
-            const customer_name = document.getElementById('newCustomerName').value.trim();
-            const email = document.getElementById('customerEmail').value.trim();
-            const phone = document.getElementById('customerPhone').value.trim();
-            const address = document.getElementById('customerAddress').value.trim();
+            const customer_id = customerSelect?.value ? parseInt(customerSelect.value) : 0;
+            const customer_name = document.getElementById('newCustomerName')?.value.trim() || '';
+            const email = document.getElementById('customerEmail')?.value.trim() || '';
+            const phone = document.getElementById('customerPhone')?.value.trim() || '';
+            const address = document.getElementById('customerAddress')?.value.trim() || '';
             
             if (!customer_id && !customer_name) {
                 showToast('Please select or enter a customer');
@@ -1304,83 +1514,97 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             formData.append('items', JSON.stringify(cartData));
             
             const submitBtn = document.querySelector('#cartModal .btn-success');
-            const originalText = submitBtn.innerHTML;
-            submitBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Processing...';
-            submitBtn.disabled = true;
+            if (submitBtn) {
+                const originalText = submitBtn.innerHTML;
+                submitBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Processing...';
+                submitBtn.disabled = true;
+            }
             
             console.log('Submitting order...');
 
-fetch('', {
-    method: 'POST',
-    body: formData
-})
-.then(response => {
-    console.log('Response status:', response.status);
-    if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-    }
-    return response.text();
-})
-.then(text => {
-    console.log('Raw response:', text);
-    
-    // Check if response is empty or contains HTML error
-    if (!text || text.trim() === '') {
-        throw new Error('Empty response from server');
-    }
-    
-    // If response starts with '<', it's probably an HTML error page
-    if (text.trim().startsWith('<')) {
-        console.error('HTML response received instead of JSON:', text.substring(0, 500));
-        throw new Error('Server returned HTML instead of JSON');
-    }
-    
-    try {
-        return JSON.parse(text);
-    } catch (e) {
-        console.error('JSON parse error:', e);
-        console.error('Response text:', text);
-        throw new Error('Invalid JSON response from server');
-    }
-})
-.then(data => {
-    console.log('Parsed response:', data);
-    
-    const cartModal = bootstrap.Modal.getInstance(document.getElementById('cartModal'));
-    if (cartModal) {
-        cartModal.hide();
-    }
-    
-    if (data.success) {
-        cart = [];
-        updateCart();
-        renderProducts();
-        
-        document.getElementById('successSoNumber').textContent = data.so_number;
-        document.getElementById('successOrderDate').textContent = new Date().toLocaleDateString();
-        const successModal = new bootstrap.Modal(document.getElementById('successModal'));
-        successModal.show();
-        
-        setTimeout(() => {
-            document.getElementById('customerSelect').value = '';
-            document.getElementById('newCustomerName').value = '';
-            document.getElementById('customerEmail').value = '';
-            document.getElementById('customerPhone').value = '';
-            document.getElementById('customerAddress').value = '';
-        }, 500);
-        
-    } else {
-        showToast('Error: ' + (data.message || 'Failed to submit order'));
-        submitBtn.innerHTML = originalText;
-        submitBtn.disabled = false;
-    }
-})
-.catch(error => {
-    console.error('Error:', error.message);
-    showToast('Error: ' + error.message);
-    submitBtn.innerHTML = originalText;
-    submitBtn.disabled = false;
-});
+            fetch('', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                console.log('Response status:', response.status);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                return response.text();
+            })
+            .then(text => {
+                console.log('Raw response:', text);
+                
+                if (!text || text.trim() === '') {
+                    throw new Error('Empty response from server');
+                }
+                
+                if (text.trim().startsWith('<')) {
+                    console.error('HTML response received instead of JSON:', text.substring(0, 500));
+                    throw new Error('Server returned HTML instead of JSON');
+                }
+                
+                try {
+                    return JSON.parse(text);
+                } catch (e) {
+                    console.error('JSON parse error:', e);
+                    console.error('Response text:', text);
+                    throw new Error('Invalid JSON response from server');
+                }
+            })
+            .then(data => {
+                console.log('Parsed response:', data);
+                
+                const cartModal = bootstrap.Modal.getInstance(document.getElementById('cartModal'));
+                if (cartModal) {
+                    cartModal.hide();
+                }
+                
+                if (data.success) {
+                    cart = [];
+                    updateCart();
+                    renderProducts();
+                    
+                    const successSoNumber = document.getElementById('successSoNumber');
+                    const successOrderDate = document.getElementById('successOrderDate');
+                    
+                    if (successSoNumber) successSoNumber.textContent = data.so_number;
+                    if (successOrderDate) successOrderDate.textContent = new Date().toLocaleDateString();
+                    
+                    const successModal = new bootstrap.Modal(document.getElementById('successModal'));
+                    successModal.show();
+                    
+                    setTimeout(() => {
+                        const customerSelect = document.getElementById('customerSelect');
+                        const newCustomerName = document.getElementById('newCustomerName');
+                        const customerEmail = document.getElementById('customerEmail');
+                        const customerPhone = document.getElementById('customerPhone');
+                        const customerAddress = document.getElementById('customerAddress');
+                        
+                        if (customerSelect) customerSelect.value = '';
+                        if (newCustomerName) newCustomerName.value = '';
+                        if (customerEmail) customerEmail.value = '';
+                        if (customerPhone) customerPhone.value = '';
+                        if (customerAddress) customerAddress.value = '';
+                    }, 500);
+                    
+                } else {
+                    showToast('Error: ' + (data.message || 'Failed to submit order'));
+                    if (submitBtn) {
+                        submitBtn.innerHTML = originalText;
+                        submitBtn.disabled = false;
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error.message);
+                showToast('Error: ' + error.message);
+                if (submitBtn) {
+                    submitBtn.innerHTML = originalText;
+                    submitBtn.disabled = false;
+                }
+            });
         }
 
         // Create new order
@@ -1396,8 +1620,92 @@ fetch('', {
             window.location.href = 'sales_order.php';
         }
 
-        // Initialize on page load
-        window.addEventListener('DOMContentLoaded', init);
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("Sales Order page loaded!");
+            
+            // Initialize sidebar
+            initializeSidebar();
+            
+            // Setup mobile toggle button - support multiple button IDs
+            const mobileToggleBtn = document.getElementById('mobileToggleBtn');
+            if (mobileToggleBtn) {
+                mobileToggleBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleSidebar();
+                });
+            }
+            
+            const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+            if (mobileMenuBtn) {
+                mobileMenuBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleSidebar();
+                });
+            }
+            
+            // Setup desktop toggle button
+            const desktopToggleBtn = document.getElementById('desktopToggleBtn');
+            if (desktopToggleBtn) {
+                desktopToggleBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleSidebar();
+                });
+            }
+            
+            // Add click listeners to sidebar links to close on mobile
+            document.querySelectorAll('.sidebar .nav-link').forEach(link => {
+                link.addEventListener('click', function() {
+                    if (window.innerWidth <= 992) {
+                        closeMobileSidebar();
+                    }
+                });
+            });
+            
+            // Close sidebar when clicking outside on mobile
+            document.addEventListener('click', function(event) {
+                const sidebar = document.getElementById('sidebar');
+                const mobileBtn = document.getElementById('mobileToggleBtn') || document.getElementById('mobileMenuBtn');
+                const overlay = document.querySelector('.sidebar-overlay');
+                const isMobile = window.innerWidth <= 992;
+                
+                if (isMobile && sidebar && sidebar.classList.contains('active') && 
+                    !sidebar.contains(event.target) && 
+                    (!mobileBtn || !mobileBtn.contains(event.target)) &&
+                    (!overlay || !overlay.contains(event.target))) {
+                    closeMobileSidebar();
+                }
+            });
+
+            // Add resize event listener
+            window.addEventListener('resize', handleSidebarResize);
+            
+            // Initialize the sales order functionality
+            init();
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Ctrl + B to toggle sidebar (desktop only)
+            if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
+                e.preventDefault();
+                toggleSidebar();
+            }
+            // Escape to close sidebar on mobile
+            else if (e.key === 'Escape' && window.innerWidth <= 992) {
+                closeMobileSidebar();
+            }
+            // Ctrl + N for new order
+            else if (e.ctrlKey && e.key === 'n') {
+                e.preventDefault();
+                createNewOrder();
+            }
+            // Ctrl + V to view cart
+            else if (e.ctrlKey && e.key === 'v') {
+                e.preventDefault();
+                viewCart();
+            }
+        });
     </script>
 </body>
 </html>
