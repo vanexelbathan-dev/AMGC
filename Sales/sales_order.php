@@ -10,157 +10,113 @@ requireRole(['sales']);
 $user_id = getUserId();
 $branch_id = getUserBranchId();
 
-// Handle order status update
+// Detect AJAX request
+$is_ajax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && 
+           strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest';
+
+// Handle AJAX requests - return ONLY JSON
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    header('Content-Type: application/json');
     $action = $_POST['action'];
-    
-    if ($action === 'update_status' && isset($_POST['order_id']) && isset($_POST['status'])) {
-        $order_id = (int)$_POST['order_id'];
-        $status = $_POST['status'];
-        
-        // Validate status
-        $valid_statuses = ['pending', 'processing', 'shipped', 'delivered', 'cancelled'];
-        if (!in_array($status, $valid_statuses)) {
-            die(json_encode(['success' => false, 'message' => 'Invalid status']));
-        }
-        
-        // First, verify the order exists and belongs to user's branch
-        $check_sql = "SELECT so_id FROM sales_orders WHERE so_id = ? AND branch_id = ?";
-        $check_stmt = $conn->prepare($check_sql);
-        $check_stmt->bind_param('ii', $order_id, $branch_id);
-        $check_stmt->execute();
-        $check_result = $check_stmt->get_result();
-        
-        if ($check_result->num_rows === 0) {
-            die(json_encode(['success' => false, 'message' => 'Order not found or access denied']));
-        }
-        
-        // Get current status before update
-        $current_sql = "SELECT order_status FROM sales_orders WHERE so_id = ?";
-        $current_stmt = $conn->prepare($current_sql);
-        $current_stmt->bind_param('i', $order_id);
-        $current_stmt->execute();
-        $current_result = $current_stmt->get_result();
-        $current_row = $current_result->fetch_assoc();
-        $old_status = $current_row['order_status'];
-        
-        // Update order status
-        $sql = "UPDATE sales_orders SET order_status = ? WHERE so_id = ?";
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param('si', $status, $order_id);
-        
-        if ($stmt->execute()) {
-            // Log the status change (check if order_status_logs table exists)
-            $log_sql = "INSERT INTO order_status_logs (so_id, user_id, old_status, new_status, notes) 
-                       VALUES (?, ?, ?, ?, ?)";
-            $log_stmt = $conn->prepare($log_sql);
-            
-            $notes = isset($_POST['notes']) ? $_POST['notes'] : "Status updated via sales portal";
-            $log_stmt->bind_param('iisss', $order_id, $user_id, $old_status, $status, $notes);
-            $log_stmt->execute();
-            
-            echo json_encode(['success' => true, 'message' => 'Order status updated']);
-        } else {
-            echo json_encode(['success' => false, 'message' => 'Failed to update status']);
-        }
-        exit;
-    }
     
     if ($action === 'get_order_details' && isset($_POST['order_id'])) {
         $order_id = (int)$_POST['order_id'];
         
-        // First verify order belongs to user's branch
-        $check_sql = "SELECT so_id FROM sales_orders WHERE so_id = ? AND branch_id = ?";
-        $check_stmt = $conn->prepare($check_sql);
-        $check_stmt->bind_param('ii', $order_id, $branch_id);
-        $check_stmt->execute();
-        $check_result = $check_stmt->get_result();
-        
-        if ($check_result->num_rows === 0) {
-            echo json_encode(['success' => false, 'message' => 'Order not found or access denied']);
-            exit;
-        }
-        
-        // Get order details
-        $sql = "SELECT 
-                    so.so_id,
-                    so.so_number,
-                    so.order_date,
-                    so.total_amount,
-                    so.order_status,
-                    so.notes,
-                    c.customer_name,
-                    c.email,
-                    c.phone_number,
-                    c.address,
-                    u.username as created_by
-                FROM sales_orders so
-                LEFT JOIN customers c ON so.customer_id = c.customer_id
-                LEFT JOIN users u ON so.created_by = u.user_id
-                WHERE so.so_id = ?";
-        
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param('i', $order_id);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        
-        if ($result->num_rows === 0) {
-            echo json_encode(['success' => false, 'message' => 'Order not found']);
-            exit;
-        }
-        
-        $order = $result->fetch_assoc();
-        
-        // Get order items - USING YOUR ACTUAL COLUMN NAMES
-        $items_sql = "SELECT 
-                        soi.so_item_id,
-                        soi.so_id,
-                        soi.item_id,
-                        soi.quantity_ordered,
-                        soi.quantity_delivered,
-                        soi.unit_price,
-                        soi.line_total,
-                        i.item_name,
-                        i.item_code,
-                        i.unit_type
-                     FROM sales_order_items soi
-                     JOIN items i ON soi.item_id = i.item_id
-                     WHERE soi.so_id = ?
-                     ORDER BY soi.so_item_id";
-        $items_stmt = $conn->prepare($items_sql);
-        $items_stmt->bind_param('i', $order_id);
-        $items_stmt->execute();
-        $items_result = $items_stmt->get_result();
-        $items = $items_result->fetch_all(MYSQLI_ASSOC);
-        
-        // Get status history (check if table exists first)
-        $history = [];
         try {
-            $history_sql = "SELECT 
-                              osl.*,
-                              u.username as changed_by
-                           FROM order_status_logs osl
-                           LEFT JOIN users u ON osl.user_id = u.user_id
-                           WHERE osl.so_id = ?
-                           ORDER BY osl.changed_at DESC";
-            $history_stmt = $conn->prepare($history_sql);
-            $history_stmt->bind_param('i', $order_id);
-            $history_stmt->execute();
-            $history_result = $history_stmt->get_result();
-            $history = $history_result->fetch_all(MYSQLI_ASSOC);
+            // Verify order belongs to user's branch
+            $check_sql = "SELECT so_id FROM sales_orders WHERE so_id = ? AND branch_id = ?";
+            $check_stmt = $conn->prepare($check_sql);
+            if (!$check_stmt) {
+                throw new Exception("Database prepare error");
+            }
+            $check_stmt->bind_param('ii', $order_id, $branch_id);
+            $check_stmt->execute();
+            $check_result = $check_stmt->get_result();
+            
+            if ($check_result->num_rows === 0) {
+                echo json_encode(['success' => false, 'message' => 'Order not found or access denied']);
+                exit;
+            }
+            
+            // Get order details
+            $sql = "SELECT 
+                        so.so_id,
+                        so.so_number,
+                        so.order_date,
+                        so.total_amount,
+                        so.order_status,
+                        c.customer_name,
+                        c.email,
+                        c.phone_number,
+                        c.address,
+                        u.first_name as created_by
+                    FROM sales_orders so
+                    LEFT JOIN customers c ON so.customer_id = c.customer_id
+                    LEFT JOIN users u ON so.created_by = u.user_id
+                    WHERE so.so_id = ?";
+            
+            $stmt = $conn->prepare($sql);
+            if (!$stmt) {
+                throw new Exception("Database prepare error");
+            }
+            $stmt->bind_param('i', $order_id);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            
+            if ($result->num_rows === 0) {
+                echo json_encode(['success' => false, 'message' => 'Order not found']);
+                exit;
+            }
+            
+            $order = $result->fetch_assoc();
+            
+            // Get order items
+            $items_sql = "SELECT 
+                            soi.so_item_id,
+                            soi.so_id,
+                            soi.item_id,
+                            soi.quantity_ordered,
+                            soi.quantity_delivered,
+                            soi.unit_price,
+                            soi.line_total,
+                            i.item_name,
+                            i.item_code,
+                            i.unit_type
+                         FROM sales_order_items soi
+                         JOIN items i ON soi.item_id = i.item_id
+                         WHERE soi.so_id = ?
+                         ORDER BY soi.so_item_id";
+            $items_stmt = $conn->prepare($items_sql);
+            if (!$items_stmt) {
+                throw new Exception("Database prepare error");
+            }
+            $items_stmt->bind_param('i', $order_id);
+            $items_stmt->execute();
+            $items_result = $items_stmt->get_result();
+            $items = $items_result->fetch_all(MYSQLI_ASSOC);
+            
+            echo json_encode([
+                'success' => true,
+                'order' => $order,
+                'items' => $items
+            ]);
+            
         } catch (Exception $e) {
-            // Table might not exist, that's okay
-            error_log("order_status_logs table not found: " . $e->getMessage());
+            echo json_encode(['success' => false, 'message' => $e->getMessage()]);
         }
-        
-        echo json_encode([
-            'success' => true,
-            'order' => $order,
-            'items' => $items,
-            'history' => $history
-        ]);
         exit;
     }
+    
+    // Invalid action
+    echo json_encode(['success' => false, 'message' => 'Invalid action']);
+    exit;
+}
+
+// If it's an AJAX request but no valid action, return error
+if ($is_ajax) {
+    header('Content-Type: application/json');
+    echo json_encode(['success' => false, 'message' => 'Invalid request']);
+    exit;
 }
 
 // Handle search and filters
@@ -220,12 +176,9 @@ $sql = "SELECT
 
 // Prepare and execute
 $stmt = $conn->prepare($sql);
-
-// Bind parameters dynamically if we have any
 if (!empty($params)) {
     $stmt->bind_param($param_types, ...$params);
 }
-
 $stmt->execute();
 $result = $stmt->get_result();
 $orders = $result->fetch_all(MYSQLI_ASSOC);
@@ -247,6 +200,7 @@ $stats_stmt->execute();
 $stats_result = $stats_stmt->get_result();
 $stats = $stats_result->fetch_assoc();
 ?>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -259,17 +213,295 @@ $stats = $stats_result->fetch_assoc();
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <!-- DataTables CSS -->
     <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap5.min.css">
+    <style>
+        /* TABLE DESIGN - GAYA NG CUSTOMER.PHP */
+        .card {
+            border: none;
+            border-radius: 10px;
+            box-shadow: 0 0 20px rgba(0,0,0,0.05);
+        }
+        
+        .card-body {
+            padding: 1.5rem;
+        }
+        
+        .table {
+            margin-bottom: 0;
+        }
+        
+        .table thead th {
+            background-color: #f8f9fc;
+            border-bottom: 2px solid #e3e6f0;
+            color: #4e73df;
+            font-weight: 700;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            padding: 1rem;
+            border-top: none;
+        }
+        
+        .table tbody tr {
+            transition: all 0.15s;
+        }
+        
+        .table tbody tr:hover {
+            background-color: #f8f9fc;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.02);
+        }
+        
+        .table td {
+            padding: 1rem;
+            vertical-align: middle;
+            border-bottom: 1px solid #e3e6f0;
+            color: #5a5c69;
+            font-size: 0.85rem;
+        }
+        
+        .badge {
+            padding: 0.5em 1em;
+            font-weight: 600;
+            font-size: 0.75rem;
+            border-radius: 50px;
+        }
+        
+        .badge.bg-light {
+            background-color: #eaecf4 !important;
+            color: #4e73df !important;
+        }
+        
+        .badge.bg-warning {
+            background-color: #fff3cd !important;
+            color: #856404 !important;
+        }
+        
+        .badge.bg-info {
+            background-color: #d1ecf1 !important;
+            color: #0c5460 !important;
+        }
+        
+        .badge.bg-primary {
+            background-color: #cce5ff !important;
+            color: #004085 !important;
+        }
+        
+        .badge.bg-success {
+            background-color: #d4edda !important;
+            color: #155724 !important;
+        }
+        
+        .badge.bg-danger {
+            background-color: #f8d7da !important;
+            color: #721c24 !important;
+        }
+        
+        .btn-group .btn {
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            margin: 0 2px;
+        }
+        
+        .btn-outline-primary {
+            color: #4e73df;
+            border-color: #4e73df;
+        }
+        
+        .btn-outline-primary:hover {
+            background-color: #4e73df;
+            border-color: #4e73df;
+            color: white;
+        }
+        
+        .btn-outline-secondary {
+            color: #858796;
+            border-color: #858796;
+        }
+        
+        .btn-outline-secondary:hover {
+            background-color: #858796;
+            border-color: #858796;
+            color: white;
+        }
+        
+        /* Statistics Cards - gaya ng customer.php */
+        .stat-card {
+            background: white;
+            border-radius: 10px;
+            padding: 1.5rem;
+            box-shadow: 0 0 15px rgba(0,0,0,0.02);
+            display: flex;
+            align-items: center;
+            transition: all 0.3s;
+            border: 1px solid #e3e6f0;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 5px 20px rgba(78,115,223,0.1);
+            border-color: #4e73df;
+        }
+        
+        .stat-icon {
+            width: 50px;
+            height: 50px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-right: 1rem;
+            font-size: 1.5rem;
+        }
+        
+        .stat-card.inventory .stat-icon {
+            background: linear-gradient(135deg, #4e73df 0%, #224abe 100%);
+            color: white;
+        }
+        
+        .stat-card.pending .stat-icon {
+            background: linear-gradient(135deg, #f6c23e 0%, #f4b619 100%);
+            color: white;
+        }
+        
+        .stat-card.sales .stat-icon {
+            background: linear-gradient(135deg, #36b9cc 0%, #1a8a9c 100%);
+            color: white;
+        }
+        
+        .stat-card.complete .stat-icon {
+            background: linear-gradient(135deg, #1cc88a 0%, #13855c 100%);
+            color: white;
+        }
+        
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: #2c3e50;
+            line-height: 1.2;
+        }
+        
+        .stat-label {
+            font-size: 0.8rem;
+            color: #858796;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        /* Search and Filter */
+        .form-control, .form-select, .input-group-text {
+            border-radius: 8px;
+            border: 1px solid #e3e6f0;
+            padding: 0.5rem 1rem;
+            font-size: 0.85rem;
+        }
+        
+        .form-control:focus, .form-select:focus {
+            border-color: #4e73df;
+            box-shadow: 0 0 0 0.2rem rgba(78,115,223,0.1);
+        }
+        
+        .input-group-text {
+            background-color: #f8f9fc;
+            color: #4e73df;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #4e73df 0%, #224abe 100%);
+            border: none;
+            border-radius: 8px;
+            padding: 0.5rem 1.2rem;
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #1cc88a 0%, #13855c 100%);
+            border: none;
+            border-radius: 8px;
+            padding: 0.5rem 1.2rem;
+            font-weight: 600;
+            font-size: 0.85rem;
+        }
+        
+        .btn-info {
+            background: linear-gradient(135deg, #36b9cc 0%, #1a8a9c 100%);
+            border: none;
+            border-radius: 8px;
+            padding: 0.5rem 1.2rem;
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: white;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+        }
+
+        /* PRINT STYLES - PARA HINDI LUMIPAT NG PAGE */
+        @media print {
+            @page {
+                size: portrait;
+                margin: 1cm;
+            }
+            
+            body {
+                font-family: 'Courier New', Courier, monospace;
+                font-size: 11pt;
+                line-height: 1.3;
+                color: #000;
+                background: #fff;
+            }
+            
+            .no-print, .sidebar, .mobile-menu-btn, .navbar-top, 
+            .stat-card, .card:first-of-type, .btn-group, 
+            .btn, .modal, .dataTables_length, .dataTables_filter,
+            .dataTables_info, .dataTables_paginate, #mobileMenuBtn {
+                display: none !important;
+            }
+            
+            .main-content, .card, .table, .table-responsive {
+                margin: 0 !important;
+                padding: 0 !important;
+                border: none !important;
+                box-shadow: none !important;
+            }
+            
+            .card {
+                page-break-inside: avoid;
+            }
+            
+            table {
+                page-break-inside: auto;
+                width: 100%;
+                border-collapse: collapse;
+            }
+            
+            tr {
+                page-break-inside: avoid;
+                page-break-after: auto;
+            }
+            
+            thead {
+                display: table-header-group;
+            }
+            
+            tfoot {
+                display: table-footer-group;
+            }
+        }
+    </style>
 </head>
 <body>
     <!-- MOBILE MENU BUTTON -->
-    <button class="mobile-menu-btn" id="mobileMenuBtn">
+    <button class="mobile-menu-btn no-print" id="mobileMenuBtn">
         <i class="bi bi-list"></i>
     </button>
 
     <!-- MAIN APPLICATION -->
     <div id="appPage">
-        <!-- Sidebar -->
-        <div class="sidebar" id="sidebar">
+        <!-- Sidebar - No Print -->
+        <div class="sidebar no-print" id="sidebar">
             <div class="sidebar-header">
                 <h3><i class="bi bi-shop logo-icon"></i> <span class="nav-text">Sales</span></h3>
             </div>
@@ -312,8 +544,8 @@ $stats = $stats_result->fetch_assoc();
 
         <!-- Main Content Area -->
         <div class="main-content">
-            <!-- Header Section with User Info and Logout -->
-            <div class="navbar-top">
+            <!-- Header Section with User Info and Logout - No Print -->
+            <div class="navbar-top no-print">
                 <div class="page-title">
                     <h2><i class="bi bi-list-check me-2"></i>Sales Orders</h2>
                     <p>View and manage customer orders</p>
@@ -334,9 +566,8 @@ $stats = $stats_result->fetch_assoc();
                 </div>
             </div>
 
-            <!-- Statistics Cards - Using same design as current inventory -->
-            <div class="row g-3 mb-4">
-                <!-- Total Orders -->
+            <!-- Statistics Cards - gaya ng customer.php - No Print -->
+            <div class="row g-3 mb-4 no-print">
                 <div class="col-md-3 mb-3">
                     <div class="stat-card inventory">
                         <div class="stat-icon">
@@ -349,7 +580,6 @@ $stats = $stats_result->fetch_assoc();
                     </div>
                 </div>
 
-                <!-- Pending Orders -->
                 <div class="col-md-3 mb-3">
                     <div class="stat-card pending">
                         <div class="stat-icon">
@@ -362,7 +592,6 @@ $stats = $stats_result->fetch_assoc();
                     </div>
                 </div>
 
-                <!-- Processing Orders -->
                 <div class="col-md-3 mb-3">
                     <div class="stat-card sales">
                         <div class="stat-icon">
@@ -375,7 +604,6 @@ $stats = $stats_result->fetch_assoc();
                     </div>
                 </div>
 
-                <!-- Total Revenue -->
                 <div class="col-md-3 mb-3">
                     <div class="stat-card complete">
                         <div class="stat-icon">
@@ -389,8 +617,8 @@ $stats = $stats_result->fetch_assoc();
                 </div>
             </div>
 
-            <!-- Search and Filter - Same design as inventory -->
-            <div class="card mb-4">
+            <!-- Search and Filter - No Print -->
+            <div class="card mb-4 no-print">
                 <div class="card-body">
                     <div class="row g-3">
                         <div class="col-md-3">
@@ -423,12 +651,25 @@ $stats = $stats_result->fetch_assoc();
                 </div>
             </div>
 
-            <!-- Orders Table - Similar design -->
+            <!-- Action Buttons - No Print -->
+            <div class="mb-3 d-flex gap-2 no-print">
+                <button class="btn btn-primary" onclick="printAllOrders()">
+                    <i class="bi bi-printer"></i> Print All Orders
+                </button>
+                <button class="btn btn-success" onclick="exportToExcel()">
+                    <i class="bi bi-file-earmark-excel"></i> Export to Excel
+                </button>
+                <button class="btn btn-info" onclick="refreshOrders()">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+            </div>
+
+            <!-- Orders Table - DESIGN GAYA NG CUSTOMER.PHP -->
             <div class="card">
                 <div class="card-body">
                     <div class="table-responsive">
                         <table class="table table-hover mb-0" id="ordersTable">
-                            <thead class="table-light">
+                            <thead>
                                 <tr>
                                     <th>Order #</th>
                                     <th>Date</th>
@@ -436,7 +677,7 @@ $stats = $stats_result->fetch_assoc();
                                     <th>Items</th>
                                     <th>Total Amount</th>
                                     <th>Status</th>
-                                    <th>Actions</th>
+                                    <th class="no-print">Actions</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -450,7 +691,7 @@ $stats = $stats_result->fetch_assoc();
                                 <?php else: ?>
                                     <?php foreach ($orders as $order): ?>
                                         <tr>
-                                            <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($order['so_number']); ?></span></td>
+                                            <td><span class="badge bg-light"><?php echo htmlspecialchars($order['so_number']); ?></span></td>
                                             <td>
                                                 <?php echo date('M d, Y', strtotime($order['order_date'])); ?><br>
                                                 <small class="text-muted"><?php echo date('h:i A', strtotime($order['order_date'])); ?></small>
@@ -479,17 +720,12 @@ $stats = $stats_result->fetch_assoc();
                                                     <?php echo $status_text[$order['order_status']] ?? ucfirst($order['order_status']); ?>
                                                 </span>
                                             </td>
-                                            <td>
+                                            <td class="no-print">
                                                 <div class="btn-group" role="group">
                                                     <button class="btn btn-sm btn-outline-primary" onclick="viewOrderDetails(<?php echo $order['so_id']; ?>)" title="View Details">
                                                         <i class="bi bi-eye"></i>
                                                     </button>
-                                                    <?php if (in_array($order['order_status'], ['pending', 'processing'])): ?>
-                                                        <button class="btn btn-sm btn-outline-warning" onclick="updateOrderStatus(<?php echo $order['so_id']; ?>)" title="Update Status">
-                                                            <i class="bi bi-pencil"></i>
-                                                        </button>
-                                                    <?php endif; ?>
-                                                    <button class="btn btn-sm btn-outline-success" onclick="printOrder(<?php echo $order['so_id']; ?>)" title="Print Order">
+                                                    <button class="btn btn-sm btn-outline-secondary" onclick="printSingleOrder(<?php echo $order['so_id']; ?>)" title="Print Order">
                                                         <i class="bi bi-printer"></i>
                                                     </button>
                                                 </div>
@@ -502,11 +738,14 @@ $stats = $stats_result->fetch_assoc();
                     </div>
                 </div>
             </div>
+            
+            <!-- PRINT VERSION - HIDDEN SA SCREEN -->
+            <div id="printContainer" style="display: none;"></div>
         </div>
     </div>
 
-    <!-- Order Details Modal -->
-    <div class="modal fade" id="orderDetailsModal" tabindex="-1">
+    <!-- Order Details Modal - No Print -->
+    <div class="modal fade no-print" id="orderDetailsModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
@@ -516,38 +755,9 @@ $stats = $stats_result->fetch_assoc();
                 <div class="modal-body" id="orderDetailsContent">
                     <!-- Content loaded via AJAX -->
                 </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Update Status Modal -->
-    <div class="modal fade" id="updateStatusModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Update Order Status</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <input type="hidden" id="updateOrderId">
-                    <div class="mb-3">
-                        <label class="form-label">Select New Status</label>
-                        <select class="form-select" id="newStatus">
-                            <option value="pending">Pending</option>
-                            <option value="processing">Processing</option>
-                            <option value="shipped">Shipped</option>
-                            <option value="delivered">Delivered</option>
-                            <option value="cancelled">Cancelled</option>
-                        </select>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Notes (Optional)</label>
-                        <textarea class="form-control" id="statusNotes" rows="2" placeholder="Add any notes about this status change..."></textarea>
-                    </div>
-                </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-success" onclick="saveStatusUpdate()">Update Status</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" id="printOrderFromDetails" style="display: none;" onclick="printFromDetails()">Print Order</button>
                 </div>
             </div>
         </div>
@@ -561,13 +771,30 @@ $stats = $stats_result->fetch_assoc();
     <script type="text/javascript" src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
     <script type="text/javascript" src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap5.min.js"></script>
     <script>
-        // Mobile menu toggle
-        document.getElementById('mobileMenuBtn').addEventListener('click', function() {
-            document.getElementById('sidebar').classList.toggle('show');
-        });
+        // Global variables
+        let currentOrderId = null;
 
-       
-            
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize DataTable - gaya ng customer.php
+            try {
+                if ($('#ordersTable tbody tr').length > 1 || 
+                    ($('#ordersTable tbody tr').length === 1 && $('#ordersTable tbody tr td').length > 1)) {
+                    $('#ordersTable').DataTable({
+                        pageLength: 25,
+                        order: [[1, 'desc']],
+                        responsive: true,
+                        dom: '<"row"<"col-sm-12 col-md-6"l><"col-sm-12 col-md-6"f>>rtip',
+                        language: {
+                            search: "_INPUT_",
+                            searchPlaceholder: "Search orders..."
+                        }
+                    });
+                }
+            } catch(e) {
+                console.log('DataTable not initialized');
+            }
+
             // Set default date range (last 30 days)
             if (!document.getElementById('startDate').value) {
                 const endDate = new Date();
@@ -576,7 +803,13 @@ $stats = $stats_result->fetch_assoc();
                 
                 document.getElementById('startDate').value = startDate.toISOString().split('T')[0];
                 document.getElementById('endDate').value = endDate.toISOString().split('T')[0];
-            };
+            }
+        });
+
+        // Mobile menu toggle
+        document.getElementById('mobileMenuBtn').addEventListener('click', function() {
+            document.getElementById('sidebar').classList.toggle('show');
+        });
 
         // Search functionality
         document.getElementById('searchInput').addEventListener('keyup', function() {
@@ -584,8 +817,10 @@ $stats = $stats_result->fetch_assoc();
             const rows = document.querySelectorAll('#ordersTable tbody tr');
             
             rows.forEach(row => {
-                const text = row.textContent.toLowerCase();
-                row.style.display = text.includes(filter) ? '' : 'none';
+                if (row.cells.length > 1 && !row.querySelector('td[colspan]')) {
+                    const text = row.textContent.toLowerCase();
+                    row.style.display = text.includes(filter) ? '' : 'none';
+                }
             });
         });
 
@@ -595,14 +830,16 @@ $stats = $stats_result->fetch_assoc();
             const rows = document.querySelectorAll('#ordersTable tbody tr');
             
             rows.forEach(row => {
-                if (filter === 'all') {
-                    row.style.display = '';
-                    return;
+                if (row.cells.length > 1 && !row.querySelector('td[colspan]')) {
+                    if (filter === 'all') {
+                        row.style.display = '';
+                        return;
+                    }
+                    
+                    const statusCell = row.cells[5];
+                    const statusText = statusCell.textContent.toLowerCase().trim();
+                    row.style.display = statusText.includes(filter) ? '' : 'none';
                 }
-                
-                const statusBadge = row.querySelector('.badge');
-                const statusText = statusBadge.textContent.toLowerCase();
-                row.style.display = (statusText.includes(filter)) ? '' : 'none';
             });
         });
 
@@ -616,21 +853,34 @@ $stats = $stats_result->fetch_assoc();
             const rows = document.querySelectorAll('#ordersTable tbody tr');
             
             rows.forEach(row => {
-                const dateCell = row.cells[1];
-                const dateText = dateCell.querySelector('small').textContent;
-                const rowDate = new Date(dateText);
-                
-                if ((!startDate || rowDate >= new Date(startDate)) && 
-                    (!endDate || rowDate <= new Date(endDate))) {
-                    row.style.display = '';
-                } else {
-                    row.style.display = 'none';
+                if (row.cells.length > 1 && !row.querySelector('td[colspan]')) {
+                    const dateCell = row.cells[1];
+                    const dateText = dateCell.querySelector('small') ? dateCell.querySelector('small').textContent : '';
+                    const rowDate = new Date(dateText);
+                    
+                    let show = true;
+                    if (startDate) {
+                        show = show && rowDate >= new Date(startDate);
+                    }
+                    if (endDate) {
+                        const endDateTime = new Date(endDate);
+                        endDateTime.setHours(23, 59, 59);
+                        show = show && rowDate <= endDateTime;
+                    }
+                    
+                    row.style.display = show ? '' : 'none';
                 }
             });
         }
 
+        // Refresh orders
+        function refreshOrders() {
+            location.reload();
+        }
+
         // View order details
         function viewOrderDetails(orderId) {
+            currentOrderId = orderId;
             const modal = new bootstrap.Modal(document.getElementById('orderDetailsModal'));
             
             // Show loading
@@ -650,6 +900,137 @@ $stats = $stats_result->fetch_assoc();
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-Requested-With': 'XMLHttpRequest'
+                },
+                body: 'action=get_order_details&order_id=' + orderId
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Network response was not ok');
+                }
+                return response.json();
+            })
+            .then(data => {
+                if (data.success) {
+                    const order = data.order;
+                    const items = data.items;
+                    
+                    let itemsHtml = '';
+                    if (items && items.length > 0) {
+                        itemsHtml = items.map(item => `
+                            <tr>
+                                <td>${item.item_name}<br><small class="text-muted">${item.item_code}</small></td>
+                                <td class="text-center">${item.quantity_ordered}</td>
+                                <td class="text-end">₱${parseFloat(item.unit_price).toFixed(2)}</td>
+                                <td class="text-end">₱${parseFloat(item.line_total).toFixed(2)}</td>
+                            </tr>
+                        `).join('');
+                    }
+                    
+                    document.getElementById('orderDetailsContent').innerHTML = `
+                        <div class="row mb-4">
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label text-muted small mb-1">Order Number</label>
+                                    <p class="h5">${order.so_number}</p>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label text-muted small mb-1">Order Date</label>
+                                    <p class="mb-0">${new Date(order.order_date).toLocaleString()}</p>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3">
+                                    <label class="form-label text-muted small mb-1">Status</label>
+                                    <p><span class="badge bg-success fs-6">${order.order_status}</span></p>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label text-muted small mb-1">Created By</label>
+                                    <p class="mb-0">${order.created_by || 'System'}</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-4">
+                            <div class="col-12">
+                                <h6 class="border-bottom pb-2">Customer Information</h6>
+                                <div class="bg-light p-3 rounded">
+                                    <p class="mb-1"><strong>Name:</strong> ${order.customer_name}</p>
+                                    <p class="mb-1"><strong>Email:</strong> ${order.email || 'N/A'}</p>
+                                    <p class="mb-1"><strong>Phone:</strong> ${order.phone_number || 'N/A'}</p>
+                                    <p class="mb-0"><strong>Address:</strong> ${order.address || 'N/A'}</p>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <h6 class="border-bottom pb-2">Order Items</h6>
+                        <div class="table-responsive mb-4">
+                            <table class="table table-bordered table-sm">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>Product</th>
+                                        <th class="text-center">Quantity</th>
+                                        <th class="text-end">Unit Price</th>
+                                        <th class="text-end">Total</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${itemsHtml}
+                                    <tr class="table-success fw-bold">
+                                        <td colspan="3" class="text-end">Grand Total</td>
+                                        <td class="text-end">₱${parseFloat(order.total_amount).toFixed(2)}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        ${order.notes ? `
+                        <h6 class="border-bottom pb-2">Order Notes</h6>
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i> ${order.notes}
+                        </div>
+                        ` : ''}
+                    `;
+                    
+                    // Show print button
+                    document.getElementById('printOrderFromDetails').style.display = 'inline-block';
+                } else {
+                    document.getElementById('orderDetailsContent').innerHTML = `
+                        <div class="alert alert-danger">
+                            <i class="bi bi-exclamation-triangle"></i> ${data.message || 'Error loading order details.'}
+                        </div>
+                    `;
+                    document.getElementById('printOrderFromDetails').style.display = 'none';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                document.getElementById('orderDetailsContent').innerHTML = `
+                    <div class="alert alert-danger">
+                        <i class="bi bi-exclamation-triangle"></i> Network error: ${error.message}
+                    </div>
+                `;
+                document.getElementById('printOrderFromDetails').style.display = 'none';
+            });
+        }
+        
+        // PRINT SINGLE ORDER - REKTA PRINT NA, WALANG PREVIEW, HINDI LILIPAT NG PAGE
+        function printSingleOrder(orderId) {
+            currentOrderId = orderId;
+            
+            // Show loading indicator
+            const printBtn = event ? event.target.closest('button') : null;
+            if (printBtn) {
+                printBtn.innerHTML = '<i class="bi bi-printer"></i> Printing...';
+                printBtn.disabled = true;
+            }
+            
+            // Get order details
+            fetch('', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'X-Requested-With': 'XMLHttpRequest'
                 },
                 body: 'action=get_order_details&order_id=' + orderId
             })
@@ -658,177 +1039,548 @@ $stats = $stats_result->fetch_assoc();
                 if (data.success) {
                     const order = data.order;
                     const items = data.items;
-                    const history = data.history;
                     
-                    let itemsHtml = '';
-                    if (items && items.length > 0) {
-                        itemsHtml = items.map(item => `
-                            <tr>
-                                <td>${item.item_name}<br><small class="text-muted">${item.item_code}</small></td>
-                                <td class="text-end">${item.quantity_ordered}</td>
-                                <td class="text-end">₱${parseFloat(item.unit_price).toFixed(2)}</td>
-                                <td class="text-end"><strong>₱${parseFloat(item.line_total).toFixed(2)}</strong></td>
-                            </tr>
-                        `).join('');
+                    // Create iframe for printing - PARA HINDI LUMIPAT NG PAGE
+                    const iframe = document.createElement('iframe');
+                    iframe.style.position = 'absolute';
+                    iframe.style.width = '0';
+                    iframe.style.height = '0';
+                    iframe.style.border = 'none';
+                    iframe.style.top = '-9999px';
+                    iframe.style.left = '-9999px';
+                    document.body.appendChild(iframe);
+                    
+                    // Generate HTML content
+                    const htmlContent = generateSingleOrderHTML(order, items);
+                    
+                    // Write to iframe and print
+                    const iframeDoc = iframe.contentWindow.document;
+                    iframeDoc.open();
+                    iframeDoc.write(htmlContent);
+                    iframeDoc.close();
+                    
+                    // Auto print after load
+                    iframe.contentWindow.focus();
+                    setTimeout(() => {
+                        iframe.contentWindow.print();
+                        // Remove iframe after print
+                        setTimeout(() => {
+                            document.body.removeChild(iframe);
+                        }, 100);
+                    }, 250);
+                } else {
+                    alert('Error loading order details: ' + data.message);
+                }
+                
+                // Restore button
+                if (printBtn) {
+                    printBtn.innerHTML = '<i class="bi bi-printer"></i>';
+                    printBtn.disabled = false;
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Network error: ' + error.message);
+                if (printBtn) {
+                    printBtn.innerHTML = '<i class="bi bi-printer"></i>';
+                    printBtn.disabled = false;
+                }
+            });
+        }
+        
+        // PRINT ALL ORDERS - REKTA PRINT NA, WALANG PREVIEW, HINDI LILIPAT NG PAGE
+        function printAllOrders() {
+            const rows = document.querySelectorAll('#ordersTable tbody tr');
+            const visibleRows = [];
+            
+            rows.forEach(row => {
+                if (!row.querySelector('td[colspan]') && row.style.display !== 'none') {
+                    visibleRows.push(row);
+                }
+            });
+            
+            if (visibleRows.length === 0) {
+                alert('No orders to print');
+                return;
+            }
+            
+            // Show loading on button
+            const printBtn = document.querySelector('.btn-primary[onclick="printAllOrders()"]');
+            if (printBtn) {
+                const originalText = printBtn.innerHTML;
+                printBtn.innerHTML = '<i class="bi bi-printer"></i> Printing...';
+                printBtn.disabled = true;
+            }
+            
+            // Create iframe for printing - PARA HINDI LUMIPAT NG PAGE
+            const iframe = document.createElement('iframe');
+            iframe.style.position = 'absolute';
+            iframe.style.width = '0';
+            iframe.style.height = '0';
+            iframe.style.border = 'none';
+            iframe.style.top = '-9999px';
+            iframe.style.left = '-9999px';
+            document.body.appendChild(iframe);
+            
+            // Generate HTML content
+            const htmlContent = generateAllOrdersHTML(visibleRows);
+            
+            // Write to iframe and print
+            const iframeDoc = iframe.contentWindow.document;
+            iframeDoc.open();
+            iframeDoc.write(htmlContent);
+            iframeDoc.close();
+            
+            // Auto print after load
+            iframe.contentWindow.focus();
+            setTimeout(() => {
+                iframe.contentWindow.print();
+                // Remove iframe after print
+                setTimeout(() => {
+                    document.body.removeChild(iframe);
+                    if (printBtn) {
+                        printBtn.innerHTML = '<i class="bi bi-printer"></i> Print All Orders';
+                        printBtn.disabled = false;
                     }
-                    
-                    let historyHtml = '';
-                    if (history && history.length > 0) {
-                        historyHtml = history.map(log => `
-                            <div class="alert alert-light mb-2">
-                                <div class="d-flex justify-content-between">
-                                    <div>
-                                        <span class="badge bg-secondary">${log.old_status}</span>
-                                        <i class="bi bi-arrow-right mx-2"></i>
-                                        <span class="badge bg-success">${log.new_status}</span>
-                                        <small class="ms-2">by ${log.changed_by || 'System'}</small>
-                                    </div>
-                                    <small class="text-muted">${new Date(log.changed_at).toLocaleString()}</small>
-                                </div>
-                                ${log.notes ? `<p class="mt-2 mb-0 small">${log.notes}</p>` : ''}
-                            </div>
-                        `).join('');
-                    } else {
-                        historyHtml = '<p class="text-muted">No status history available.</p>';
-                    }
-                    
-                    document.getElementById('orderDetailsContent').innerHTML = `
-                        <div class="row mb-4">
-                            <div class="col-md-6">
-                                <div class="mb-2">
-                                    <label class="form-label text-muted">Order Number</label>
-                                    <p><strong>${order.so_number}</strong></p>
-                                </div>
-                                <div class="mb-2">
-                                    <label class="form-label text-muted">Order Date</label>
-                                    <p><strong>${new Date(order.order_date).toLocaleString()}</strong></p>
-                                </div>
-                            </div>
-                            <div class="col-md-6">
-                                <div class="mb-2">
-                                    <label class="form-label text-muted">Status</label>
-                                    <p><span class="badge bg-success">${order.order_status}</span></p>
-                                </div>
-                                <div class="mb-2">
-                                    <label class="form-label text-muted">Created By</label>
-                                    <p><strong>${order.created_by}</strong></p>
-                                </div>
+                }, 100);
+            }, 250);
+        }
+        
+        // Generate HTML for single order - GAYA NG NASA PICTURE
+        function generateSingleOrderHTML(order, items) {
+            let itemsHtml = '';
+            let totalAmount = 0;
+            
+            if (items && items.length > 0) {
+                itemsHtml = items.map(item => {
+                    totalAmount += parseFloat(item.line_total);
+                    return `
+                        <tr>
+                            <td style="padding: 8px; border: 1px solid #ddd;">${item.item_name}</td>
+                            <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${item.quantity_ordered}</td>
+                            <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₱${parseFloat(item.unit_price).toFixed(2)}</td>
+                            <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₱${parseFloat(item.line_total).toFixed(2)}</td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+            
+            return `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>Order #${order.so_number}</title>
+                    <style>
+                        @page {
+                            size: portrait;
+                            margin: 1cm;
+                        }
+                        body {
+                            font-family: 'Courier New', Courier, monospace;
+                            margin: 0;
+                            padding: 20px;
+                            color: #000;
+                            font-size: 12px;
+                            line-height: 1.4;
+                        }
+                        .print-container {
+                            max-width: 800px;
+                            margin: 0 auto;
+                        }
+                        .header {
+                            text-align: center;
+                            border-bottom: 2px solid #000;
+                            padding-bottom: 10px;
+                            margin-bottom: 20px;
+                        }
+                        .company-name {
+                            font-size: 24px;
+                            font-weight: bold;
+                            margin-bottom: 5px;
+                        }
+                        .order-title {
+                            font-size: 16px;
+                            font-weight: bold;
+                            text-transform: uppercase;
+                        }
+                        .info-row {
+                            display: flex;
+                            margin-bottom: 5px;
+                        }
+                        .info-label {
+                            width: 120px;
+                            font-weight: bold;
+                        }
+                        .section {
+                            margin-bottom: 20px;
+                            padding: 10px;
+                            border: 1px solid #000;
+                        }
+                        .section-title {
+                            font-weight: bold;
+                            margin-bottom: 10px;
+                            border-bottom: 1px solid #000;
+                            padding-bottom: 5px;
+                            text-transform: uppercase;
+                            font-size: 13px;
+                        }
+                        table {
+                            width: 100%;
+                            border-collapse: collapse;
+                            margin: 10px 0;
+                        }
+                        th {
+                            background: #f0f0f0;
+                            border: 1px solid #000;
+                            padding: 8px;
+                            text-align: left;
+                            font-weight: bold;
+                        }
+                        td {
+                            border: 1px solid #000;
+                            padding: 8px;
+                        }
+                        .text-right {
+                            text-align: right;
+                        }
+                        .text-center {
+                            text-align: center;
+                        }
+                        .total-row {
+                            font-weight: bold;
+                            background: #f0f0f0;
+                        }
+                        .footer {
+                            margin-top: 30px;
+                            text-align: center;
+                            font-size: 11px;
+                            border-top: 1px solid #000;
+                            padding-top: 10px;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="print-container">
+                        <div class="header">
+                            <div class="company-name">AMGC</div>
+                            <div class="order-title">SALES ORDER</div>
+                            <div style="margin-top: 5px; font-size: 11px;">${order.so_number}</div>
+                        </div>
+                        
+                        <div style="margin-bottom: 20px; display: flex; justify-content: space-between;">
+                            <div>
+                                <div class="info-row"><span class="info-label">Order Date:</span> <span>${new Date(order.order_date).toLocaleString()}</span></div>
+                                <div class="info-row"><span class="info-label">Status:</span> <span style="text-transform: uppercase;">${order.order_status}</span></div>
+                                <div class="info-row"><span class="info-label">Created By:</span> <span>${order.created_by || 'System'}</span></div>
                             </div>
                         </div>
                         
-                        <div class="row mb-4">
-                            <div class="col-12">
-                                <h6>Customer Information</h6>
-                                <div class="alert alert-light">
-                                    <p class="mb-1"><strong>Name:</strong> ${order.customer_name}</p>
-                                    <p class="mb-1"><strong>Email:</strong> ${order.email}</p>
-                                    <p class="mb-1"><strong>Phone:</strong> ${order.phone_number}</p>
-                                    <p class="mb-0"><strong>Address:</strong> ${order.address}</p>
-                                </div>
-                            </div>
+                        <div class="section">
+                            <div class="section-title">CUSTOMER INFORMATION</div>
+                            <div class="info-row"><span class="info-label">Name:</span> <span>${order.customer_name}</span></div>
+                            <div class="info-row"><span class="info-label">Email:</span> <span>${order.email || 'N/A'}</span></div>
+                            <div class="info-row"><span class="info-label">Phone:</span> <span>${order.phone_number || 'N/A'}</span></div>
+                            <div class="info-row"><span class="info-label">Address:</span> <span>${order.address || 'N/A'}</span></div>
                         </div>
                         
-                        <h6>Order Items (${items ? items.length : 0} items)</h6>
-                        <div class="table-responsive mb-4">
-                            <table class="table table-bordered">
-                                <thead class="table-light">
+                        <div class="section">
+                            <div class="section-title">ORDER ITEMS</div>
+                            <table>
+                                <thead>
                                     <tr>
                                         <th>Product</th>
-                                        <th class="text-end">Quantity</th>
-                                        <th class="text-end">Unit Price</th>
-                                        <th class="text-end">Total</th>
+                                        <th style="text-align: center;">Qty</th>
+                                        <th style="text-align: right;">Unit Price</th>
+                                        <th style="text-align: right;">Total</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     ${itemsHtml}
-                                    <tr class="table-success">
-                                        <td colspan="3" class="text-end"><strong>Grand Total</strong></td>
-                                        <td class="text-end"><strong>₱${parseFloat(order.total_amount).toFixed(2)}</strong></td>
+                                    <tr class="total-row">
+                                        <td colspan="3" style="text-align: right;"><strong>GRAND TOTAL</strong></td>
+                                        <td style="text-align: right;"><strong>₱${parseFloat(order.total_amount).toFixed(2)}</strong></td>
                                     </tr>
                                 </tbody>
                             </table>
                         </div>
                         
-                        ${order.notes ? `
-                        <h6>Order Notes</h6>
-                        <div class="alert alert-info">
-                            ${order.notes}
+                        <div class="footer">
+                            <div>Printed on: ${new Date().toLocaleString()}</div>
+                            <div style="margin-top: 5px;">Prepared by: ${document.querySelector('#userName')?.textContent || 'Sales Staff'}</div>
                         </div>
-                        ` : ''}
-                        
-                        <h6>Status History</h6>
-                        <div class="status-history">
-                            ${historyHtml}
-                        </div>
-                    `;
-                } else {
-                    document.getElementById('orderDetailsContent').innerHTML = `
-                        <div class="alert alert-danger">
-                            <i class="bi bi-exclamation-triangle"></i> ${data.message || 'Error loading order details.'}
-                        </div>
+                    </div>
+                </body>
+                </html>
+            `;
+        }
+        
+        // Generate HTML for all orders - GAYA NG NASA PICTURE
+        function generateAllOrdersHTML(rows) {
+            let tableRows = '';
+            let totalAmount = 0;
+            
+            rows.forEach(row => {
+                const cells = row.querySelectorAll('td');
+                if (cells.length >= 6) {
+                    const orderNumber = cells[0].textContent.trim();
+                    const date = cells[1].textContent.trim().replace(/\n/g, ' ');
+                    const customer = cells[2].textContent.trim();
+                    const items = cells[3].textContent.trim();
+                    const amount = cells[4].textContent.trim();
+                    const status = cells[5].textContent.trim();
+                    
+                    const amountValue = parseFloat(amount.replace('₱', '').replace(',', '')) || 0;
+                    totalAmount += amountValue;
+                    
+                    tableRows += `
+                        <tr>
+                            <td style="padding: 6px; border: 1px solid #000;">${orderNumber}</td>
+                            <td style="padding: 6px; border: 1px solid #000;">${date}</td>
+                            <td style="padding: 6px; border: 1px solid #000;">${customer}</td>
+                            <td style="padding: 6px; border: 1px solid #000; text-align: center;">${items}</td>
+                            <td style="padding: 6px; border: 1px solid #000; text-align: right;">${amount}</td>
+                            <td style="padding: 6px; border: 1px solid #000;">${status}</td>
+                        </tr>
                     `;
                 }
-            })
-            .catch(error => {
-                document.getElementById('orderDetailsContent').innerHTML = `
-                    <div class="alert alert-danger">
-                        <i class="bi bi-exclamation-triangle"></i> Network error: ${error.message}
-                    </div>
-                `;
             });
-        }
-        
-        // Update order status
-        function updateOrderStatus(orderId) {
-            document.getElementById('updateOrderId').value = orderId;
-            const modal = new bootstrap.Modal(document.getElementById('updateStatusModal'));
-            modal.show();
-        }
-        
-        // Save status update
-        function saveStatusUpdate() {
-            const orderId = document.getElementById('updateOrderId').value;
-            const newStatus = document.getElementById('newStatus').value;
-            const notes = document.getElementById('statusNotes').value;
             
-            if (!orderId || !newStatus) {
-                alert('Please select a status');
+            return `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                    <title>Sales Orders Report</title>
+                    <style>
+                        @page {
+                            size: landscape;
+                            margin: 1cm;
+                        }
+                        body {
+                            font-family: 'Courier New', Courier, monospace;
+                            margin: 0;
+                            padding: 20px;
+                            color: #000;
+                            font-size: 11px;
+                        }
+                        .print-container {
+                            max-width: 100%;
+                            margin: 0 auto;
+                        }
+                        .header {
+                            text-align: center;
+                            border-bottom: 2px solid #000;
+                            padding-bottom: 10px;
+                            margin-bottom: 20px;
+                        }
+                        .company-name {
+                            font-size: 22px;
+                            font-weight: bold;
+                        }
+                        .report-title {
+                            font-size: 16px;
+                            font-weight: bold;
+                            text-transform: uppercase;
+                        }
+                        .summary {
+                            display: flex;
+                            justify-content: space-between;
+                            margin-bottom: 20px;
+                            padding: 10px;
+                            border: 1px solid #000;
+                            background: #f9f9f9;
+                        }
+                        table {
+                            width: 100%;
+                            border-collapse: collapse;
+                            margin: 20px 0;
+                        }
+                        th {
+                            background: #e0e0e0;
+                            border: 1px solid #000;
+                            padding: 8px;
+                            text-align: left;
+                            font-weight: bold;
+                        }
+                        td {
+                            border: 1px solid #000;
+                            padding: 6px;
+                        }
+                        .total-row {
+                            font-weight: bold;
+                            background: #f0f0f0;
+                        }
+                        .footer {
+                            margin-top: 30px;
+                            text-align: center;
+                            font-size: 10px;
+                            border-top: 1px solid #000;
+                            padding-top: 10px;
+                        }
+                    </style>
+                </head>
+                <body>
+                    <div class="print-container">
+                        <div class="header">
+                            <div class="company-name">AMGC</div>
+                            <div class="report-title">SALES ORDERS REPORT</div>
+                        </div>
+                        
+                        <div class="summary">
+                            <div><strong>Total Orders:</strong> ${rows.length}</div>
+                            <div><strong>Report Date:</strong> ${new Date().toLocaleDateString()}</div>
+                            <div><strong>Report Time:</strong> ${new Date().toLocaleTimeString()}</div>
+                            <div><strong>Total Amount:</strong> ₱${totalAmount.toFixed(2)}</div>
+                        </div>
+                        
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Order #</th>
+                                    <th>Date</th>
+                                    <th>Customer</th>
+                                    <th style="text-align: center;">Items</th>
+                                    <th style="text-align: right;">Total Amount</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${tableRows}
+                                <tr class="total-row">
+                                    <td colspan="4" style="text-align: right;"><strong>GRAND TOTAL</strong></td>
+                                    <td style="text-align: right;"><strong>₱${totalAmount.toFixed(2)}</strong></td>
+                                    <td></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        
+                        <div class="footer">
+                            <div>Printed on: ${new Date().toLocaleString()}</div>
+                            <div style="margin-top: 5px;">Prepared by: ${document.querySelector('#userName')?.textContent || 'Sales Staff'}</div>
+                        </div>
+                    </div>
+                </body>
+                </html>
+            `;
+        }
+        
+        // Print from details modal
+        function printFromDetails() {
+            if (currentOrderId) {
+                printSingleOrder(currentOrderId);
+                bootstrap.Modal.getInstance(document.getElementById('orderDetailsModal')).hide();
+            }
+        }
+        
+        // Export to Excel - EXCEL FILE LANG, HINDI CSV
+        function exportToExcel() {
+            const rows = document.querySelectorAll('#ordersTable tbody tr');
+            const visibleRows = [];
+            
+            rows.forEach(row => {
+                if (!row.querySelector('td[colspan]') && row.style.display !== 'none') {
+                    visibleRows.push(row);
+                }
+            });
+            
+            if (visibleRows.length === 0) {
+                alert('No orders to export');
                 return;
             }
             
-            const btn = document.querySelector('#updateStatusModal .btn-success');
-            const originalText = btn.innerHTML;
-            btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Updating...';
-            btn.disabled = true;
+            // Create Excel HTML content
+            let excelContent = `
+                <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+                <head>
+                    <meta charset="UTF-8">
+                    <title>Sales Orders Export</title>
+                    <style>
+                        .title { font-size: 20px; font-weight: bold; }
+                        .header { background: #4e73df; color: white; }
+                        th { background: #4e73df; color: white; padding: 8px; }
+                        td { padding: 6px; border: 1px solid #ddd; }
+                    </style>
+                </head>
+                <body>
+                    <table border="1">
+                        <tr>
+                            <td colspan="6" style="font-size: 20px; font-weight: bold; text-align: center; background: #4e73df; color: white;">
+                                SALES ORDERS REPORT
+                            </td>
+                        </tr>
+                        <tr>
+                            <td colspan="6" style="text-align: center;">
+                                Export Date: ${new Date().toLocaleString()}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td colspan="6" style="text-align: center;">
+                                Total Orders: ${visibleRows.length} | Total Amount: ₱${calculateTotalAmount(visibleRows).toFixed(2)}
+                            </td>
+                        </tr>
+                        <tr></tr>
+                        <tr>
+                            <th>Order #</th>
+                            <th>Date</th>
+                            <th>Customer</th>
+                            <th>Items</th>
+                            <th>Total Amount</th>
+                            <th>Status</th>
+                        </tr>
+            `;
             
-            fetch('', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded',
-                },
-                body: `action=update_status&order_id=${orderId}&status=${newStatus}${notes ? '&notes=' + encodeURIComponent(notes) : ''}`
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    alert('Order status updated successfully!');
-                    location.reload();
-                } else {
-                    alert('Error: ' + data.message);
-                    btn.innerHTML = originalText;
-                    btn.disabled = false;
+            visibleRows.forEach(row => {
+                const cells = row.querySelectorAll('td');
+                if (cells.length >= 6) {
+                    excelContent += '<tr>';
+                    for (let i = 0; i < 6; i++) {
+                        let value = cells[i].textContent.trim();
+                        excelContent += `<td>${value}</td>`;
+                    }
+                    excelContent += '</tr>';
                 }
-            })
-            .catch(error => {
-                alert('Network error: ' + error.message);
-                btn.innerHTML = originalText;
-                btn.disabled = false;
             });
+            
+            excelContent += `
+                        <tr style="font-weight: bold; background: #f0f0f0;">
+                            <td colspan="4" style="text-align: right;">GRAND TOTAL</td>
+                            <td>₱${calculateTotalAmount(visibleRows).toFixed(2)}</td>
+                            <td></td>
+                        </tr>
+                    </table>
+                </body>
+                </html>
+            `;
+            
+            // Create Excel file
+            const blob = new Blob([excelContent], { 
+                type: 'application/vnd.ms-excel' 
+            });
+            
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            link.setAttribute('href', url);
+            link.setAttribute('download', 'sales_orders_' + new Date().toISOString().split('T')[0] + '.xls');
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
         }
         
-        // Print order
-        function printOrder(orderId) {
-            window.open(`print_order.php?id=${orderId}`, '_blank');
+        // Helper function to calculate total amount
+        function calculateTotalAmount(rows) {
+            let total = 0;
+            rows.forEach(row => {
+                const cells = row.querySelectorAll('td');
+                if (cells.length >= 6) {
+                    const amount = cells[4].textContent.trim();
+                    total += parseFloat(amount.replace('₱', '').replace(',', '')) || 0;
+                }
+            });
+            return total;
         }
     </script>
 </body>

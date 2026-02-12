@@ -12,7 +12,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $item_id = !empty($_POST['item_id']) ? (int)$_POST['item_id'] : null;
     $return_quantity = !empty($_POST['return_qty']) ? (int)$_POST['return_qty'] : 0;
     $reason = isset($_POST['return_reason']) ? trim($_POST['return_reason']) : 'other';
-    $status = isset($_POST['return_status']) ? trim($_POST['return_status']) : 'pending';
+    $status = 'pending'; // Force status to pending only
+    $so_id = !empty($_POST['so_id']) ? (int)$_POST['so_id'] : null;
     
     // Map reason to enum
     $reason_map = [
@@ -27,17 +28,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $reason_enum = $reason_map[$reason] ?? 'other';
     
     $rmr_number = 'RMR-' . date('Ymd') . '-' . time();
-    $so_id = 1; // Default, could be improved with order selection
     
     if ($customer_id && $item_id && $return_quantity > 0) {
         $sql = "INSERT INTO rmr_requests (rmr_number, so_id, customer_id, item_id, return_quantity, return_reason, reason_details, rmr_status)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
         $stmt = $conn->prepare($sql);
         $reason_details = 'Return via sales interface';
+        
         $stmt->bind_param('siiiisss', $rmr_number, $so_id, $customer_id, $item_id, $return_quantity, $reason_enum, $reason_details, $status);
         
         if ($stmt->execute()) {
             $success = 'Return request added successfully!';
+            // Redirect to refresh the page and show success message
+            header("Location: " . $_SERVER['PHP_SELF'] . "?success=1");
+            exit();
         } else {
             $error = 'Error adding return: ' . $stmt->error;
         }
@@ -46,12 +50,90 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
-// Get all returns
+// Handle Status Update via AJAX or Form
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_status') {
+    $rmr_id = isset($_POST['rmr_id']) ? (int)$_POST['rmr_id'] : 0;
+    $new_status = isset($_POST['status']) ? trim($_POST['status']) : '';
+    
+    if ($rmr_id > 0 && in_array($new_status, ['pending', 'approved', 'rejected', 'processing', 'completed'])) {
+        $update_sql = "UPDATE rmr_requests SET rmr_status = ? WHERE rmr_id = ?";
+        $update_stmt = $conn->prepare($update_sql);
+        $update_stmt->bind_param('si', $new_status, $rmr_id);
+        
+        if ($update_stmt->execute()) {
+            echo json_encode(['success' => true]);
+            exit();
+        } else {
+            echo json_encode(['success' => false, 'error' => $update_stmt->error]);
+            exit();
+        }
+    }
+}
+
+// Handle AJAX request to get SO details with customer info
+if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['action'] === 'get_so_details') {
+    $so_id = isset($_GET['so_id']) ? (int)$_GET['so_id'] : 0;
+    
+    if ($so_id > 0) {
+        // Join with customers table to get customer name
+        $query = "SELECT so.*, c.customer_id, c.customer_name 
+                  FROM sales_orders so
+                  JOIN customers c ON so.customer_id = c.customer_id
+                  WHERE so.so_id = ?";
+        $stmt = $conn->prepare($query);
+        $stmt->bind_param('i', $so_id);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $order = $result->fetch_assoc();
+        
+        // Get order items - Using quantity_ordered column
+        $items_query = "SELECT soi.*, i.item_id, i.item_code, i.item_name, i.unit_price 
+                       FROM sales_order_items soi
+                       JOIN items i ON soi.item_id = i.item_id
+                       WHERE soi.so_id = ?";
+        $items_stmt = $conn->prepare($items_query);
+        $items_stmt->bind_param('i', $so_id);
+        $items_stmt->execute();
+        $items_result = $items_stmt->get_result();
+        $items = [];
+        
+        if ($items_result) {
+            while ($item = $items_result->fetch_assoc()) {
+                // Use quantity_ordered as the column name
+                $ordered_qty = isset($item['quantity_ordered']) ? (int)$item['quantity_ordered'] : 0;
+                
+                $items[] = [
+                    'item_id' => $item['item_id'],
+                    'item_code' => $item['item_code'],
+                    'item_name' => $item['item_name'],
+                    'unit_price' => $item['unit_price'],
+                    'quantity' => $ordered_qty,
+                    'quantity_ordered' => $ordered_qty
+                ];
+            }
+        }
+        
+        header('Content-Type: application/json');
+        echo json_encode([
+            'success' => true,
+            'order' => $order,
+            'items' => $items
+        ]);
+        exit;
+    }
+    
+    header('Content-Type: application/json');
+    echo json_encode(['success' => false, 'message' => 'Invalid SO ID']);
+    exit;
+}
+
+// Get all returns with item price and SO number
 $returns = [];
-$query = "SELECT rmr.*, c.customer_name, i.item_name, i.item_code
+$query = "SELECT rmr.*, c.customer_name, i.item_name, i.item_code, i.unit_price, so.so_number
           FROM rmr_requests rmr
           JOIN customers c ON rmr.customer_id = c.customer_id
           JOIN items i ON rmr.item_id = i.item_id
+          LEFT JOIN sales_orders so ON rmr.so_id = so.so_id
           ORDER BY rmr.created_at DESC";
 $result = $conn->query($query);
 if ($result) {
@@ -68,7 +150,9 @@ $stats_query = "SELECT
                 SUM(CASE WHEN rmr_status = 'pending' THEN 1 ELSE 0 END) as pending,
                 SUM(CASE WHEN rmr_status = 'approved' THEN 1 ELSE 0 END) as approved,
                 SUM(CASE WHEN rmr_status = 'rejected' THEN 1 ELSE 0 END) as rejected,
-                COALESCE(SUM(CASE WHEN rmr_status = 'approved' THEN return_quantity * (SELECT unit_price FROM items WHERE item_id = rmr_requests.item_id) ELSE 0 END), 0) as total_refunds
+                SUM(CASE WHEN rmr_status = 'processing' THEN 1 ELSE 0 END) as processing,
+                SUM(CASE WHEN rmr_status = 'completed' THEN 1 ELSE 0 END) as completed,
+                COALESCE(SUM(CASE WHEN rmr_status IN ('approved', 'completed') THEN return_quantity * (SELECT unit_price FROM items WHERE item_id = rmr_requests.item_id) ELSE 0 END), 0) as total_refunds
                 FROM rmr_requests";
 $stats_result = $conn->query($stats_query);
 if ($stats_result) {
@@ -76,18 +160,31 @@ if ($stats_result) {
     $pending = $stats['pending'] ?? 0;
     $approved = $stats['approved'] ?? 0;
     $rejected = $stats['rejected'] ?? 0;
+    $processing = $stats['processing'] ?? 0;
+    $completed = $stats['completed'] ?? 0;
     $total_refunds = $stats['total_refunds'] ?? 0;
 }
 
-// Get customers and items for dropdowns
+// Get customers for dropdown (active customers only)
 $customers_result = $conn->query("SELECT customer_id, customer_name FROM customers WHERE status = 'active' ORDER BY customer_name");
 $customers = $customers_result ? $customers_result->fetch_all(MYSQLI_ASSOC) : [];
 
-$items_result = $conn->query("SELECT item_id, item_code, item_name, unit_price FROM items WHERE status = 'active' ORDER BY item_code");
-$items_list = $items_result ? $items_result->fetch_all(MYSQLI_ASSOC) : [];
+// Get sales orders with customer names from customers table
+$so_query = "SELECT so.so_id, so.so_number, so.customer_id, so.order_date, so.total_amount, c.customer_name
+             FROM sales_orders so
+             JOIN customers c ON so.customer_id = c.customer_id
+             WHERE order_status != 'cancelled'
+             ORDER BY so.created_at DESC LIMIT 100";
+$so_result = $conn->query($so_query);
+$sales_orders = $so_result ? $so_result->fetch_all(MYSQLI_ASSOC) : [];
 
-$error = '';
+// Check for success message from redirect
 $success = '';
+$error = '';
+
+if (isset($_GET['success']) && $_GET['success'] == 1) {
+    $success = 'Return request added successfully!';
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -101,7 +198,7 @@ $success = '';
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <style>
-        /* Mobile responsive adjustments ONLY - same as warehouse.php */
+        /* Mobile responsive adjustments */
         @media (max-width: 768px) {
             .stat-card {
                 padding: 12px;
@@ -122,8 +219,7 @@ $success = '';
                 font-size: 0.8rem;
             }
             
-            /* Make cards 2 columns on mobile */
-            .col-md-3 {
+            .col-md-2 {
                 width: 50%;
                 padding-left: 8px;
                 padding-right: 8px;
@@ -139,7 +235,6 @@ $success = '';
             }
         }
         
-        /* Extra small devices (phones, less than 576px) */
         @media (max-width: 576px) {
             .stat-card {
                 min-height: 80px;
@@ -159,7 +254,7 @@ $success = '';
                 font-size: 0.75rem;
             }
             
-            .col-md-3 {
+            .col-md-2 {
                 width: 50%;
                 padding-left: 6px;
                 padding-right: 6px;
@@ -169,6 +264,35 @@ $success = '';
                 margin-left: -6px;
                 margin-right: -6px;
             }
+        }
+        
+        .order-info-card {
+            background-color: #f8f9fa;
+            border-left: 4px solid #0d6efd;
+            border-radius: 4px;
+            padding: 15px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        
+        .order-info-card.show {
+            display: block;
+        }
+        
+        .product-select-group {
+            display: none;
+        }
+        
+        .product-select-group.show {
+            display: block;
+        }
+        
+        .customer-badge {
+            background-color: #e7f1ff;
+            color: #0d6efd;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.85rem;
         }
     </style>
 </head>
@@ -201,7 +325,7 @@ $success = '';
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link active" href="sales_order.php">
+                        <a class="nav-link" href="sales_order.php">
                             <i class="bi bi-list-check"></i>
                             <span class="nav-text">Sales Orders</span>
                         </a>
@@ -213,7 +337,7 @@ $success = '';
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="returnedmerchandise.php">
+                        <a class="nav-link active" href="returnedmerchandise.php">
                             <i class="bi bi-arrow-counterclockwise"></i>
                             <span class="nav-text">Returned Merchandise</span>
                         </a>
@@ -246,77 +370,89 @@ $success = '';
                 </div>
             </div>
 
-<!-- Messages -->
-<?php if (!empty($success)): ?>
-    <div class="alert alert-success alert-dismissible fade show" role="alert">
-        <i class="bi bi-check-circle"></i> <?php echo $success; ?>
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
-<?php endif; ?>
-<?php if (!empty($error)): ?>
-    <div class="alert alert-danger alert-dismissible fade show" role="alert">
-        <i class="bi bi-exclamation-triangle"></i> <?php echo $error; ?>
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    </div>
-<?php endif; ?>
+            <!-- Messages -->
+            <?php if (!empty($success)): ?>
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    <i class="bi bi-check-circle"></i> <?php echo $success; ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
+            <?php if (!empty($error)): ?>
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <i class="bi bi-exclamation-triangle"></i> <?php echo $error; ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
 
-<!-- Return Stats -->
-<div class="row g-3 mb-4">
-
-    <!-- Pending Requests -->
-    <div class="col-md-3 mb-3">
-        <div class="stat-card pending">
-            <div class="stat-icon">
-                <i class="bi bi-hourglass-split"></i>
+            <!-- Return Stats -->
+            <div class="row g-3 mb-4">
+                <div class="col-md-2 mb-3">
+                    <div class="stat-card pending">
+                        <div class="stat-icon">
+                            <i class="bi bi-hourglass-split"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value"><?php echo $pending; ?></div>
+                            <div class="stat-label">Pending</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2 mb-3">
+                    <div class="stat-card processing">
+                        <div class="stat-icon">
+                            <i class="bi bi-gear"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value"><?php echo $processing; ?></div>
+                            <div class="stat-label">Processing</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2 mb-3">
+                    <div class="stat-card complete">
+                        <div class="stat-icon">
+                            <i class="bi bi-check-circle"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value"><?php echo $approved; ?></div>
+                            <div class="stat-label">Approved</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2 mb-3">
+                    <div class="stat-card complete">
+                        <div class="stat-icon">
+                            <i class="bi bi-check-circle-fill"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value"><?php echo $completed; ?></div>
+                            <div class="stat-label">Completed</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2 mb-3">
+                    <div class="stat-card sales">
+                        <div class="stat-icon">
+                            <i class="bi bi-x-circle"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value"><?php echo $rejected; ?></div>
+                            <div class="stat-label">Rejected</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-2 mb-3">
+                    <div class="stat-card inventory">
+                        <div class="stat-icon">
+                            <i class="bi bi-cash-coin"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value">₱<?php echo number_format($total_refunds, 2); ?></div>
+                            <div class="stat-label">Total Refunds</div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div>
-                <div class="stat-value"><?php echo $pending; ?></div>
-                <div class="stat-label">Pending Requests</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Approved -->
-    <div class="col-md-3 mb-3">
-        <div class="stat-card complete">
-            <div class="stat-icon">
-                <i class="bi bi-check-circle"></i>
-            </div>
-            <div>
-                <div class="stat-value"><?php echo $approved; ?></div>
-                <div class="stat-label">Approved</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Rejected -->
-    <div class="col-md-3 mb-3">
-        <div class="stat-card sales">
-            <div class="stat-icon">
-                <i class="bi bi-x-circle"></i>
-            </div>
-            <div>
-                <div class="stat-value"><?php echo $rejected; ?></div>
-                <div class="stat-label">Rejected</div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Total Refunds -->
-    <div class="col-md-3 mb-3">
-        <div class="stat-card inventory">
-            <div class="stat-icon">
-                <i class="bi bi-cash-coin"></i>
-            </div>
-            <div>
-                <div class="stat-value">₱<?php echo number_format($total_refunds, 2); ?></div>
-                <div class="stat-label">Total Refunds</div>
-            </div>
-        </div>
-    </div>
-
-</div>
-
 
             <!-- Search and Filter with Add Button -->
             <div class="card mb-4">
@@ -333,10 +469,11 @@ $success = '';
                         <div class="col-md-4">
                             <select class="form-select" id="statusFilter">
                                 <option value="">All Status</option>
-                                <option value="Pending">Pending</option>
-                                <option value="Approved">Approved</option>
-                                <option value="Rejected">Rejected</option>
-                                <option value="Completed">Completed</option>
+                                <option value="pending">Pending</option>
+                                <option value="processing">Processing</option>
+                                <option value="approved">Approved</option>
+                                <option value="rejected">Rejected</option>
+                                <option value="completed">Completed</option>
                             </select>
                         </div>
                         <div class="col-md-2">
@@ -355,6 +492,7 @@ $success = '';
                         <thead class="table-light">
                             <tr>
                                 <th>Return ID</th>
+                                <th>SO Number</th>
                                 <th>Customer</th>
                                 <th>Product</th>
                                 <th>Qty</th>
@@ -371,46 +509,61 @@ $success = '';
                                     <?php
                                         $status_badge = match($return['rmr_status']) {
                                             'pending' => 'bg-warning',
-                                            'approved' => 'bg-success',
-                                            'rejected' => 'bg-danger',
                                             'processing' => 'bg-info',
+                                            'approved' => 'bg-success',
+                                            'completed' => 'bg-success',
+                                            'rejected' => 'bg-danger',
                                             default => 'bg-light'
                                         };
                                         $status_label = ucfirst($return['rmr_status']);
                                         $refund_amount = $return['return_quantity'] * ($return['unit_price'] ?? 0);
                                     ?>
-                                <tr>
-                                    <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($return['rmr_number']); ?></span></td>
-                                    <td><?php echo htmlspecialchars($return['customer_name']); ?></td>
-                                    <td><?php echo htmlspecialchars($return['item_name']); ?></td>
-                                    <td><?php echo $return['return_quantity']; ?></td>
-                                    <td><?php echo htmlspecialchars($return['return_reason']); ?></td>
-                                    <td><?php echo date('Y-m-d', strtotime($return['created_at'])); ?></td>
-                                    <td><span class="badge <?php echo $status_badge; ?>"><?php echo $status_label; ?></span></td>
-                                    <td>₱<?php echo number_format($refund_amount, 2); ?></td>
-                                    <td>
-                                        <?php if ($return['rmr_status'] === 'pending'): ?>
-                                            <button class="btn btn-sm btn-success" title="Approve" onclick="updateStatus(this, '<?php echo $return['rmr_id']; ?>', 'approved')">
-                                                <i class="bi bi-check-lg"></i>
-                                            </button>
-                                            <button class="btn btn-sm btn-danger" title="Reject" onclick="updateStatus(this, '<?php echo $return['rmr_id']; ?>', 'rejected')">
-                                                <i class="bi bi-x-lg"></i>
-                                            </button>
-                                        <?php else: ?>
-                                            <button class="btn btn-sm btn-info" title="View Details">
-                                                <i class="bi bi-eye"></i>
-                                            </button>
-                                        <?php endif; ?>
-                                    </td>
-                                </tr>
+                                    <tr>
+                                        <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($return['rmr_number']); ?></span></td>
+                                        <td><?php echo htmlspecialchars($return['so_number'] ?? 'N/A'); ?></td>
+                                        <td><?php echo htmlspecialchars($return['customer_name']); ?></td>
+                                        <td><?php echo htmlspecialchars($return['item_name']); ?></td>
+                                        <td><?php echo $return['return_quantity']; ?></td>
+                                        <td><?php echo htmlspecialchars($return['return_reason']); ?></td>
+                                        <td><?php echo date('Y-m-d', strtotime($return['created_at'])); ?></td>
+                                        <td><span class="badge <?php echo $status_badge; ?>"><?php echo $status_label; ?></span></td>
+                                        <td>₱<?php echo number_format($refund_amount, 2); ?></td>
+                                        <td>
+                                            <div class="btn-group btn-group-sm">
+                                                <?php if ($return['rmr_status'] === 'pending'): ?>
+                                                    <button class="btn btn-success" title="Approve" onclick="updateStatus(<?php echo $return['rmr_id']; ?>, 'approved')">
+                                                        <i class="bi bi-check-lg"></i>
+                                                    </button>
+                                                    <button class="btn btn-danger" title="Reject" onclick="updateStatus(<?php echo $return['rmr_id']; ?>, 'rejected')">
+                                                        <i class="bi bi-x-lg"></i>
+                                                    </button>
+                                                    <button class="btn btn-info" title="Process" onclick="updateStatus(<?php echo $return['rmr_id']; ?>, 'processing')">
+                                                        <i class="bi bi-gear"></i>
+                                                    </button>
+                                                <?php elseif ($return['rmr_status'] === 'processing'): ?>
+                                                    <button class="btn btn-success" title="Approve" onclick="updateStatus(<?php echo $return['rmr_id']; ?>, 'approved')">
+                                                        <i class="bi bi-check-lg"></i>
+                                                    </button>
+                                                    <button class="btn btn-danger" title="Reject" onclick="updateStatus(<?php echo $return['rmr_id']; ?>, 'rejected')">
+                                                        <i class="bi bi-x-lg"></i>
+                                                    </button>
+                                                    <button class="btn btn-primary" title="Complete" onclick="updateStatus(<?php echo $return['rmr_id']; ?>, 'completed')">
+                                                        <i class="bi bi-check-circle-fill"></i>
+                                                    </button>
+                                                <?php elseif ($return['rmr_status'] === 'approved'): ?>
+                                                    <button class="btn btn-primary" title="Complete" onclick="updateStatus(<?php echo $return['rmr_id']; ?>, 'completed')">
+                                                        <i class="bi bi-check-circle-fill"></i>
+                                                    </button>
+                                                <?php endif; ?>
+                                            </div>
+                                        </td>
+                                    </tr>
                                 <?php endforeach; ?>
                             <?php else: ?>
                                 <tr>
-                                    <td colspan="9" class="text-center text-muted py-4">No returns found</td>
+                                    <td colspan="10" class="text-center text-muted py-4">No returns found</td>
                                 </tr>
                             <?php endif; ?>
-                        </tbody>
-
                         </tbody>
                     </table>
                 </div>
@@ -419,41 +572,86 @@ $success = '';
     </div>
 
     <!-- Add Return Modal -->
-    <div class="modal fade" id="addReturnModal" tabindex="-1">
-        <div class="modal-dialog">
+    <div class="modal fade" id="addReturnModal" tabindex="-1" data-bs-backdrop="static">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Add New Return Request</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <form id="addReturnForm" method="POST">
+                    <form id="addReturnForm" method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>">
                         <input type="hidden" name="action" value="add_return">
-                        <div class="mb-3">
-                            <label class="form-label">Customer *</label>
-                            <select class="form-select" name="customer_id" required>
-                                <option value="">-- Select Customer --</option>
-                                <?php foreach ($customers as $customer): ?>
-                                    <option value="<?php echo $customer['customer_id']; ?>"><?php echo htmlspecialchars($customer['customer_name']); ?></option>
+                        
+                        <!-- Sales Order Selection - Required to Auto Fill -->
+                        <div class="mb-4">
+                            <label class="form-label fw-bold">Select Sales Order *</label>
+                            <select class="form-select" name="so_id" id="so_id" required>
+                                <option value="">-- Select Sales Order to Auto Fill Details --</option>
+                                <?php foreach ($sales_orders as $order): ?>
+                                    <option value="<?php echo $order['so_id']; ?>" 
+                                            data-customer-id="<?php echo $order['customer_id']; ?>"
+                                            data-customer-name="<?php echo htmlspecialchars($order['customer_name']); ?>"
+                                            data-order-date="<?php echo $order['order_date']; ?>"
+                                            data-total="<?php echo $order['total_amount']; ?>">
+                                        <?php 
+                                        echo htmlspecialchars(
+                                            $order['so_number'] . ' - ' . 
+                                            $order['customer_name'] . ' - ' . 
+                                            date('Y-m-d', strtotime($order['order_date'])) . ' - ' .
+                                            '₱' . number_format($order['total_amount'], 2)
+                                        ); 
+                                        ?>
+                                    </option>
                                 <?php endforeach; ?>
                             </select>
+                            <small class="text-muted">Select a sales order to automatically fill customer and product details</small>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label">Product *</label>
-                            <select class="form-select" name="item_id" required>
-                                <option value="">-- Select Product --</option>
-                                <?php foreach ($items_list as $item): ?>
-                                    <option value="<?php echo $item['item_id']; ?>"><?php echo htmlspecialchars($item['item_code'] . ' - ' . $item['item_name']); ?></option>
-                                <?php endforeach; ?>
+
+                        <!-- Order Information Card - Auto-filled from customers table -->
+                        <div class="order-info-card" id="orderInfoCard">
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <h6 class="fw-bold">Order Information</h6>
+                                    <p class="mb-1"><strong>SO Number:</strong> <span id="display_so_number"></span></p>
+                                    <p class="mb-1"><strong>Order Date:</strong> <span id="display_order_date"></span></p>
+                                    <p class="mb-1"><strong>Total Amount:</strong> ₱<span id="display_total_amount"></span></p>
+                                </div>
+                                <div class="col-md-6">
+                                    <h6 class="fw-bold">Customer Information</h6>
+                                    <p class="mb-1"><strong>Name:</strong> <span id="display_customer_name" class="customer-badge"></span></p>
+                                    <input type="hidden" name="customer_id" id="customer_id">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Product Selection - Auto-filled from SO -->
+                        <div class="mb-3 product-select-group" id="productSelectGroup">
+                            <label class="form-label fw-bold">Product to Return *</label>
+                            <select class="form-select" name="item_id" id="item_id" required disabled>
+                                <option value="">-- Select Product from Order --</option>
                             </select>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label">Quantity *</label>
-                            <input type="number" class="form-control" name="return_qty" required min="1" placeholder="Qty">
+
+                        <!-- Quantity and Reason - User Input -->
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-bold">Return Quantity *</label>
+                                <input type="number" class="form-control" name="return_qty" id="return_qty" required min="1" placeholder="Enter quantity to return" disabled>
+                                <small class="text-muted" id="max_qty_hint"></small>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label fw-bold">Estimated Refund</label>
+                                <div class="input-group">
+                                    <span class="input-group-text">₱</span>
+                                    <input type="text" class="form-control" id="estimated_refund" readonly value="0.00">
+                                </div>
+                            </div>
                         </div>
+
                         <div class="mb-3">
-                            <label class="form-label">Reason for Return *</label>
-                            <select class="form-select" name="return_reason" required>
+                            <label class="form-label fw-bold">Reason for Return *</label>
+                            <select class="form-select" name="return_reason" id="return_reason" required disabled>
                                 <option value="">-- Select Reason --</option>
                                 <option value="Defective unit">Defective unit</option>
                                 <option value="Wrong Item">Wrong Item</option>
@@ -464,20 +662,16 @@ $success = '';
                                 <option value="Overstock">Overstock</option>
                             </select>
                         </div>
-                        <div class="mb-3">
-                            <label class="form-label">Status</label>
-                            <select class="form-select" name="return_status">
-                                <option value="pending" selected>Pending</option>
-                                <option value="approved">Approved</option>
-                                <option value="rejected">Rejected</option>
-                                <option value="processing">Processing</option>
-                            </select>
-                        </div>
+
+                        <!-- Status - Hidden and always pending -->
+                        <input type="hidden" name="return_status" value="pending">
                     </form>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="document.getElementById('addReturnForm').submit()">Add Return</button>
+                    <button type="button" class="btn btn-primary" id="submitReturnBtn" disabled onclick="document.getElementById('addReturnForm').submit();">
+                        Add Return Request
+                    </button>
                 </div>
             </div>
         </div>
@@ -491,10 +685,190 @@ $success = '';
             document.getElementById('sidebar').classList.toggle('show');
         });
 
-        // Update return status (placeholder for future implementation)
-        function updateStatus(button, rmrId, newStatus) {
-            console.log('Update return ' + rmrId + ' to status: ' + newStatus);
-            // This would typically send an AJAX request to update the database
+        // SO Selection Change - Auto Fill Everything using customers table
+        document.getElementById('so_id').addEventListener('change', function() {
+            const soId = this.value;
+            
+            if (soId) {
+                // Get selected option data
+                const selectedOption = this.options[this.selectedIndex];
+                const customerId = selectedOption.dataset.customerId;
+                const customerName = selectedOption.dataset.customerName;
+                const orderDate = selectedOption.dataset.orderDate;
+                const totalAmount = selectedOption.dataset.total;
+                const soNumber = selectedOption.text.split(' - ')[0];
+                
+                // Fill customer info from customers table
+                document.getElementById('customer_id').value = customerId;
+                document.getElementById('display_customer_name').textContent = customerName;
+                document.getElementById('display_so_number').textContent = soNumber;
+                document.getElementById('display_order_date').textContent = orderDate;
+                document.getElementById('display_total_amount').textContent = parseFloat(totalAmount).toFixed(2);
+                
+                // Show order info card
+                document.getElementById('orderInfoCard').classList.add('show');
+                
+                // Show loading indicator
+                document.getElementById('productSelectGroup').classList.add('show');
+                const productSelect = document.getElementById('item_id');
+                productSelect.innerHTML = '<option value="">Loading products...</option>';
+                productSelect.disabled = true;
+                
+                // Disable submit button while loading
+                document.getElementById('submitReturnBtn').disabled = true;
+                
+                // Fetch order items via AJAX
+                fetch(`<?php echo $_SERVER['PHP_SELF']; ?>?action=get_so_details&so_id=${soId}`)
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
+                        }
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (data.success) {
+                            // Populate product dropdown
+                            productSelect.innerHTML = '<option value="">-- Select Product from Order --</option>';
+                            
+                            if (data.items && data.items.length > 0) {
+                                data.items.forEach(item => {
+                                    const option = document.createElement('option');
+                                    option.value = item.item_id;
+                                    option.textContent = `${item.item_code} - ${item.item_name} (Ordered: ${item.quantity_ordered || item.quantity || 0}, Price: ₱${parseFloat(item.unit_price).toFixed(2)})`;
+                                    option.dataset.price = item.unit_price;
+                                    option.dataset.maxQty = item.quantity_ordered || item.quantity || 0;
+                                    productSelect.appendChild(option);
+                                });
+                                
+                                // Enable form fields
+                                productSelect.disabled = false;
+                                document.getElementById('return_qty').disabled = false;
+                                document.getElementById('return_reason').disabled = false;
+                            } else {
+                                productSelect.innerHTML = '<option value="">No products found in this order</option>';
+                                productSelect.disabled = true;
+                            }
+                        } else {
+                            productSelect.innerHTML = '<option value="">Error loading products</option>';
+                            productSelect.disabled = true;
+                            alert('Error: ' + (data.message || 'Failed to load order details'));
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error fetching order details:', error);
+                        productSelect.innerHTML = '<option value="">Error loading products</option>';
+                        productSelect.disabled = true;
+                        alert('Error loading order details. Please try again.');
+                    });
+            } else {
+                // Reset form
+                resetReturnForm();
+            }
+        });
+
+        // Product Selection Change
+        document.getElementById('item_id').addEventListener('change', function() {
+            if (this.value && this.options[this.selectedIndex].dataset.maxQty) {
+                const selectedOption = this.options[this.selectedIndex];
+                const maxQty = parseInt(selectedOption.dataset.maxQty) || 0;
+                const price = parseFloat(selectedOption.dataset.price) || 0;
+                
+                // Set max quantity
+                const qtyInput = document.getElementById('return_qty');
+                qtyInput.max = maxQty;
+                qtyInput.placeholder = `Max: ${maxQty}`;
+                
+                // Show max quantity hint
+                document.getElementById('max_qty_hint').innerHTML = `<span class="text-primary">Maximum return quantity: ${maxQty}</span>`;
+                
+                // Clear previous quantity
+                qtyInput.value = '';
+                
+                // Enable submit button
+                document.getElementById('submitReturnBtn').disabled = false;
+                
+                // Reset refund
+                document.getElementById('estimated_refund').value = '0.00';
+            } else {
+                document.getElementById('submitReturnBtn').disabled = true;
+                document.getElementById('max_qty_hint').innerHTML = '';
+            }
+        });
+
+        // Quantity Input Change
+        document.getElementById('return_qty').addEventListener('input', calculateRefund);
+
+        // Calculate estimated refund amount
+        function calculateRefund() {
+            const productSelect = document.getElementById('item_id');
+            const quantity = parseInt(document.getElementById('return_qty').value) || 0;
+            
+            if (productSelect.selectedIndex > 0 && productSelect.options[productSelect.selectedIndex].dataset.price) {
+                const selectedOption = productSelect.options[productSelect.selectedIndex];
+                const price = parseFloat(selectedOption.dataset.price) || 0;
+                const maxQty = parseInt(selectedOption.dataset.maxQty) || 0;
+                
+                // Validate quantity
+                if (quantity > maxQty) {
+                    document.getElementById('return_qty').value = maxQty;
+                    document.getElementById('estimated_refund').value = (price * maxQty).toFixed(2);
+                    alert(`Maximum return quantity is ${maxQty}`);
+                } else {
+                    const refund = price * quantity;
+                    document.getElementById('estimated_refund').value = refund.toFixed(2);
+                }
+            }
+        }
+
+        // Reset return form
+        function resetReturnForm() {
+            document.getElementById('orderInfoCard').classList.remove('show');
+            document.getElementById('productSelectGroup').classList.remove('show');
+            
+            document.getElementById('customer_id').value = '';
+            document.getElementById('display_customer_name').textContent = '';
+            document.getElementById('display_so_number').textContent = '';
+            document.getElementById('display_order_date').textContent = '';
+            document.getElementById('display_total_amount').textContent = '';
+            
+            const productSelect = document.getElementById('item_id');
+            productSelect.innerHTML = '<option value="">-- Select Product from Order --</option>';
+            productSelect.disabled = true;
+            
+            document.getElementById('return_qty').value = '';
+            document.getElementById('return_qty').disabled = true;
+            document.getElementById('return_reason').disabled = true;
+            document.getElementById('return_reason').value = '';
+            document.getElementById('estimated_refund').value = '0.00';
+            document.getElementById('max_qty_hint').innerHTML = '';
+            document.getElementById('submitReturnBtn').disabled = true;
+        }
+
+        // Update return status
+        function updateStatus(rmrId, newStatus) {
+            if (confirm('Are you sure you want to update this return status to ' + newStatus + '?')) {
+                const formData = new FormData();
+                formData.append('action', 'update_status');
+                formData.append('rmr_id', rmrId);
+                formData.append('status', newStatus);
+                
+                fetch(window.location.href, {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        window.location.reload();
+                    } else {
+                        alert('Error updating status: ' + (data.error || 'Unknown error'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error updating status. Please try again.');
+                });
+            }
         }
 
         // Search functionality
@@ -514,8 +888,10 @@ $success = '';
             const rows = document.querySelectorAll('tbody tr');
             
             rows.forEach(row => {
-                const status = row.cells[6].textContent.toLowerCase();
-                row.style.display = (filter === '' || status.includes(filter)) ? '' : 'none';
+                if (row.cells.length > 1) {
+                    const status = row.cells[7].textContent.toLowerCase();
+                    row.style.display = (filter === '' || status.includes(filter)) ? '' : 'none';
+                }
             });
         });
 
@@ -525,6 +901,19 @@ $success = '';
                 let alertInstance = new bootstrap.Alert(alert);
                 alertInstance.close();
             }, 5000);
+        });
+
+        // Reset form when modal is closed
+        document.getElementById('addReturnModal').addEventListener('hidden.bs.modal', function() {
+            document.getElementById('so_id').value = '';
+            resetReturnForm();
+        });
+
+        // Prevent double form submission
+        document.getElementById('addReturnForm').addEventListener('submit', function() {
+            const submitBtn = document.getElementById('submitReturnBtn');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Submitting...';
         });
     </script>
 </body>

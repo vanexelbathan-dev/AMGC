@@ -20,7 +20,7 @@ $sql = "SELECT
             c.email,
             c.phone_number,
             c.address,
-            u.user_id as created_by
+            u.first_name as created_by
         FROM sales_orders so
         LEFT JOIN customers c ON so.customer_id = c.customer_id
         LEFT JOIN users u ON so.created_by = u.user_id
@@ -58,70 +58,111 @@ $items = $items_result->fetch_all(MYSQLI_ASSOC);
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Order <?php echo $order['so_number']; ?> - Print</title>
     <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'Arial', 'Helvetica', sans-serif;
             margin: 20px;
             color: #333;
+            background-color: #fff;
         }
         
         .print-container {
-            max-width: 800px;
+            max-width: 900px;
             margin: 0 auto;
-            border: 1px solid #ddd;
-            padding: 30px;
+            padding: 40px;
             background: white;
         }
         
         .header {
             text-align: center;
-            margin-bottom: 30px;
-            padding-bottom: 20px;
-            border-bottom: 2px solid #333;
+            margin-bottom: 40px;
+            padding-bottom: 25px;
+            border-bottom: 2px solid #000;
         }
         
         .company-name {
-            font-size: 24px;
+            font-size: 32px;
             font-weight: bold;
-            color: #2c3e50;
+            color: #000;
+            margin-bottom: 10px;
+            letter-spacing: 2px;
+        }
+        
+        .document-type {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: #333;
+            font-weight: normal;
         }
         
         .order-title {
-            font-size: 20px;
-            margin: 20px 0;
-            color: #2c3e50;
+            font-size: 16px;
+            margin: 30px 0 10px 0;
+            color: #000;
+            font-weight: bold;
         }
         
         .info-section {
-            margin-bottom: 30px;
+            margin-bottom: 25px;
+        }
+        
+        .info-section h4 {
+            font-size: 12px;
+            font-weight: bold;
+            text-transform: uppercase;
+            color: #000;
+            margin-bottom: 12px;
+            padding-bottom: 5px;
+            border-bottom: 1px solid #000;
         }
         
         .info-row {
             display: flex;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
+            align-items: flex-start;
+            font-size: 12px;
         }
         
         .info-label {
             font-weight: bold;
-            min-width: 150px;
+            min-width: 130px;
+            color: #000;
+        }
+        
+        .info-value {
+            flex: 1;
+            color: #333;
         }
         
         .items-table {
             width: 100%;
             border-collapse: collapse;
             margin: 20px 0;
+            font-size: 11px;
         }
         
         .items-table th {
-            background-color: #f8f9fa;
-            border: 1px solid #dee2e6;
+            background: #f5f5f5;
+            color: #000;
+            border: 1px solid #000;
             padding: 10px;
             text-align: left;
             font-weight: bold;
         }
         
         .items-table td {
-            border: 1px solid #dee2e6;
+            border: 1px solid #ccc;
             padding: 10px;
+        }
+        
+        .items-table tbody tr {
+            background-color: #fff;
         }
         
         .text-right {
@@ -129,61 +170,78 @@ $items = $items_result->fetch_all(MYSQLI_ASSOC);
         }
         
         .total-section {
-            margin-top: 20px;
-            padding-top: 20px;
-            border-top: 2px solid #333;
+            margin-top: 25px;
+            padding: 15px;
+            background: #f5f5f5;
+            border: 1px solid #ccc;
         }
         
         .total-row {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 10px;
-            font-size: 16px;
+            margin-bottom: 8px;
+            font-size: 12px;
+        }
+        
+        .subtotal-label {
+            font-weight: normal;
         }
         
         .grand-total {
-            font-size: 20px;
+            font-size: 14px;
             font-weight: bold;
-            color: #28a745;
+            color: #000;
+            border-top: 1px solid #000;
+            padding-top: 10px;
+            margin-top: 10px;
         }
         
         .footer {
             margin-top: 50px;
-            padding-top: 20px;
-            border-top: 1px solid #ddd;
+            padding-top: 15px;
+            border-top: 1px solid #ccc;
             text-align: center;
             color: #666;
-            font-size: 12px;
+            font-size: 10px;
         }
         
         .status-badge {
             display: inline-block;
-            padding: 4px 12px;
-            border-radius: 20px;
+            padding: 3px 8px;
+            border: 1px solid #000;
             font-weight: bold;
             text-transform: uppercase;
-            font-size: 12px;
+            font-size: 10px;
+            letter-spacing: 0.5px;
+            background: #fff;
         }
         
-        .status-pending { background: #fff3cd; color: #856404; }
-        .status-processing { background: #cce5ff; color: #004085; }
-        .status-shipped { background: #d1ecf1; color: #0c5460; }
-        .status-delivered { background: #d4edda; color: #155724; }
-        .status-cancelled { background: #f8d7da; color: #721c24; }
+        .notes-section {
+            margin-top: 20px;
+            padding: 12px;
+            background-color: #f9f9f9;
+            border-left: 2px solid #000;
+        }
+        
+        .notes-section h4 {
+            border-bottom: none;
+            margin-bottom: 8px;
+            color: #000;
+        }
         
         @media print {
             body {
                 margin: 0;
                 padding: 0;
+                background-color: white;
             }
             
             .print-container {
-                border: none;
                 padding: 0;
             }
             
             .no-print {
-                display: none;
+                display: none !important;
             }
         }
     </style>
@@ -191,8 +249,8 @@ $items = $items_result->fetch_all(MYSQLI_ASSOC);
 <body>
     <div class="print-container">
         <div class="header">
-            <div class="company-name">Your Company Name</div>
-            <div>Sales Order</div>
+            <div class="company-name">AMGC</div>
+            <div class="document-type">Sales Order</div>
         </div>
         
         <div class="order-title">
@@ -202,51 +260,50 @@ $items = $items_result->fetch_all(MYSQLI_ASSOC);
         <div class="info-section">
             <div class="info-row">
                 <div class="info-label">Order Date:</div>
-                <div><?php echo date('F d, Y h:i A', strtotime($order['order_date'])); ?></div>
+                <div class="info-value"><?php echo date('F d, Y', strtotime($order['order_date'])); ?></div>
             </div>
             <div class="info-row">
                 <div class="info-label">Status:</div>
-                <div>
-                    <span class="status-badge status-<?php echo $order['order_status']; ?>">
-                        <?php echo ucfirst($order['order_status']); ?>
+                <div class="info-value">
+                    <span class="status-badge">
+                        <?php echo strtoupper($order['order_status']); ?>
                     </span>
                 </div>
             </div>
             <div class="info-row">
-                <div class="info-label">Created By:</div>
-                <div><?php echo htmlspecialchars($order['created_by']); ?></div>
+                <div class="info-label">Prepared By:</div>
+                <div class="info-value"><?php echo htmlspecialchars($order['created_by']); ?></div>
             </div>
         </div>
         
         <div class="info-section">
-            <h4>Customer Information</h4>
+            <h4>Bill To</h4>
             <div class="info-row">
-                <div class="info-label">Customer Name:</div>
-                <div><?php echo htmlspecialchars($order['customer_name']); ?></div>
+                <div class="info-label">Name:</div>
+                <div class="info-value"><?php echo htmlspecialchars($order['customer_name']); ?></div>
             </div>
             <div class="info-row">
                 <div class="info-label">Email:</div>
-                <div><?php echo htmlspecialchars($order['email']); ?></div>
+                <div class="info-value"><?php echo htmlspecialchars($order['email']); ?></div>
             </div>
             <div class="info-row">
                 <div class="info-label">Phone:</div>
-                <div><?php echo htmlspecialchars($order['phone_number']); ?></div>
+                <div class="info-value"><?php echo htmlspecialchars($order['phone_number']); ?></div>
             </div>
             <div class="info-row">
                 <div class="info-label">Address:</div>
-                <div><?php echo htmlspecialchars($order['address']); ?></div>
+                <div class="info-value"><?php echo htmlspecialchars($order['address']); ?></div>
             </div>
         </div>
         
-        <h4>Order Items</h4>
         <table class="items-table">
             <thead>
                 <tr>
-                    <th>Product</th>
-                    <th>SKU</th>
-                    <th class="text-right">Quantity</th>
-                    <th class="text-right">Unit Price</th>
-                    <th class="text-right">Total</th>
+                    <th style="width: 40%;">Product</th>
+                    <th style="width: 15%;">SKU</th>
+                    <th style="width: 15%;" class="text-right">Quantity</th>
+                    <th style="width: 15%;" class="text-right">Unit Price</th>
+                    <th style="width: 15%;" class="text-right">Amount</th>
                 </tr>
             </thead>
             <tbody>
@@ -263,30 +320,30 @@ $items = $items_result->fetch_all(MYSQLI_ASSOC);
         </table>
         
         <div class="total-section">
-            <div class="total-row grand-total">
-                <span>Grand Total:</span>
-                <span>₱<?php echo number_format($order['total_amount'], 2); ?></span>
+            <div class="total-row">
+                <span style="font-weight: bold;">Total Amount:</span>
+                <span style="font-weight: bold;">₱<?php echo number_format($order['total_amount'], 2); ?></span>
             </div>
         </div>
         
         <?php if (!empty($order['notes'])): ?>
-        <div class="info-section">
+        <div class="notes-section">
             <h4>Notes</h4>
             <p><?php echo nl2br(htmlspecialchars($order['notes'])); ?></p>
         </div>
         <?php endif; ?>
         
         <div class="footer">
-            <p>This is a computer-generated document. No signature required.</p>
-            <p>Printed on: <?php echo date('F d, Y h:i A'); ?></p>
+            This is a computer-generated document.
+            <br/>Printed on: <?php echo date('F d, Y H:i', strtotime(date('Y-m-d H:i:s'))); ?>
         </div>
     </div>
     
     <div class="no-print" style="text-align: center; margin-top: 20px;">
-        <button onclick="window.print()" class="btn btn-primary">
+        <button onclick="window.print()" class="btn btn-primary" style="padding: 8px 16px; margin-right: 10px;">
             <i class="bi bi-printer"></i> Print
         </button>
-        <button onclick="window.close()" class="btn btn-secondary">
+        <button onclick="window.close()" class="btn btn-secondary" style="padding: 8px 16px;">
             <i class="bi bi-x-circle"></i> Close
         </button>
     </div>
