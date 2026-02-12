@@ -144,6 +144,8 @@ if ($result) {
 $pending = 0;
 $approved = 0;
 $rejected = 0;
+$processing = 0;
+$completed = 0;
 $total_refunds = 0;
 
 $stats_query = "SELECT 
@@ -152,8 +154,9 @@ $stats_query = "SELECT
                 SUM(CASE WHEN rmr_status = 'rejected' THEN 1 ELSE 0 END) as rejected,
                 SUM(CASE WHEN rmr_status = 'processing' THEN 1 ELSE 0 END) as processing,
                 SUM(CASE WHEN rmr_status = 'completed' THEN 1 ELSE 0 END) as completed,
-                COALESCE(SUM(CASE WHEN rmr_status IN ('approved', 'completed') THEN return_quantity * (SELECT unit_price FROM items WHERE item_id = rmr_requests.item_id) ELSE 0 END), 0) as total_refunds
-                FROM rmr_requests";
+                COALESCE(SUM(CASE WHEN rmr_status IN ('approved', 'completed') THEN return_quantity * i.unit_price ELSE 0 END), 0) as total_refunds
+                FROM rmr_requests
+                LEFT JOIN items i ON rmr_requests.item_id = i.item_id";
 $stats_result = $conn->query($stats_query);
 if ($stats_result) {
     $stats = $stats_result->fetch_assoc();
@@ -500,7 +503,7 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                                 <th>Request Date</th>
                                 <th>Status</th>
                                 <th>Refund Amount</th>
-                                <th>Action</th>
+                                <!-- <th>Action</th> -->
                             </tr>
                         </thead>
                         <tbody>
@@ -528,7 +531,7 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                                         <td><?php echo date('Y-m-d', strtotime($return['created_at'])); ?></td>
                                         <td><span class="badge <?php echo $status_badge; ?>"><?php echo $status_label; ?></span></td>
                                         <td>₱<?php echo number_format($refund_amount, 2); ?></td>
-                                        <td>
+                                        <!-- <td>
                                             <div class="btn-group btn-group-sm">
                                                 <?php if ($return['rmr_status'] === 'pending'): ?>
                                                     <button class="btn btn-success" title="Approve" onclick="updateStatus(<?php echo $return['rmr_id']; ?>, 'approved')">
@@ -556,12 +559,12 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                                                     </button>
                                                 <?php endif; ?>
                                             </div>
-                                        </td>
+                                        </td> -->
                                     </tr>
                                 <?php endforeach; ?>
                             <?php else: ?>
                                 <tr>
-                                    <td colspan="10" class="text-center text-muted py-4">No returns found</td>
+                                    <td colspan="9" class="text-center text-muted py-4">No returns found</td>
                                 </tr>
                             <?php endif; ?>
                         </tbody>
@@ -844,7 +847,7 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
             document.getElementById('submitReturnBtn').disabled = true;
         }
 
-        // Update return status
+        // Update return status - Kept for AJAX functionality but not used in UI
         function updateStatus(rmrId, newStatus) {
             if (confirm('Are you sure you want to update this return status to ' + newStatus + '?')) {
                 const formData = new FormData();
