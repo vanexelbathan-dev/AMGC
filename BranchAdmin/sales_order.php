@@ -1,5 +1,38 @@
 <?php
 require_once '../config/database.php';
+require_once '../config/session_handler.php';
+
+// Get current user info and branch context
+$user_id = $_SESSION['user_id'] ?? 0;
+$user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Branch Admin';
+$user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'branch_admin';
+$branch_id = $_SESSION['branch_id'] ?? 0;
+$view_all_branches = $_SESSION['view_all_branches'] ?? false;
+
+// Check if branch_id column exists in sales_orders table
+$so_branch_column_exists = false;
+$check_column = $conn->query("SHOW COLUMNS FROM sales_orders LIKE 'branch_id'");
+if ($check_column && $check_column->num_rows > 0) {
+    $so_branch_column_exists = true;
+}
+
+// Check if branch_id column exists in customers table
+$customers_branch_column_exists = false;
+$check_customers_column = $conn->query("SHOW COLUMNS FROM customers LIKE 'branch_id'");
+if ($check_customers_column && $check_customers_column->num_rows > 0) {
+    $customers_branch_column_exists = true;
+}
+
+// Determine branch filter condition
+$branch_condition = "";
+if ($so_branch_column_exists && !$view_all_branches) {
+    $branch_condition = "AND so.branch_id = $branch_id";
+}
+
+$customers_branch_condition = "";
+if ($customers_branch_column_exists && !$view_all_branches) {
+    $customers_branch_condition = "AND branch_id = $branch_id";
+}
 
 // ========== HANDLE AJAX REQUESTS ==========
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
@@ -15,6 +48,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $order_status = $_POST['order_status'];
             $total_amount = (float)$_POST['total_amount'];
             
+            // Get the old status to check if it's being confirmed
+            $status_query = "SELECT order_status, customer_id, branch_id, so_number FROM sales_orders WHERE so_id = ?";
+            $status_stmt = $conn->prepare($status_query);
+            $status_stmt->bind_param("i", $so_id);
+            $status_stmt->execute();
+            $order_info = $status_stmt->get_result()->fetch_assoc();
+            $old_status = $order_info['order_status'];
+            
+            // Verify order belongs to user's branch
+            if ($so_branch_column_exists && !$view_all_branches) {
+                $check_query = "SELECT so_id FROM sales_orders WHERE so_id = ? AND branch_id = ?";
+                $check_stmt = $conn->prepare($check_query);
+                $check_stmt->bind_param("ii", $so_id, $branch_id);
+                $check_stmt->execute();
+                $check_result = $check_stmt->get_result();
+                
+                if ($check_result->num_rows === 0) {
+                    throw new Exception('Order not found or access denied');
+                }
+            }
+            
             $update_query = "UPDATE sales_orders 
                            SET order_date = ?, order_status = ?, total_amount = ?, updated_at = NOW() 
                            WHERE so_id = ?";
@@ -23,6 +77,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             
             if (!$update_stmt->execute()) {
                 throw new Exception('Failed to update sales order');
+            }
+            
+            // GENERATE PICK LIST, INVOICE, AND TRIP TICKET WHEN ORDER IS CONFIRMED
+            if ($order_status === 'confirmed' && $old_status !== 'confirmed') {
+                
+                // 1. CREATE PICK LIST
+                $pick_list_number = 'PL-' . date('Ymd') . '-' . str_pad($so_id, 5, '0', STR_PAD_LEFT);
+                $picklist_query = "INSERT INTO pick_lists (pick_list_number, so_id, branch_id, status, created_at) 
+                                  VALUES (?, ?, ?, 'pending', NOW())";
+                $picklist_stmt = $conn->prepare($picklist_query);
+                $picklist_stmt->bind_param("sii", $pick_list_number, $so_id, $branch_id);
+                
+                if (!$picklist_stmt->execute()) {
+                    throw new Exception('Failed to create pick list');
+                }
+                $picklist_id = $conn->insert_id;
+                
+                // ADD ITEMS TO PICK LIST
+                $items_query = "SELECT item_id, quantity_ordered FROM sales_order_items WHERE so_id = ?";
+                $items_stmt = $conn->prepare($items_query);
+                $items_stmt->bind_param("i", $so_id);
+                $items_stmt->execute();
+                $items_result = $items_stmt->get_result();
+                
+                $pick_items_query = "INSERT INTO pick_list_items (picklist_id, item_id, quantity) VALUES (?, ?, ?)";
+                $pick_items_stmt = $conn->prepare($pick_items_query);
+                
+                while ($item = $items_result->fetch_assoc()) {
+                    $pick_items_stmt->bind_param("iii", $picklist_id, $item['item_id'], $item['quantity_ordered']);
+                    $pick_items_stmt->execute();
+                }
+                
+                // 2. SKIP INVOICE CREATION - No relationship exists yet
+                // Just create a placeholder in session or log
+                
+                // 3. CREATE TRIP TICKET
+                $trip_trip_number = 'TT-' . date('Ymd') . '-' . str_pad($so_id, 5, '0', STR_PAD_LEFT);
+                $branch_to_use = ($so_branch_column_exists && !$view_all_branches) ? $branch_id : $order_info['branch_id'];
+                
+                $trip_ticket_query = "INSERT INTO trip_tickets (trip_number, so_id, picklist_id, branch_id, status, created_at) 
+                                     VALUES (?, ?, ?, ?, 'pending', NOW())";
+                $trip_ticket_stmt = $conn->prepare($trip_ticket_query);
+                $trip_ticket_stmt->bind_param("siii", $trip_trip_number, $so_id, $picklist_id, $branch_to_use);
+                
+                if (!$trip_ticket_stmt->execute()) {
+                    throw new Exception('Failed to create trip ticket');
+                }
+                
+                $conn->commit();
+                
+                echo json_encode([
+                    'success' => true,
+                    'message' => 'Order confirmed successfully! Pick List and Trip Ticket have been generated. (Invoice creation skipped - no relationship exists)',
+                    'generated_docs' => [
+                        'picklist' => $pick_list_number,
+                        'invoice' => 'Not Generated',
+                        'trip_ticket' => $trip_trip_number
+                    ]
+                ]);
+                exit;
             }
             
             $conn->commit();
@@ -38,6 +152,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         elseif ($_POST['action'] === 'delete_order') {
             $so_id = (int)$_POST['so_id'];
             
+            // Verify order belongs to user's branch
+            if ($so_branch_column_exists && !$view_all_branches) {
+                $check_query = "SELECT so_id FROM sales_orders WHERE so_id = ? AND branch_id = ?";
+                $check_stmt = $conn->prepare($check_query);
+                $check_stmt->bind_param("ii", $so_id, $branch_id);
+                $check_stmt->execute();
+                $check_result = $check_stmt->get_result();
+                
+                if ($check_result->num_rows === 0) {
+                    throw new Exception('Order not found or access denied');
+                }
+            }
+            
             // Check if order has related records
             $check_picklist_query = "SELECT COUNT(*) as count FROM pick_lists WHERE so_id = ?";
             $check_picklist_stmt = $conn->prepare($check_picklist_query);
@@ -47,6 +174,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             
             if ($picklist_count > 0) {
                 throw new Exception('Cannot delete order with existing pick lists');
+            }
+            
+            // Skip invoice check - no relationship exists
+            
+            // Check for trip tickets
+            $check_trip_query = "SELECT COUNT(*) as count FROM trip_tickets WHERE so_id = ?";
+            $check_trip_stmt = $conn->prepare($check_trip_query);
+            $check_trip_stmt->bind_param("i", $so_id);
+            $check_trip_stmt->execute();
+            $trip_count = $check_trip_stmt->get_result()->fetch_assoc()['count'];
+            
+            if ($trip_count > 0) {
+                throw new Exception('Cannot delete order with existing trip tickets');
             }
             
             // Delete order items first
@@ -77,21 +217,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         elseif ($_POST['action'] === 'get_order') {
             $so_id = (int)$_POST['so_id'];
             
+            // Add branch filter if needed
             $query = "
                 SELECT 
                     so.*,
                     c.customer_name,
                     c.customer_id,
+                    c.address,
+                    c.phone_number as contact_number,
+                    c.email,
+                    b.branch_name,
                     COUNT(soi.so_item_id) as total_items,
                     SUM(soi.quantity_ordered) as total_quantity
                 FROM sales_orders so
                 JOIN customers c ON so.customer_id = c.customer_id
+                LEFT JOIN branches b ON so.branch_id = b.branch_id
                 LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
                 WHERE so.so_id = ?
-                GROUP BY so.so_id
             ";
-            $stmt = $conn->prepare($query);
-            $stmt->bind_param("i", $so_id);
+            
+            if ($so_branch_column_exists && !$view_all_branches) {
+                $query .= " AND so.branch_id = ?";
+                $stmt = $conn->prepare($query);
+                $stmt->bind_param("ii", $so_id, $branch_id);
+            } else {
+                $stmt = $conn->prepare($query);
+                $stmt->bind_param("i", $so_id);
+            }
+            
             $stmt->execute();
             $result = $stmt->get_result();
             $order = $result->fetch_assoc();
@@ -103,7 +256,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         soi.*,
                         i.item_code,
                         i.item_name,
-                        i.unit_type
+                        i.unit_type,
+                        i.branch_id as item_branch_id
                     FROM sales_order_items soi
                     JOIN items i ON soi.item_id = i.item_id
                     WHERE soi.so_id = ?
@@ -114,14 +268,101 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $items_result = $items_stmt->get_result();
                 $items = $items_result->fetch_all(MYSQLI_ASSOC);
                 
+                // Get generated documents
+                $docs_query = "
+                    SELECT 
+                        (SELECT pick_list_number FROM pick_lists WHERE so_id = ? LIMIT 1) as pick_list_number,
+                        (SELECT trip_number FROM trip_tickets WHERE so_id = ? LIMIT 1) as trip_trip_number
+                ";
+                $docs_stmt = $conn->prepare($docs_query);
+                $docs_stmt->bind_param("ii", $so_id, $so_id);
+                $docs_stmt->execute();
+                $documents = $docs_stmt->get_result()->fetch_assoc();
+                
+                // No invoice data - relationship doesn't exist
+                
                 echo json_encode([
                     'success' => true,
                     'order' => $order,
-                    'items' => $items
+                    'items' => $items,
+                    'documents' => $documents,
+                    'invoice' => null
                 ]);
             } else {
                 throw new Exception('Sales order not found');
             }
+            exit;
+        }
+        
+        // PRINT SALES ORDER
+        elseif ($_POST['action'] === 'print_order') {
+            $so_id = (int)$_POST['so_id'];
+            
+            $query = "
+                SELECT 
+                    so.*,
+                    c.customer_name,
+                    c.address,
+                    c.phone_number as contact_number,
+                    c.email,
+                    b.branch_name,
+                    b.address as branch_address,
+                    b.contact_number as branch_contact,
+                    b.email as branch_email,
+                    COUNT(soi.so_item_id) as total_items,
+                    SUM(soi.quantity_ordered) as total_quantity
+                FROM sales_orders so
+                JOIN customers c ON so.customer_id = c.customer_id
+                LEFT JOIN branches b ON so.branch_id = b.branch_id
+                LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
+                WHERE so.so_id = ?
+                GROUP BY so.so_id
+            ";
+            
+            $stmt = $conn->prepare($query);
+            $stmt->bind_param("i", $so_id);
+            $stmt->execute();
+            $order = $stmt->get_result()->fetch_assoc();
+            
+            // Get items
+            $items_query = "
+                SELECT 
+                    soi.*,
+                    i.item_code,
+                    i.item_name,
+                    i.unit_type
+                FROM sales_order_items soi
+                JOIN items i ON soi.item_id = i.item_id
+                WHERE soi.so_id = ?
+            ";
+            $items_stmt = $conn->prepare($items_query);
+            $items_stmt->bind_param("i", $so_id);
+            $items_stmt->execute();
+            $items = $items_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            
+            echo json_encode([
+                'success' => true,
+                'order' => $order,
+                'items' => $items
+            ]);
+            exit;
+        }
+        
+        // GET INVOICE DETAILS - DISABLED (no relationship)
+        elseif ($_POST['action'] === 'get_invoice') {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Invoice functionality not available. Please run SQL to add relationship: ALTER TABLE invoices ADD COLUMN so_id INT NULL;'
+            ]);
+            exit;
+        }
+        
+        // UPDATE INVOICE STATUS - DISABLED (no relationship)
+        elseif ($_POST['action'] === 'update_invoice_status') {
+            echo json_encode([
+                'success' => false,
+                'message' => 'Invoice functionality not available'
+            ]);
             exit;
         }
         
@@ -135,7 +376,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 
-// FETCH SALES ORDERS WITH CUSTOMER AND ITEM COUNTS
+// FETCH SALES ORDERS WITH CUSTOMER AND ITEM COUNTS - NO INVOICE JOIN
 $sales_query = "
     SELECT 
         so.so_id,
@@ -143,18 +384,33 @@ $sales_query = "
         so.order_date,
         so.total_amount,
         so.order_status,
+        so.branch_id,
         c.customer_name,
         c.customer_id,
+        b.branch_name,
         COUNT(soi.so_item_id) as total_items,
         SUM(soi.quantity_ordered) as total_quantity
     FROM sales_orders so
     JOIN customers c ON so.customer_id = c.customer_id
+    LEFT JOIN branches b ON so.branch_id = b.branch_id
     LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
+    WHERE 1=1
+    $branch_condition
     GROUP BY so.so_id
     ORDER BY so.order_date DESC, so.so_id DESC
 ";
 $sales_result = $conn->query($sales_query);
+if (!$sales_result) {
+    die("Query failed: " . $conn->error);
+}
 $sales_orders = $sales_result->fetch_all(MYSQLI_ASSOC);
+
+// No invoice data - set to null for all orders
+foreach ($sales_orders as &$order) {
+    $order['invoice_number'] = null;
+    $order['invoice_status'] = null;
+}
+unset($order);
 
 // CALCULATE STATISTICS FROM REAL DATA
 $total_orders = count($sales_orders);
@@ -170,8 +426,8 @@ $statPendingOrders = $pending_orders;
 $statForDelivery = $ready_orders;
 $statCompletedOrders = $delivered_orders;
 
-// Get unique customers for filter
-$customers_query = "SELECT customer_id, customer_name FROM customers WHERE status = 'active' ORDER BY customer_name";
+// Get unique customers for filter - branch-specific
+$customers_query = "SELECT customer_id, customer_name FROM customers WHERE status = 'active' $customers_branch_condition ORDER BY customer_name";
 $customers_result = $conn->query($customers_query);
 $customers = $customers_result->fetch_all(MYSQLI_ASSOC);
 
@@ -200,9 +456,8 @@ function getOrderStatusText($status) {
     };
 }
 
-// Payment status derived from order status
+// Payment status - simplified (no invoice)
 function getPaymentStatus($order_status) {
-    if ($order_status === 'delivered') return ['status' => 'Paid', 'class' => 'badge-success'];
     if ($order_status === 'cancelled') return ['status' => 'Cancelled', 'class' => 'badge-danger'];
     return ['status' => 'Pending', 'class' => 'badge-warning'];
 }
@@ -224,7 +479,7 @@ function formatDateTime($dateStr) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sales Orders</title>
+    <title>Sales Orders - Branch Admin</title>
     <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
     <link rel="shortcut icon" href="../Pictures/favicon.ico" />
@@ -240,9 +495,188 @@ function formatDateTime($dateStr) {
     <!-- SweetAlert2 -->
     <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    
+    <style media="print">
+        @page {
+            size: A4;
+            margin: 0.5in;
+        }
+        body {
+            background-color: white;
+            font-family: Arial, Helvetica, sans-serif;
+            color: black;
+            margin: 0;
+            padding: 0;
+        }
+        .sidebar, .navbar-top, .footer, .action-buttons, 
+        .btn, .table-header .btn, .form-card, 
+        .mobile-menu-btn, #desktopToggleBtn, .sidebar-footer,
+        .stat-card, .alert, .page-title p, .badge, .branch-badge,
+        .modal, .data-table .table-header button {
+            display: none !important;
+        }
+        .main-content {
+            margin-left: 0 !important;
+            padding: 0 !important;
+            width: 100% !important;
+        }
+        #dashboardContent {
+            display: block !important;
+        }
+        .data-table {
+            box-shadow: none !important;
+            border: 1px solid #ddd !important;
+            padding: 20px !important;
+            margin: 0 !important;
+        }
+        .custom-table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+        }
+        .custom-table th {
+            background-color: #f0f0f0 !important;
+            color: black !important;
+            font-weight: bold !important;
+            border: 1px solid #333 !important;
+            padding: 10px !important;
+        }
+        .custom-table td {
+            border: 1px solid #ddd !important;
+            padding: 8px !important;
+        }
+        .page-title h2 {
+            color: black !important;
+            margin-bottom: 20px !important;
+            display: block !important;
+            font-size: 24px !important;
+        }
+        .page-title h2 i {
+            display: none !important;
+        }
+        .row.g-3.mb-4 {
+            display: none !important;
+        }
+        #dashboardContent:before {
+            content: "AMGC Branch System";
+            display: block;
+            font-size: 28px;
+            font-weight: bold;
+            color: #333;
+            text-align: center;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #333;
+            padding-bottom: 10px;
+        }
+        #dashboardContent:after {
+            content: "Sales Orders Report - " attr(data-print-date);
+            display: block;
+            font-size: 14px;
+            color: #666;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .text-end {
+            text-align: right !important;
+        }
+        .text-center {
+            text-align: center !important;
+        }
+    </style>
+    
+    <style>
+        .branch-badge {
+            background-color: #e7f1ff;
+            color: #0d6efd;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 5px;
+        }
+        .alert-info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        .alert-info code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 4px;
+            color: #c7254e;
+        }
+        @media (max-width: 768px) {
+            .stat-card {
+                padding: 12px;
+                min-height: 85px;
+                margin-bottom: 8px;
+            }
+            .stat-icon {
+                font-size: 2rem;
+                margin-right: 12px;
+            }
+            .stat-value {
+                font-size: 1.5rem;
+            }
+            .stat-label {
+                font-size: 0.8rem;
+            }
+            .col-md-3, .col-md-4, .col-md-5, .col-md-6 {
+                width: 50%;
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+            .row.g-3 {
+                margin-left: -8px;
+                margin-right: -8px;
+            }
+        }
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        .document-notification {
+            animation: slideIn 0.5s ease-out;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: 20px;
+        }
+        .print-order-btn {
+            transition: all 0.3s ease;
+        }
+        .print-order-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .invoice-badge {
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            margin-left: 5px;
+        }
+        .db-fix-card {
+            background: #fff3cd;
+            border: 1px solid #ffe69c;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .db-fix-card pre {
+            background: #212529;
+            color: #fff;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+    </style>
 </head>
 <body>
-    <!-- MAIN APPLICATION -->
     <div id="appPage">
         <!-- Sidebar -->
         <div class="sidebar" id="sidebar">
@@ -297,13 +731,11 @@ function formatDateTime($dateStr) {
                     <hr class="sidebar-divider">
                 </ul>
             </div>
-            <!-- User Profile Section at the bottom of sidebar -->
             <div class="sidebar-footer">
                 <div class="user-profile-sidebar">
-                    <div class="user-avatar-sidebar">AD</div>
+                    <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
                     <div class="user-details-sidebar">
-                        <span class="user-name-sidebar">Quality Control</span>
-                        <span class="user-role-sidebar">QC Officer</span>
+                        <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
                     </div>
                 </div>
                 
@@ -316,28 +748,104 @@ function formatDateTime($dateStr) {
 
         <!-- Main Content -->
         <div class="main-content" id="mainContent">
-            <!-- SALES ORDER CONTENT -->
-            <div id="dashboardContent" class="page-content active">
+            <div id="dashboardContent" class="page-content active" data-print-date="<?php echo date('F d, Y H:i:s'); ?>">
                 <div class="navbar-top">
-                    <!-- MOBILE MENU BUTTON -->
                     <button class="mobile-menu-btn" id="mobileMenuBtn">
                         <i class="bi bi-list"></i>
                     </button>
                     
                     <div class="page-title">
                         <h2><i class="bi bi-bag me-2"></i>Sales Orders</h2>
-                        <p id="dashboardSubtitle">Manage and track all sales orders</p>
+                        <p id="dashboardSubtitle">
+                            Manage and track all sales orders
+                        </p>
                     </div>
                 </div>
 
-                <!-- Quick Stats - REAL DATA FROM DATABASE -->
+                <!-- Database Fix Alert - INVOICES TABLE NEEDS FIXING -->
+                <div class="db-fix-card">
+                    <div class="d-flex align-items-center mb-3">
+                        <i class="bi bi-database fs-1 me-3 text-warning"></i>
+                        <div>
+                            <h4 class="mb-1 text-warning">Database Relationship Missing</h4>
+                            <p class="mb-0 text-muted">The invoices table doesn't have a column linking to sales_orders.</p>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-8">
+                            <p class="fw-bold mb-2">Run this SQL in phpMyAdmin to fix:</p>
+                            <pre class="mb-3"><code>ALTER TABLE invoices ADD COLUMN so_id INT NULL;
+ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</code></pre>
+                        </div>
+                        <div class="col-md-4 d-flex align-items-center">
+                            <button class="btn btn-warning w-100" onclick="copyFixSQL()">
+                                <i class="bi bi-files me-2"></i>Copy SQL
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="alert alert-info mt-3 mb-0">
+                        <i class="bi bi-info-circle me-2"></i>
+                        <strong>Workaround Mode:</strong> Invoice features are currently disabled. The system will work normally for sales orders, pick lists, and trip tickets.
+                    </div>
+                </div>
+
+                <!-- Branch Info Alerts -->
+                <?php if (!$so_branch_column_exists): ?>
+                    <div class="alert alert-info alert-dismissible fade show" role="alert">
+                        <i class="bi bi-info-circle"></i> 
+                        <strong>Branch filtering for sales orders not yet set up.</strong> Run this SQL:
+                        <br><br>
+                        <code>ALTER TABLE sales_orders ADD COLUMN branch_id INT NULL;</code>
+                        <br>
+                        <code>ALTER TABLE sales_orders ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
+                        <br><br>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('sales_orders')">
+                            <i class="bi bi-files"></i> Copy SQL
+                        </button>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <?php endif; ?>
+
+                <?php if (!$customers_branch_column_exists): ?>
+                    <div class="alert alert-info alert-dismissible fade show" role="alert">
+                        <i class="bi bi-info-circle"></i> 
+                        <strong>Branch filtering for customers not yet set up.</strong> Run this SQL:
+                        <br><br>
+                        <code>ALTER TABLE customers ADD COLUMN branch_id INT NULL;</code>
+                        <br>
+                        <code>ALTER TABLE customers ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
+                        <br><br>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('customers')">
+                            <i class="bi bi-files"></i> Copy SQL
+                        </button>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <?php endif; ?>
+
+                <!-- No Orders Warning -->
+                <?php if (empty($sales_orders) && $so_branch_column_exists && !$view_all_branches): ?>
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i> 
+                        No sales orders found for your branch.
+                    </div>
+                <?php endif; ?>
+
+                <!-- Quick Stats -->
                 <div class="row g-3 mb-4">
                     <div class="col-md-3">
                         <div class="stat-card total">
                             <i class="bi bi-cart-check stat-icon"></i>
                             <div class="stat-value"><?= $statTotalOrders ?></div>
                             <div class="stat-label">Total Orders</div>
-                            <small class="d-block mt-2">All time sales orders</small>
+                            <small class="d-block mt-2">
+                                <?php if ($so_branch_column_exists && !$view_all_branches): ?>
+                                    Your branch
+                                <?php else: ?>
+                                    All time sales orders
+                                <?php endif; ?>
+                            </small>
                         </div>
                     </div>
                     <div class="col-md-3">
@@ -366,7 +874,7 @@ function formatDateTime($dateStr) {
                     </div>
                 </div>
 
-                <!-- Search and Filter - AUTO FILTER ON CHANGE -->
+                <!-- Search and Filter -->
                 <div class="row g-3 mb-4">
                     <div class="col-12">
                         <div class="form-card">
@@ -403,11 +911,14 @@ function formatDateTime($dateStr) {
                     </div>
                 </div>
 
-                <!-- Sales Orders Table - REAL DATA FROM DATABASE -->
+                <!-- Sales Orders Table -->
                 <div class="data-table">
                     <div class="table-header d-flex justify-content-between align-items-center">
                         <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>Sales Orders</h5>
-                        <div class="d-flex gap-2">
+                        <div class="d-flex gap-2 align-items-center">
+                            <?php if ($so_branch_column_exists && $view_all_branches): ?>
+                                <span class="badge bg-success">All Branches</span>
+                            <?php endif; ?>
                             <span class="text-muted me-2">Total: ₱<?= number_format(array_sum(array_column($sales_orders, 'total_amount')), 2) ?></span>
                             <button class="btn btn-sm btn-outline-primary" onclick="printReport()">
                                 <i class="bi bi-printer me-1"></i> Print
@@ -424,9 +935,13 @@ function formatDateTime($dateStr) {
                                     <th>Order No.</th>
                                     <th>Date</th>
                                     <th>Customer</th>
+                                    <?php if ($so_branch_column_exists && $view_all_branches): ?>
+                                        <th>Branch</th>
+                                    <?php endif; ?>
                                     <th>Items</th>
                                     <th>Qty</th>
                                     <th>Total Amount</th>
+                                    <th>Invoice</th>
                                     <th>Payment Status</th>
                                     <th>Order Status</th>
                                     <th>Actions</th>
@@ -435,7 +950,7 @@ function formatDateTime($dateStr) {
                             <tbody id="salesOrdersTableBody">
                                 <?php if (empty($sales_orders)): ?>
                                 <tr>
-                                    <td colspan="9" class="text-center py-4">
+                                    <td colspan="<?= ($so_branch_column_exists && $view_all_branches) ? '11' : '10' ?>" class="text-center py-4">
                                         <i class="bi bi-inbox fs-1 d-block text-muted mb-2"></i>
                                         <p class="text-muted mb-0">No sales orders found</p>
                                     </td>
@@ -456,9 +971,19 @@ function formatDateTime($dateStr) {
                                         <td><strong><?= htmlspecialchars($order['so_number']) ?></strong></td>
                                         <td><?= formatDate($order['order_date']) ?></td>
                                         <td><?= htmlspecialchars($order['customer_name']) ?></td>
+                                        <?php if ($so_branch_column_exists && $view_all_branches): ?>
+                                            <td>
+                                                <span class="badge bg-info">
+                                                    <?= htmlspecialchars($order['branch_name'] ?? 'Branch ' . $order['branch_id']) ?>
+                                                </span>
+                                            </td>
+                                        <?php endif; ?>
                                         <td class="text-center"><?= $order['total_items'] ?? 0 ?></td>
                                         <td class="text-center"><?= $order['total_quantity'] ?? 0 ?></td>
                                         <td class="text-end">₱<?= number_format($order['total_amount'] ?? 0, 2) ?></td>
+                                        <td>
+                                            <span class="badge bg-secondary">No Invoice</span>
+                                        </td>
                                         <td>
                                             <span class="badge <?= $payment['class'] ?>"><?= $payment['status'] ?></span>
                                         </td>
@@ -472,12 +997,20 @@ function formatDateTime($dateStr) {
                                                 <button class="btn btn-sm btn-outline-primary" onclick="viewOrder(<?= $order['so_id'] ?>)" title="View">
                                                     <i class="bi bi-eye"></i>
                                                 </button>
-                                                <button class="btn btn-sm btn-outline-warning" onclick="editOrder(<?= $order['so_id'] ?>)" title="Edit">
-                                                    <i class="bi bi-pencil"></i>
-                                                </button>
-                                                <button class="btn btn-sm btn-outline-danger" onclick="deleteOrder(<?= $order['so_id'] ?>)" title="Delete">
-                                                    <i class="bi bi-trash"></i>
-                                                </button>
+                                                <?php if ($order['order_status'] == 'pending'): ?>
+                                                    <button class="btn btn-sm btn-outline-warning" onclick="editOrder(<?= $order['so_id'] ?>)" title="Edit">
+                                                        <i class="bi bi-pencil"></i>
+                                                    </button>
+                                                <?php elseif (in_array($order['order_status'], ['confirmed', 'processing', 'ready', 'delivered'])): ?>
+                                                    <button class="btn btn-sm btn-outline-success" onclick="printOrder(<?= $order['so_id'] ?>)" title="Print Order">
+                                                        <i class="bi bi-printer"></i>
+                                                    </button>
+                                                <?php endif; ?>
+                                                <?php if ($order['order_status'] == 'pending'): ?>
+                                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteOrder(<?= $order['so_id'] ?>)" title="Delete">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                <?php endif; ?>
                                             </div>
                                         </td>
                                     </tr>
@@ -501,11 +1034,12 @@ function formatDateTime($dateStr) {
                 </div>
                 <div class="modal-body">
                     <div id="viewOrderContent">
-                        <!-- Content will be populated by JavaScript -->
+                        <!-- Content populated by JavaScript -->
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" onclick="printOrder(currentOrderId)" id="printOrderBtn">Print Order</button>
                     <button type="button" class="btn btn-warning" onclick="editFromView()" id="editFromViewBtn">Edit Order</button>
                 </div>
             </div>
@@ -523,6 +1057,10 @@ function formatDateTime($dateStr) {
                 <div class="modal-body">
                     <form id="editOrderForm">
                         <input type="hidden" id="editOrderId">
+                        <?php if ($so_branch_column_exists && !$view_all_branches): ?>
+                            <input type="hidden" name="branch_id" value="<?= $branch_id ?>">
+                        <?php endif; ?>
+                        
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label for="editOrderNumber" class="form-label">Order Number</label>
@@ -540,12 +1078,9 @@ function formatDateTime($dateStr) {
                                 <label for="editOrderStatus" class="form-label">Order Status *</label>
                                 <select class="form-select" id="editOrderStatus" required>
                                     <option value="pending">Pending</option>
-                                    <option value="confirmed">Confirmed</option>
-                                    <option value="processing">Processing</option>
-                                    <option value="ready">For Delivery</option>
-                                    <option value="delivered">Delivered</option>
-                                    <option value="cancelled">Cancelled</option>
+                                    <option value="confirmed">Confirm Order (Generate Documents)</option>
                                 </select>
+                                <small class="text-muted">Confirming will generate Pick List and Trip Ticket</small>
                             </div>
                             <div class="col-md-4">
                                 <label for="editTotalItems" class="form-label">Items</label>
@@ -594,12 +1129,36 @@ function formatDateTime($dateStr) {
         </div>
     </div>
 
+    <!-- PRINT PREVIEW MODAL -->
+    <div class="modal fade" id="printPreviewModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title"><i class="bi bi-printer me-2"></i>Print Sales Order</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="printPreviewContent" class="print-preview"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" onclick="executePrint()">
+                        <i class="bi bi-printer"></i> Print
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     
     <script>
     // ========== GLOBAL VARIABLES ==========
     let currentOrderId = null;
+    const branchId = <?php echo $branch_id; ?>;
+    const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
+    const soBranchColumnExists = <?php echo $so_branch_column_exists ? 'true' : 'false'; ?>;
     
     // ========== SIDEBAR FUNCTIONS ==========
     function toggleSidebar() {
@@ -657,10 +1216,8 @@ function formatDateTime($dateStr) {
         });
     }
 
-    // ========== SALES ORDER FUNCTIONS ==========
+    // ========== DOM READY ==========
     document.addEventListener('DOMContentLoaded', function() {
-        console.log("Sales Orders - Live Database Mode");
-        
         initializeSidebar();
         
         // Mobile menu toggle
@@ -695,25 +1252,9 @@ function formatDateTime($dateStr) {
                 if (window.innerWidth <= 992) closeMobileSidebar();
             });
         });
-
-        document.addEventListener('click', function(event) {
-            const sidebar = document.getElementById('sidebar');
-            const mobileBtn = document.getElementById('mobileMenuBtn');
-            const overlay = document.querySelector('.sidebar-overlay');
-            const isMobile = window.innerWidth <= 992;
-            
-            if (isMobile && sidebar.classList.contains('active') && 
-                !sidebar.contains(event.target) && 
-                !mobileBtn.contains(event.target) &&
-                !overlay?.contains(event.target)) {
-                closeMobileSidebar();
-            }
-        });
     });
 
-    // ========== MODAL FUNCTIONS ==========
-    
-    // View Order
+    // ========== VIEW ORDER ==========
     function viewOrder(id) {
         showLoading();
         
@@ -732,8 +1273,8 @@ function formatDateTime($dateStr) {
             if (data.success) {
                 const order = data.order;
                 const items = data.items;
+                const documents = data.documents || {};
                 
-                // Format date
                 const orderDate = new Date(order.order_date);
                 const formattedDate = orderDate.toLocaleDateString('en-US', {
                     year: 'numeric',
@@ -743,24 +1284,36 @@ function formatDateTime($dateStr) {
                 
                 const statusBadge = getStatusBadge(order.order_status);
                 const statusText = getStatusText(order.order_status);
-                const paymentStatus = getPaymentStatusText(order.order_status);
-                const paymentClass = getPaymentStatusClass(order.order_status);
                 
                 // Build items table
                 let itemsHtml = '';
                 if (items && items.length > 0) {
-                    itemsHtml = '<h6 class="mt-4 mb-3">Order Items</h6><div class="table-responsive"><table class="table table-sm table-bordered"><thead><tr><th>Item Code</th><th>Item Name</th><th>Quantity</th><th>Unit Price</th><th>Subtotal</th></tr></thead><tbody>';
+                    itemsHtml = '<h6 class="mt-4 mb-3 fw-bold">Order Items</h6><div class="table-responsive"><table class="table table-sm table-bordered"><thead class="table-light"><tr><th>Item Code</th><th>Item Name</th><th>Quantity</th><th>Unit Price</th><th>Subtotal</th></tr></thead><tbody>';
                     items.forEach(item => {
                         const subtotal = item.quantity_ordered * item.unit_price;
                         itemsHtml += `<tr>
                             <td>${item.item_code}</td>
                             <td>${item.item_name}</td>
-                            <td class="text-center">${item.quantity_ordered}</td>
+                            <td class="text-center">${item.quantity_ordered} ${item.unit_type || ''}</td>
                             <td class="text-end">₱${Number(item.unit_price).toFixed(2)}</td>
                             <td class="text-end">₱${Number(subtotal).toFixed(2)}</td>
                         </tr>`;
                     });
                     itemsHtml += '</tbody></table></div>';
+                }
+                
+                // Build documents section
+                let documentsHtml = '';
+                if (order.order_status === 'confirmed' || order.order_status === 'processing' || 
+                    order.order_status === 'ready' || order.order_status === 'delivered') {
+                    documentsHtml = '<div class="mt-4"><h6 class="fw-bold">Generated Documents</h6><div class="row g-2">';
+                    if (documents.pick_list_number) {
+                        documentsHtml += `<div class="col-md-6"><div class="card bg-light"><div class="card-body p-2"><small class="text-muted">Pick List</small><br><strong>${documents.pick_list_number}</strong></div></div></div>`;
+                    }
+                    if (documents.trip_trip_number) {
+                        documentsHtml += `<div class="col-md-6"><div class="card bg-light"><div class="card-body p-2"><small class="text-muted">Trip Ticket</small><br><strong>${documents.trip_trip_number}</strong></div></div></div>`;
+                    }
+                    documentsHtml += '</div></div>';
                 }
                 
                 const content = document.getElementById('viewOrderContent');
@@ -783,15 +1336,14 @@ function formatDateTime($dateStr) {
                                         </tr>
                                         <tr>
                                             <td>Customer:</td>
-                                            <td>${order.customer_name}</td>
+                                            <td><strong>${order.customer_name}</strong></td>
                                         </tr>
+                                        ${order.address ? `<tr><td>Address:</td><td>${order.address}</td></tr>` : ''}
+                                        ${order.contact_number ? `<tr><td>Contact:</td><td>${order.contact_number}</td></tr>` : ''}
+                                        ${order.branch_name ? `<tr><td>Branch:</td><td><span class="badge bg-info">${order.branch_name}</span></td></tr>` : ''}
                                         <tr>
                                             <td>Order Status:</td>
                                             <td><span class="${statusBadge}">${statusText}</span></td>
-                                        </tr>
-                                        <tr>
-                                            <td>Payment Status:</td>
-                                            <td><span class="badge ${paymentClass}">${paymentStatus}</span></td>
                                         </tr>
                                     </table>
                                 </div>
@@ -816,30 +1368,27 @@ function formatDateTime($dateStr) {
                                             <td>Total Amount:</td>
                                             <td class="fw-bold fs-5">₱${Number(order.total_amount).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                                         </tr>
-                                        <tr>
-                                            <td>Created At:</td>
-                                            <td>${order.created_at ? new Date(order.created_at).toLocaleString() : 'N/A'}</td>
-                                        </tr>
-                                        <tr>
-                                            <td>Last Updated:</td>
-                                            <td>${order.updated_at ? new Date(order.updated_at).toLocaleString() : 'N/A'}</td>
-                                        </tr>
                                     </table>
                                 </div>
                             </div>
                         </div>
                     </div>
                     ${itemsHtml}
+                    ${documentsHtml}
                 `;
                 
                 currentOrderId = id;
                 
-                // Show/hide edit button based on status
+                // Show/hide buttons based on status
                 const editBtn = document.getElementById('editFromViewBtn');
-                if (order.order_status !== 'delivered' && order.order_status !== 'cancelled') {
+                const printBtn = document.getElementById('printOrderBtn');
+                
+                if (order.order_status === 'pending') {
                     editBtn.style.display = 'inline-block';
+                    printBtn.style.display = 'none';
                 } else {
                     editBtn.style.display = 'none';
+                    printBtn.style.display = 'inline-block';
                 }
                 
                 new bootstrap.Modal(document.getElementById('viewOrderModal')).show();
@@ -880,7 +1429,6 @@ function formatDateTime($dateStr) {
             if (data.success) {
                 const order = data.order;
                 
-                // Format date for input
                 const orderDate = order.order_date.split(' ')[0];
                 
                 document.getElementById('editOrderId').value = order.so_id;
@@ -939,16 +1487,40 @@ function formatDateTime($dateStr) {
             Swal.close();
             
             if (data.success) {
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Success!',
-                    text: data.message,
-                    timer: 2000,
-                    showConfirmButton: false
-                }).then(() => {
-                    bootstrap.Modal.getInstance(document.getElementById('editOrderModal')).hide();
-                    location.reload();
-                });
+                if (data.generated_docs) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Order Confirmed!',
+                        html: `
+                            <div style="text-align: left;">
+                                <p>${data.message}</p>
+                                <hr>
+                                <h6 class="fw-bold">Generated Documents:</h6>
+                                <ul class="list-unstyled">
+                                    <li><i class="bi bi-check-circle-fill text-success"></i> Pick List: ${data.generated_docs.picklist}</li>
+                                    <li><i class="bi bi-check-circle-fill text-success"></i> Trip Ticket: ${data.generated_docs.trip_ticket}</li>
+                                </ul>
+                                <p class="text-warning mt-2"><i class="bi bi-exclamation-triangle"></i> Invoice generation skipped - database relationship missing</p>
+                            </div>
+                        `,
+                        confirmButtonText: 'OK',
+                        confirmButtonColor: '#0d6efd'
+                    }).then(() => {
+                        bootstrap.Modal.getInstance(document.getElementById('editOrderModal')).hide();
+                        location.reload();
+                    });
+                } else {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Success!',
+                        text: data.message,
+                        timer: 2000,
+                        showConfirmButton: false
+                    }).then(() => {
+                        bootstrap.Modal.getInstance(document.getElementById('editOrderModal')).hide();
+                        location.reload();
+                    });
+                }
             } else {
                 Swal.fire('Error', data.message, 'error');
             }
@@ -1006,50 +1578,212 @@ function formatDateTime($dateStr) {
         });
     }
 
+    // ========== PRINT FUNCTIONS ==========
+    function printOrder(id) {
+        showLoading();
+        
+        const formData = new FormData();
+        formData.append('action', 'print_order');
+        formData.append('so_id', id);
+        
+        fetch('sales_order.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            Swal.close();
+            
+            if (data.success) {
+                const order = data.order;
+                const items = data.items;
+                
+                const printContent = generateSalesOrderDocument(order, items);
+                document.getElementById('printPreviewContent').innerHTML = printContent;
+                new bootstrap.Modal(document.getElementById('printPreviewModal')).show();
+            } else {
+                Swal.fire('Error', data.message, 'error');
+            }
+        })
+        .catch(error => {
+            Swal.close();
+            Swal.fire('Error', 'An error occurred', 'error');
+        });
+    }
+
+    function generateSalesOrderDocument(order, items) {
+        const orderDate = new Date(order.order_date);
+        const formattedDate = orderDate.toLocaleDateString('en-US', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric'
+        });
+        
+        let itemsHtml = '';
+        let subtotal = 0;
+        
+        items.forEach((item, index) => {
+            const itemSubtotal = item.quantity_ordered * item.unit_price;
+            subtotal += itemSubtotal;
+            
+            itemsHtml += `<tr>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${index + 1}</td>
+                <td style="padding: 8px; border: 1px solid #ddd;">${item.item_code}</td>
+                <td style="padding: 8px; border: 1px solid #ddd;">${item.item_name}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${item.quantity_ordered} ${item.unit_type || ''}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₱${Number(item.unit_price).toFixed(2)}</td>
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₱${Number(itemSubtotal).toFixed(2)}</td>
+            </tr>`;
+        });
+        
+        const tax = subtotal * 0.12;
+        const total = order.total_amount || (subtotal + tax);
+        
+        return `
+            <div style="font-family: Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 30px; background: white; border: 2px solid #333; border-radius: 8px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #333;">
+                    <div>
+                        <h1 style="margin: 0; color: #0d6efd; font-size: 28px; font-weight: bold;">AMGC BRANCH SYSTEM</h1>
+                        <p style="margin: 5px 0; color: #666;">Sales Order Document</p>
+                    </div>
+                    <div style="text-align: right;">
+                        <h2 style="margin: 0; font-size: 24px; color: #333;">SALES ORDER</h2>
+                        <p style="margin: 5px 0; font-size: 18px; font-weight: bold;">${order.so_number}</p>
+                    </div>
+                </div>
+                
+                <div style="display: flex; justify-content: space-between; margin-bottom: 30px;">
+                    <div style="width: 48%;">
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 5px;">
+                            <h4 style="margin-top: 0; margin-bottom: 15px; color: #0d6efd;">From:</h4>
+                            <p style="margin: 5px 0;"><strong>${order.branch_name || 'AMGC Branch'}</strong></p>
+                            <p style="margin: 5px 0;">${order.branch_address || 'Branch Address'}</p>
+                            <p style="margin: 5px 0;">Contact: ${order.branch_contact || 'N/A'}</p>
+                        </div>
+                    </div>
+                    <div style="width: 48%;">
+                        <div style="background: #f8f9fa; padding: 15px; border-radius: 5px;">
+                            <h4 style="margin-top: 0; margin-bottom: 15px; color: #0d6efd;">Bill To:</h4>
+                            <p style="margin: 5px 0;"><strong>${order.customer_name}</strong></p>
+                            <p style="margin: 5px 0;">${order.address || 'Customer Address'}</p>
+                            <p style="margin: 5px 0;">Contact: ${order.contact_number || 'N/A'}</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div style="display: flex; justify-content: space-between; margin-bottom: 30px; background: #e7f1ff; padding: 15px; border-radius: 5px;">
+                    <div>
+                        <p style="margin: 5px 0;"><strong>Order Date:</strong> ${formattedDate}</p>
+                        <p style="margin: 5px 0;"><strong>Order Status:</strong> ${getStatusText(order.order_status)}</p>
+                    </div>
+                    <div>
+                        <p style="margin: 5px 0;"><strong>Total Items:</strong> ${order.total_items || 0}</p>
+                        <p style="margin: 5px 0;"><strong>Total Quantity:</strong> ${order.total_quantity || 0}</p>
+                    </div>
+                </div>
+                
+                <h4 style="margin-bottom: 15px; color: #0d6efd;">Order Items</h4>
+                <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
+                    <thead>
+                        <tr style="background: #0d6efd; color: white;">
+                            <th style="padding: 12px; border: 1px solid #0d6efd;">#</th>
+                            <th style="padding: 12px; border: 1px solid #0d6efd;">Item Code</th>
+                            <th style="padding: 12px; border: 1px solid #0d6efd;">Description</th>
+                            <th style="padding: 12px; border: 1px solid #0d6efd;">Quantity</th>
+                            <th style="padding: 12px; border: 1px solid #0d6efd;">Unit Price</th>
+                            <th style="padding: 12px; border: 1px solid #0d6efd;">Subtotal</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${itemsHtml}
+                    </tbody>
+                </table>
+                
+                <div style="display: flex; justify-content: flex-end; margin-bottom: 30px;">
+                    <div style="width: 40%;">
+                        <table style="width: 100%; border-collapse: collapse;">
+                            <tr>
+                                <td style="padding: 8px; border: 1px solid #ddd; background: #f8f9fa;"><strong>Subtotal:</strong></td>
+                                <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₱${Number(subtotal).toFixed(2)}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px; border: 1px solid #ddd; background: #f8f9fa;"><strong>VAT (12%):</strong></td>
+                                <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₱${Number(tax).toFixed(2)}</td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 8px; border: 1px solid #ddd; background: #0d6efd; color: white;"><strong>TOTAL:</strong></td>
+                                <td style="padding: 8px; border: 1px solid #ddd; text-align: right; font-size: 18px; font-weight: bold;">₱${Number(total).toFixed(2)}</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+                
+                <div style="margin-top: 50px; border-top: 2px solid #333; padding-top: 20px; text-align: center;">
+                    <div style="display: flex; justify-content: space-between;">
+                        <div style="width: 45%;">
+                            <p style="border-top: 1px solid #333; padding-top: 10px; margin-top: 30px;"><strong>Prepared by:</strong></p>
+                            <p>${order.branch_name || 'Branch Admin'}</p>
+                        </div>
+                        <div style="width: 45%;">
+                            <p style="border-top: 1px solid #333; padding-top: 10px; margin-top: 30px;"><strong>Received by:</strong></p>
+                            <p>_________________________</p>
+                        </div>
+                    </div>
+                    <p style="margin-top: 30px; color: #666; font-size: 12px;">Generated on: ${new Date().toLocaleString()}</p>
+                </div>
+            </div>
+        `;
+    }
+
+    function executePrint() {
+        const printContent = document.getElementById('printPreviewContent').innerHTML;
+        const printWindow = window.open('', '_blank', 'width=900,height=700');
+        
+        printWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Sales Order</title>
+                <style>
+                    @page { size: A4; margin: 0.5in; }
+                    body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: white; }
+                    @media print { body { padding: 0; } }
+                </style>
+            </head>
+            <body>${printContent}</body>
+            </html>
+        `);
+        
+        printWindow.document.close();
+        setTimeout(() => { printWindow.print(); }, 250);
+        bootstrap.Modal.getInstance(document.getElementById('printPreviewModal')).hide();
+    }
+
     // ========== FILTER FUNCTIONS ==========
-    
-    // Filter table function
     function filterTable() {
         const searchTerm = document.getElementById('searchInput').value.toLowerCase();
         const statusFilter = document.getElementById('statusFilter').value;
         const customerFilter = document.getElementById('customerFilter').value;
         
-        const rows = document.querySelectorAll('.sales-order-row');
-        
-        rows.forEach(row => {
+        document.querySelectorAll('.sales-order-row').forEach(row => {
             const orderNumber = row.dataset.orderNumber?.toLowerCase() || '';
             const customer = row.dataset.customer?.toLowerCase() || '';
             const status = row.dataset.status || '';
             
-            let matchesSearch = searchTerm === '' || 
-                orderNumber.includes(searchTerm) || 
-                customer.includes(searchTerm);
+            const matchesSearch = searchTerm === '' || orderNumber.includes(searchTerm) || customer.includes(searchTerm);
+            const matchesStatus = statusFilter === '' || status === statusFilter;
+            const matchesCustomer = customerFilter === '' || row.dataset.customer === customerFilter;
             
-            let matchesStatus = statusFilter === '' || status === statusFilter;
-            let matchesCustomer = customerFilter === '' || row.dataset.customer === customerFilter;
-            
-            if (matchesSearch && matchesStatus && matchesCustomer) {
-                row.style.display = '';
-            } else {
-                row.style.display = 'none';
-            }
+            row.style.display = matchesSearch && matchesStatus && matchesCustomer ? '' : 'none';
         });
     }
 
     // ========== UTILITY FUNCTIONS ==========
-    
-    // Format Date
     function formatDate(dateStr) {
         if (!dateStr) return '';
-        const date = new Date(dateStr);
-        return date.toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric'
-        });
+        return new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
     }
 
-    // Get Status Badge
     function getStatusBadge(status) {
         const classes = {
             'pending': 'badge bg-warning text-dark',
@@ -1062,7 +1796,6 @@ function formatDateTime($dateStr) {
         return classes[status] || 'badge bg-secondary text-white';
     }
 
-    // Get Status Text
     function getStatusText(status) {
         const texts = {
             'pending': 'Pending',
@@ -1075,28 +1808,14 @@ function formatDateTime($dateStr) {
         return texts[status] || status;
     }
 
-    // Get Payment Status
-    function getPaymentStatusText(status) {
-        if (status === 'delivered') return 'Paid';
-        if (status === 'cancelled') return 'Cancelled';
-        return 'Pending';
-    }
-
-    // Get Payment Status Class
-    function getPaymentStatusClass(status) {
-        if (status === 'delivered') return 'badge-success';
-        if (status === 'cancelled') return 'badge-danger';
-        return 'badge-warning';
-    }
-
     // ========== EXPORT FUNCTIONS ==========
-    
-    // Print Report
     function printReport() {
+        document.getElementById('dashboardContent').setAttribute('data-print-date', new Date().toLocaleString());
+        document.title = 'Sales Orders Report - ' + new Date().toLocaleDateString();
         window.print();
+        document.title = 'Sales Orders - Branch Admin';
     }
 
-    // ========== EXCEL EXPORT FUNCTION ==========
     function exportToExcel() {
         const rows = document.querySelectorAll('.sales-order-row:not([style*="display: none"])');
         if (rows.length === 0) {
@@ -1104,84 +1823,61 @@ function formatDateTime($dateStr) {
             return;
         }
         
-        // Prepare data array for Excel
         const excelData = [];
-        
-        // Add headers
-        excelData.push([
-            'Order Number',
-            'Date',
-            'Customer',
-            'Items',
-            'Quantity',
-            'Total Amount (₱)',
-            'Payment Status',
-            'Order Status'
-        ]);
+        const headers = ['Order Number', 'Order Date', 'Customer Name', 'Items', 'Qty', 'Total Amount (₱)', 'Payment Status', 'Order Status'];
+        excelData.push(headers);
 
-        // Add data rows
         rows.forEach(row => {
             if (row.style.display !== 'none') {
                 const cells = row.querySelectorAll('td');
-                const orderNo = cells[0]?.innerText || '';
-                const date = cells[1]?.innerText || '';
-                const customer = cells[2]?.innerText || '';
-                const items = parseInt(cells[3]?.innerText) || 0;
-                const qty = parseInt(cells[4]?.innerText) || 0;
-                const amount = parseFloat(cells[5]?.innerText.replace('₱', '').replace(/,/g, '')) || 0;
-                const paymentStatus = cells[6]?.innerText || '';
-                const orderStatus = cells[7]?.innerText || '';
+                let cellIndex = 0;
                 
-                excelData.push([
-                    orderNo,
-                    date,
-                    customer,
-                    items,
-                    qty,
-                    amount,
-                    paymentStatus,
-                    orderStatus
-                ]);
+                const orderNo = cells[cellIndex++]?.innerText || '';
+                const date = cells[cellIndex++]?.innerText || '';
+                const customer = cells[cellIndex++]?.innerText || '';
+                
+                if (soBranchColumnExists && viewAllBranches) cellIndex++;
+                
+                const items = cells[cellIndex++]?.innerText || '0';
+                const qty = cells[cellIndex++]?.innerText || '0';
+                const amount = cells[cellIndex++]?.innerText.replace('₱', '').replace(/,/g, '') || '0';
+                cellIndex += 2; // Skip Invoice and Payment Status columns
+                const orderStatus = cells[cellIndex]?.innerText || '';
+                
+                excelData.push([orderNo, date, customer, items, qty, amount, 'Pending', orderStatus]);
             }
         });
 
-        // Create workbook and worksheet
         const wb = XLSX.utils.book_new();
         const ws = XLSX.utils.aoa_to_sheet(excelData);
-
-        // Set column widths
-        ws['!cols'] = [
-            { wch: 15 }, // Order Number
-            { wch: 15 }, // Date
-            { wch: 25 }, // Customer
-            { wch: 10 }, // Items
-            { wch: 12 }, // Quantity
-            { wch: 18 }, // Total Amount
-            { wch: 15 }, // Payment Status
-            { wch: 15 }  // Order Status
-        ];
-
-        // Add worksheet to workbook
+        ws['!cols'] = [{ wch: 18 }, { wch: 15 }, { wch: 30 }, { wch: 10 }, { wch: 10 }, { wch: 15 }, { wch: 15 }, { wch: 15 }];
         XLSX.utils.book_append_sheet(wb, ws, 'Sales Orders');
-
-        // Generate filename with current date
-        const date = new Date();
-        const dateStr = date.toISOString().slice(0,10).replace(/-/g, '');
-        const filename = `Sales_Orders_${dateStr}.xlsx`;
-
-        // Export Excel file
-        XLSX.writeFile(wb, filename);
+        XLSX.writeFile(wb, `Sales_Orders_${new Date().toISOString().slice(0,10).replace(/-/g, '')}.xlsx`);
         
-        Swal.fire({
-            icon: 'success',
-            title: 'Export Complete',
-            text: 'Excel export completed successfully!',
-            timer: 2000,
-            showConfirmButton: false
+        Swal.fire({ icon: 'success', title: 'Export Complete', timer: 2000, showConfirmButton: false });
+    }
+
+    // ========== COPY SQL FUNCTION ==========
+    function copyFixSQL() {
+        const sql = "ALTER TABLE invoices ADD COLUMN so_id INT NULL;\nALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);";
+        navigator.clipboard.writeText(sql).then(() => {
+            Swal.fire({ icon: 'success', title: 'Copied!', text: 'SQL copied to clipboard', timer: 1500, showConfirmButton: false });
         });
     }
 
-    // ========== LOGOUT FUNCTION ==========
+    function copySQL(table) {
+        let sql = '';
+        if (table === 'sales_orders') {
+            sql = "ALTER TABLE sales_orders ADD COLUMN branch_id INT NULL;\nALTER TABLE sales_orders ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+        } else if (table === 'customers') {
+            sql = "ALTER TABLE customers ADD COLUMN branch_id INT NULL;\nALTER TABLE customers ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+        }
+        navigator.clipboard.writeText(sql).then(() => {
+            Swal.fire({ icon: 'success', title: 'Copied!', timer: 1500, showConfirmButton: false });
+        });
+    }
+
+    // ========== LOGOUT ==========
     function logout() {
         Swal.fire({
             title: 'Are you sure?',
@@ -1189,26 +1885,14 @@ function formatDateTime($dateStr) {
             icon: 'question',
             showCancelButton: true,
             confirmButtonColor: '#0d6efd',
-            cancelButtonColor: '#6c757d',
             confirmButtonText: 'Yes, logout'
         }).then((result) => {
             if (result.isConfirmed) {
                 localStorage.removeItem('sidebarCollapsed');
-                window.location.href = '../login.php';
+                window.location.href = '../logout.php';
             }
         });
     }
-
-    // ========== KEYBOARD SHORTCUTS ==========
-    document.addEventListener('keydown', function(e) {
-        if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
-            e.preventDefault();
-            toggleSidebar();
-        } else if (e.ctrlKey && e.key === 'f') {
-            e.preventDefault();
-            document.getElementById('searchInput')?.focus();
-        }
-    });
     </script>
 </body>
 </html>

@@ -1,5 +1,40 @@
 <?php
 require_once '../config/database.php';
+require_once '../config/session_handler.php';
+
+// Get current user info and branch context
+$user_id = $_SESSION['user_id'] ?? 0;
+$user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Branch Admin';
+$user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'branch_admin';
+$branch_id = $_SESSION['branch_id'] ?? 0;
+$view_all_branches = $_SESSION['view_all_branches'] ?? false;
+
+// Check if branch_id column exists in rmr_requests table
+$rmr_branch_column_exists = false;
+$check_rmr_column = $conn->query("SHOW COLUMNS FROM rmr_requests LIKE 'branch_id'");
+if ($check_rmr_column && $check_rmr_column->num_rows > 0) {
+    $rmr_branch_column_exists = true;
+}
+
+// Check if branch_id column exists in customers table
+$customers_branch_column_exists = false;
+$check_customers_column = $conn->query("SHOW COLUMNS FROM customers LIKE 'branch_id'");
+if ($check_customers_column && $check_customers_column->num_rows > 0) {
+    $customers_branch_column_exists = true;
+}
+
+// Check if branch_id column exists in items table
+$items_branch_column_exists = false;
+$check_items_column = $conn->query("SHOW COLUMNS FROM items LIKE 'branch_id'");
+if ($check_items_column && $check_items_column->num_rows > 0) {
+    $items_branch_column_exists = true;
+}
+
+// Determine branch filter condition
+$rmr_branch_condition = "";
+if ($rmr_branch_column_exists && !$view_all_branches) {
+    $rmr_branch_condition = "AND r.branch_id = $branch_id";
+}
 
 // ========== HANDLE AJAX REQUESTS ==========
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
@@ -14,6 +49,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $inspector_name = $_POST['inspector_name'];
             $inspection_type = $_POST['inspection_type'];
             $user_id = $_SESSION['user_id'] ?? 1; // Default to 1 if not set
+            
+            // Verify RMR belongs to user's branch (if branch column exists and not admin)
+            if ($rmr_branch_column_exists && !$view_all_branches) {
+                $check_query = "SELECT rmr_id FROM rmr_requests WHERE rmr_id = ? AND branch_id = ?";
+                $check_stmt = $conn->prepare($check_query);
+                $check_stmt->bind_param("ii", $rmr_id, $branch_id);
+                $check_stmt->execute();
+                $check_result = $check_stmt->get_result();
+                
+                if ($check_result->num_rows === 0) {
+                    throw new Exception('RMR not found or access denied');
+                }
+            }
             
             // Update RMR status
             $update_query = "UPDATE rmr_requests 
@@ -45,6 +93,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $approved_amount = (float)$_POST['approved_amount'];
             $approval_notes = $_POST['approval_notes'] ?? null;
             $user_id = $_SESSION['user_id'] ?? 1;
+            
+            // Verify RMR belongs to user's branch (if branch column exists and not admin)
+            if ($rmr_branch_column_exists && !$view_all_branches) {
+                $check_query = "SELECT rmr_id FROM rmr_requests WHERE rmr_id = ? AND branch_id = ?";
+                $check_stmt = $conn->prepare($check_query);
+                $check_stmt->bind_param("ii", $rmr_id, $branch_id);
+                $check_stmt->execute();
+                $check_result = $check_stmt->get_result();
+                
+                if ($check_result->num_rows === 0) {
+                    throw new Exception('RMR not found or access denied');
+                }
+            }
             
             // Update RMR status to approved
             $update_query = "UPDATE rmr_requests 
@@ -81,6 +142,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $rejection_reason = $_POST['rejection_reason'] ?? 'Rejected by QC';
             $user_id = $_SESSION['user_id'] ?? 1;
             
+            // Verify RMR belongs to user's branch (if branch column exists and not admin)
+            if ($rmr_branch_column_exists && !$view_all_branches) {
+                $check_query = "SELECT rmr_id FROM rmr_requests WHERE rmr_id = ? AND branch_id = ?";
+                $check_stmt = $conn->prepare($check_query);
+                $check_stmt->bind_param("ii", $rmr_id, $branch_id);
+                $check_stmt->execute();
+                $check_result = $check_stmt->get_result();
+                
+                if ($check_result->num_rows === 0) {
+                    throw new Exception('RMR not found or access denied');
+                }
+            }
+            
             // Update RMR status to rejected
             $update_query = "UPDATE rmr_requests 
                            SET rmr_status = 'rejected', 
@@ -107,6 +181,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         elseif ($_POST['action'] === 'view_rmr') {
             $rmr_id = (int)$_POST['rmr_id'];
             
+            // Add branch filter if needed
             $query = "
                 SELECT 
                     r.*,
@@ -116,15 +191,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     i.item_name,
                     i.unit_price,
                     i.unit_type,
+                    b.branch_name,
                     CONCAT(u.first_name, ' ', u.last_name) as received_by_name
                 FROM rmr_requests r
                 JOIN customers c ON r.customer_id = c.customer_id
                 JOIN items i ON r.item_id = i.item_id
+                LEFT JOIN branches b ON r.branch_id = b.branch_id
                 LEFT JOIN users u ON r.received_by = u.user_id
                 WHERE r.rmr_id = ?
             ";
-            $stmt = $conn->prepare($query);
-            $stmt->bind_param("i", $rmr_id);
+            
+            if ($rmr_branch_column_exists && !$view_all_branches) {
+                $query .= " AND r.branch_id = ?";
+                $stmt = $conn->prepare($query);
+                $stmt->bind_param("ii", $rmr_id, $branch_id);
+            } else {
+                $stmt = $conn->prepare($query);
+                $stmt->bind_param("i", $rmr_id);
+            }
+            
             $stmt->execute();
             $result = $stmt->get_result();
             $rmr = $result->fetch_assoc();
@@ -159,7 +244,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 
-// FETCH RMR REQUESTS FROM DATABASE WITH JOINS
+// FETCH RMR REQUESTS FROM DATABASE WITH JOINS AND BRANCH FILTERING
 $rmr_query = "
     SELECT 
         r.rmr_id,
@@ -173,6 +258,7 @@ $rmr_query = "
         r.inspector_name,
         r.inspection_type,
         r.disposition_type,
+        r.branch_id,
         r.created_at,
         r.updated_at,
         c.customer_name,
@@ -182,17 +268,21 @@ $rmr_query = "
         i.item_name,
         i.unit_price,
         i.unit_type,
+        b.branch_name,
         CONCAT(u.first_name, ' ', u.last_name) as received_by_name
     FROM rmr_requests r
     JOIN customers c ON r.customer_id = c.customer_id
     JOIN items i ON r.item_id = i.item_id
+    LEFT JOIN branches b ON r.branch_id = b.branch_id
     LEFT JOIN users u ON r.received_by = u.user_id
+    WHERE 1=1
+    $rmr_branch_condition
     ORDER BY r.created_at DESC, r.rmr_id DESC
 ";
 $rmr_result = $conn->query($rmr_query);
 $rmr_requests = $rmr_result->fetch_all(MYSQLI_ASSOC);
 
-// CALCULATE STATISTICS FROM REAL DATA
+// CALCULATE STATISTICS FROM REAL DATA (branch-specific)
 $total_rmr = count($rmr_requests);
 $pending_rmr = count(array_filter($rmr_requests, fn($r) => $r['rmr_status'] === 'pending'));
 $processing_rmr = count(array_filter($rmr_requests, fn($r) => $r['rmr_status'] === 'processing'));
@@ -286,7 +376,7 @@ function formatDate($dateTimeStr) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bad Orders</title>
+    <title>Bad Orders - Branch Admin</title>
     <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
     <link rel="shortcut icon" href="../Pictures/favicon.ico" />
@@ -304,6 +394,31 @@ function formatDate($dateTimeStr) {
     <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
+        /* Branch badge styling */
+        .branch-badge {
+            background-color: #e7f1ff;
+            color: #0d6efd;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 5px;
+        }
+        
+        /* Alert for missing branch column */
+        .alert-info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        
+        .alert-info code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 4px;
+            color: #c7254e;
+        }
+        
         /* Table styles for RMR */
         .rmr-table {
             width: 100%;
@@ -349,6 +464,9 @@ function formatDate($dateTimeStr) {
         .col-reason { width: 12%; }
         .col-status { width: 10%; }
         .col-received { width: 12%; }
+        <?php if ($rmr_branch_column_exists && $view_all_branches): ?>
+        .col-branch { width: 8%; }
+        <?php endif; ?>
         .col-actions { width: 13%; text-align: center; }
         
         .empty-state-table {
@@ -505,7 +623,8 @@ function formatDate($dateTimeStr) {
                     <button class="desktop-toggle-btn" id="desktopToggleBtn">
                         <i class="bi bi-list"></i>
                     </button>    
-                    <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> <span class="nav-text">Branch Admin</span>
+                    <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
+                    <span class="nav-text">Branch Admin</span>
                 </h3>
             </div>
             
@@ -552,10 +671,9 @@ function formatDate($dateTimeStr) {
             </div>
             <div class="sidebar-footer">
                 <div class="user-profile-sidebar">
-                    <div class="user-avatar-sidebar">AD</div>
+                    <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
                     <div class="user-details-sidebar">
-                        <span class="user-name-sidebar">Quality Control</span>
-                        <span class="user-role-sidebar">QC Officer</span>
+                        <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
                     </div>
                 </div>
                 <button class="logout-btn-sidebar" onclick="logout()">
@@ -576,9 +694,37 @@ function formatDate($dateTimeStr) {
                     </button>
                     <div class="page-title">
                         <h2><i class="bi bi-recycle me-2"></i>Bad Orders</h2>
-                        <p>Manage Returned Merchandise Requests (RMR)</p>
+                        <p id="dashboardSubtitle">
+                            Manage Returned Merchandise Requests (RMR)
+                           
+                        </p>
                     </div>
                 </div>
+
+                <!-- Branch Info Alerts -->
+                <?php if (!$rmr_branch_column_exists): ?>
+                    <div class="alert alert-info alert-dismissible fade show" role="alert">
+                        <i class="bi bi-info-circle"></i> 
+                        <strong>Branch filtering for RMR not yet set up.</strong> Please run this SQL in phpMyAdmin to enable branch-specific RMR data:
+                        <br><br>
+                        <code>ALTER TABLE rmr_requests ADD COLUMN branch_id INT NULL;</code>
+                        <br>
+                        <code>ALTER TABLE rmr_requests ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
+                        <br><br>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('rmr_requests')">
+                            <i class="bi bi-files"></i> Copy SQL
+                        </button>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <?php endif; ?>
+
+                <!-- No RMR Warning -->
+                <?php if (empty($rmr_requests) && $rmr_branch_column_exists && !$view_all_branches): ?>
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i> 
+                        No RMR requests found for your branch.
+                    </div>
+                <?php endif; ?>
 
                 <!-- Stats Section -->
                 <div class="row g-3 mb-4">
@@ -587,6 +733,9 @@ function formatDate($dateTimeStr) {
                             <i class="bi bi-box-seam stat-icon"></i>
                             <div class="stat-value"><?= $statTotalRMR ?></div>
                             <div class="stat-label">Total RMR</div>
+                            <?php if ($rmr_branch_column_exists && !$view_all_branches): ?>
+                                <small class="d-block text-white-50">Your Branch</small>
+                            <?php endif; ?>
                         </div>
                     </div>
                     <div class="col-md-3 col-6">
@@ -673,6 +822,27 @@ function formatDate($dateTimeStr) {
                                     <option value="gt500">Greater than 500</option>
                                 </select>
                             </div>
+                            
+                            <?php if ($rmr_branch_column_exists && $view_all_branches): ?>
+                            <!-- Branch Filter Dropdown (only visible to admin) -->
+                            <div class="filter-dropdown">
+                                <span class="filter-label">Branch</span>
+                                <select class="form-select" id="branchFilter" onchange="applyFilters()">
+                                    <option value="all">All Branches</option>
+                                    <?php
+                                    // Get unique branches from the data
+                                    $branches = array_unique(array_column($rmr_requests, 'branch_id'));
+                                    foreach ($branches as $bid):
+                                        if (!empty($bid)):
+                                    ?>
+                                    <option value="<?= $bid ?>">Branch <?= $bid ?></option>
+                                    <?php 
+                                        endif;
+                                    endforeach; 
+                                    ?>
+                                </select>
+                            </div>
+                            <?php endif; ?>
                         </div>
                     </div>
                     
@@ -694,6 +864,9 @@ function formatDate($dateTimeStr) {
                                 <th class="col-rmr">RMR NUMBER</th>
                                 <th class="col-customer">CUSTOMER</th>
                                 <th class="col-item">ITEM</th>
+                                <?php if ($rmr_branch_column_exists && $view_all_branches): ?>
+                                    <th class="col-branch">BRANCH</th>
+                                <?php endif; ?>
                                 <th class="col-qty">QTY</th>
                                 <th class="col-amount">TOTAL AMOUNT</th>
                                 <th class="col-reason">REASON</th>
@@ -705,11 +878,17 @@ function formatDate($dateTimeStr) {
                         <tbody id="rmrTableBody">
                             <?php if (empty($rmr_requests)): ?>
                             <tr>
-                                <td colspan="9" class="empty-state-table">
+                                <td colspan="<?= ($rmr_branch_column_exists && $view_all_branches) ? '10' : '9' ?>" class="empty-state-table">
                                     <i class="bi bi-inbox"></i>
                                     <h5>No Returned Merchandise Requests</h5>
-                                    <p class="text-muted">RMR requests are created by the Sales team.</p>
-                                    <p class="text-muted">No requests available at this time.</p>
+                                    <p class="text-muted">
+                                        RMR requests are created by the Sales team.
+                                        <?php if ($rmr_branch_column_exists && !$view_all_branches): ?>
+                                            <br>No requests found for your branch.
+                                        <?php else: ?>
+                                            <br>No requests available at this time.
+                                        <?php endif; ?>
+                                    </p>
                                 </td>
                             </tr>
                             <?php else: ?>
@@ -722,13 +901,21 @@ function formatDate($dateTimeStr) {
                                     data-status="<?= $rmr['rmr_status'] ?>"
                                     data-reason="<?= $rmr['return_reason'] ?>"
                                     data-received-date="<?= $rmr['received_date'] ?>"
-                                    data-quantity="<?= $rmr['return_quantity'] ?>">
+                                    data-quantity="<?= $rmr['return_quantity'] ?>"
+                                    data-branch="<?= $rmr['branch_id'] ?? '' ?>">
                                     <td class="col-rmr"><strong><?= htmlspecialchars($rmr['rmr_number']) ?></strong></td>
                                     <td class="col-customer"><?= htmlspecialchars($rmr['customer_name']) ?></td>
                                     <td class="col-item">
                                         <?= htmlspecialchars($rmr['item_name']) ?>
                                         <small class="d-block text-muted"><?= htmlspecialchars($rmr['item_code']) ?></small>
                                     </td>
+                                    <?php if ($rmr_branch_column_exists && $view_all_branches): ?>
+                                        <td class="col-branch">
+                                            <span class="badge bg-info">
+                                                <?= htmlspecialchars($rmr['branch_name'] ?? 'Branch ' . $rmr['branch_id']) ?>
+                                            </span>
+                                        </td>
+                                    <?php endif; ?>
                                     <td class="col-qty"><?= $rmr['return_quantity'] ?> <?= getUnitText($rmr['unit_type']) ?></td>
                                     <td class="col-amount">₱<?= number_format($totalAmount, 2) ?></td>
                                     <td class="col-reason">
@@ -781,6 +968,12 @@ function formatDate($dateTimeStr) {
                 </div>
                 <div class="modal-body">
                     <p>Process the selected RMR for quality inspection?</p>
+                    <?php if ($rmr_branch_column_exists && !$view_all_branches): ?>
+                        <div class="alert alert-info mb-3">
+                            <i class="bi bi-info-circle me-2"></i>
+                            Processing RMR for Branch <?= $branch_id ?>
+                        </div>
+                    <?php endif; ?>
                     <div class="mb-3">
                         <label class="form-label">Inspector Name *</label>
                         <input type="text" class="form-control" id="inspectorName" value="Quality Control Dept" required>
@@ -817,6 +1010,12 @@ function formatDate($dateTimeStr) {
                 </div>
                 <div class="modal-body">
                     <p id="approvalMessage">Approve the selected RMR for credit/refund?</p>
+                    <?php if ($rmr_branch_column_exists && !$view_all_branches): ?>
+                        <div class="alert alert-info mb-3">
+                            <i class="bi bi-info-circle me-2"></i>
+                            Approving RMR for Branch <?= $branch_id ?>
+                        </div>
+                    <?php endif; ?>
                     <div id="approvalFields">
                         <div class="mb-3">
                             <label class="form-label">Disposition *</label>
@@ -882,6 +1081,11 @@ function formatDate($dateTimeStr) {
     // ========== GLOBAL VARIABLES ==========
     let selectedRMR = null;
     let currentAction = null;
+    const branchId = <?php echo $branch_id; ?>;
+    const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
+    const rmrBranchColumnExists = <?php echo $rmr_branch_column_exists ? 'true' : 'false'; ?>;
+    const customersBranchColumnExists = <?php echo $customers_branch_column_exists ? 'true' : 'false'; ?>;
+    const itemsBranchColumnExists = <?php echo $items_branch_column_exists ? 'true' : 'false'; ?>;
     
     // ========== SIDEBAR FUNCTIONS ==========
     function toggleSidebar() {
@@ -945,6 +1149,7 @@ function formatDate($dateTimeStr) {
         const statusFilter = document.getElementById('statusFilter').value;
         const reasonFilter = document.getElementById('reasonFilter').value;
         const quantityFilter = document.getElementById('quantityFilter').value;
+        const branchFilter = document.getElementById('branchFilter')?.value || 'all';
         
         const rows = document.querySelectorAll('.rmr-row');
         let visibleCount = 0;
@@ -984,6 +1189,12 @@ function formatDate($dateTimeStr) {
                         if (rowQuantity <= 500) showRow = false;
                         break;
                 }
+            }
+            
+            // Branch filter (only when viewing all branches)
+            if (showRow && rmrBranchColumnExists && viewAllBranches && branchFilter !== 'all') {
+                const rowBranch = row.dataset.branch;
+                if (rowBranch !== branchFilter) showRow = false;
             }
             
             // Date filter
@@ -1071,7 +1282,7 @@ function formatDate($dateTimeStr) {
                 if (emptyStateParent) {
                     emptyStateParent.style.display = '';
                     emptyStateRow.innerHTML = `
-                        <td colspan="9" class="empty-state-table">
+                        <td colspan="${rmrBranchColumnExists && viewAllBranches ? '10' : '9'}" class="empty-state-table">
                             <i class="bi bi-funnel"></i>
                             <h5>No matching RMR requests</h5>
                             <p class="text-muted">No requests match your filter criteria.</p>
@@ -1087,6 +1298,11 @@ function formatDate($dateTimeStr) {
     // ========== RMR FUNCTIONS ==========
     document.addEventListener('DOMContentLoaded', function() {
         console.log("Bad Orders - Live Database Mode");
+        console.log("Branch ID:", branchId);
+        console.log("View All Branches:", viewAllBranches);
+        console.log("RMR Branch Column Exists:", rmrBranchColumnExists);
+        console.log("Customers Branch Column Exists:", customersBranchColumnExists);
+        console.log("Items Branch Column Exists:", itemsBranchColumnExists);
         
         initializeSidebar();
         
@@ -1348,6 +1564,16 @@ function formatDate($dateTimeStr) {
                 
                 const totalAmount = rmr.return_quantity * rmr.unit_price;
                 
+                let branchHtml = '';
+                if (rmr.branch_name) {
+                    branchHtml = `
+                        <tr>
+                            <td class="detail-label">Branch:</td>
+                            <td><span class="badge bg-info">${rmr.branch_name}</span></td>
+                        </tr>
+                    `;
+                }
+                
                 let approvalHtml = '';
                 if (approval) {
                     approvalHtml = `
@@ -1372,6 +1598,7 @@ function formatDate($dateTimeStr) {
                                         <td width="40%" class="detail-label">RMR Number:</td>
                                         <td class="detail-value">${rmr.rmr_number}</td>
                                     </tr>
+                                    ${branchHtml}
                                     <tr>
                                         <td class="detail-label">Status:</td>
                                         <td><span class="status-badge ${getStatusClass(rmr.rmr_status)}">${getStatusText(rmr.rmr_status)}</span></td>
@@ -1608,55 +1835,68 @@ function formatDate($dateTimeStr) {
         const excelData = [];
         
         // Add headers
-        excelData.push([
+        const headers = [
             'RMR Number',
             'Customer',
             'Item Name',
             'Item Code',
+            ...(rmrBranchColumnExists && viewAllBranches ? ['Branch'] : []),
             'Quantity',
             'Unit',
             'Total Amount (₱)',
             'Return Reason',
             'Status',
             'Received Date'
-        ]);
+        ];
+        excelData.push(headers);
 
         // Add data rows
         rows.forEach(row => {
             const cells = row.querySelectorAll('td');
+            let cellIndex = 0;
             
             // Extract data from cells
-            const rmrNumber = cells[0]?.innerText.trim() || '';
-            const customer = cells[1]?.innerText.trim() || '';
+            const rmrNumber = cells[cellIndex++]?.innerText.trim() || '';
+            const customer = cells[cellIndex++]?.innerText.trim() || '';
             
             // Item details
-            const itemName = cells[2]?.innerText.split('\n')[0].trim() || '';
-            const itemCode = cells[2]?.querySelector('small')?.innerText.trim() || '';
+            const itemName = cells[cellIndex]?.innerText.split('\n')[0].trim() || '';
+            const itemCode = cells[cellIndex]?.querySelector('small')?.innerText.trim() || '';
+            cellIndex++;
+            
+            let branch = '';
+            if (rmrBranchColumnExists && viewAllBranches) {
+                branch = cells[cellIndex]?.innerText.trim() || '';
+                cellIndex++;
+            }
             
             // Quantity with unit
-            const qtyCell = cells[3]?.innerText.trim() || '';
+            const qtyCell = cells[cellIndex++]?.innerText.trim() || '';
             const qty = qtyCell.split(' ')[0] || '';
             const unit = qtyCell.split(' ')[1] || '';
             
             // Amount (remove ₱ and commas)
-            const amount = cells[4]?.innerText.replace('₱', '').replace(/,/g, '') || '0';
+            const amount = cells[cellIndex++]?.innerText.replace('₱', '').replace(/,/g, '') || '0';
             
-            const reason = cells[5]?.innerText.trim() || '';
-            const status = cells[6]?.innerText.trim() || '';
-            const receivedDate = cells[7]?.innerText.trim() || '';
+            const reason = cells[cellIndex++]?.innerText.trim() || '';
+            const status = cells[cellIndex++]?.innerText.trim() || '';
+            const receivedDate = cells[cellIndex++]?.innerText.trim() || '';
             
-            excelData.push([
+            const rowData = [
                 rmrNumber,
                 customer,
                 itemName,
                 itemCode,
-                qty,
+                ...(rmrBranchColumnExists && viewAllBranches ? [branch] : []),
+                parseInt(qty) || 0,
                 unit,
                 parseFloat(amount),
                 reason,
                 status,
                 receivedDate
-            ]);
+            ];
+            
+            excelData.push(rowData);
         });
 
         // Create workbook and worksheet
@@ -1664,11 +1904,12 @@ function formatDate($dateTimeStr) {
         const ws = XLSX.utils.aoa_to_sheet(excelData);
 
         // Set column widths
-        ws['!cols'] = [
+        const colWidths = [
             { wch: 15 }, // RMR Number
             { wch: 25 }, // Customer
             { wch: 30 }, // Item Name
             { wch: 15 }, // Item Code
+            ...(rmrBranchColumnExists && viewAllBranches ? [{ wch: 12 }] : []), // Branch
             { wch: 10 }, // Quantity
             { wch: 8 },  // Unit
             { wch: 15 }, // Total Amount
@@ -1676,14 +1917,19 @@ function formatDate($dateTimeStr) {
             { wch: 15 }, // Status
             { wch: 20 }  // Received Date
         ];
+        ws['!cols'] = colWidths;
 
         // Add worksheet to workbook
         XLSX.utils.book_append_sheet(wb, ws, 'RMR Requests');
 
-        // Generate filename with current date
+        // Generate filename with current date and branch info
         const date = new Date();
         const dateStr = date.toISOString().slice(0,10).replace(/-/g, '');
-        const filename = `RMR_Requests_${dateStr}.xlsx`;
+        let filename = `RMR_Requests_${dateStr}`;
+        if (rmrBranchColumnExists && !viewAllBranches) {
+            filename += `_Branch_${branchId}`;
+        }
+        filename += '.xlsx';
 
         // Export Excel file
         XLSX.writeFile(wb, filename);
@@ -1694,6 +1940,24 @@ function formatDate($dateTimeStr) {
             text: 'Excel export completed successfully!',
             timer: 2000,
             showConfirmButton: false
+        });
+    }
+
+    // ========== COPY SQL FUNCTION ==========
+    function copySQL(table) {
+        let sql = '';
+        if (table === 'rmr_requests') {
+            sql = "ALTER TABLE rmr_requests ADD COLUMN branch_id INT NULL;\nALTER TABLE rmr_requests ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+        }
+        
+        navigator.clipboard.writeText(sql).then(() => {
+            Swal.fire({
+                icon: 'success',
+                title: 'Copied!',
+                text: 'SQL copied to clipboard',
+                timer: 1500,
+                showConfirmButton: false
+            });
         });
     }
 
@@ -1710,7 +1974,7 @@ function formatDate($dateTimeStr) {
         }).then((result) => {
             if (result.isConfirmed) {
                 localStorage.removeItem('sidebarCollapsed');
-                window.location.href = 'login.php';
+                window.location.href = '../logout.php';
             }
         });
     }

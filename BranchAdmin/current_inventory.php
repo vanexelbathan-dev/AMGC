@@ -1,5 +1,26 @@
 <?php
 require_once '../config/database.php';
+require_once '../config/session_handler.php';
+
+// Get current user info and branch context
+$user_id = $_SESSION['user_id'] ?? 0;
+$user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Branch Admin';
+$user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'branch_admin';
+$branch_id = $_SESSION['branch_id'] ?? 0;
+$view_all_branches = $_SESSION['view_all_branches'] ?? false;
+
+// Check if branch_id column exists in items table
+$items_branch_column_exists = false;
+$check_column = $conn->query("SHOW COLUMNS FROM items LIKE 'branch_id'");
+if ($check_column && $check_column->num_rows > 0) {
+    $items_branch_column_exists = true;
+}
+
+// Determine branch filter condition
+$branch_condition = "";
+if ($items_branch_column_exists && !$view_all_branches) {
+    $branch_condition = "AND branch_id = $branch_id";
+}
 
 // ========== HANDLE AJAX REQUESTS ==========
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
@@ -31,14 +52,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 throw new Exception('Item code already exists');
             }
             
-            // Insert new item
-            $insert_query = "INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, reorder_level, status, created_at, updated_at) 
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
-            $insert_stmt = $conn->prepare($insert_query);
-            $insert_stmt->bind_param("ssssisdis", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status);
+            // Insert new item with branch_id
+            if ($items_branch_column_exists) {
+                $insert_query = "INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, reorder_level, status, branch_id, created_at, updated_at) 
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
+                $insert_stmt = $conn->prepare($insert_query);
+                $insert_stmt->bind_param("ssssisdisi", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status, $branch_id);
+            } else {
+                $insert_query = "INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, reorder_level, status, created_at, updated_at) 
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
+                $insert_stmt = $conn->prepare($insert_query);
+                $insert_stmt->bind_param("ssssisdis", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status);
+            }
             
             if (!$insert_stmt->execute()) {
-                throw new Exception('Failed to add item');
+                throw new Exception('Failed to add item: ' . $insert_stmt->error);
             }
             
             $item_id = $conn->insert_id;
@@ -65,6 +93,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $reorder_level = (int)$_POST['reorder_level'];
             $status = $_POST['status'] ?? 'active';
             
+            // Verify item belongs to user's branch (if branch column exists and not admin)
+            if ($items_branch_column_exists && !$view_all_branches) {
+                $check_query = "SELECT item_id FROM items WHERE item_id = ? AND branch_id = ?";
+                $check_stmt = $conn->prepare($check_query);
+                $check_stmt->bind_param("ii", $item_id, $branch_id);
+                $check_stmt->execute();
+                $check_result = $check_stmt->get_result();
+                
+                if ($check_result->num_rows === 0) {
+                    throw new Exception('Item not found or access denied');
+                }
+            }
+            
             $update_query = "UPDATE items 
                            SET item_name = ?, description = ?, category = ?, stock = ?, unit_type = ?, unit_price = ?, reorder_level = ?, status = ?, updated_at = NOW() 
                            WHERE item_id = ?";
@@ -72,7 +113,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $update_stmt->bind_param("sssisdsii", $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status, $item_id);
             
             if (!$update_stmt->execute()) {
-                throw new Exception('Failed to update item');
+                throw new Exception('Failed to update item: ' . $update_stmt->error);
             }
             
             $conn->commit();
@@ -88,6 +129,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         elseif ($_POST['action'] === 'delete_item') {
             $item_id = (int)$_POST['item_id'];
             
+            // Verify item belongs to user's branch (if branch column exists and not admin)
+            if ($items_branch_column_exists && !$view_all_branches) {
+                $check_query = "SELECT item_id FROM items WHERE item_id = ? AND branch_id = ?";
+                $check_stmt = $conn->prepare($check_query);
+                $check_stmt->bind_param("ii", $item_id, $branch_id);
+                $check_stmt->execute();
+                $check_result = $check_stmt->get_result();
+                
+                if ($check_result->num_rows === 0) {
+                    throw new Exception('Item not found or access denied');
+                }
+            }
+            
             // Check if item is used in sales orders
             $check_so_query = "SELECT COUNT(*) as count FROM sales_order_items WHERE item_id = ?";
             $check_so_stmt = $conn->prepare($check_so_query);
@@ -100,15 +154,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $update_query = "UPDATE items SET status = 'discontinued', updated_at = NOW() WHERE item_id = ?";
                 $update_stmt = $conn->prepare($update_query);
                 $update_stmt->bind_param("i", $item_id);
+                $update_stmt->execute();
             } else {
                 // Hard delete if not used
                 $delete_query = "DELETE FROM items WHERE item_id = ?";
                 $delete_stmt = $conn->prepare($delete_query);
                 $delete_stmt->bind_param("i", $item_id);
-            }
-            
-            if (!$update_stmt->execute()) {
-                throw new Exception('Failed to delete item');
+                $delete_stmt->execute();
             }
             
             $conn->commit();
@@ -124,9 +176,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         elseif ($_POST['action'] === 'get_item') {
             $item_id = (int)$_POST['item_id'];
             
+            // Add branch filter if needed
             $query = "SELECT * FROM items WHERE item_id = ?";
-            $stmt = $conn->prepare($query);
-            $stmt->bind_param("i", $item_id);
+            if ($items_branch_column_exists && !$view_all_branches) {
+                $query .= " AND branch_id = ?";
+                $stmt = $conn->prepare($query);
+                $stmt->bind_param("ii", $item_id, $branch_id);
+            } else {
+                $stmt = $conn->prepare($query);
+                $stmt->bind_param("i", $item_id);
+            }
+            
             $stmt->execute();
             $result = $stmt->get_result();
             $item = $result->fetch_assoc();
@@ -137,7 +197,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     'item' => $item
                 ]);
             } else {
-                throw new Exception('Item not found');
+                throw new Exception('Item not found or access denied');
             }
             exit;
         }
@@ -152,7 +212,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 
-// FETCH ALL ITEMS FROM items TABLE
+// FETCH ALL ITEMS FROM items TABLE WITH BRANCH FILTERING
 $items_query = "
     SELECT 
         item_id,
@@ -165,15 +225,19 @@ $items_query = "
         unit_price,
         reorder_level,
         status,
+        branch_id,
         created_at,
         updated_at
     FROM items
+    WHERE 1=1
+    $branch_condition
     ORDER BY item_code ASC
 ";
+
 $items_result = $conn->query($items_query);
 $items = $items_result->fetch_all(MYSQLI_ASSOC);
 
-// GET NEXT ITEM CODE FOR AUTO-GENERATION
+// GET NEXT ITEM CODE FOR AUTO-GENERATION (branch-specific)
 $next_number = 1;
 if (!empty($items)) {
     // Extract numbers from existing item codes (ITEM001, ITEM002, etc.)
@@ -189,7 +253,7 @@ if (!empty($items)) {
 }
 $next_item_code = 'ITEM' . str_pad($next_number, 3, '0', STR_PAD_LEFT);
 
-// CALCULATE STATISTICS FROM REAL DATA
+// CALCULATE STATISTICS FROM REAL DATA (branch-specific)
 $total_items = count($items);
 $total_stock = array_sum(array_column($items, 'quantity_on_hand'));
 $total_value = array_sum(array_map(function($item) {
@@ -222,7 +286,7 @@ function getStockStatus($stock, $reorder_level) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Current Inventory</title>
+    <title>Current Inventory - Branch Admin</title>
     <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
     <link rel="shortcut icon" href="../Pictures/favicon.ico" />
@@ -240,6 +304,65 @@ function getStockStatus($stock, $reorder_level) {
     <!-- SweetAlert2 -->
     <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <style>
+        /* Branch badge styling */
+        .branch-badge {
+            background-color: #e7f1ff;
+            color: #0d6efd;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 5px;
+        }
+        
+        /* Alert for missing branch column */
+        .alert-info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        
+        .alert-info code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 4px;
+            color: #c7254e;
+        }
+        
+        /* Mobile responsive adjustments */
+        @media (max-width: 768px) {
+            .stat-card {
+                padding: 12px;
+                min-height: 85px;
+                margin-bottom: 8px;
+            }
+            
+            .stat-icon {
+                font-size: 2rem;
+                margin-right: 12px;
+            }
+            
+            .stat-value {
+                font-size: 1.5rem;
+            }
+            
+            .stat-label {
+                font-size: 0.8rem;
+            }
+            
+            .col-md-3, .col-md-4, .col-md-6 {
+                width: 50%;
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+            
+            .row.g-3 {
+                margin-left: -8px;
+                margin-right: -8px;
+            }
+        }
+    </style>
 </head>
 <body>
     <!-- MAIN APPLICATION -->
@@ -301,10 +424,9 @@ function getStockStatus($stock, $reorder_level) {
             <!-- User Profile Section at the bottom of sidebar -->
             <div class="sidebar-footer">
                 <div class="user-profile-sidebar">
-                    <div class="user-avatar-sidebar">AD</div>
+                    <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
                     <div class="user-details-sidebar">
-                        <span class="user-name-sidebar">Quality Control</span>
-                        <span class="user-role-sidebar">QC Officer</span>
+                        <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
                     </div>
                 </div>
                 
@@ -326,9 +448,36 @@ function getStockStatus($stock, $reorder_level) {
                     </button>
                     <div class="page-title">
                         <h2>Current Inventory</h2>
-                        <p id="dashboardSubtitle">Real-time inventory from database</p>
+                        <p id="dashboardSubtitle">
+                            Real-time inventory from database
+                        </p>
                     </div>
                 </div>
+
+                <!-- Branch Info Alerts -->
+                <?php if (!$items_branch_column_exists): ?>
+                    <div class="alert alert-info alert-dismissible fade show" role="alert">
+                        <i class="bi bi-info-circle"></i> 
+                        <strong>Branch filtering for items not yet set up.</strong> Please run this SQL in phpMyAdmin to enable branch-specific inventory data:
+                        <br><br>
+                        <code>ALTER TABLE items ADD COLUMN branch_id INT NULL;</code>
+                        <br>
+                        <code>ALTER TABLE items ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
+                        <br><br>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('items')">
+                            <i class="bi bi-files"></i> Copy SQL
+                        </button>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <?php endif; ?>
+
+                <!-- No Items Warning -->
+                <?php if (empty($items) && $items_branch_column_exists && !$view_all_branches): ?>
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i> 
+                        No inventory items found for your branch. You can add new items using the "Add Item" button.
+                    </div>
+                <?php endif; ?>
 
                 <!-- QUICK STATS - WITH PROPER ICONS FOR EACH METRIC -->
                 <div class="row g-3 mb-4">
@@ -339,6 +488,9 @@ function getStockStatus($stock, $reorder_level) {
                             <div class="stat-value"><?= $statInventoryValue ?></div>
                             <div class="stat-label">Total Inventory Value</div>
                             <small class="d-block mt-2"><i class="bi bi-box-seam"></i> <?= number_format($total_stock) ?> units</small>
+                            <?php if ($items_branch_column_exists && !$view_all_branches): ?>
+                               
+                            <?php endif; ?>
                         </div>
                     </div>
                     
@@ -415,12 +567,15 @@ function getStockStatus($stock, $reorder_level) {
                     </div>
                 </div>
 
-                <!-- INVENTORY TABLE - REAL DATA FROM DATABASE -->
+                <!-- INVENTORY TABLE - REAL DATA FROM DATABASE WITH BRANCH FILTERING -->
                 <div class="data-table">
                     <div class="table-header d-flex justify-content-between align-items-center">
                         <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>Current Inventory Items</h5>
                         <div class="d-flex gap-2">
                             <span class="text-muted me-2">Total Value: ₱<?= number_format($total_value, 2) ?></span>
+                            <?php if ($items_branch_column_exists && $view_all_branches): ?>
+                                <span class="badge bg-success align-self-center">All Branches</span>
+                            <?php endif; ?>
                             <button class="btn btn-sm btn-outline-success" onclick="exportToExcel()">
                                 <i class="bi bi-file-earmark-excel"></i> Export to Excel
                             </button>
@@ -436,6 +591,9 @@ function getStockStatus($stock, $reorder_level) {
                                     <th>Item Code</th>
                                     <th>Item Name</th>
                                     <th>Category</th>
+                                    <?php if ($items_branch_column_exists && $view_all_branches): ?>
+                                        <th>Branch</th>
+                                    <?php endif; ?>
                                     <th>Stock</th>
                                     <th>Unit</th>
                                     <th>Unit Price</th>
@@ -447,11 +605,16 @@ function getStockStatus($stock, $reorder_level) {
                             <tbody id="inventoryTableBody">
                                 <?php if (empty($items)): ?>
                                 <tr>
-                                    <td colspan="9" class="text-center py-4">
+                                    <td colspan="<?= ($items_branch_column_exists && $view_all_branches) ? '10' : '9' ?>" class="text-center py-4">
                                         <i class="bi bi-inbox fs-1 d-block text-muted mb-2"></i>
-                                        <p class="text-muted mb-0">No items found in database</p>
+                                        <p class="text-muted mb-0">
+                                            No items found
+                                            <?php if ($items_branch_column_exists && !$view_all_branches): ?>
+                                                for your branch
+                                            <?php endif; ?>
+                                        </p>
                                         <button class="btn btn-sm btn-primary mt-2" onclick="showAddItemModal()">
-                                            <i class="bi bi-plus-circle"></i> Add First Item
+                                            <i class="bi bi-plus-circle"></i> Add Item
                                         </button>
                                     </td>
                                 </tr>
@@ -463,13 +626,14 @@ function getStockStatus($stock, $reorder_level) {
                                         data-id="<?= $item['item_id'] ?>"
                                         data-code="<?= htmlspecialchars($item['item_code']) ?>"
                                         data-name="<?= htmlspecialchars($item['item_name']) ?>"
-                                        data-category="<?= htmlspecialchars($item['category']) ?>"
+                                        data-category="<?= htmlspecialchars($item['category'] ?? '') ?>"
                                         data-status="<?= $item['status'] ?>"
                                         data-stock="<?= $item['quantity_on_hand'] ?>"
                                         data-reorder="<?= $item['reorder_level'] ?>"
                                         data-price="<?= $item['unit_price'] ?>"
                                         data-unit="<?= $item['unit_type'] ?>"
-                                        data-description="<?= htmlspecialchars($item['description'] ?? '') ?>">
+                                        data-description="<?= htmlspecialchars($item['description'] ?? '') ?>"
+                                        data-branch="<?= $item['branch_id'] ?? '' ?>">
                                         <td><strong><?= htmlspecialchars($item['item_code']) ?></strong></td>
                                         <td>
                                             <?= htmlspecialchars($item['item_name']) ?>
@@ -478,6 +642,13 @@ function getStockStatus($stock, $reorder_level) {
                                             <?php endif; ?>
                                         </td>
                                         <td><?= htmlspecialchars($item['category'] ?? 'Uncategorized') ?></td>
+                                        <?php if ($items_branch_column_exists && $view_all_branches): ?>
+                                            <td>
+                                                <span class="badge bg-info">
+                                                    Branch <?= $item['branch_id'] ?? 'N/A' ?>
+                                                </span>
+                                            </td>
+                                        <?php endif; ?>
                                         <td>
                                             <span class="<?= $item['quantity_on_hand'] <= $item['reorder_level'] ? 'text-danger fw-bold' : '' ?>">
                                                 <?= number_format($item['quantity_on_hand']) ?>
@@ -524,6 +695,9 @@ function getStockStatus($stock, $reorder_level) {
                         <div class="alert alert-warning alert-dismissible fade show mb-0" role="alert">
                             <i class="bi bi-exclamation-triangle-fill me-2"></i>
                             <strong>Low Stock Alert!</strong> <?= $low_stock_count ?> item(s) are below reorder level.
+                            <?php if ($items_branch_column_exists && !$view_all_branches): ?>
+                                in your branch.
+                            <?php endif; ?>
                             <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                         </div>
                     </div>
@@ -544,6 +718,19 @@ function getStockStatus($stock, $reorder_level) {
                 <div class="modal-body">
                     <form id="itemForm">
                         <input type="hidden" id="itemId">
+                        <?php if ($items_branch_column_exists && !$view_all_branches): ?>
+                            <input type="hidden" name="branch_id" value="<?= $branch_id ?>">
+                        <?php endif; ?>
+                        
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i>
+                            <?php if ($items_branch_column_exists && !$view_all_branches): ?>
+                                Adding item to Branch <?= $branch_id ?>
+                            <?php else: ?>
+                                Item code is auto-generated
+                            <?php endif; ?>
+                        </div>
+                        
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label for="itemCode" class="form-label">Item Code *</label>
@@ -626,7 +813,7 @@ function getStockStatus($stock, $reorder_level) {
 
     <!-- EDIT ITEM MODAL -->
     <div class="modal fade" id="editItemModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
+        <div class="dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header bg-warning text-dark">
                     <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Edit Item</h5>
@@ -635,6 +822,7 @@ function getStockStatus($stock, $reorder_level) {
                 <div class="modal-body">
                     <form id="editItemForm">
                         <input type="hidden" id="editItemId">
+                        
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label for="editItemCode" class="form-label">Item Code</label>
@@ -723,6 +911,9 @@ function getStockStatus($stock, $reorder_level) {
     <script>
     // ========== GLOBAL VARIABLES ==========
     let currentItemId = null;
+    const branchId = <?php echo $branch_id; ?>;
+    const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
+    const itemsBranchColumnExists = <?php echo $items_branch_column_exists ? 'true' : 'false'; ?>;
     
     // ========== SIDEBAR FUNCTIONS ==========
     function toggleSidebar() {
@@ -783,6 +974,9 @@ function getStockStatus($stock, $reorder_level) {
     // ========== ITEM FUNCTIONS ==========
     document.addEventListener('DOMContentLoaded', function() {
         console.log("Current Inventory - Live Database Mode");
+        console.log("Branch ID:", branchId);
+        console.log("View All Branches:", viewAllBranches);
+        console.log("Items Branch Column Exists:", itemsBranchColumnExists);
         
         initializeSidebar();
         
@@ -893,6 +1087,14 @@ function getStockStatus($stock, $reorder_level) {
                                     </span>
                                 </td>
                             </tr>
+                            ${itemsBranchColumnExists ? `
+                            <tr>
+                                <th>Branch:</th>
+                                <td>
+                                    <span class="badge bg-info">Branch ${item.branch_id || 'N/A'}</span>
+                                </td>
+                            </tr>
+                            ` : ''}
                         </table>
                     </div>
                     <div class="col-md-6">
@@ -1219,17 +1421,19 @@ function getStockStatus($stock, $reorder_level) {
         const excelData = [];
         
         // Add headers
-        excelData.push([
+        const headers = [
             'Item Code',
             'Item Name',
             'Category',
+            ...(itemsBranchColumnExists && viewAllBranches ? ['Branch'] : []),
             'Stock',
             'Unit Type',
             'Unit Price (₱)',
             'Reorder Level',
             'Status',
             'Stock Value (₱)'
-        ]);
+        ];
+        excelData.push(headers);
 
         // Add data rows
         rows.forEach(row => {
@@ -1238,23 +1442,27 @@ function getStockStatus($stock, $reorder_level) {
                 const name = row.dataset.name;
                 const category = row.dataset.category || 'Uncategorized';
                 const stock = parseInt(row.dataset.stock);
-                const unit = row.querySelector('td:nth-child(5)')?.innerText || '';
+                const unit = row.dataset.unit;
                 const price = parseFloat(row.dataset.price);
                 const reorder = parseInt(row.dataset.reorder);
                 const status = row.dataset.status;
                 const value = stock * price;
+                const branch = row.dataset.branch;
                 
-                excelData.push([
+                const rowData = [
                     code,
                     name,
                     category,
+                    ...(itemsBranchColumnExists && viewAllBranches ? [`Branch ${branch || 'N/A'}`] : []),
                     stock,
                     unit,
                     price,
                     reorder,
                     status.charAt(0).toUpperCase() + status.slice(1),
                     parseFloat(value.toFixed(2))
-                ]);
+                ];
+                
+                excelData.push(rowData);
             }
         });
 
@@ -1263,10 +1471,11 @@ function getStockStatus($stock, $reorder_level) {
         const ws = XLSX.utils.aoa_to_sheet(excelData);
 
         // Set column widths
-        ws['!cols'] = [
+        const colWidths = [
             { wch: 15 }, // Item Code
             { wch: 30 }, // Item Name
             { wch: 20 }, // Category
+            ...(itemsBranchColumnExists && viewAllBranches ? [{ wch: 12 }] : []), // Branch
             { wch: 12 }, // Stock
             { wch: 12 }, // Unit Type
             { wch: 15 }, // Unit Price
@@ -1274,14 +1483,19 @@ function getStockStatus($stock, $reorder_level) {
             { wch: 15 }, // Status
             { wch: 18 }  // Stock Value
         ];
+        ws['!cols'] = colWidths;
 
         // Add worksheet to workbook
         XLSX.utils.book_append_sheet(wb, ws, 'Current Inventory');
 
-        // Generate filename with current date
+        // Generate filename with current date and branch info
         const date = new Date();
         const dateStr = date.toISOString().slice(0,10).replace(/-/g, '');
-        const filename = `Current_Inventory_${dateStr}.xlsx`;
+        let filename = `Current_Inventory_${dateStr}`;
+        if (itemsBranchColumnExists && !viewAllBranches) {
+            filename += `_Branch_${branchId}`;
+        }
+        filename += '.xlsx';
 
         // Export Excel file
         XLSX.writeFile(wb, filename);
@@ -1292,6 +1506,24 @@ function getStockStatus($stock, $reorder_level) {
             text: 'Excel export completed successfully!',
             timer: 2000,
             showConfirmButton: false
+        });
+    }
+
+    // ========== COPY SQL FUNCTION ==========
+    function copySQL(table) {
+        let sql = '';
+        if (table === 'items') {
+            sql = "ALTER TABLE items ADD COLUMN branch_id INT NULL;\nALTER TABLE items ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+        }
+        
+        navigator.clipboard.writeText(sql).then(() => {
+            Swal.fire({
+                icon: 'success',
+                title: 'Copied!',
+                text: 'SQL copied to clipboard',
+                timer: 1500,
+                showConfirmButton: false
+            });
         });
     }
 
@@ -1308,7 +1540,7 @@ function getStockStatus($stock, $reorder_level) {
         }).then((result) => {
             if (result.isConfirmed) {
                 localStorage.removeItem('sidebarCollapsed');
-                window.location.href = '../login.php';
+                window.location.href = '../logout.php';
             }
         });
     }

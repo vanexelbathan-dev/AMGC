@@ -1,5 +1,38 @@
 <?php
 require_once '../config/database.php';
+require_once '../config/session_handler.php';
+
+// Get current user info and branch context
+$user_id = $_SESSION['user_id'] ?? 0;
+$user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Branch Admin';
+$user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'branch_admin';
+$branch_id = $_SESSION['branch_id'] ?? 0;
+$view_all_branches = $_SESSION['view_all_branches'] ?? false;
+
+// Check if branch_id column exists in purchase_orders table
+$po_branch_column_exists = false;
+$check_po_column = $conn->query("SHOW COLUMNS FROM purchase_orders LIKE 'branch_id'");
+if ($check_po_column && $check_po_column->num_rows > 0) {
+    $po_branch_column_exists = true;
+}
+
+// Check if branch_id column exists in items table
+$items_branch_column_exists = false;
+$check_items_column = $conn->query("SHOW COLUMNS FROM items LIKE 'branch_id'");
+if ($check_items_column && $check_items_column->num_rows > 0) {
+    $items_branch_column_exists = true;
+}
+
+// Determine branch filter condition - ONLY if column exists
+$po_branch_condition = "";
+if ($po_branch_column_exists && !$view_all_branches) {
+    $po_branch_condition = "AND po.branch_id = $branch_id";
+}
+
+$items_branch_condition = "";
+if ($items_branch_column_exists && !$view_all_branches) {
+    $items_branch_condition = "AND branch_id = $branch_id";
+}
 
 // ========== HANDLE AJAX REQUESTS ==========
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
@@ -17,10 +50,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $total_amount = (float)$_POST['total_amount'];
             $po_status = $_POST['po_status'] ?? 'draft';
             
-            $insert_query = "INSERT INTO purchase_orders (po_number, supplier_name, order_date, expected_delivery, total_amount, po_status, created_at, updated_at) 
-                           VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())";
-            $insert_stmt = $conn->prepare($insert_query);
-            $insert_stmt->bind_param("ssssds", $po_number, $supplier_name, $order_date, $expected_delivery, $total_amount, $po_status);
+            // Insert with branch_id if column exists
+            if ($po_branch_column_exists) {
+                $insert_query = "INSERT INTO purchase_orders (po_number, supplier_name, order_date, expected_delivery, total_amount, po_status, branch_id, created_at, updated_at) 
+                               VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
+                $insert_stmt = $conn->prepare($insert_query);
+                $insert_stmt->bind_param("ssssdsi", $po_number, $supplier_name, $order_date, $expected_delivery, $total_amount, $po_status, $branch_id);
+            } else {
+                $insert_query = "INSERT INTO purchase_orders (po_number, supplier_name, order_date, expected_delivery, total_amount, po_status, created_at, updated_at) 
+                               VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())";
+                $insert_stmt = $conn->prepare($insert_query);
+                $insert_stmt->bind_param("ssssds", $po_number, $supplier_name, $order_date, $expected_delivery, $total_amount, $po_status);
+            }
             
             if (!$insert_stmt->execute()) {
                 throw new Exception('Failed to create purchase order');
@@ -48,6 +89,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $total_amount = (float)$_POST['total_amount'];
             $po_status = $_POST['po_status'];
             
+            // Verify PO belongs to user's branch (if branch column exists and not admin)
+            if ($po_branch_column_exists && !$view_all_branches) {
+                $check_query = "SELECT po_id FROM purchase_orders WHERE po_id = ? AND branch_id = ?";
+                $check_stmt = $conn->prepare($check_query);
+                $check_stmt->bind_param("ii", $po_id, $branch_id);
+                $check_stmt->execute();
+                $check_result = $check_stmt->get_result();
+                
+                if ($check_result->num_rows === 0) {
+                    throw new Exception('Purchase order not found or access denied');
+                }
+            }
+            
             $update_query = "UPDATE purchase_orders 
                            SET supplier_name = ?, order_date = ?, expected_delivery = ?, total_amount = ?, po_status = ?, updated_at = NOW() 
                            WHERE po_id = ?";
@@ -70,6 +124,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         // DELETE PURCHASE ORDER
         elseif ($_POST['action'] === 'delete_po') {
             $po_id = (int)$_POST['po_id'];
+            
+            // Verify PO belongs to user's branch (if branch column exists and not admin)
+            if ($po_branch_column_exists && !$view_all_branches) {
+                $check_query = "SELECT po_id FROM purchase_orders WHERE po_id = ? AND branch_id = ?";
+                $check_stmt = $conn->prepare($check_query);
+                $check_stmt->bind_param("ii", $po_id, $branch_id);
+                $check_stmt->execute();
+                $check_result = $check_stmt->get_result();
+                
+                if ($check_result->num_rows === 0) {
+                    throw new Exception('Purchase order not found or access denied');
+                }
+            }
             
             // Delete order items first
             $delete_items_query = "DELETE FROM purchase_order_items WHERE po_id = ?";
@@ -99,18 +166,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         elseif ($_POST['action'] === 'get_po') {
             $po_id = (int)$_POST['po_id'];
             
+            // Add branch filter if needed
             $query = "
                 SELECT 
                     po.*,
+                    b.branch_name,
                     COUNT(poi.po_item_id) as total_items,
                     SUM(poi.quantity_ordered) as total_quantity
                 FROM purchase_orders po
+                LEFT JOIN branches b ON po.branch_id = b.branch_id
                 LEFT JOIN purchase_order_items poi ON po.po_id = poi.po_id
                 WHERE po.po_id = ?
-                GROUP BY po.po_id
             ";
-            $stmt = $conn->prepare($query);
-            $stmt->bind_param("i", $po_id);
+            
+            if ($po_branch_column_exists && !$view_all_branches) {
+                $query .= " AND po.branch_id = ?";
+                $stmt = $conn->prepare($query);
+                $stmt->bind_param("ii", $po_id, $branch_id);
+            } else {
+                $stmt = $conn->prepare($query);
+                $stmt->bind_param("i", $po_id);
+            }
+            
             $stmt->execute();
             $result = $stmt->get_result();
             $po = $result->fetch_assoc();
@@ -151,6 +228,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $quantity_ordered = (int)$_POST['quantity_ordered'];
             $unit_price = (float)$_POST['unit_price'];
             
+            // Verify PO belongs to user's branch (if branch column exists and not admin)
+            if ($po_branch_column_exists && !$view_all_branches) {
+                $check_query = "SELECT po_id FROM purchase_orders WHERE po_id = ? AND branch_id = ?";
+                $check_stmt = $conn->prepare($check_query);
+                $check_stmt->bind_param("ii", $po_id, $branch_id);
+                $check_stmt->execute();
+                $check_result = $check_stmt->get_result();
+                
+                if ($check_result->num_rows === 0) {
+                    throw new Exception('Purchase order not found or access denied');
+                }
+            }
+            
             $insert_query = "INSERT INTO purchase_order_items (po_id, item_id, quantity_ordered, unit_price, created_at) 
                            VALUES (?, ?, ?, ?, NOW())";
             $insert_stmt = $conn->prepare($insert_query);
@@ -162,7 +252,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             
             // Update PO total amount
             $update_total_query = "UPDATE purchase_orders 
-                                  SET total_amount = (SELECT SUM(quantity_ordered * unit_price) FROM purchase_order_items WHERE po_id = ?)
+                                  SET total_amount = (SELECT IFNULL(SUM(quantity_ordered * unit_price), 0) FROM purchase_order_items WHERE po_id = ?)
                                   WHERE po_id = ?";
             $update_total_stmt = $conn->prepare($update_total_query);
             $update_total_stmt->bind_param("ii", $po_id, $po_id);
@@ -181,6 +271,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         elseif ($_POST['action'] === 'delete_po_item') {
             $po_item_id = (int)$_POST['po_item_id'];
             $po_id = (int)$_POST['po_id'];
+            
+            // Verify PO belongs to user's branch (if branch column exists and not admin)
+            if ($po_branch_column_exists && !$view_all_branches) {
+                $check_query = "SELECT po_id FROM purchase_orders WHERE po_id = ? AND branch_id = ?";
+                $check_stmt = $conn->prepare($check_query);
+                $check_stmt->bind_param("ii", $po_id, $branch_id);
+                $check_stmt->execute();
+                $check_result = $check_stmt->get_result();
+                
+                if ($check_result->num_rows === 0) {
+                    throw new Exception('Purchase order not found or access denied');
+                }
+            }
             
             $delete_query = "DELETE FROM purchase_order_items WHERE po_item_id = ?";
             $delete_stmt = $conn->prepare($delete_query);
@@ -217,7 +320,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 
-// FETCH PURCHASE ORDERS FROM DATABASE
+// FETCH PURCHASE ORDERS FROM DATABASE WITH BRANCH FILTERING
 $po_query = "
     SELECT 
         po.po_id,
@@ -227,24 +330,33 @@ $po_query = "
         po.total_amount,
         po.po_status,
         po.supplier_name,
+        po.branch_id,
         po.created_at,
         po.updated_at,
+        b.branch_name,
         COUNT(poi.po_item_id) as total_items,
         IFNULL(SUM(poi.quantity_ordered), 0) as total_quantity
     FROM purchase_orders po
+    LEFT JOIN branches b ON po.branch_id = b.branch_id
     LEFT JOIN purchase_order_items poi ON po.po_id = poi.po_id
+    WHERE 1=1
+    $po_branch_condition
     GROUP BY po.po_id
     ORDER BY po.created_at DESC, po.po_id DESC
 ";
 $po_result = $conn->query($po_query);
 $purchase_orders = $po_result->fetch_all(MYSQLI_ASSOC);
 
-// FETCH ALL ITEMS FOR DROPDOWN
-$items_query = "SELECT item_id, item_code, item_name, unit_price, unit_type, stock FROM items WHERE status = 'active' ORDER BY item_name";
+// FETCH ALL ITEMS FOR DROPDOWN - BRANCH SPECIFIC
+$items_query = "SELECT item_id, item_code, item_name, unit_price, unit_type, stock 
+                FROM items 
+                WHERE status = 'active' 
+                $items_branch_condition 
+                ORDER BY item_name";
 $items_result = $conn->query($items_query);
 $items_list = $items_result->fetch_all(MYSQLI_ASSOC);
 
-// CALCULATE STATISTICS FROM REAL DATA
+// CALCULATE STATISTICS FROM REAL DATA (branch-specific)
 $total_po = count($purchase_orders);
 $draft_po = count(array_filter($purchase_orders, fn($po) => $po['po_status'] === 'draft'));
 $submitted_po = count(array_filter($purchase_orders, fn($po) => $po['po_status'] === 'submitted'));
@@ -258,8 +370,16 @@ $statProcessingPO = $submitted_po + $approved_po;
 $statDeliveredPO = $received_po;
 $statReturnedPO = 0;
 
-// Get unique suppliers for filter
-$suppliers_query = "SELECT DISTINCT supplier_name FROM purchase_orders WHERE supplier_name IS NOT NULL AND supplier_name != '' ORDER BY supplier_name";
+// Get unique suppliers for filter - branch specific (only if column exists)
+$suppliers_query = "SELECT DISTINCT supplier_name FROM purchase_orders 
+                    WHERE supplier_name IS NOT NULL AND supplier_name != ''";
+
+// Only add branch condition if column exists and not viewing all branches
+if ($po_branch_column_exists && !$view_all_branches) {
+    $suppliers_query .= " AND branch_id = $branch_id";
+}
+
+$suppliers_query .= " ORDER BY supplier_name";
 $suppliers_result = $conn->query($suppliers_query);
 $suppliers = $suppliers_result->fetch_all(MYSQLI_ASSOC);
 
@@ -303,7 +423,7 @@ function formatDateTime($dateStr) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Purchase Orders</title>
+    <title>Purchase Orders - Branch Admin</title>
     <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
     <link rel="shortcut icon" href="../Pictures/favicon.ico" />
@@ -323,6 +443,31 @@ function formatDateTime($dateStr) {
     <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
+        /* Branch badge styling */
+        .branch-badge {
+            background-color: #e7f1ff;
+            color: #0d6efd;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 5px;
+        }
+        
+        /* Alert for missing branch column */
+        .alert-info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        
+        .alert-info code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 4px;
+            color: #c7254e;
+        }
+        
         /* Main layout */
         .main-content {
             padding: 20px 30px;
@@ -417,6 +562,9 @@ function formatDateTime($dateStr) {
         .col-po { width: 11%; }
         .col-supplier { width: 13%; }
         .col-date { width: 10%; }
+        <?php if ($po_branch_column_exists && $view_all_branches): ?>
+        .col-branch { width: 8%; }
+        <?php endif; ?>
         .col-items { width: 7%; }
         .col-qty { width: 8%; }
         .col-amount { width: 12%; }
@@ -627,7 +775,9 @@ function formatDateTime($dateStr) {
                  <button class="desktop-toggle-btn" id="desktopToggleBtn">
                     <i class="bi bi-list"></i>
                 </button>    
-                 <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> <span class="nav-text">Branch Admin</span></h3>
+                 <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
+                 <span class="nav-text">Branch Admin</span>
+                 </h3>
             </div>
             
             <div class="sidebar-menu">
@@ -674,10 +824,9 @@ function formatDateTime($dateStr) {
             <!-- User Profile Section at the bottom of sidebar -->
             <div class="sidebar-footer">
                 <div class="user-profile-sidebar">
-                    <div class="user-avatar-sidebar">AD</div>
+                    <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
                     <div class="user-details-sidebar">
-                        <span class="user-name-sidebar">Quality Control</span>
-                        <span class="user-role-sidebar">QC Officer</span>
+                        <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
                     </div>
                 </div>
                 
@@ -699,9 +848,53 @@ function formatDateTime($dateStr) {
                     </button>
                     <div class="page-title">
                         <h2>Purchase Orders</h2>
-                        <p id="dashboardSubtitle">Manage and track all purchase orders</p>
+                        <p id="dashboardSubtitle">
+                            Manage and track all purchase orders
+                            
+                        </p>
                     </div>
                 </div>
+
+                <!-- Branch Info Alerts -->
+                <?php if (!$po_branch_column_exists): ?>
+                    <div class="alert alert-info alert-dismissible fade show" role="alert">
+                        <i class="bi bi-info-circle"></i> 
+                        <strong>Branch filtering for purchase orders not yet set up.</strong> Please run this SQL in phpMyAdmin to enable branch-specific PO data:
+                        <br><br>
+                        <code>ALTER TABLE purchase_orders ADD COLUMN branch_id INT NULL;</code>
+                        <br>
+                        <code>ALTER TABLE purchase_orders ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
+                        <br><br>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('purchase_orders')">
+                            <i class="bi bi-files"></i> Copy SQL
+                        </button>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <?php endif; ?>
+
+                <?php if (!$items_branch_column_exists): ?>
+                    <div class="alert alert-info alert-dismissible fade show" role="alert">
+                        <i class="bi bi-info-circle"></i> 
+                        <strong>Branch filtering for items not yet set up.</strong> Please run this SQL in phpMyAdmin to enable branch-specific item data:
+                        <br><br>
+                        <code>ALTER TABLE items ADD COLUMN branch_id INT NULL;</code>
+                        <br>
+                        <code>ALTER TABLE items ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
+                        <br><br>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('items')">
+                            <i class="bi bi-files"></i> Copy SQL
+                        </button>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <?php endif; ?>
+
+                <!-- No PO Warning -->
+                <?php if (empty($purchase_orders) && $po_branch_column_exists && !$view_all_branches): ?>
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i> 
+                        No purchase orders found for your branch.
+                    </div>
+                <?php endif; ?>
 
                 <!-- Stats Section - WITH PROPER ICONS -->
                 <div class="stats-row">
@@ -712,6 +905,9 @@ function formatDateTime($dateStr) {
                         <div class="stat-content">
                             <div class="stat-value" id="totalPO"><?= $statTotalPO ?></div>
                             <div class="stat-label">Total POs</div>
+                            <?php if ($po_branch_column_exists && !$view_all_branches): ?>
+                                <small class="d-block text-white-50">Your Branch</small>
+                            <?php endif; ?>
                         </div>
                     </div>
                     <div class="stat-card pending">
@@ -781,6 +977,23 @@ function formatDateTime($dateStr) {
                         <option value="12">December</option>
                     </select>
                     
+                    <?php if ($po_branch_column_exists && $view_all_branches): ?>
+                    <select class="filter-select" id="filterBranch" onchange="filterTable()">
+                        <option value="all">All Branches</option>
+                        <?php
+                        // Get unique branches from the data
+                        $branches = array_unique(array_column($purchase_orders, 'branch_id'));
+                        foreach ($branches as $bid):
+                            if (!empty($bid)):
+                        ?>
+                        <option value="<?= $bid ?>">Branch <?= $bid ?></option>
+                        <?php 
+                            endif;
+                        endforeach; 
+                        ?>
+                    </select>
+                    <?php endif; ?>
+                    
                     <div class="filter-search">
                         <i class="bi bi-search"></i>
                         <input type="text" id="searchInput" placeholder="Search PO number, supplier..." onkeyup="filterTable()">
@@ -805,6 +1018,9 @@ function formatDateTime($dateStr) {
                                     <th class="col-po">PO NUMBER</th>
                                     <th class="col-supplier">SUPPLIER</th>
                                     <th class="col-date">ORDER DATE</th>
+                                    <?php if ($po_branch_column_exists && $view_all_branches): ?>
+                                        <th class="col-branch">BRANCH</th>
+                                    <?php endif; ?>
                                     <th class="col-items">ITEMS</th>
                                     <th class="col-qty">QUANTITY</th>
                                     <th class="col-amount">TOTAL AMOUNT</th>
@@ -816,10 +1032,16 @@ function formatDateTime($dateStr) {
                             <tbody id="poTableBody">
                                 <?php if (empty($purchase_orders)): ?>
                                 <tr>
-                                    <td colspan="9" class="text-center py-5">
+                                    <td colspan="<?= ($po_branch_column_exists && $view_all_branches) ? '10' : '9' ?>" class="text-center py-5">
                                         <i class="bi bi-inbox fs-1 d-block text-muted mb-3"></i>
                                         <h5>No Purchase Orders Found</h5>
-                                        <p class="text-muted mb-0">No purchase orders in the database.</p>
+                                        <p class="text-muted mb-0">
+                                            <?php if ($po_branch_column_exists && !$view_all_branches): ?>
+                                                No purchase orders for your branch.
+                                            <?php else: ?>
+                                                No purchase orders in the database.
+                                            <?php endif; ?>
+                                        </p>
                                         <p class="text-muted">Click "New PO" to create your first purchase order.</p>
                                     </td>
                                 </tr>
@@ -830,7 +1052,8 @@ function formatDateTime($dateStr) {
                                         data-po-number="<?= htmlspecialchars($po['po_number']) ?>"
                                         data-supplier="<?= htmlspecialchars($po['supplier_name'] ?? '') ?>"
                                         data-status="<?= $po['po_status'] ?>"
-                                        data-date="<?= $po['order_date'] ?>">
+                                        data-date="<?= $po['order_date'] ?>"
+                                        data-branch="<?= $po['branch_id'] ?? '' ?>">
                                         <td class="col-po">
                                             <strong><?= htmlspecialchars($po['po_number']) ?></strong>
                                         </td>
@@ -838,6 +1061,13 @@ function formatDateTime($dateStr) {
                                             <?= htmlspecialchars($po['supplier_name'] ?? 'N/A') ?>
                                         </td>
                                         <td class="col-date"><?= formatDate($po['order_date']) ?></td>
+                                        <?php if ($po_branch_column_exists && $view_all_branches): ?>
+                                            <td class="col-branch">
+                                                <span class="badge bg-info">
+                                                    <?= htmlspecialchars($po['branch_name'] ?? 'Branch ' . $po['branch_id']) ?>
+                                                </span>
+                                            </td>
+                                        <?php endif; ?>
                                         <td class="col-items"><?= $po['total_items'] ?? 0 ?></td>
                                         <td class="col-qty"><?= number_format($po['total_quantity'] ?? 0) ?></td>
                                         <td class="col-amount">₱<?= number_format($po['total_amount'] ?? 0, 2) ?></td>
@@ -895,6 +1125,14 @@ function formatDateTime($dateStr) {
                 </div>
                 <div class="modal-body">
                     <form id="newPOForm">
+                        <?php if ($po_branch_column_exists && !$view_all_branches): ?>
+                            <input type="hidden" name="branch_id" value="<?= $branch_id ?>">
+                            <div class="alert alert-info mb-3">
+                                <i class="bi bi-info-circle me-2"></i>
+                                Creating purchase order for Branch <?= $branch_id ?>
+                            </div>
+                        <?php endif; ?>
+                        
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label for="supplierName" class="form-label">Supplier Name *</label>
@@ -920,6 +1158,14 @@ function formatDateTime($dateStr) {
                                 <input type="number" class="form-control" id="poTotalAmount" min="0" step="0.01" value="0" required>
                             </div>
                         </div>
+                        
+                        <?php if (empty($items_list) && $items_branch_column_exists && !$view_all_branches): ?>
+                            <div class="alert alert-warning mt-3">
+                                <i class="bi bi-exclamation-triangle me-2"></i>
+                                No items available for your branch. You can still create the PO and add items later.
+                            </div>
+                        <?php endif; ?>
+                        
                         <div class="alert alert-info mt-3">
                             <i class="bi bi-info-circle me-2"></i>
                             You can add items to this purchase order after creation.
@@ -967,6 +1213,10 @@ function formatDateTime($dateStr) {
                 <div class="modal-body">
                     <form id="editPOForm">
                         <input type="hidden" id="editPOId">
+                        <?php if ($po_branch_column_exists && !$view_all_branches): ?>
+                            <input type="hidden" name="branch_id" value="<?= $branch_id ?>">
+                        <?php endif; ?>
+                        
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label for="editPONumber" class="form-label">PO Number</label>
@@ -999,6 +1249,15 @@ function formatDateTime($dateStr) {
                                 <input type="number" class="form-control" id="editTotalAmount" min="0" step="0.01" required>
                             </div>
                         </div>
+                        
+                        <?php if ($po_branch_column_exists && $view_all_branches): ?>
+                        <div class="row g-3 mt-2">
+                            <div class="col-md-6">
+                                <label for="editBranch" class="form-label">Branch</label>
+                                <input type="text" class="form-control" id="editBranch" readonly>
+                            </div>
+                        </div>
+                        <?php endif; ?>
                     </form>
                 </div>
                 <div class="modal-footer">
@@ -1043,6 +1302,10 @@ function formatDateTime($dateStr) {
     // ========== GLOBAL VARIABLES ==========
     let currentPOId = null;
     let itemsList = <?= json_encode($items_list) ?>;
+    const branchId = <?php echo $branch_id; ?>;
+    const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
+    const poBranchColumnExists = <?php echo $po_branch_column_exists ? 'true' : 'false'; ?>;
+    const itemsBranchColumnExists = <?php echo $items_branch_column_exists ? 'true' : 'false'; ?>;
     
     // ========== SIDEBAR FUNCTIONS ==========
     function toggleSidebar() {
@@ -1103,6 +1366,10 @@ function formatDateTime($dateStr) {
     // ========== PURCHASE ORDER FUNCTIONS ==========
     document.addEventListener('DOMContentLoaded', function() {
         console.log("Purchase Orders - Live Database Mode");
+        console.log("Branch ID:", branchId);
+        console.log("View All Branches:", viewAllBranches);
+        console.log("PO Branch Column Exists:", poBranchColumnExists);
+        console.log("Items Branch Column Exists:", itemsBranchColumnExists);
         
         initializeSidebar();
         
@@ -1185,6 +1452,7 @@ function formatDateTime($dateStr) {
         const statusFilter = document.getElementById('filterStatus').value;
         const supplierFilter = document.getElementById('filterSupplier').value;
         const monthFilter = document.getElementById('filterMonth').value;
+        const branchFilter = document.getElementById('filterBranch')?.value || 'all';
         const searchTerm = document.getElementById('searchInput').value.toLowerCase();
         
         const rows = document.querySelectorAll('.po-row');
@@ -1195,6 +1463,7 @@ function formatDateTime($dateStr) {
             const supplier = row.dataset.supplier?.toLowerCase() || '';
             const status = row.dataset.status || '';
             const dateStr = row.dataset.date || '';
+            const rowBranch = row.dataset.branch || '';
             
             let matchesStatus = statusFilter === 'all' || status === statusFilter;
             let matchesSupplier = supplierFilter === 'all' || row.dataset.supplier === supplierFilter;
@@ -1205,11 +1474,17 @@ function formatDateTime($dateStr) {
                 matchesMonth = poMonth === parseInt(monthFilter);
             }
             
+            // Branch filter (only when viewing all branches)
+            let matchesBranch = true;
+            if (poBranchColumnExists && viewAllBranches && branchFilter !== 'all') {
+                matchesBranch = rowBranch === branchFilter;
+            }
+            
             let matchesSearch = searchTerm === '' || 
                 poNumber.includes(searchTerm) || 
                 supplier.includes(searchTerm);
             
-            if (matchesStatus && matchesSupplier && matchesMonth && matchesSearch) {
+            if (matchesStatus && matchesSupplier && matchesMonth && matchesBranch && matchesSearch) {
                 row.style.display = '';
                 visibleCount++;
             } else {
@@ -1231,6 +1506,16 @@ function formatDateTime($dateStr) {
 
     // Show new PO modal
     function showNewPOModal() {
+        // Check if there are items available for branch
+        <?php if (empty($items_list) && $items_branch_column_exists && !$view_all_branches): ?>
+        Swal.fire({
+            title: 'No Items Available',
+            text: 'There are no active items assigned to your branch. You can still create the PO and add items later.',
+            icon: 'warning',
+            confirmButtonText: 'Continue'
+        });
+        <?php endif; ?>
+        
         // Reset form
         document.getElementById('newPOForm').reset();
         
@@ -1329,6 +1614,16 @@ function formatDateTime($dateStr) {
                 const orderDate = po.order_date ? new Date(po.order_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A';
                 const expectedDate = po.expected_delivery ? new Date(po.expected_delivery).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A';
                 
+                let branchHtml = '';
+                if (po.branch_name) {
+                    branchHtml = `
+                        <tr>
+                            <td class="detail-label">Branch:</td>
+                            <td><span class="badge bg-info">${po.branch_name}</span></td>
+                        </tr>
+                    `;
+                }
+                
                 // Build items table
                 let itemsHtml = '';
                 if (items.length > 0) {
@@ -1357,6 +1652,7 @@ function formatDateTime($dateStr) {
                                         <td width="40%" class="detail-label">PO Number:</td>
                                         <td class="detail-value">${po.po_number}</td>
                                     </tr>
+                                    ${branchHtml}
                                     <tr>
                                         <td class="detail-label">Supplier:</td>
                                         <td>${po.supplier_name || 'N/A'}</td>
@@ -1466,6 +1762,10 @@ function formatDateTime($dateStr) {
                 document.getElementById('editExpectedDelivery').value = expectedDate;
                 document.getElementById('editTotalAmount').value = po.total_amount || 0;
                 document.getElementById('editPOStatus').value = po.po_status;
+                
+                if (poBranchColumnExists && viewAllBranches) {
+                    document.getElementById('editBranch').value = po.branch_name || `Branch ${po.branch_id}`;
+                }
                 
                 currentPOId = id;
                 new bootstrap.Modal(document.getElementById('editPOModal')).show();
@@ -1634,40 +1934,53 @@ function formatDateTime($dateStr) {
         const excelData = [];
         
         // Add headers
-        excelData.push([
+        const headers = [
             'PO Number',
             'Supplier',
             'Order Date',
+            ...(poBranchColumnExists && viewAllBranches ? ['Branch'] : []),
             'Items',
             'Quantity',
             'Total Amount (₱)',
             'Status',
             'Expected Delivery'
-        ]);
+        ];
+        excelData.push(headers);
 
         // Add data rows
         rows.forEach(row => {
             if (row.style.display !== 'none') {
                 const cells = row.querySelectorAll('td');
-                const poNumber = cells[0]?.innerText || '';
-                const supplier = cells[1]?.innerText || '';
-                const orderDate = cells[2]?.innerText || '';
-                const items = parseInt(cells[3]?.innerText) || 0;
-                const qty = parseInt(cells[4]?.innerText.replace(/,/g, '')) || 0;
-                const amount = parseFloat(cells[5]?.innerText.replace('₱', '').replace(/,/g, '')) || 0;
-                const status = cells[6]?.innerText || '';
-                const expectedDate = cells[7]?.innerText || '';
+                let cellIndex = 0;
                 
-                excelData.push([
+                const poNumber = cells[cellIndex++]?.innerText || '';
+                const supplier = cells[cellIndex++]?.innerText || '';
+                const orderDate = cells[cellIndex++]?.innerText || '';
+                
+                let branch = '';
+                if (poBranchColumnExists && viewAllBranches) {
+                    branch = cells[cellIndex++]?.innerText || '';
+                }
+                
+                const items = parseInt(cells[cellIndex++]?.innerText) || 0;
+                const qty = parseInt(cells[cellIndex++]?.innerText.replace(/,/g, '')) || 0;
+                const amount = parseFloat(cells[cellIndex++]?.innerText.replace('₱', '').replace(/,/g, '')) || 0;
+                const status = cells[cellIndex++]?.innerText || '';
+                const expectedDate = cells[cellIndex++]?.innerText || '';
+                
+                const rowData = [
                     poNumber,
                     supplier,
                     orderDate,
+                    ...(poBranchColumnExists && viewAllBranches ? [branch] : []),
                     items,
                     qty,
                     amount,
                     status,
                     expectedDate
-                ]);
+                ];
+                
+                excelData.push(rowData);
             }
         });
 
@@ -1676,24 +1989,30 @@ function formatDateTime($dateStr) {
         const ws = XLSX.utils.aoa_to_sheet(excelData);
 
         // Set column widths
-        ws['!cols'] = [
+        const colWidths = [
             { wch: 15 }, // PO Number
             { wch: 25 }, // Supplier
             { wch: 15 }, // Order Date
+            ...(poBranchColumnExists && viewAllBranches ? [{ wch: 12 }] : []), // Branch
             { wch: 10 }, // Items
             { wch: 12 }, // Quantity
             { wch: 18 }, // Total Amount
             { wch: 15 }, // Status
             { wch: 15 }  // Expected Delivery
         ];
+        ws['!cols'] = colWidths;
 
         // Add worksheet to workbook
         XLSX.utils.book_append_sheet(wb, ws, 'Purchase Orders');
 
-        // Generate filename with current date
+        // Generate filename with current date and branch info
         const date = new Date();
         const dateStr = date.toISOString().slice(0,10).replace(/-/g, '');
-        const filename = `Purchase_Orders_${dateStr}.xlsx`;
+        let filename = `Purchase_Orders_${dateStr}`;
+        if (poBranchColumnExists && !viewAllBranches) {
+            filename += `_Branch_${branchId}`;
+        }
+        filename += '.xlsx';
 
         // Export Excel file
         XLSX.writeFile(wb, filename);
@@ -1704,6 +2023,26 @@ function formatDateTime($dateStr) {
             text: 'Excel export completed successfully!',
             timer: 2000,
             showConfirmButton: false
+        });
+    }
+
+    // ========== COPY SQL FUNCTION ==========
+    function copySQL(table) {
+        let sql = '';
+        if (table === 'purchase_orders') {
+            sql = "ALTER TABLE purchase_orders ADD COLUMN branch_id INT NULL;\nALTER TABLE purchase_orders ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+        } else if (table === 'items') {
+            sql = "ALTER TABLE items ADD COLUMN branch_id INT NULL;\nALTER TABLE items ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+        }
+        
+        navigator.clipboard.writeText(sql).then(() => {
+            Swal.fire({
+                icon: 'success',
+                title: 'Copied!',
+                text: 'SQL copied to clipboard',
+                timer: 1500,
+                showConfirmButton: false
+            });
         });
     }
 
@@ -1743,7 +2082,7 @@ function formatDateTime($dateStr) {
         }).then((result) => {
             if (result.isConfirmed) {
                 localStorage.removeItem('sidebarCollapsed');
-                window.location.href = 'login.php';
+                window.location.href = '../logout.php';
             }
         });
     }

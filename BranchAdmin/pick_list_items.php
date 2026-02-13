@@ -1,5 +1,79 @@
 <?php
 require_once '../config/database.php';
+require_once '../config/session_handler.php';
+
+// ========== GET USER SESSION INFO ==========
+$user_id = $_SESSION['user_id'] ?? 0;
+$user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'User';
+$user_role = $_SESSION['role'] ?? 'branch_admin';
+$branch_id = $_SESSION['branch_id'] ?? 0;
+$view_all_branches = $_SESSION['view_all_branches'] ?? false;
+
+// ========== CHECK DATABASE COLUMNS ==========
+// Check if branch_id column exists in pick_lists table
+$pick_lists_branch_column_exists = false;
+$check_pl_column = $conn->query("SHOW COLUMNS FROM pick_lists LIKE 'branch_id'");
+if ($check_pl_column && $check_pl_column->num_rows > 0) {
+    $pick_lists_branch_column_exists = true;
+}
+
+// Check if branch_id column exists in sales_orders table
+$sales_orders_branch_column_exists = false;
+$check_so_column = $conn->query("SHOW COLUMNS FROM sales_orders LIKE 'branch_id'");
+if ($check_so_column && $check_so_column->num_rows > 0) {
+    $sales_orders_branch_column_exists = true;
+}
+
+// Check if branch_id column exists in items table
+$items_branch_column_exists = false;
+$check_item_column = $conn->query("SHOW COLUMNS FROM items LIKE 'branch_id'");
+if ($check_item_column && $check_item_column->num_rows > 0) {
+    $items_branch_column_exists = true;
+}
+
+// Check if branch_id column exists in drivers table
+$drivers_branch_column_exists = false;
+$check_drivers_column = $conn->query("SHOW COLUMNS FROM drivers LIKE 'branch_id'");
+if ($check_drivers_column && $check_drivers_column->num_rows > 0) {
+    $drivers_branch_column_exists = true;
+}
+
+// ========== BRANCH FILTER CONDITIONS ==========
+$pick_lists_branch_condition = "";
+$sales_orders_branch_condition = "";
+$items_branch_condition = "";
+$drivers_branch_condition = "";
+
+if ($pick_lists_branch_column_exists && !$view_all_branches) {
+    $pick_lists_branch_condition = "AND pl.branch_id = $branch_id";
+}
+
+if ($sales_orders_branch_column_exists && !$view_all_branches) {
+    $sales_orders_branch_condition = "AND so.branch_id = $branch_id";
+}
+
+if ($items_branch_column_exists && !$view_all_branches) {
+    $items_branch_condition = "AND i.branch_id = $branch_id";
+}
+
+if ($drivers_branch_column_exists && !$view_all_branches) {
+    $drivers_branch_condition = "AND branch_id = $branch_id";
+}
+
+// Get branch name for display
+$branch_name = 'All Branches';
+$branch_display_id = 0;
+if (!$view_all_branches) {
+    $branch_display_id = $branch_id;
+    $branch_query = "SELECT branch_name FROM branches WHERE branch_id = ?";
+    $branch_stmt = $conn->prepare($branch_query);
+    $branch_stmt->bind_param("i", $branch_id);
+    $branch_stmt->execute();
+    $branch_result = $branch_stmt->get_result();
+    if ($branch_row = $branch_result->fetch_assoc()) {
+        $branch_name = $branch_row['branch_name'];
+    }
+}
 
 // ========== HANDLE AJAX REQUESTS ==========
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
@@ -21,28 +95,73 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 throw new Exception('All fields are required');
             }
             
-            // Check if enough stock is available
-            $check_stock_query = "SELECT stock FROM items WHERE item_id = ? FOR UPDATE";
-            $check_stock_stmt = $conn->prepare($check_stock_query);
-            $check_stock_stmt->bind_param("i", $item_id);
-            $check_stock_stmt->execute();
-            $stock_result = $check_stock_stmt->get_result();
-            $item_data = $stock_result->fetch_assoc();
+            // Verify user has permission to access this sales order
+            if ($sales_orders_branch_column_exists && !$view_all_branches) {
+                $check_so_query = "SELECT so_id, branch_id FROM sales_orders WHERE so_id = ?";
+                $check_so_stmt = $conn->prepare($check_so_query);
+                $check_so_stmt->bind_param("i", $so_id);
+                $check_so_stmt->execute();
+                $so_result = $check_so_stmt->get_result();
+                $so_data = $so_result->fetch_assoc();
+                
+                if (!$so_data) {
+                    throw new Exception('Sales order not found');
+                }
+                
+                if ($so_data['branch_id'] != $branch_id) {
+                    throw new Exception('You can only process orders from your assigned branch');
+                }
+            }
+            
+            // Verify user has permission to access this item
+            if ($items_branch_column_exists && !$view_all_branches) {
+                $check_item_query = "SELECT item_id, branch_id, stock FROM items WHERE item_id = ? FOR UPDATE";
+                $check_item_stmt = $conn->prepare($check_item_query);
+                $check_item_stmt->bind_param("i", $item_id);
+                $check_item_stmt->execute();
+                $item_result = $check_item_stmt->get_result();
+                $item_data = $item_result->fetch_assoc();
+                
+                if (!$item_data) {
+                    throw new Exception('Item not found');
+                }
+                
+                if ($item_data['branch_id'] != $branch_id) {
+                    throw new Exception('You can only pick items from your assigned branch');
+                }
+            } else {
+                // Just check stock without branch verification
+                $check_stock_query = "SELECT stock FROM items WHERE item_id = ? FOR UPDATE";
+                $check_stock_stmt = $conn->prepare($check_stock_query);
+                $check_stock_stmt->bind_param("i", $item_id);
+                $check_stock_stmt->execute();
+                $stock_result = $check_stock_stmt->get_result();
+                $item_data = $stock_result->fetch_assoc();
+            }
             
             if (!$item_data || $item_data['stock'] < $quantity_to_pick) {
                 throw new Exception('Insufficient stock available. Current stock: ' . ($item_data['stock'] ?? 0));
             }
             
-            // Get branch_id from user's branch or default to 1
-            $branch_id = 1; // Default branch
+            // Use user's branch ID
+            $branch_id_for_insert = $branch_id;
             
-            // Generate pick list number
-            $pick_list_number = 'PL-' . date('Ymd') . '-' . rand(100000, 999999);
+            // Generate pick list number with branch prefix
+            $branch_prefix = $view_all_branches ? 'ADMIN' : 'B' . str_pad($branch_id, 2, '0', STR_PAD_LEFT);
+            $pick_list_number = $branch_prefix . '-PL-' . date('Ymd') . '-' . rand(1000, 9999);
             
             // Check if pick list exists for this SO
             $check_pl_query = "SELECT pick_list_id FROM pick_lists WHERE so_id = ? AND pick_status IN ('open', 'in-progress')";
-            $check_pl_stmt = $conn->prepare($check_pl_query);
-            $check_pl_stmt->bind_param("i", $so_id);
+            
+            if ($pick_lists_branch_column_exists && !$view_all_branches) {
+                $check_pl_query .= " AND branch_id = ?";
+                $check_pl_stmt = $conn->prepare($check_pl_query);
+                $check_pl_stmt->bind_param("ii", $so_id, $branch_id);
+            } else {
+                $check_pl_stmt = $conn->prepare($check_pl_query);
+                $check_pl_stmt->bind_param("i", $so_id);
+            }
+            
             $check_pl_stmt->execute();
             $pl_result = $check_pl_stmt->get_result();
             
@@ -50,19 +169,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $pick_list = $pl_result->fetch_assoc();
                 $pick_list_id = $pick_list['pick_list_id'];
                 
+                // Verify pick list belongs to user's branch
+                if ($pick_lists_branch_column_exists && !$view_all_branches) {
+                    $check_pl_branch_query = "SELECT branch_id FROM pick_lists WHERE pick_list_id = ?";
+                    $check_pl_branch_stmt = $conn->prepare($check_pl_branch_query);
+                    $check_pl_branch_stmt->bind_param("i", $pick_list_id);
+                    $check_pl_branch_stmt->execute();
+                    $pl_branch_result = $check_pl_branch_stmt->get_result();
+                    $pl_branch_data = $pl_branch_result->fetch_assoc();
+                    
+                    if ($pl_branch_data && $pl_branch_data['branch_id'] != $branch_id) {
+                        throw new Exception('Cannot modify pick list from another branch');
+                    }
+                }
+                
                 // Update driver assignment if provided
                 if ($driver_id) {
                     $update_driver_query = "UPDATE pick_lists SET driver_id = ? WHERE pick_list_id = ?";
-                    $update_driver_stmt = $conn->prepare($update_driver_query);
-                    $update_driver_stmt->bind_param("ii", $driver_id, $pick_list_id);
+                    
+                    if ($pick_lists_branch_column_exists && !$view_all_branches) {
+                        $update_driver_query .= " AND branch_id = ?";
+                        $update_driver_stmt = $conn->prepare($update_driver_query);
+                        $update_driver_stmt->bind_param("iii", $driver_id, $pick_list_id, $branch_id);
+                    } else {
+                        $update_driver_stmt = $conn->prepare($update_driver_query);
+                        $update_driver_stmt->bind_param("ii", $driver_id, $pick_list_id);
+                    }
+                    
                     $update_driver_stmt->execute();
                 }
             } else {
-                // Create new pick list with driver assignment
-                $create_pl_query = "INSERT INTO pick_lists (pick_list_number, so_id, branch_id, driver_id, pick_status, pick_date, created_at) 
-                                   VALUES (?, ?, ?, ?, 'open', NOW(), NOW())";
-                $create_pl_stmt = $conn->prepare($create_pl_query);
-                $create_pl_stmt->bind_param("siii", $pick_list_number, $so_id, $branch_id, $driver_id);
+                // Create new pick list with branch ID
+                if ($pick_lists_branch_column_exists) {
+                    $create_pl_query = "INSERT INTO pick_lists (pick_list_number, so_id, branch_id, driver_id, pick_status, pick_date, created_at) 
+                                       VALUES (?, ?, ?, ?, 'open', NOW(), NOW())";
+                    $create_pl_stmt = $conn->prepare($create_pl_query);
+                    $create_pl_stmt->bind_param("siii", $pick_list_number, $so_id, $branch_id_for_insert, $driver_id);
+                } else {
+                    $create_pl_query = "INSERT INTO pick_lists (pick_list_number, so_id, driver_id, pick_status, pick_date, created_at) 
+                                       VALUES (?, ?, ?, 'open', NOW(), NOW())";
+                    $create_pl_stmt = $conn->prepare($create_pl_query);
+                    $create_pl_stmt->bind_param("sii", $pick_list_number, $so_id, $driver_id);
+                }
                 
                 if (!$create_pl_stmt->execute()) {
                     throw new Exception('Failed to create pick list');
@@ -116,8 +264,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             
             // Update items table - decrease stock
             $update_stock_query = "UPDATE items SET stock = stock - ? WHERE item_id = ? AND stock >= ?";
-            $update_stock_stmt = $conn->prepare($update_stock_query);
-            $update_stock_stmt->bind_param("iii", $quantity_to_pick, $item_id, $quantity_to_pick);
+            if ($items_branch_column_exists && !$view_all_branches) {
+                $update_stock_query .= " AND branch_id = ?";
+                $update_stock_stmt = $conn->prepare($update_stock_query);
+                $update_stock_stmt->bind_param("iiii", $quantity_to_pick, $item_id, $quantity_to_pick, $branch_id);
+            } else {
+                $update_stock_stmt = $conn->prepare($update_stock_query);
+                $update_stock_stmt->bind_param("iii", $quantity_to_pick, $item_id, $quantity_to_pick);
+            }
             
             if (!$update_stock_stmt->execute() || $update_stock_stmt->affected_rows === 0) {
                 throw new Exception('Failed to update item stock');
@@ -127,8 +281,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $update_so_query = "UPDATE sales_orders 
                                SET order_status = 'processing', updated_at = NOW() 
                                WHERE so_id = ? AND order_status NOT IN ('delivered', 'cancelled')";
-            $update_so_stmt = $conn->prepare($update_so_query);
-            $update_so_stmt->bind_param("i", $so_id);
+            
+            if ($sales_orders_branch_column_exists && !$view_all_branches) {
+                $update_so_query .= " AND branch_id = ?";
+                $update_so_stmt = $conn->prepare($update_so_query);
+                $update_so_stmt->bind_param("ii", $so_id, $branch_id);
+            } else {
+                $update_so_stmt = $conn->prepare($update_so_query);
+                $update_so_stmt->bind_param("i", $so_id);
+            }
+            
             $update_so_stmt->execute();
             
             $conn->commit();
@@ -137,8 +299,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $driver_name = null;
             if ($driver_id) {
                 $driver_query = "SELECT driver_name FROM drivers WHERE driver_id = ?";
-                $driver_stmt = $conn->prepare($driver_query);
-                $driver_stmt->bind_param("i", $driver_id);
+                
+                if ($drivers_branch_column_exists && !$view_all_branches) {
+                    $driver_query .= " AND branch_id = ?";
+                    $driver_stmt = $conn->prepare($driver_query);
+                    $driver_stmt->bind_param("ii", $driver_id, $branch_id);
+                } else {
+                    $driver_stmt = $conn->prepare($driver_query);
+                    $driver_stmt->bind_param("i", $driver_id);
+                }
+                
                 $driver_stmt->execute();
                 $driver_result = $driver_stmt->get_result();
                 $driver_data = $driver_result->fetch_assoc();
@@ -152,70 +322,114 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 'pick_list_id' => $pick_list_id,
                 'remaining_stock' => $item_data['stock'] - $quantity_to_pick,
                 'driver_id' => $driver_id,
-                'driver_name' => $driver_name
+                'driver_name' => $driver_name,
+                'branch_id' => $branch_id_for_insert,
+                'branch_name' => $branch_name
             ]);
             exit;
         }
         elseif ($_POST['action'] === 'delete_pick_item') {
             $pick_item_id = $_POST['pick_item_id'];
             
-            // Get item details before deletion
-            $get_item_query = "SELECT pli.*, pl.so_id, pl.pick_list_id, i.item_id, i.stock as current_stock 
-                              FROM pick_list_items pli 
-                              JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id 
-                              JOIN items i ON pli.item_id = i.item_id 
-                              WHERE pli.pick_item_id = ?";
-            $get_item_stmt = $conn->prepare($get_item_query);
-            $get_item_stmt->bind_param("i", $pick_item_id);
+            // Get item details before deletion with branch verification
+            $get_item_query = "
+                SELECT pli.*, pl.so_id, pl.pick_list_id, pl.branch_id, 
+                       i.item_id, i.stock as current_stock 
+                FROM pick_list_items pli 
+                JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id 
+                JOIN items i ON pli.item_id = i.item_id 
+                WHERE pli.pick_item_id = ?
+            ";
+            
+            if ($pick_lists_branch_column_exists && !$view_all_branches) {
+                $get_item_query .= " AND pl.branch_id = ?";
+                $get_item_stmt = $conn->prepare($get_item_query);
+                $get_item_stmt->bind_param("ii", $pick_item_id, $branch_id);
+            } else {
+                $get_item_stmt = $conn->prepare($get_item_query);
+                $get_item_stmt->bind_param("i", $pick_item_id);
+            }
+            
             $get_item_stmt->execute();
             $item = $get_item_stmt->get_result()->fetch_assoc();
             
-            if ($item) {
-                // Return stock to items table
-                $return_stock_query = "UPDATE items SET stock = stock + ? WHERE item_id = ?";
+            if (!$item) {
+                throw new Exception('Pick list item not found or access denied');
+            }
+            
+            // Verify branch permission
+            if ($pick_lists_branch_column_exists && !$view_all_branches && $item['branch_id'] != $branch_id) {
+                throw new Exception('You can only delete items from your assigned branch');
+            }
+            
+            // Return stock to items table
+            $return_stock_query = "UPDATE items SET stock = stock + ? WHERE item_id = ?";
+            
+            if ($items_branch_column_exists && !$view_all_branches) {
+                $return_stock_query .= " AND branch_id = ?";
+                $return_stock_stmt = $conn->prepare($return_stock_query);
+                $return_stock_stmt->bind_param("iii", $item['quantity_to_pick'], $item['item_id'], $branch_id);
+            } else {
                 $return_stock_stmt = $conn->prepare($return_stock_query);
                 $return_stock_stmt->bind_param("ii", $item['quantity_to_pick'], $item['item_id']);
+            }
+            
+            if (!$return_stock_stmt->execute()) {
+                throw new Exception('Failed to return stock');
+            }
+            
+            // Delete the pick list item
+            $delete_query = "DELETE FROM pick_list_items WHERE pick_item_id = ?";
+            $delete_stmt = $conn->prepare($delete_query);
+            $delete_stmt->bind_param("i", $pick_item_id);
+            
+            if (!$delete_stmt->execute()) {
+                throw new Exception('Failed to delete pick list item');
+            }
+            
+            // Check if pick list has any remaining items
+            $check_items_query = "SELECT COUNT(*) as item_count FROM pick_list_items WHERE pick_list_id = ?";
+            $check_items_stmt = $conn->prepare($check_items_query);
+            $check_items_stmt->bind_param("i", $item['pick_list_id']);
+            $check_items_stmt->execute();
+            $item_count = $check_items_stmt->get_result()->fetch_assoc()['item_count'];
+            
+            if ($item_count == 0) {
+                // No items left, update pick list status to cancelled
+                $update_pl_query = "UPDATE pick_lists SET pick_status = 'cancelled', updated_at = NOW() WHERE pick_list_id = ?";
                 
-                if (!$return_stock_stmt->execute()) {
-                    throw new Exception('Failed to return stock');
-                }
-                
-                // Delete the pick list item
-                $delete_query = "DELETE FROM pick_list_items WHERE pick_item_id = ?";
-                $delete_stmt = $conn->prepare($delete_query);
-                $delete_stmt->bind_param("i", $pick_item_id);
-                
-                if (!$delete_stmt->execute()) {
-                    throw new Exception('Failed to delete pick list item');
-                }
-                
-                // Check if pick list has any remaining items
-                $check_items_query = "SELECT COUNT(*) as item_count FROM pick_list_items WHERE pick_list_id = ?";
-                $check_items_stmt = $conn->prepare($check_items_query);
-                $check_items_stmt->bind_param("i", $item['pick_list_id']);
-                $check_items_stmt->execute();
-                $item_count = $check_items_stmt->get_result()->fetch_assoc()['item_count'];
-                
-                if ($item_count == 0) {
-                    // No items left, update pick list status to cancelled
-                    $update_pl_query = "UPDATE pick_lists SET pick_status = 'cancelled', updated_at = NOW() WHERE pick_list_id = ?";
+                if ($pick_lists_branch_column_exists && !$view_all_branches) {
+                    $update_pl_query .= " AND branch_id = ?";
+                    $update_pl_stmt = $conn->prepare($update_pl_query);
+                    $update_pl_stmt->bind_param("ii", $item['pick_list_id'], $branch_id);
+                } else {
                     $update_pl_stmt = $conn->prepare($update_pl_query);
                     $update_pl_stmt->bind_param("i", $item['pick_list_id']);
-                    $update_pl_stmt->execute();
-                    
-                    // Update sales order status back to pending
-                    $update_so_query = "UPDATE sales_orders SET order_status = 'pending', updated_at = NOW() WHERE so_id = ?";
+                }
+                
+                $update_pl_stmt->execute();
+                
+                // Update sales order status back to pending
+                $update_so_query = "UPDATE sales_orders SET order_status = 'pending', updated_at = NOW() WHERE so_id = ?";
+                
+                if ($sales_orders_branch_column_exists && !$view_all_branches) {
+                    $update_so_query .= " AND branch_id = ?";
+                    $update_so_stmt = $conn->prepare($update_so_query);
+                    $update_so_stmt->bind_param("ii", $item['so_id'], $branch_id);
+                } else {
                     $update_so_stmt = $conn->prepare($update_so_query);
                     $update_so_stmt->bind_param("i", $item['so_id']);
-                    $update_so_stmt->execute();
                 }
+                
+                $update_so_stmt->execute();
             }
             
             $conn->commit();
             
             echo json_encode([
                 'success' => true,
-                'message' => 'Item deleted successfully. Stock returned.'
+                'message' => 'Item deleted successfully. Stock returned.',
+                'branch_id' => $branch_id
             ]);
             exit;
         }
@@ -230,7 +444,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 
-// FETCH PICK LISTS WITH ITEMS FROM DATABASE - INCLUDING DRIVER INFO
+// ========== FETCH PICK LISTS WITH BRANCH FILTERING ==========
 $picklist_query = "
     SELECT 
         pl.pick_list_id,
@@ -241,6 +455,8 @@ $picklist_query = "
         pl.verified_by,
         pl.created_at,
         pl.driver_id,
+        pl.branch_id,
+        b.branch_name,
         d.driver_name as assigned_driver,
         pli.pick_item_id,
         pli.quantity_to_pick,
@@ -251,22 +467,33 @@ $picklist_query = "
         i.item_name,
         i.unit_type,
         i.stock as current_stock,
+        i.branch_id as item_branch_id,
         so.so_id,
         so.so_number,
         so.order_status,
+        so.branch_id as so_branch_id,
         CONCAT(u.first_name, ' ', u.last_name) as encoded_by_name
     FROM pick_lists pl
+    LEFT JOIN branches b ON pl.branch_id = b.branch_id
     LEFT JOIN pick_list_items pli ON pl.pick_list_id = pli.pick_list_id
     LEFT JOIN items i ON pli.item_id = i.item_id
     LEFT JOIN sales_orders so ON pl.so_id = so.so_id
     LEFT JOIN users u ON pl.picked_by = u.user_id
     LEFT JOIN drivers d ON pl.driver_id = d.driver_id
-    ORDER BY pl.created_at DESC, pl.pick_list_id DESC
+    WHERE 1=1
 ";
+
+// Apply branch filter for pick_lists
+if ($pick_lists_branch_column_exists && !$view_all_branches) {
+    $picklist_query .= " AND pl.branch_id = $branch_id";
+}
+
+$picklist_query .= " ORDER BY pl.created_at DESC, pl.pick_list_id DESC";
+
 $picklist_result = $conn->query($picklist_query);
 $picklist_items = $picklist_result->fetch_all(MYSQLI_ASSOC);
 
-// FETCH ALL SALES ORDERS FOR DROPDOWN
+// ========== FETCH SALES ORDERS WITH BRANCH FILTERING ==========
 $so_query = "
     SELECT 
         so.so_id,
@@ -275,16 +502,27 @@ $so_query = "
         so.order_date,
         so.total_amount,
         so.order_status,
-        c.customer_name
+        so.branch_id,
+        c.customer_name,
+        b.branch_name
     FROM sales_orders so
     LEFT JOIN customers c ON so.customer_id = c.customer_id
+    LEFT JOIN branches b ON so.branch_id = b.branch_id
     WHERE so.order_status IN ('pending', 'confirmed', 'processing')
-    ORDER BY so.order_date DESC
 ";
+
+// Apply branch filter for sales_orders
+if ($sales_orders_branch_column_exists && !$view_all_branches) {
+    $so_query .= " AND so.branch_id = $branch_id";
+}
+
+$so_query .= " ORDER BY so.order_date DESC";
+
 $so_result = $conn->query($so_query);
 $sales_orders = $so_result->fetch_all(MYSQLI_ASSOC);
 
-// FETCH SALES ORDER ITEMS WITH ITEM DETAILS
+// ========== FETCH SALES ORDER ITEMS WITH BRANCH FILTERING ==========
+// ========== FETCH SALES ORDER ITEMS WITH BRANCH FILTERING ==========
 $so_items_query = "
     SELECT 
         soi.so_id,
@@ -296,13 +534,38 @@ $so_items_query = "
         i.item_name,
         i.unit_type,
         i.stock as current_stock,
-        i.reorder_level
+        i.reorder_level,
+        i.branch_id as item_branch_id
     FROM sales_order_items soi
     JOIN items i ON soi.item_id = i.item_id
-    WHERE soi.so_id IN (SELECT so_id FROM sales_orders WHERE order_status IN ('pending', 'confirmed', 'processing'))
+    WHERE soi.so_id IN (
+        SELECT so_id FROM sales_orders 
+        WHERE order_status IN ('pending', 'confirmed', 'processing')
 ";
+
+if ($sales_orders_branch_column_exists && !$view_all_branches) {
+    $so_items_query .= " AND branch_id = $branch_id";
+}
+
+$so_items_query .= "
+    )
+";
+
+// Add item branch filter AFTER the subquery is closed
+if ($items_branch_column_exists && !$view_all_branches) {
+    $so_items_query .= " AND i.branch_id = $branch_id";
+}
+
 $so_items_result = $conn->query($so_items_query);
-$so_items = $so_items_result->fetch_all(MYSQLI_ASSOC);
+
+// Add error checking
+if (!$so_items_result) {
+    error_log("SQL Error in pick_list_items.php: " . $conn->error);
+    error_log("SQL Query: " . $so_items_query);
+    $so_items = [];
+} else {
+    $so_items = $so_items_result->fetch_all(MYSQLI_ASSOC);
+}
 
 // Organize SO items by SO ID
 $so_items_by_so = [];
@@ -310,7 +573,7 @@ foreach ($so_items as $item) {
     $so_items_by_so[$item['so_id']][] = $item;
 }
 
-// FETCH ALL ITEMS FOR AUTO-FILL
+// ========== FETCH ITEMS WITH BRANCH FILTERING ==========
 $items_query = "
     SELECT 
         item_id,
@@ -319,11 +582,18 @@ $items_query = "
         unit_price,
         unit_type,
         stock,
-        reorder_level
+        reorder_level,
+        branch_id
     FROM items
     WHERE status = 'active'
-    ORDER BY item_name ASC
 ";
+
+if ($items_branch_column_exists && !$view_all_branches) {
+    $items_query .= " AND branch_id = $branch_id";
+}
+
+$items_query .= " ORDER BY item_name ASC";
+
 $items_result = $conn->query($items_query);
 $items_list = $items_result->fetch_all(MYSQLI_ASSOC);
 
@@ -333,7 +603,7 @@ foreach ($items_list as $item) {
     $items_by_code[$item['item_code']] = $item;
 }
 
-// FETCH ALL ACTIVE DRIVERS
+// ========== FETCH DRIVERS WITH BRANCH FILTERING ==========
 $drivers_query = "
     SELECT 
         driver_id,
@@ -343,14 +613,25 @@ $drivers_query = "
         vehicle_plate_number
     FROM drivers
     WHERE status = 'active'
-    ORDER BY driver_name ASC
 ";
+
+if ($drivers_branch_column_exists && !$view_all_branches) {
+    $drivers_query .= " AND branch_id = $branch_id";
+}
+
+$drivers_query .= " ORDER BY driver_name ASC";
+
 $drivers_result = $conn->query($drivers_query);
 $drivers_list = $drivers_result->fetch_all(MYSQLI_ASSOC);
 
-// ========== FIXED STATISTICS CALCULATION ==========
+// ========== STATISTICS CALCULATION WITH BRANCH FILTERING ==========
 // Get distinct pick lists count
-$distinct_picklists_query = "SELECT COUNT(DISTINCT pick_list_id) as total FROM pick_lists";
+$distinct_picklists_query = "SELECT COUNT(DISTINCT pick_list_id) as total FROM pick_lists WHERE 1=1";
+
+if ($pick_lists_branch_column_exists && !$view_all_branches) {
+    $distinct_picklists_query .= " AND branch_id = $branch_id";
+}
+
 $distinct_result = $conn->query($distinct_picklists_query);
 $statTotalItems = $distinct_result->fetch_assoc()['total'];
 
@@ -360,13 +641,19 @@ $status_counts_query = "
         pick_status,
         COUNT(DISTINCT pick_list_id) as count 
     FROM pick_lists 
-    GROUP BY pick_status
+    WHERE 1=1
 ";
+
+if ($pick_lists_branch_column_exists && !$view_all_branches) {
+    $status_counts_query .= " AND branch_id = $branch_id";
+}
+
+$status_counts_query .= " GROUP BY pick_status";
+
 $status_result = $conn->query($status_counts_query);
 
 $statWarehouseReady = 0; // Completed pick lists
 $statInTransit = 0;      // In-progress pick lists
-$statDelivered = 0;      // For delivered items
 
 while ($row = $status_result->fetch_assoc()) {
     if ($row['pick_status'] === 'completed') {
@@ -376,12 +663,17 @@ while ($row = $status_result->fetch_assoc()) {
     }
 }
 
-// Count delivered orders from sales_orders
+// Count delivered orders from sales_orders with branch filtering
 $delivered_query = "
     SELECT COUNT(*) as count 
     FROM sales_orders 
     WHERE order_status = 'delivered'
 ";
+
+if ($sales_orders_branch_column_exists && !$view_all_branches) {
+    $delivered_query .= " AND branch_id = $branch_id";
+}
+
 $delivered_result = $conn->query($delivered_query);
 $statDelivered = $delivered_result->fetch_assoc()['count'];
 
@@ -391,7 +683,7 @@ if (!$statWarehouseReady) $statWarehouseReady = 0;
 if (!$statInTransit) $statInTransit = 0;
 if (!$statDelivered) $statDelivered = 0;
 
-// Helper function for status badge
+// ========== HELPER FUNCTIONS ==========
 function getPickStatusBadge($status) {
     return match($status) {
         'open' => 'bg-warning text-dark',
@@ -412,20 +704,6 @@ function getPickStatusText($status) {
     };
 }
 
-function getWarehouseStatusText($status) {
-    return match($status) {
-        'open' => 'Pending',
-        'in-progress' => 'Picking',
-        'completed' => 'Ready',
-        'cancelled' => 'Cancelled',
-        default => 'Pending'
-    };
-}
-
-function formatItemDisplay($item_code, $item_name) {
-    return htmlspecialchars($item_code . ' - ' . $item_name);
-}
-
 function getOrderStatusBadge($status) {
     return match($status) {
         'pending' => 'bg-warning text-dark',
@@ -443,13 +721,20 @@ function getStockStatusClass($stock, $reorder_level) {
     if ($stock <= $reorder_level) return 'bg-warning text-dark';
     return 'bg-success text-white';
 }
+
+function getBranchBadge($branch_id, $branch_name) {
+    if ($branch_id) {
+        return '<span class="badge bg-info">' . htmlspecialchars($branch_name ?? 'Branch ' . $branch_id) . '</span>';
+    }
+    return '<span class="badge bg-secondary">No Branch</span>';
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pick List Items</title>
+    <title>Pick List Items - <?php echo htmlspecialchars($branch_name); ?></title>
     <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
     <link rel="shortcut icon" href="../Pictures/favicon.ico" />
@@ -468,6 +753,47 @@ function getStockStatusClass($stock, $reorder_level) {
     <!-- SheetJS for Excel Export -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
+        /* Branch badge styling */
+        .branch-badge {
+            background-color: #e7f1ff;
+            color: #0d6efd;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 5px;
+        }
+        
+        .branch-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 15px 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+        }
+        
+        .role-badge {
+            background-color: rgba(255,255,255,0.2);
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 500;
+        }
+        
+        /* Alert for missing branch column */
+        .alert-info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        
+        .alert-info code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 4px;
+            color: #c7254e;
+        }
+        
         /* Table styles for pick list items */
         .pick-list-table {
             width: 100%;
@@ -502,12 +828,15 @@ function getStockStatusClass($stock, $reorder_level) {
         
         /* Column widths */
         .col-so { width: 12%; }
+        <?php if ($view_all_branches && $pick_lists_branch_column_exists): ?>
+        .col-branch { width: 10%; }
+        <?php endif; ?>
         .col-item-code { width: 10%; }
-        .col-item-name { width: 20%; }
+        .col-item-name { width: 18%; }
         .col-to-pick { width: 8%; text-align: center; }
         .col-picked { width: 8%; text-align: center; }
         .col-location { width: 10%; }
-        .col-status { width: 10%; }
+        .col-status { width: 12%; }
         .col-encoded { width: 12%; }
         .col-actions { width: 10%; text-align: center; }
         
@@ -778,6 +1107,22 @@ function getStockStatusClass($stock, $reorder_level) {
             display: inline-block;
             margin-top: 4px;
         }
+        
+        /* Admin branch selector */
+        .branch-selector {
+            min-width: 200px;
+        }
+        
+        .branch-selector .select2-container {
+            width: 100% !important;
+        }
+        
+        /* Driver filter hint */
+        .driver-filter-hint {
+            font-size: 11px;
+            color: #6c757d;
+            margin-top: 4px;
+        }
     </style>
 </head>
 <body>
@@ -795,7 +1140,10 @@ function getStockStatusClass($stock, $reorder_level) {
                     <button class="desktop-toggle-btn" id="desktopToggleBtn">
                         <i class="bi bi-list"></i>
                     </button>    
-                    <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> <span class="nav-text">Branch Admin</span>
+                    <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
+                    <span class="nav-text">
+                        <?php echo $view_all_branches ? 'Administrator' : 'Branch Admin'; ?>
+                    </span>
                 </h3>
             </div>
             
@@ -843,10 +1191,19 @@ function getStockStatusClass($stock, $reorder_level) {
             <!-- User Profile Section at the bottom of sidebar -->
             <div class="sidebar-footer">
                 <div class="user-profile-sidebar">
-                    <div class="user-avatar-sidebar">AD</div>
+                    <div class="user-avatar-sidebar">
+                        <?php 
+                        $initials = '';
+                        $name_parts = explode(' ', $user_name);
+                        foreach ($name_parts as $part) {
+                            if (!empty($part)) $initials .= strtoupper(substr($part, 0, 1));
+                            if (strlen($initials) >= 2) break;
+                        }
+                        echo $initials ?: 'U';
+                        ?>
+                    </div>
                     <div class="user-details-sidebar">
-                        <span class="user-name-sidebar">Quality Control</span>
-                        <span class="user-role-sidebar">QC Officer</span>
+                        <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
                     </div>
                 </div>
                 
@@ -868,10 +1225,93 @@ function getStockStatusClass($stock, $reorder_level) {
                         <i class="bi bi-list"></i>
                     </button>
                     <div class="page-title">
-                        <h2>Pick List Items</h2>
-                        <p>Manage pick list items and assign drivers for fulfillment</p>
+                        <h2>
+                            Pick List Items
+                        </h2>
+                        <p>
+                            <?php 
+                            if ($view_all_branches) {
+                                echo 'Managing pick list items ';
+                            } else {
+                                echo 'Manage pick list items ';
+                            }
+                            ?>
+                        </p>
                     </div>
+                    <?php if ($view_all_branches): ?>
+                    <div class="ms-auto me-3">
+                        <div class="branch-selector">
+                            <select id="branchViewSelector" class="form-select form-select-sm" onchange="changeBranchView()">
+                                <option value="all">All Branches</option>
+                                <?php
+                                $all_branches_query = "SELECT branch_id, branch_name FROM branches ORDER BY branch_name";
+                                $all_branches_result = $conn->query($all_branches_query);
+                                while ($branch = $all_branches_result->fetch_assoc()):
+                                ?>
+                                <option value="<?php echo $branch['branch_id']; ?>">
+                                    <?php echo htmlspecialchars($branch['branch_name']); ?>
+                                </option>
+                                <?php endwhile; ?>
+                            </select>
+                        </div>
+                    </div>
+                    <?php endif; ?>
                 </div>
+
+                <!-- Branch Filter Alerts -->
+                <?php if (!$pick_lists_branch_column_exists): ?>
+                    <div class="alert alert-info alert-dismissible fade show" role="alert">
+                        <i class="bi bi-info-circle"></i> 
+                        <strong>Branch filtering for pick lists not yet set up.</strong> Please run this SQL in phpMyAdmin to enable branch-specific pick list data:
+                        <br><br>
+                        <code>ALTER TABLE pick_lists ADD COLUMN branch_id INT NULL AFTER so_id;</code>
+                        <br>
+                        <code>ALTER TABLE pick_lists ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
+                        <br>
+                        <code>UPDATE pick_lists SET branch_id = 1 WHERE branch_id IS NULL;</code>
+                        <br><br>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('pick_lists')">
+                            <i class="bi bi-files"></i> Copy SQL
+                        </button>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <?php endif; ?>
+
+                <?php if (!$drivers_branch_column_exists && !$view_all_branches): ?>
+                    <div class="alert alert-info alert-dismissible fade show" role="alert">
+                        <i class="bi bi-info-circle"></i> 
+                        <strong>Branch filtering for drivers not yet set up.</strong> Please run this SQL in phpMyAdmin to enable branch-specific driver data:
+                        <br><br>
+                        <code>ALTER TABLE drivers ADD COLUMN branch_id INT NULL;</code>
+                        <br>
+                        <code>ALTER TABLE drivers ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
+                        <br><br>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('drivers')">
+                            <i class="bi bi-files"></i> Copy SQL
+                        </button>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <?php endif; ?>
+
+                <!-- No Items Warning -->
+                <?php if (empty($picklist_items) && $pick_lists_branch_column_exists): ?>
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i> 
+                        <?php if ($view_all_branches): ?>
+                            No pick list items found in any branch.
+                        <?php else: ?>
+                            No pick list items found. You can add new items using the "Add Item" button.
+                        <?php endif; ?>
+                    </div>
+                <?php endif; ?>
+
+                <!-- No Drivers Warning -->
+                <?php if (empty($drivers_list) && !$view_all_branches): ?>
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle"></i> 
+                        No active drivers found for <?php echo htmlspecialchars($branch_name); ?>. Please contact admin to assign drivers to your branch.
+                    </div>
+                <?php endif; ?>
 
                 <!-- Stats Section -->
                 <div class="row g-3 mb-4">
@@ -880,6 +1320,9 @@ function getStockStatusClass($stock, $reorder_level) {
                             <i class="bi bi-boxes stat-icon"></i>
                             <div class="stat-value" id="totalItems"><?= $statTotalItems ?></div>
                             <div class="stat-label">Total Pick Lists</div>
+                            <?php if (!$view_all_branches): ?>
+                                <small class="d-block text-white-50"><?php echo htmlspecialchars($branch_name); ?></small>
+                            <?php endif; ?>
                         </div>
                     </div>
                     <div class="col-md-3 col-6">
@@ -939,7 +1382,26 @@ function getStockStatusClass($stock, $reorder_level) {
                                 </select>
                             </div>
                             
-                            <!-- Driver Filter Dropdown - NEW -->
+                            <!-- Branch Filter Dropdown - Only for Admin -->
+                            <?php if ($view_all_branches && $pick_lists_branch_column_exists): ?>
+                            <div class="filter-dropdown">
+                                <span class="filter-label">Branch</span>
+                                <select class="form-select" id="branchFilter" onchange="applyFilters()">
+                                    <option value="all">All Branches</option>
+                                    <?php
+                                    $branches_for_filter = "SELECT branch_id, branch_name FROM branches ORDER BY branch_name";
+                                    $branches_filter_result = $conn->query($branches_for_filter);
+                                    while ($branch = $branches_filter_result->fetch_assoc()):
+                                    ?>
+                                    <option value="<?= $branch['branch_id'] ?>">
+                                        <?= htmlspecialchars($branch['branch_name']) ?>
+                                    </option>
+                                    <?php endwhile; ?>
+                                </select>
+                            </div>
+                            <?php endif; ?>
+                            
+                            <!-- Driver Filter Dropdown -->
                             <div class="filter-dropdown">
                                 <span class="filter-label">Driver</span>
                                 <select class="form-select" id="driverFilter" onchange="applyFilters()">
@@ -952,6 +1414,7 @@ function getStockStatusClass($stock, $reorder_level) {
                                     <?php endforeach; ?>
                                 </select>
                             </div>
+                            
                             <!-- Quantity Filter Dropdown -->
                             <div class="filter-dropdown">
                                 <span class="filter-label">Quantity to Pick</span>
@@ -986,6 +1449,9 @@ function getStockStatusClass($stock, $reorder_level) {
                         <thead>
                             <tr>
                                 <th class="col-so">SO NUMBER</th>
+                                <?php if ($view_all_branches && $pick_lists_branch_column_exists): ?>
+                                    <th class="col-branch">BRANCH</th>
+                                <?php endif; ?>
                                 <th class="col-item-code">ITEM CODE</th>
                                 <th class="col-item-name">ITEM NAME</th>
                                 <th class="col-to-pick">TO PICK</th>
@@ -1022,26 +1488,37 @@ function getStockStatusClass($stock, $reorder_level) {
                                 data-quantity="<?= $item['quantity_to_pick'] ?? 0 ?>"
                                 data-created-date="<?= $item['created_at'] ?? '' ?>"
                                 data-driver-id="<?= $item['driver_id'] ?? '' ?>"
-                                data-driver-name="<?= htmlspecialchars($item['assigned_driver'] ?? 'Unassigned') ?>">
+                                data-driver-name="<?= htmlspecialchars($item['assigned_driver'] ?? 'Unassigned') ?>"
+                                data-branch-id="<?= $item['branch_id'] ?? '' ?>"
+                                data-branch-name="<?= htmlspecialchars($item['branch_name'] ?? '') ?>">
                                 <td class="col-so">
                                     <strong><?= htmlspecialchars($item['so_number'] ?? 'N/A') ?></strong>
-                                    <?php if ($item['order_status']): ?>
-                                    <?php endif; ?>
                                 </td>
+                                <?php if ($view_all_branches && $pick_lists_branch_column_exists): ?>
+                                <td class="col-branch">
+                                    <span class="badge bg-info">
+                                        <?= htmlspecialchars($item['branch_name'] ?? 'Branch ' . $item['branch_id']) ?>
+                                    </span>
+                                </td>
+                                <?php endif; ?>
                                 <td class="col-item-code"><?= htmlspecialchars($item['item_code'] ?? 'N/A') ?></td>
                                 <td class="col-item-name">
                                     <?= htmlspecialchars($item['item_name'] ?? 'Unknown Item') ?>
+                                    <?php if ($item['current_stock'] !== null): ?>
                                     <span class="stock-indicator <?= getStockStatusClass($item['current_stock'] ?? 0, 50) ?>">
                                         Stock: <?= $item['current_stock'] ?? 0 ?>
                                     </span>
+                                    <?php endif; ?>
                                 </td>
                                 <td class="col-to-pick"><?= $item['quantity_to_pick'] ?? 0 ?></td>
                                 <td class="col-picked"><?= $item['quantity_picked'] ?? 0 ?></td>
                                 <td class="col-location"><?= htmlspecialchars($item['location_bin'] ?? '—') ?></td>
                                 <td class="col-status">
-                                    <span class="badge <?= getOrderStatusBadge($item['order_status']) ?>" style="font-size: 10px;">
-                                        <?= ucfirst($item['order_status']) ?>
+                                    <span class="badge <?= getPickStatusBadge($item['pick_status']) ?>">
+                                        <?= getPickStatusText($item['pick_status']) ?>
                                     </span>
+                                    <br>
+                                    <small class="text-muted">SO: <?= ucfirst($item['order_status'] ?? 'N/A') ?></small>
                                 </td>
                                 <td class="col-encoded">
                                     <?php if (!empty($item['assigned_driver'])): ?>
@@ -1057,7 +1534,7 @@ function getStockStatusClass($stock, $reorder_level) {
                                         <button class="table-btn btn-view" onclick="viewItem(<?= $item['pick_item_id'] ?>)" title="View">
                                             <i class="bi bi-eye"></i>
                                         </button>
-                                        <?php if ($item['pick_status'] === 'open'): ?>
+                                        <?php if ($item['pick_status'] === 'open' && ($view_all_branches || ($pick_lists_branch_column_exists && $item['branch_id'] == $branch_id))): ?>
                                         <button class="table-btn btn-delete" onclick="deleteItem(<?= $item['pick_item_id'] ?>)" title="Delete">
                                             <i class="bi bi-trash"></i>
                                         </button>
@@ -1070,11 +1547,16 @@ function getStockStatusClass($stock, $reorder_level) {
                             else: 
                             ?>
                             <tr>
-                                <td colspan="9" class="empty-state-table">
+                                <td colspan="<?= ($view_all_branches && $pick_lists_branch_column_exists) ? '10' : '9' ?>" class="empty-state-table">
                                     <i class="bi bi-clipboard"></i>
                                     <h5>No Pick List Items Found</h5>
-                                    <p class="text-muted">There are currently no pick list items in the database.</p>
-
+                                    <p class="text-muted">
+                                        <?php if ($view_all_branches): ?>
+                                            There are currently no pick list items in any branch.
+                                        <?php else: ?>
+                                            There are currently no pick list items for <?php echo htmlspecialchars($branch_name); ?>.
+                                        <?php endif; ?>
+                                    </p>
                                 </td>
                             </tr>
                             <?php endif; ?>
@@ -1105,6 +1587,33 @@ function getStockStatusClass($stock, $reorder_level) {
                 <div class="modal-body">
                     <form id="itemForm">
                         <input type="hidden" id="itemId">
+                        <input type="hidden" id="branchId" name="branch_id" value="<?= $branch_id ?>">
+                        
+                        <?php if (!$view_all_branches && $branch_id > 0): ?>
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i>
+                            Adding item to <strong><?php echo htmlspecialchars($branch_name); ?></strong>
+                        </div>
+                        <?php else: ?>
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i>
+                            <strong>Administrator Mode:</strong> Adding item to <span id="selectedBranchName">your selected branch</span>
+                        </div>
+                        <?php endif; ?>
+                        
+                        <?php if (empty($sales_orders) && !$view_all_branches): ?>
+                        <div class="alert alert-warning">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            No sales orders available for <?php echo htmlspecialchars($branch_name); ?>. You need to create a sales order first.
+                        </div>
+                        <?php endif; ?>
+                        
+                        <?php if (empty($drivers_list) && !$view_all_branches): ?>
+                        <div class="alert alert-warning">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            No drivers available for <?php echo htmlspecialchars($branch_name); ?>. Please contact admin to assign drivers.
+                        </div>
+                        <?php endif; ?>
                         
                         <div class="row g-3">
                             <!-- SO ID Dropdown -->
@@ -1113,17 +1622,27 @@ function getStockStatusClass($stock, $reorder_level) {
                                 <select class="form-select select2-so" id="soIdSelect" style="width: 100%;" onchange="onSOSelected()" required>
                                     <option value="">Select Sales Order</option>
                                     <?php foreach ($sales_orders as $so): ?>
+                                        <?php if ($so['so_id']): ?>
                                         <option value="<?= $so['so_id'] ?>" 
                                                 data-so-number="<?= htmlspecialchars($so['so_number']) ?>"
                                                 data-customer-name="<?= htmlspecialchars($so['customer_name'] ?? 'N/A') ?>"
                                                 data-order-date="<?= $so['order_date'] ?>"
-                                                data-total-amount="<?= $so['total_amount'] ?>">
+                                                data-total-amount="<?= $so['total_amount'] ?>"
+                                                data-branch-id="<?= $so['branch_id'] ?? '' ?>"
+                                                data-branch-name="<?= htmlspecialchars($so['branch_name'] ?? '') ?>">
                                             <?= htmlspecialchars($so['so_number'] . ' - ' . ($so['customer_name'] ?? 'Unknown') . ' - ' . date('M d, Y', strtotime($so['order_date']))) ?>
+                                            <?php if ($view_all_branches && !empty($so['branch_name'])): ?>
+                                                [<?= htmlspecialchars($so['branch_name']) ?>]
+                                            <?php endif; ?>
                                         </option>
+                                        <?php endif; ?>
                                     <?php endforeach; ?>
                                 </select>
                                 <input type="hidden" id="soId" name="so_id">
                                 <input type="hidden" id="soNumber" name="so_number">
+                                <?php if ($sales_orders_branch_column_exists && !$view_all_branches): ?>
+                                    <small class="text-muted">Your branch orders only</small>
+                                <?php endif; ?>
                             </div>
                             
                             <!-- SO Details Preview -->
@@ -1133,6 +1652,7 @@ function getStockStatusClass($stock, $reorder_level) {
                                     <div class="so-details-value" id="previewSoNumber">-</div>
                                     <div class="so-details-value" id="previewCustomer">-</div>
                                     <div class="so-details-value" id="previewOrderDate">-</div>
+                                    <div class="so-details-value" id="previewSoBranch">-</div>
                                 </div>
                             </div>
                             
@@ -1144,6 +1664,9 @@ function getStockStatusClass($stock, $reorder_level) {
                                 </select>
                                 <input type="hidden" id="itemCode" name="item_code">
                                 <input type="hidden" id="itemId" name="item_id">
+                                <?php if ($items_branch_column_exists && !$view_all_branches): ?>
+                                    <small class="text-muted">Your branch items only</small>
+                                <?php endif; ?>
                             </div>
                             
                             <!-- Auto-filled Item Details -->
@@ -1166,7 +1689,7 @@ function getStockStatusClass($stock, $reorder_level) {
                                 </div>
                             </div>
                             
-                            <!-- Quantity Fields - Auto-filled from SO -->
+                            <!-- Quantity Fields -->
                             <div class="col-md-4">
                                 <label for="caseQty" class="form-label">Case Quantity</label>
                                 <input type="number" class="form-control" id="caseQty" name="case_qty" min="0" value="0" readonly>
@@ -1183,26 +1706,26 @@ function getStockStatusClass($stock, $reorder_level) {
                                 <small class="text-muted">Per piece</small>
                             </div>
                             
-                            <!-- Total Quantity (Read Only) -->
+                            <!-- Total Quantity -->
                             <div class="col-md-6">
                                 <label for="totalQuantity" class="form-label">Total Quantity to Pick</label>
                                 <input type="number" class="form-control bg-light" id="totalQuantity" name="quantity_to_pick" readonly>
                             </div>
                             
-                            <!-- Location Bin - Auto-filled from inventory -->
+                            <!-- Location Bin -->
                             <div class="col-md-6">
                                 <label for="locationBin" class="form-label">Location/Bin *</label>
                                 <input type="text" class="form-control" id="locationBin" name="location_bin" required placeholder="e.g., A-01-01">
                             </div>
                             
-                            <!-- DRIVER ASSIGNMENT - NEW SECTION -->
+                            <!-- Driver Assignment -->
                             <div class="col-md-6">
                                 <label for="driverSelect" class="form-label">Assign Driver *</label>
                                 <select class="form-select select2-driver" id="driverSelect" style="width: 100%;" required>
                                     <option value="">Select Driver</option>
                                     <?php foreach ($drivers_list as $driver): ?>
                                         <option value="<?= $driver['driver_id'] ?>" 
-                                                data-license="<?= htmlspecialchars($driver['license_number']) ?>"
+                                                data-license="<?= htmlspecialchars($driver['license_number'] ?? '') ?>"
                                                 data-vehicle="<?= htmlspecialchars($driver['vehicle_type'] ?? 'N/A') ?>"
                                                 data-plate="<?= htmlspecialchars($driver['vehicle_plate_number'] ?? 'N/A') ?>">
                                             <?= htmlspecialchars($driver['driver_name'] . ' - ' . ($driver['vehicle_plate_number'] ?? 'No vehicle')) ?>
@@ -1210,9 +1733,12 @@ function getStockStatusClass($stock, $reorder_level) {
                                     <?php endforeach; ?>
                                 </select>
                                 <input type="hidden" id="driverId" name="driver_id">
+                                <?php if ($drivers_branch_column_exists && !$view_all_branches): ?>
+                                    <small class="text-muted">Your branch drivers only</small>
+                                <?php endif; ?>
                             </div>
                             
-                            <!-- Driver Info Preview - NEW -->
+                            <!-- Driver Info Preview -->
                             <div class="col-md-6">
                                 <div id="driverInfoPreview" style="display: none;" class="driver-info">
                                     <div class="driver-info-label">Driver Information</div>
@@ -1224,7 +1750,7 @@ function getStockStatusClass($stock, $reorder_level) {
                             <!-- Encoded By and At -->
                             <div class="col-md-6">
                                 <label for="encodedBy" class="form-label">Encoded By *</label>
-                                <input type="text" class="form-control" id="encodedBy" name="encoded_by" value="1" required readonly>
+                                <input type="text" class="form-control" id="encodedBy" name="encoded_by" value="<?= $user_id ?>" required readonly>
                             </div>
                             <div class="col-md-6">
                                 <label for="encodedAt" class="form-label">Encoded At *</label>
@@ -1234,7 +1760,10 @@ function getStockStatusClass($stock, $reorder_level) {
                         
                         <div class="alert alert-info mt-3">
                             <i class="bi bi-info-circle me-2"></i>
-                            <strong>Driver Assignment:</strong> The assigned driver will be responsible for delivering this pick list. Driver information can be updated later.
+                            <strong>Driver Assignment:</strong> The assigned driver will be responsible for delivering this pick list.
+                            <?php if (!$view_all_branches): ?>
+                                <br>This pick list will be created for <strong><?php echo htmlspecialchars($branch_name); ?></strong>.
+                            <?php endif; ?>
                         </div>
                     </form>
                 </div>
@@ -1250,7 +1779,7 @@ function getStockStatusClass($stock, $reorder_level) {
         </div>
     </div>
 
-    <!-- View Item Modal - UPDATED TO SHOW DRIVER INFO -->
+    <!-- View Item Modal -->
     <div class="modal fade" id="viewItemModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
@@ -1267,9 +1796,11 @@ function getStockStatusClass($stock, $reorder_level) {
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
                         <i class="bi bi-x-circle me-1"></i> Close
                     </button>
+                    <?php if ($view_all_branches): ?>
                     <button type="button" class="btn btn-warning" onclick="editCurrentItem()" id="editFromViewBtn">
                         <i class="bi bi-pencil me-1"></i> Edit
                     </button>
+                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -1288,6 +1819,9 @@ function getStockStatusClass($stock, $reorder_level) {
                     <div class="alert alert-warning mb-0">
                         <i class="bi bi-exclamation-triangle me-2"></i>
                         This will return the stock to the items table.
+                        <?php if (!$view_all_branches): ?>
+                            <br>This action is for <strong><?php echo htmlspecialchars($branch_name); ?></strong>.
+                        <?php endif; ?>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -1312,12 +1846,20 @@ function getStockStatusClass($stock, $reorder_level) {
     
     <script>
     // ========== GLOBAL VARIABLES ==========
-    let selectedItemId = null;
+    const userBranchId = <?php echo $branch_id; ?>;
+    const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
+    const pickListsBranchColumnExists = <?php echo $pick_lists_branch_column_exists ? 'true' : 'false'; ?>;
+    const salesOrdersBranchColumnExists = <?php echo $sales_orders_branch_column_exists ? 'true' : 'false'; ?>;
+    const itemsBranchColumnExists = <?php echo $items_branch_column_exists ? 'true' : 'false'; ?>;
+    const driversBranchColumnExists = <?php echo $drivers_branch_column_exists ? 'true' : 'false'; ?>;
+    const userRole = '<?php echo $user_role; ?>';
+    const branchName = '<?php echo htmlspecialchars($branch_name); ?>';
+    const branchDisplayId = <?php echo $branch_display_id; ?>;
     let selectedPickItemId = null;
     let itemsData = <?= json_encode($items_by_code) ?>;
     let soItemsData = <?= json_encode($so_items_by_so) ?>;
     let driversData = <?= json_encode($drivers_list) ?>;
-    let currentUserId = 1; // This should be from session
+    let currentUserId = <?= $user_id ?: 1 ?>;
     
     // ========== LOADING FUNCTIONS ==========
     function showLoading() {
@@ -1372,13 +1914,47 @@ function getStockStatusClass($stock, $reorder_level) {
         }
     }
 
+    // ========== BRANCH VIEW FUNCTIONS ==========
+    function changeBranchView() {
+        const selector = document.getElementById('branchViewSelector');
+        if (!selector) return;
+        
+        const branchId = selector.value;
+        
+        if (branchId === 'all') {
+            window.location.href = 'pick_list_items.php?view=all';
+        } else {
+            window.location.href = 'pick_list_items.php?branch_id=' + branchId;
+        }
+    }
+
+    // ========== COPY SQL FUNCTION ==========
+    function copySQL(table) {
+        let sql = '';
+        if (table === 'pick_lists') {
+            sql = "ALTER TABLE pick_lists ADD COLUMN branch_id INT NULL AFTER so_id;\nALTER TABLE pick_lists ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);\nUPDATE pick_lists SET branch_id = 1 WHERE branch_id IS NULL;";
+        } else if (table === 'drivers') {
+            sql = "ALTER TABLE drivers ADD COLUMN branch_id INT NULL;\nALTER TABLE drivers ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+        }
+        
+        navigator.clipboard.writeText(sql).then(() => {
+            Swal.fire({
+                icon: 'success',
+                title: 'Copied!',
+                text: 'SQL copied to clipboard',
+                timer: 1500,
+                showConfirmButton: false
+            });
+        });
+    }
+
     // ========== FILTER FUNCTIONS ==========
     function applyFilters() {
         const dateFilter = document.getElementById('dateFilter').value;
         const statusFilter = document.getElementById('statusFilter').value;
         const driverFilter = document.getElementById('driverFilter').value;
-        const itemFilter = document.getElementById('itemFilter').value;
         const quantityFilter = document.getElementById('quantityFilter').value;
+        const branchFilter = document.getElementById('branchFilter')?.value || 'all';
         
         const rows = document.querySelectorAll('.pick-list-row');
         let visibleCount = 0;
@@ -1400,9 +1976,9 @@ function getStockStatusClass($stock, $reorder_level) {
                 }
             }
             
-            if (showRow && itemFilter !== 'all') {
-                const rowItemCode = row.dataset.itemCode;
-                if (rowItemCode !== itemFilter) showRow = false;
+            if (showRow && branchFilter !== 'all' && viewAllBranches) {
+                const rowBranchId = row.dataset.branchId || '';
+                if (rowBranchId != branchFilter) showRow = false;
             }
             
             if (showRow && quantityFilter !== 'all') {
@@ -1468,6 +2044,7 @@ function getStockStatusClass($stock, $reorder_level) {
             if (showRow) visibleCount++;
         });
         
+        // Update empty state message
         const emptyStateRow = document.querySelector('.empty-state-table');
         if (emptyStateRow) {
             const emptyStateParent = emptyStateRow.closest('tr');
@@ -1475,7 +2052,7 @@ function getStockStatusClass($stock, $reorder_level) {
                 if (emptyStateParent) {
                     emptyStateParent.style.display = '';
                     emptyStateRow.innerHTML = `
-                        <td colspan="9" class="empty-state-table">
+                        <td colspan="${viewAllBranches && pickListsBranchColumnExists ? '10' : '9'}" class="empty-state-table">
                             <i class="bi bi-funnel"></i>
                             <h5>No matching pick list items</h5>
                             <p class="text-muted">No items match your filter criteria.</p>
@@ -1495,13 +2072,35 @@ function getStockStatusClass($stock, $reorder_level) {
         document.getElementById('dateFilter').value = 'all';
         document.getElementById('statusFilter').value = 'all';
         document.getElementById('driverFilter').value = 'all';
-        document.getElementById('itemFilter').value = 'all';
+        if (document.getElementById('branchFilter')) {
+            document.getElementById('branchFilter').value = 'all';
+        }
         document.getElementById('quantityFilter').value = 'all';
         applyFilters();
     }
 
     // ========== MODAL FUNCTIONS ==========
     function showAddItemModal() {
+        <?php if (empty($sales_orders) && !$view_all_branches): ?>
+        Swal.fire({
+            icon: 'warning',
+            title: 'No Sales Orders',
+            text: 'No sales orders available for <?php echo htmlspecialchars($branch_name); ?>. You need to create a sales order first.',
+            confirmButtonColor: '#0d6efd'
+        });
+        return;
+        <?php endif; ?>
+        
+        <?php if (empty($drivers_list) && !$view_all_branches): ?>
+        Swal.fire({
+            icon: 'warning',
+            title: 'No Drivers Available',
+            text: 'No drivers available for <?php echo htmlspecialchars($branch_name); ?>. Please contact admin to assign drivers.',
+            confirmButtonColor: '#0d6efd'
+        });
+        return;
+        <?php endif; ?>
+        
         document.getElementById('modalTitle').textContent = 'Add Pick List Item';
         document.getElementById('itemForm').reset();
         document.getElementById('itemId').value = '';
@@ -1530,7 +2129,12 @@ function getStockStatusClass($stock, $reorder_level) {
         const now = new Date();
         const formattedDateTime = now.toISOString().slice(0, 16);
         document.getElementById('encodedAt').value = formattedDateTime;
-        document.getElementById('encodedBy').value = '<?= $_SESSION['user_id'] ?? 1 ?>';
+        document.getElementById('encodedBy').value = currentUserId;
+        
+        // Set branch info
+        <?php if ($view_all_branches): ?>
+        document.getElementById('selectedBranchName').textContent = 'your selected branch';
+        <?php endif; ?>
         
         new bootstrap.Modal(document.getElementById('itemModal')).show();
     }
@@ -1539,21 +2143,29 @@ function getStockStatusClass($stock, $reorder_level) {
         const select = document.getElementById('soIdSelect');
         const selectedOption = select.options[select.selectedIndex];
         
-        if (selectedOption.value) {
+        if (selectedOption && selectedOption.value) {
             const soId = selectedOption.value;
             const soNumber = selectedOption.dataset.soNumber;
             const customerName = selectedOption.dataset.customerName;
             const orderDate = selectedOption.dataset.orderDate;
+            const branchId = selectedOption.dataset.branchId;
+            const branchName = selectedOption.dataset.branchName;
             
             // Fill hidden fields
             document.getElementById('soId').value = soId;
             document.getElementById('soNumber').value = soNumber;
+            document.getElementById('branchId').value = branchId || userBranchId;
             
             // Show SO details
             document.getElementById('previewSoNumber').textContent = 'SO #: ' + soNumber;
             document.getElementById('previewCustomer').textContent = 'Customer: ' + customerName;
             document.getElementById('previewOrderDate').textContent = 'Order Date: ' + new Date(orderDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            document.getElementById('previewSoBranch').textContent = 'Branch: ' + (branchName || 'Branch ' + branchId);
             document.getElementById('soDetailsPreview').style.display = 'block';
+            
+            <?php if ($view_all_branches): ?>
+            document.getElementById('selectedBranchName').textContent = branchName || 'Branch ' + branchId;
+            <?php endif; ?>
             
             // Populate item dropdown based on selected SO
             populateItemsForSO(soId);
@@ -1591,11 +2203,21 @@ function getStockStatusClass($stock, $reorder_level) {
         
         // Add items from the selected SO
         items.forEach(item => {
-            // Calculate already picked quantity for this SO and item
-            const alreadyPicked = 0; // You can calculate this from existing pick list items
-            const availableToPick = item.quantity_ordered - (item.quantity_delivered || 0) - alreadyPicked;
+            // Check if item belongs to user's branch
+            <?php if (!$view_all_branches && $items_branch_column_exists): ?>
+            if (item.item_branch_id && item.item_branch_id != userBranchId) {
+                return; // Skip items not in user's branch
+            }
+            <?php endif; ?>
             
-            if (availableToPick > 0 && item.current_stock > 0) {
+            // Calculate available quantity to pick
+            const alreadyPicked = 0; // You can calculate this from existing pick list items
+            const availableToPick = Math.min(
+                item.quantity_ordered - (item.quantity_delivered || 0) - alreadyPicked,
+                item.current_stock || 0
+            );
+            
+            if (availableToPick > 0) {
                 const option = new Option(
                     item.item_code + ' - ' + item.item_name + 
                     ' (Ordered: ' + item.quantity_ordered + 
@@ -1625,7 +2247,7 @@ function getStockStatusClass($stock, $reorder_level) {
         const select = document.getElementById('itemCodeSelect');
         const selectedOption = select.options[select.selectedIndex];
         
-        if (selectedOption.value) {
+        if (selectedOption && selectedOption.value) {
             const itemCode = selectedOption.value;
             const itemName = selectedOption.dataset.itemName;
             const unitType = selectedOption.dataset.unitType;
@@ -1659,8 +2281,7 @@ function getStockStatusClass($stock, $reorder_level) {
             document.getElementById('previewStock').textContent = stockStatus;
             document.getElementById('itemPreview').style.display = 'block';
             
-            // Auto-fill quantities from SO
-            // Assuming 1 Case = 12 pcs, 1 Inner Pack = 6 pcs
+            // Auto-fill quantities
             let remainingQty = Math.min(quantityOrdered, currentStock);
             const cases = Math.floor(remainingQty / 12);
             remainingQty = remainingQty % 12;
@@ -1690,9 +2311,21 @@ function getStockStatusClass($stock, $reorder_level) {
         }
     }
 
-    // NEW: Driver selection handler
+    // Driver selection handler
     $(document).ready(function() {
-        // Initialize driver Select2
+        // Initialize Select2
+        $('.select2-so').select2({
+            placeholder: 'Search Sales Order...',
+            allowClear: true,
+            dropdownParent: $('#itemModal')
+        });
+        
+        $('.select2-item').select2({
+            placeholder: 'Select Item...',
+            allowClear: true,
+            dropdownParent: $('#itemModal')
+        });
+        
         $('.select2-driver').select2({
             placeholder: 'Search Driver...',
             allowClear: true,
@@ -1854,8 +2487,9 @@ function getStockStatusClass($stock, $reorder_level) {
         const status = row.dataset.status || '';
         const driverName = row.dataset.driverName || 'Unassigned';
         const stockText = row.querySelector('.stock-indicator')?.innerText || 'Stock: 0';
+        const branchName = row.dataset.branchName || `Branch ${row.dataset.branchId}`;
         
-        const detailsHtml = `
+        let detailsHtml = `
             <div class="col-md-6">
                 <div class="detail-card">
                     <div class="detail-label">SO Number</div>
@@ -1875,6 +2509,20 @@ function getStockStatusClass($stock, $reorder_level) {
                 </div>
             </div>
             <div class="col-md-6">
+        `;
+        
+        if (viewAllBranches && pickListsBranchColumnExists) {
+            detailsHtml += `
+                <div class="detail-card">
+                    <div class="detail-label">Branch</div>
+                    <div class="detail-value">
+                        <span class="badge bg-info">${branchName}</span>
+                    </div>
+                </div>
+            `;
+        }
+        
+        detailsHtml += `
                 <div class="detail-card">
                     <div class="detail-label">Location/Bin</div>
                     <div class="detail-value">${location}</div>
@@ -1899,12 +2547,22 @@ function getStockStatusClass($stock, $reorder_level) {
         `;
         
         document.getElementById('viewItemDetails').innerHTML = detailsHtml;
+        
+        // Show/hide edit button based on permissions
+        const editBtn = document.getElementById('editFromViewBtn');
+        if (editBtn) {
+            <?php if ($view_all_branches): ?>
+            editBtn.style.display = 'inline-block';
+            <?php else: ?>
+            editBtn.style.display = 'none';
+            <?php endif; ?>
+        }
+        
         new bootstrap.Modal(document.getElementById('viewItemModal')).show();
     }
 
     function editCurrentItem() {
         bootstrap.Modal.getInstance(document.getElementById('viewItemModal')).hide();
-        // In a real implementation, this would open the edit modal with the item data
         Swal.fire({
             icon: 'info',
             title: 'Edit Item',
@@ -2021,8 +2679,9 @@ function getStockStatusClass($stock, $reorder_level) {
         const excelData = [];
         
         // Add headers
-        excelData.push([
+        const headers = [
             'SO Number',
+            ...(viewAllBranches && pickListsBranchColumnExists ? ['Branch'] : []),
             'Item Code',
             'Item Name',
             'Quantity to Pick',
@@ -2031,32 +2690,42 @@ function getStockStatusClass($stock, $reorder_level) {
             'Status',
             'Assigned Driver',
             'Current Stock'
-        ]);
+        ];
+        excelData.push(headers);
 
         // Add data rows
         rows.forEach(row => {
             if (row.style.display !== 'none') {
                 const cells = row.querySelectorAll('td');
-                const soNumber = cells[0]?.innerText.replace(/\n/g, ' ').trim() || '';
-                const itemCode = cells[1]?.innerText || '';
-                const itemName = cells[2]?.innerText.split('\n')[0].trim() || '';
-                const toPick = parseInt(cells[3]?.innerText) || 0;
-                const picked = parseInt(cells[4]?.innerText) || 0;
-                const location = cells[5]?.innerText || '';
-                const status = cells[6]?.innerText || '';
-                const driver = cells[7]?.innerText || '';
+                let cellIndex = 0;
+                
+                const soNumber = cells[cellIndex++]?.innerText.replace(/\n/g, ' ').trim() || '';
+                let branchName = '';
+                
+                if (viewAllBranches && pickListsBranchColumnExists) {
+                    branchName = cells[cellIndex++]?.innerText.replace(/\n/g, ' ').trim() || '';
+                }
+                
+                const itemCode = cells[cellIndex++]?.innerText || '';
+                const itemName = cells[cellIndex++]?.innerText.split('\n')[0].trim() || '';
+                const toPick = parseInt(cells[cellIndex++]?.innerText) || 0;
+                const picked = parseInt(cells[cellIndex++]?.innerText) || 0;
+                const location = cells[cellIndex++]?.innerText || '';
+                const status = cells[cellIndex++]?.innerText || '';
+                const driver = cells[cellIndex++]?.innerText || '';
                 
                 // Extract stock from the stock indicator
                 let stock = 0;
-                const stockElement = cells[2]?.querySelector('.stock-indicator');
+                const stockElement = row.querySelector('.stock-indicator');
                 if (stockElement) {
                     const stockText = stockElement.innerText;
                     const stockMatch = stockText.match(/\d+/);
                     if (stockMatch) stock = parseInt(stockMatch[0]);
                 }
                 
-                excelData.push([
+                const rowData = [
                     soNumber,
+                    ...(viewAllBranches && pickListsBranchColumnExists ? [branchName] : []),
                     itemCode,
                     itemName,
                     toPick,
@@ -2065,7 +2734,9 @@ function getStockStatusClass($stock, $reorder_level) {
                     status,
                     driver,
                     stock
-                ]);
+                ];
+                
+                excelData.push(rowData);
             }
         });
 
@@ -2074,8 +2745,9 @@ function getStockStatusClass($stock, $reorder_level) {
         const ws = XLSX.utils.aoa_to_sheet(excelData);
 
         // Set column widths
-        ws['!cols'] = [
+        const colWidths = [
             { wch: 15 }, // SO Number
+            ...(viewAllBranches && pickListsBranchColumnExists ? [{ wch: 15 }] : []), // Branch
             { wch: 15 }, // Item Code
             { wch: 30 }, // Item Name
             { wch: 15 }, // Quantity to Pick
@@ -2085,14 +2757,19 @@ function getStockStatusClass($stock, $reorder_level) {
             { wch: 25 }, // Assigned Driver
             { wch: 15 }  // Current Stock
         ];
+        ws['!cols'] = colWidths;
 
         // Add worksheet to workbook
         XLSX.utils.book_append_sheet(wb, ws, 'Pick List Items');
 
-        // Generate filename with current date
+        // Generate filename with current date and branch info
         const date = new Date();
         const dateStr = date.toISOString().slice(0,10).replace(/-/g, '');
-        const filename = `Pick_List_Items_${dateStr}.xlsx`;
+        let filename = `Pick_List_Items_${dateStr}`;
+        if (!viewAllBranches) {
+            filename += `_${branchName.replace(/\s+/g, '_')}`;
+        }
+        filename += '.xlsx';
 
         // Export Excel file
         XLSX.writeFile(wb, filename);
@@ -2106,26 +2783,42 @@ function getStockStatusClass($stock, $reorder_level) {
         });
     }
 
-    // ========== PICK LIST FUNCTIONS ==========
+    // ========== PRINT FUNCTION ==========
+    function printPickList() {
+        window.print();
+    }
+
+    // ========== LOGOUT FUNCTION ==========
+    function logout() {
+        Swal.fire({
+            title: 'Are you sure?',
+            text: 'You will be logged out of the system',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#0d6efd',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Yes, logout'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                localStorage.removeItem('sidebarCollapsed');
+                window.location.href = '../logout.php';
+            }
+        });
+    }
+
+    // ========== DOCUMENT READY ==========
     document.addEventListener('DOMContentLoaded', function() {
-        console.log("Pick List Items - Live Database Mode with Driver Assignment");
+        console.log("Pick List Items - Branch Filtering Mode");
+        console.log("User Branch:", userBranchId);
+        console.log("View All Branches:", viewAllBranches);
+        console.log("User Role:", userRole);
+        console.log("Branch Name:", branchName);
+        console.log("Pick Lists Branch Column Exists:", pickListsBranchColumnExists);
+        console.log("Sales Orders Branch Column Exists:", salesOrdersBranchColumnExists);
+        console.log("Items Branch Column Exists:", itemsBranchColumnExists);
+        console.log("Drivers Branch Column Exists:", driversBranchColumnExists);
         
         initializeSidebar();
-        
-        // Initialize Select2
-        $('.select2-so').select2({
-            placeholder: 'Search Sales Order...',
-            allowClear: true,
-            dropdownParent: $('#itemModal')
-        });
-        
-        $('.select2-item').select2({
-            placeholder: 'Select Item...',
-            allowClear: true,
-            dropdownParent: $('#itemModal')
-        });
-        
-        // Driver Select2 is initialized in the ready function above
         
         // Mobile menu toggle
         document.getElementById('mobileMenuBtn').addEventListener('click', function() {
@@ -2175,29 +2868,7 @@ function getStockStatusClass($stock, $reorder_level) {
         });
     });
 
-    function printPickList() {
-        window.print();
-    }
-
-    // Logout Function
-    function logout() {
-        Swal.fire({
-            title: 'Are you sure?',
-            text: 'You will be logged out of the system',
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonColor: '#0d6efd',
-            cancelButtonColor: '#6c757d',
-            confirmButtonText: 'Yes, logout'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                localStorage.removeItem('sidebarCollapsed');
-                window.location.href = 'login.php';
-            }
-        });
-    }
-
-    // Keyboard shortcuts
+    // ========== KEYBOARD SHORTCUTS ==========
     document.addEventListener('keydown', function(e) {
         if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
             e.preventDefault();
