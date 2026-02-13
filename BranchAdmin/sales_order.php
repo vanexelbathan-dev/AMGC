@@ -1,6 +1,140 @@
 <?php
 require_once '../config/database.php';
 
+// ========== HANDLE AJAX REQUESTS ==========
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    header('Content-Type: application/json');
+    
+    try {
+        $conn->begin_transaction();
+        
+        // UPDATE SALES ORDER
+        if ($_POST['action'] === 'update_order') {
+            $so_id = (int)$_POST['so_id'];
+            $order_date = $_POST['order_date'];
+            $order_status = $_POST['order_status'];
+            $total_amount = (float)$_POST['total_amount'];
+            
+            $update_query = "UPDATE sales_orders 
+                           SET order_date = ?, order_status = ?, total_amount = ?, updated_at = NOW() 
+                           WHERE so_id = ?";
+            $update_stmt = $conn->prepare($update_query);
+            $update_stmt->bind_param("ssdi", $order_date, $order_status, $total_amount, $so_id);
+            
+            if (!$update_stmt->execute()) {
+                throw new Exception('Failed to update sales order');
+            }
+            
+            $conn->commit();
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Sales order updated successfully'
+            ]);
+            exit;
+        }
+        
+        // DELETE SALES ORDER
+        elseif ($_POST['action'] === 'delete_order') {
+            $so_id = (int)$_POST['so_id'];
+            
+            // Check if order has related records
+            $check_picklist_query = "SELECT COUNT(*) as count FROM pick_lists WHERE so_id = ?";
+            $check_picklist_stmt = $conn->prepare($check_picklist_query);
+            $check_picklist_stmt->bind_param("i", $so_id);
+            $check_picklist_stmt->execute();
+            $picklist_count = $check_picklist_stmt->get_result()->fetch_assoc()['count'];
+            
+            if ($picklist_count > 0) {
+                throw new Exception('Cannot delete order with existing pick lists');
+            }
+            
+            // Delete order items first
+            $delete_items_query = "DELETE FROM sales_order_items WHERE so_id = ?";
+            $delete_items_stmt = $conn->prepare($delete_items_query);
+            $delete_items_stmt->bind_param("i", $so_id);
+            $delete_items_stmt->execute();
+            
+            // Delete the order
+            $delete_order_query = "DELETE FROM sales_orders WHERE so_id = ?";
+            $delete_order_stmt = $conn->prepare($delete_order_query);
+            $delete_order_stmt->bind_param("i", $so_id);
+            
+            if (!$delete_order_stmt->execute()) {
+                throw new Exception('Failed to delete sales order');
+            }
+            
+            $conn->commit();
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Sales order deleted successfully'
+            ]);
+            exit;
+        }
+        
+        // GET SALES ORDER DETAILS
+        elseif ($_POST['action'] === 'get_order') {
+            $so_id = (int)$_POST['so_id'];
+            
+            $query = "
+                SELECT 
+                    so.*,
+                    c.customer_name,
+                    c.customer_id,
+                    COUNT(soi.so_item_id) as total_items,
+                    SUM(soi.quantity_ordered) as total_quantity
+                FROM sales_orders so
+                JOIN customers c ON so.customer_id = c.customer_id
+                LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
+                WHERE so.so_id = ?
+                GROUP BY so.so_id
+            ";
+            $stmt = $conn->prepare($query);
+            $stmt->bind_param("i", $so_id);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            $order = $result->fetch_assoc();
+            
+            if ($order) {
+                // Get order items
+                $items_query = "
+                    SELECT 
+                        soi.*,
+                        i.item_code,
+                        i.item_name,
+                        i.unit_type
+                    FROM sales_order_items soi
+                    JOIN items i ON soi.item_id = i.item_id
+                    WHERE soi.so_id = ?
+                ";
+                $items_stmt = $conn->prepare($items_query);
+                $items_stmt->bind_param("i", $so_id);
+                $items_stmt->execute();
+                $items_result = $items_stmt->get_result();
+                $items = $items_result->fetch_all(MYSQLI_ASSOC);
+                
+                echo json_encode([
+                    'success' => true,
+                    'order' => $order,
+                    'items' => $items
+                ]);
+            } else {
+                throw new Exception('Sales order not found');
+            }
+            exit;
+        }
+        
+    } catch (Exception $e) {
+        $conn->rollback();
+        echo json_encode([
+            'success' => false,
+            'message' => $e->getMessage()
+        ]);
+        exit;
+    }
+}
+
 // FETCH SALES ORDERS WITH CUSTOMER AND ITEM COUNTS
 $sales_query = "
     SELECT 
@@ -101,6 +235,11 @@ function formatDateTime($dateStr) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <!-- SheetJS for Excel Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- SweetAlert2 -->
+    <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 <body>
     <!-- MAIN APPLICATION -->
@@ -270,12 +409,11 @@ function formatDateTime($dateStr) {
                         <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>Sales Orders</h5>
                         <div class="d-flex gap-2">
                             <span class="text-muted me-2">Total: ₱<?= number_format(array_sum(array_column($sales_orders, 'total_amount')), 2) ?></span>
-                            <!-- NEW ORDER BUTTON - REMOVED - Orders come from Sales Role User -->
                             <button class="btn btn-sm btn-outline-primary" onclick="printReport()">
                                 <i class="bi bi-printer me-1"></i> Print
                             </button>
-                            <button class="btn btn-sm btn-outline-primary" onclick="exportToCSV()">
-                                <i class="bi bi-download me-1"></i> Export
+                            <button class="btn btn-sm btn-outline-success" onclick="exportToExcel()">
+                                <i class="bi bi-file-earmark-excel me-1"></i> Export to Excel
                             </button>
                         </div>
                     </div>
@@ -362,12 +500,13 @@ function formatDateTime($dateStr) {
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="row" id="viewOrderContent">
+                    <div id="viewOrderContent">
                         <!-- Content will be populated by JavaScript -->
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-warning" onclick="editFromView()" id="editFromViewBtn">Edit Order</button>
                 </div>
             </div>
         </div>
@@ -390,7 +529,7 @@ function formatDateTime($dateStr) {
                                 <input type="text" class="form-control" id="editOrderNumber" readonly>
                             </div>
                             <div class="col-md-6">
-                                <label for="editOrderDate" class="form-label">Order Date</label>
+                                <label for="editOrderDate" class="form-label">Order Date *</label>
                                 <input type="date" class="form-control" id="editOrderDate" required>
                             </div>
                             <div class="col-md-6">
@@ -398,7 +537,7 @@ function formatDateTime($dateStr) {
                                 <input type="text" class="form-control" id="editCustomerName" readonly>
                             </div>
                             <div class="col-md-6">
-                                <label for="editOrderStatus" class="form-label">Order Status</label>
+                                <label for="editOrderStatus" class="form-label">Order Status *</label>
                                 <select class="form-select" id="editOrderStatus" required>
                                     <option value="pending">Pending</option>
                                     <option value="confirmed">Confirmed</option>
@@ -413,12 +552,12 @@ function formatDateTime($dateStr) {
                                 <input type="number" class="form-control" id="editTotalItems" readonly>
                             </div>
                             <div class="col-md-4">
-                                <label for="editTotalQty" class="form-label">Quantity</label>
+                                <label for="editTotalQty" class="form-label">Total Quantity</label>
                                 <input type="number" class="form-control" id="editTotalQty" readonly>
                             </div>
                             <div class="col-md-4">
-                                <label for="editTotalAmount" class="form-label">Total Amount (₱)</label>
-                                <input type="number" class="form-control" id="editTotalAmount" step="0.01" required>
+                                <label for="editTotalAmount" class="form-label">Total Amount (₱) *</label>
+                                <input type="number" class="form-control" id="editTotalAmount" step="0.01" min="0" required>
                             </div>
                         </div>
                     </form>
@@ -506,6 +645,18 @@ function formatDateTime($dateStr) {
         }
     }
 
+    // ========== SHOW LOADING ==========
+    function showLoading() {
+        Swal.fire({
+            title: 'Processing...',
+            text: 'Please wait',
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+    }
+
     // ========== SALES ORDER FUNCTIONS ==========
     document.addEventListener('DOMContentLoaded', function() {
         console.log("Sales Orders - Live Database Mode");
@@ -564,92 +715,248 @@ function formatDateTime($dateStr) {
     
     // View Order
     function viewOrder(id) {
-        const row = document.querySelector(`.sales-order-row[data-id="${id}"]`);
-        if (!row) return;
+        showLoading();
         
-        const orderNumber = row.dataset.orderNumber;
-        const customer = row.dataset.customer;
-        const date = row.dataset.date;
-        const status = row.dataset.status;
-        const amount = parseFloat(row.dataset.amount).toFixed(2);
-        const items = row.dataset.items;
-        const qty = row.dataset.qty;
+        const formData = new FormData();
+        formData.append('action', 'get_order');
+        formData.append('so_id', id);
         
-        const statusBadge = getStatusBadge(status);
-        const statusText = getStatusText(status);
-        const paymentStatus = getPaymentStatusText(status);
-        const paymentClass = getPaymentStatusClass(status);
-        
-        const content = document.getElementById('viewOrderContent');
-        content.innerHTML = `
-            <div class="col-md-6">
-                <table class="table table-sm table-borderless">
-                    <tr>
-                        <th width="40%">Order Number:</th>
-                        <td><strong>${orderNumber}</strong></td>
-                    </tr>
-                    <tr>
-                        <th>Order Date:</th>
-                        <td>${formatDate(date)}</td>
-                    </tr>
-                    <tr>
-                        <th>Customer:</th>
-                        <td>${customer}</td>
-                    </tr>
-                    <tr>
-                        <th>Order Status:</th>
-                        <td><span class="${statusBadge}">${statusText}</span></td>
-                    </tr>
-                </table>
-            </div>
-            <div class="col-md-6">
-                <table class="table table-sm table-borderless">
-                    <tr>
-                        <th width="40%">Items:</th>
-                        <td>${items}</td>
-                    </tr>
-                    <tr>
-                        <th>Total Quantity:</th>
-                        <td>${qty}</td>
-                    </tr>
-                    <tr>
-                        <th>Total Amount:</th>
-                        <td class="fw-bold">₱${Number(amount).toLocaleString()}</td>
-                    </tr>
-                    <tr>
-                        <th>Payment Status:</th>
-                        <td><span class="badge ${paymentClass}">${paymentStatus}</span></td>
-                    </tr>
-                </table>
-            </div>
-        `;
-        
-        new bootstrap.Modal(document.getElementById('viewOrderModal')).show();
+        fetch('sales_order.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            Swal.close();
+            
+            if (data.success) {
+                const order = data.order;
+                const items = data.items;
+                
+                // Format date
+                const orderDate = new Date(order.order_date);
+                const formattedDate = orderDate.toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric'
+                });
+                
+                const statusBadge = getStatusBadge(order.order_status);
+                const statusText = getStatusText(order.order_status);
+                const paymentStatus = getPaymentStatusText(order.order_status);
+                const paymentClass = getPaymentStatusClass(order.order_status);
+                
+                // Build items table
+                let itemsHtml = '';
+                if (items && items.length > 0) {
+                    itemsHtml = '<h6 class="mt-4 mb-3">Order Items</h6><div class="table-responsive"><table class="table table-sm table-bordered"><thead><tr><th>Item Code</th><th>Item Name</th><th>Quantity</th><th>Unit Price</th><th>Subtotal</th></tr></thead><tbody>';
+                    items.forEach(item => {
+                        const subtotal = item.quantity_ordered * item.unit_price;
+                        itemsHtml += `<tr>
+                            <td>${item.item_code}</td>
+                            <td>${item.item_name}</td>
+                            <td class="text-center">${item.quantity_ordered}</td>
+                            <td class="text-end">₱${Number(item.unit_price).toFixed(2)}</td>
+                            <td class="text-end">₱${Number(subtotal).toFixed(2)}</td>
+                        </tr>`;
+                    });
+                    itemsHtml += '</tbody></table></div>';
+                }
+                
+                const content = document.getElementById('viewOrderContent');
+                content.innerHTML = `
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card mb-3">
+                                <div class="card-header bg-light">
+                                    <h6 class="mb-0 fw-bold">Order Information</h6>
+                                </div>
+                                <div class="card-body">
+                                    <table class="table table-sm table-borderless mb-0">
+                                        <tr>
+                                            <td width="40%">Order Number:</td>
+                                            <td><strong>${order.so_number}</strong></td>
+                                        </tr>
+                                        <tr>
+                                            <td>Order Date:</td>
+                                            <td>${formattedDate}</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Customer:</td>
+                                            <td>${order.customer_name}</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Order Status:</td>
+                                            <td><span class="${statusBadge}">${statusText}</span></td>
+                                        </tr>
+                                        <tr>
+                                            <td>Payment Status:</td>
+                                            <td><span class="badge ${paymentClass}">${paymentStatus}</span></td>
+                                        </tr>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="card mb-3">
+                                <div class="card-header bg-light">
+                                    <h6 class="mb-0 fw-bold">Order Summary</h6>
+                                </div>
+                                <div class="card-body">
+                                    <table class="table table-sm table-borderless mb-0">
+                                        <tr>
+                                            <td width="40%">Total Items:</td>
+                                            <td>${order.total_items || 0}</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Total Quantity:</td>
+                                            <td>${order.total_quantity || 0}</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Total Amount:</td>
+                                            <td class="fw-bold fs-5">₱${Number(order.total_amount).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Created At:</td>
+                                            <td>${order.created_at ? new Date(order.created_at).toLocaleString() : 'N/A'}</td>
+                                        </tr>
+                                        <tr>
+                                            <td>Last Updated:</td>
+                                            <td>${order.updated_at ? new Date(order.updated_at).toLocaleString() : 'N/A'}</td>
+                                        </tr>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    ${itemsHtml}
+                `;
+                
+                currentOrderId = id;
+                
+                // Show/hide edit button based on status
+                const editBtn = document.getElementById('editFromViewBtn');
+                if (order.order_status !== 'delivered' && order.order_status !== 'cancelled') {
+                    editBtn.style.display = 'inline-block';
+                } else {
+                    editBtn.style.display = 'none';
+                }
+                
+                new bootstrap.Modal(document.getElementById('viewOrderModal')).show();
+            } else {
+                Swal.fire('Error', data.message, 'error');
+            }
+        })
+        .catch(error => {
+            Swal.close();
+            Swal.fire('Error', 'An error occurred while fetching order details', 'error');
+        });
+    }
+
+    // Edit from View Modal
+    function editFromView() {
+        bootstrap.Modal.getInstance(document.getElementById('viewOrderModal')).hide();
+        setTimeout(() => {
+            editOrder(currentOrderId);
+        }, 300);
     }
 
     // Edit Order
     function editOrder(id) {
-        const row = document.querySelector(`.sales-order-row[data-id="${id}"]`);
-        if (!row) return;
+        showLoading();
         
-        document.getElementById('editOrderId').value = id;
-        document.getElementById('editOrderNumber').value = row.dataset.orderNumber;
-        document.getElementById('editOrderDate').value = row.dataset.date.split(' ')[0];
-        document.getElementById('editCustomerName').value = row.dataset.customer;
-        document.getElementById('editOrderStatus').value = row.dataset.status;
-        document.getElementById('editTotalItems').value = row.dataset.items;
-        document.getElementById('editTotalQty').value = row.dataset.qty;
-        document.getElementById('editTotalAmount').value = row.dataset.amount;
+        const formData = new FormData();
+        formData.append('action', 'get_order');
+        formData.append('so_id', id);
         
-        currentOrderId = id;
-        new bootstrap.Modal(document.getElementById('editOrderModal')).show();
+        fetch('sales_order.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            Swal.close();
+            
+            if (data.success) {
+                const order = data.order;
+                
+                // Format date for input
+                const orderDate = order.order_date.split(' ')[0];
+                
+                document.getElementById('editOrderId').value = order.so_id;
+                document.getElementById('editOrderNumber').value = order.so_number;
+                document.getElementById('editOrderDate').value = orderDate;
+                document.getElementById('editCustomerName').value = order.customer_name;
+                document.getElementById('editOrderStatus').value = order.order_status;
+                document.getElementById('editTotalItems').value = order.total_items || 0;
+                document.getElementById('editTotalQty').value = order.total_quantity || 0;
+                document.getElementById('editTotalAmount').value = order.total_amount;
+                
+                currentOrderId = id;
+                new bootstrap.Modal(document.getElementById('editOrderModal')).show();
+            } else {
+                Swal.fire('Error', data.message, 'error');
+            }
+        })
+        .catch(error => {
+            Swal.close();
+            Swal.fire('Error', 'An error occurred while fetching order details', 'error');
+        });
     }
 
     // Update Order
     function updateOrder() {
-        const id = document.getElementById('editOrderId').value;
-        alert('Update order ' + id + ' - AJAX implementation needed');
-        bootstrap.Modal.getInstance(document.getElementById('editOrderModal')).hide();
+        const orderId = document.getElementById('editOrderId').value;
+        const orderDate = document.getElementById('editOrderDate').value;
+        const orderStatus = document.getElementById('editOrderStatus').value;
+        const totalAmount = document.getElementById('editTotalAmount').value;
+        
+        if (!orderDate) {
+            Swal.fire('Warning', 'Order Date is required', 'warning');
+            return;
+        }
+        
+        if (!totalAmount || totalAmount < 0) {
+            Swal.fire('Warning', 'Valid Total Amount is required', 'warning');
+            return;
+        }
+        
+        showLoading();
+        
+        const formData = new FormData();
+        formData.append('action', 'update_order');
+        formData.append('so_id', orderId);
+        formData.append('order_date', orderDate);
+        formData.append('order_status', orderStatus);
+        formData.append('total_amount', totalAmount);
+        
+        fetch('sales_order.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            Swal.close();
+            
+            if (data.success) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Success!',
+                    text: data.message,
+                    timer: 2000,
+                    showConfirmButton: false
+                }).then(() => {
+                    bootstrap.Modal.getInstance(document.getElementById('editOrderModal')).hide();
+                    location.reload();
+                });
+            } else {
+                Swal.fire('Error', data.message, 'error');
+            }
+        })
+        .catch(error => {
+            Swal.close();
+            Swal.fire('Error', 'An error occurred while updating the order', 'error');
+        });
     }
 
     // Delete Order
@@ -664,8 +971,39 @@ function formatDateTime($dateStr) {
 
     // Confirm Delete
     function confirmDelete() {
-        alert('Delete order ' + currentOrderId + ' - AJAX implementation needed');
-        bootstrap.Modal.getInstance(document.getElementById('deleteOrderModal')).hide();
+        showLoading();
+        
+        const formData = new FormData();
+        formData.append('action', 'delete_order');
+        formData.append('so_id', currentOrderId);
+        
+        fetch('sales_order.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            Swal.close();
+            
+            if (data.success) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Deleted!',
+                    text: data.message,
+                    timer: 2000,
+                    showConfirmButton: false
+                }).then(() => {
+                    bootstrap.Modal.getInstance(document.getElementById('deleteOrderModal')).hide();
+                    location.reload();
+                });
+            } else {
+                Swal.fire('Error', data.message, 'error');
+            }
+        })
+        .catch(error => {
+            Swal.close();
+            Swal.fire('Error', 'An error occurred while deleting the order', 'error');
+        });
     }
 
     // ========== FILTER FUNCTIONS ==========
@@ -758,51 +1096,107 @@ function formatDateTime($dateStr) {
         window.print();
     }
 
-    // Export to CSV
-    function exportToCSV() {
+    // ========== EXCEL EXPORT FUNCTION ==========
+    function exportToExcel() {
         const rows = document.querySelectorAll('.sales-order-row:not([style*="display: none"])');
         if (rows.length === 0) {
-            alert('No orders to export');
+            Swal.fire('Warning', 'No orders to export', 'warning');
             return;
         }
         
-        let csv = 'Order Number,Date,Customer,Items,Qty,Total Amount,Payment Status,Order Status\n';
+        // Prepare data array for Excel
+        const excelData = [];
         
+        // Add headers
+        excelData.push([
+            'Order Number',
+            'Date',
+            'Customer',
+            'Items',
+            'Quantity',
+            'Total Amount (₱)',
+            'Payment Status',
+            'Order Status'
+        ]);
+
+        // Add data rows
         rows.forEach(row => {
             if (row.style.display !== 'none') {
                 const cells = row.querySelectorAll('td');
                 const orderNo = cells[0]?.innerText || '';
                 const date = cells[1]?.innerText || '';
-                const customer = `"${cells[2]?.innerText || ''}"`;
-                const items = cells[3]?.innerText || '0';
-                const qty = cells[4]?.innerText || '0';
-                const amount = cells[5]?.innerText.replace('₱', '').replace(',', '') || '0';
+                const customer = cells[2]?.innerText || '';
+                const items = parseInt(cells[3]?.innerText) || 0;
+                const qty = parseInt(cells[4]?.innerText) || 0;
+                const amount = parseFloat(cells[5]?.innerText.replace('₱', '').replace(/,/g, '')) || 0;
                 const paymentStatus = cells[6]?.innerText || '';
                 const orderStatus = cells[7]?.innerText || '';
                 
-                csv += `${orderNo},${date},${customer},${items},${qty},${amount},${paymentStatus},${orderStatus}\n`;
+                excelData.push([
+                    orderNo,
+                    date,
+                    customer,
+                    items,
+                    qty,
+                    amount,
+                    paymentStatus,
+                    orderStatus
+                ]);
             }
         });
+
+        // Create workbook and worksheet
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(excelData);
+
+        // Set column widths
+        ws['!cols'] = [
+            { wch: 15 }, // Order Number
+            { wch: 15 }, // Date
+            { wch: 25 }, // Customer
+            { wch: 10 }, // Items
+            { wch: 12 }, // Quantity
+            { wch: 18 }, // Total Amount
+            { wch: 15 }, // Payment Status
+            { wch: 15 }  // Order Status
+        ];
+
+        // Add worksheet to workbook
+        XLSX.utils.book_append_sheet(wb, ws, 'Sales Orders');
+
+        // Generate filename with current date
+        const date = new Date();
+        const dateStr = date.toISOString().slice(0,10).replace(/-/g, '');
+        const filename = `Sales_Orders_${dateStr}.xlsx`;
+
+        // Export Excel file
+        XLSX.writeFile(wb, filename);
         
-        const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `sales_orders_export_<?= date('Ymd') ?>.csv`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-        
-        alert('Export completed!');
+        Swal.fire({
+            icon: 'success',
+            title: 'Export Complete',
+            text: 'Excel export completed successfully!',
+            timer: 2000,
+            showConfirmButton: false
+        });
     }
 
     // ========== LOGOUT FUNCTION ==========
     function logout() {
-        if (confirm('Are you sure you want to logout?')) {
-            localStorage.removeItem('sidebarCollapsed');
-            window.location.href = '../login.php';
-        }
+        Swal.fire({
+            title: 'Are you sure?',
+            text: 'You will be logged out of the system',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#0d6efd',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Yes, logout'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                localStorage.removeItem('sidebarCollapsed');
+                window.location.href = '../login.php';
+            }
+        });
     }
 
     // ========== KEYBOARD SHORTCUTS ==========

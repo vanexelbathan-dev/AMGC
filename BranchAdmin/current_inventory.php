@@ -1,6 +1,157 @@
 <?php
 require_once '../config/database.php';
 
+// ========== HANDLE AJAX REQUESTS ==========
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    header('Content-Type: application/json');
+    
+    try {
+        $conn->begin_transaction();
+        
+        // ADD ITEM
+        if ($_POST['action'] === 'add_item') {
+            $item_code = $_POST['item_code'];
+            $item_name = $_POST['item_name'];
+            $description = $_POST['description'] ?? null;
+            $category = $_POST['category'] ?? null;
+            $stock = (int)$_POST['stock'];
+            $unit_type = $_POST['unit_type'];
+            $unit_price = (float)$_POST['unit_price'];
+            $reorder_level = (int)$_POST['reorder_level'];
+            $status = $_POST['status'] ?? 'active';
+            
+            // Check if item code already exists
+            $check_query = "SELECT item_id FROM items WHERE item_code = ?";
+            $check_stmt = $conn->prepare($check_query);
+            $check_stmt->bind_param("s", $item_code);
+            $check_stmt->execute();
+            $check_result = $check_stmt->get_result();
+            
+            if ($check_result->num_rows > 0) {
+                throw new Exception('Item code already exists');
+            }
+            
+            // Insert new item
+            $insert_query = "INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, reorder_level, status, created_at, updated_at) 
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
+            $insert_stmt = $conn->prepare($insert_query);
+            $insert_stmt->bind_param("ssssisdis", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status);
+            
+            if (!$insert_stmt->execute()) {
+                throw new Exception('Failed to add item');
+            }
+            
+            $item_id = $conn->insert_id;
+            
+            $conn->commit();
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Item added successfully',
+                'item_id' => $item_id
+            ]);
+            exit;
+        }
+        
+        // UPDATE ITEM
+        elseif ($_POST['action'] === 'update_item') {
+            $item_id = (int)$_POST['item_id'];
+            $item_name = $_POST['item_name'];
+            $description = $_POST['description'] ?? null;
+            $category = $_POST['category'] ?? null;
+            $stock = (int)$_POST['stock'];
+            $unit_type = $_POST['unit_type'];
+            $unit_price = (float)$_POST['unit_price'];
+            $reorder_level = (int)$_POST['reorder_level'];
+            $status = $_POST['status'] ?? 'active';
+            
+            $update_query = "UPDATE items 
+                           SET item_name = ?, description = ?, category = ?, stock = ?, unit_type = ?, unit_price = ?, reorder_level = ?, status = ?, updated_at = NOW() 
+                           WHERE item_id = ?";
+            $update_stmt = $conn->prepare($update_query);
+            $update_stmt->bind_param("sssisdsii", $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status, $item_id);
+            
+            if (!$update_stmt->execute()) {
+                throw new Exception('Failed to update item');
+            }
+            
+            $conn->commit();
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Item updated successfully'
+            ]);
+            exit;
+        }
+        
+        // DELETE ITEM
+        elseif ($_POST['action'] === 'delete_item') {
+            $item_id = (int)$_POST['item_id'];
+            
+            // Check if item is used in sales orders
+            $check_so_query = "SELECT COUNT(*) as count FROM sales_order_items WHERE item_id = ?";
+            $check_so_stmt = $conn->prepare($check_so_query);
+            $check_so_stmt->bind_param("i", $item_id);
+            $check_so_stmt->execute();
+            $so_count = $check_so_stmt->get_result()->fetch_assoc()['count'];
+            
+            if ($so_count > 0) {
+                // Soft delete - just update status to discontinued
+                $update_query = "UPDATE items SET status = 'discontinued', updated_at = NOW() WHERE item_id = ?";
+                $update_stmt = $conn->prepare($update_query);
+                $update_stmt->bind_param("i", $item_id);
+            } else {
+                // Hard delete if not used
+                $delete_query = "DELETE FROM items WHERE item_id = ?";
+                $delete_stmt = $conn->prepare($delete_query);
+                $delete_stmt->bind_param("i", $item_id);
+            }
+            
+            if (!$update_stmt->execute()) {
+                throw new Exception('Failed to delete item');
+            }
+            
+            $conn->commit();
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Item deleted successfully'
+            ]);
+            exit;
+        }
+        
+        // GET ITEM DETAILS
+        elseif ($_POST['action'] === 'get_item') {
+            $item_id = (int)$_POST['item_id'];
+            
+            $query = "SELECT * FROM items WHERE item_id = ?";
+            $stmt = $conn->prepare($query);
+            $stmt->bind_param("i", $item_id);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            $item = $result->fetch_assoc();
+            
+            if ($item) {
+                echo json_encode([
+                    'success' => true,
+                    'item' => $item
+                ]);
+            } else {
+                throw new Exception('Item not found');
+            }
+            exit;
+        }
+        
+    } catch (Exception $e) {
+        $conn->rollback();
+        echo json_encode([
+            'success' => false,
+            'message' => $e->getMessage()
+        ]);
+        exit;
+    }
+}
+
 // FETCH ALL ITEMS FROM items TABLE
 $items_query = "
     SELECT 
@@ -84,6 +235,11 @@ function getStockStatus($stock, $reorder_level) {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/inter-ui@3.19.3/inter.css">
+    <!-- SheetJS for Excel Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- SweetAlert2 -->
+    <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 <body>
     <!-- MAIN APPLICATION -->
@@ -265,8 +421,8 @@ function getStockStatus($stock, $reorder_level) {
                         <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>Current Inventory Items</h5>
                         <div class="d-flex gap-2">
                             <span class="text-muted me-2">Total Value: ₱<?= number_format($total_value, 2) ?></span>
-                            <button class="btn btn-sm btn-outline-primary" onclick="exportToCSV()">
-                                <i class="bi bi-download"></i> Export
+                            <button class="btn btn-sm btn-outline-success" onclick="exportToExcel()">
+                                <i class="bi bi-file-earmark-excel"></i> Export to Excel
                             </button>
                             <button class="btn btn-sm btn-primary" onclick="showAddItemModal()">
                                 <i class="bi bi-plus-circle"></i> Add Item
@@ -381,9 +537,9 @@ function getStockStatus($stock, $reorder_level) {
     <div class="modal fade" id="itemModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="itemModalTitle">Add New Item</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title" id="itemModalTitle"><i class="bi bi-plus-circle me-2"></i>Add New Item</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     <form id="itemForm">
@@ -462,6 +618,7 @@ function getStockStatus($stock, $reorder_level) {
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-warning" onclick="editFromView()">Edit Item</button>
                 </div>
             </div>
         </div>
@@ -611,7 +768,19 @@ function getStockStatus($stock, $reorder_level) {
         }
     }
 
-    // ========== INVENTORY FUNCTIONS ==========
+    // ========== SHOW LOADING ==========
+    function showLoading() {
+        Swal.fire({
+            title: 'Processing...',
+            text: 'Please wait',
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+    }
+
+    // ========== ITEM FUNCTIONS ==========
     document.addEventListener('DOMContentLoaded', function() {
         console.log("Current Inventory - Live Database Mode");
         
@@ -668,7 +837,7 @@ function getStockStatus($stock, $reorder_level) {
     
     // Show Add Item Modal
     function showAddItemModal() {
-        document.getElementById('itemModalTitle').textContent = 'Add New Item';
+        document.getElementById('itemModalTitle').innerHTML = '<i class="bi bi-plus-circle me-2"></i>Add New Item';
         document.getElementById('itemForm').reset();
         document.getElementById('itemId').value = '';
         document.getElementById('itemCode').value = '<?= $next_item_code ?>';
@@ -678,95 +847,272 @@ function getStockStatus($stock, $reorder_level) {
 
     // View Item
     function viewItem(id) {
-        const row = document.querySelector(`.inventory-row[data-id="${id}"]`);
-        if (!row) return;
+        showLoading();
         
-        const code = row.dataset.code;
-        const name = row.dataset.name;
-        const category = row.dataset.category || 'Uncategorized';
-        const stock = row.dataset.stock;
-        const unit = row.dataset.unit;
-        const price = row.dataset.price;
-        const reorder = row.dataset.reorder;
-        const status = row.dataset.status;
-        const description = row.dataset.description || 'No description';
+        // Fetch item details via AJAX
+        const formData = new FormData();
+        formData.append('action', 'get_item');
+        formData.append('item_id', id);
         
-        const content = document.getElementById('viewItemContent');
-        content.innerHTML = `
-            <div class="col-md-6">
-                <table class="table table-sm table-borderless">
-                    <tr>
-                        <th width="40%">Item Code:</th>
-                        <td><strong>${code}</strong></td>
-                    </tr>
-                    <tr>
-                        <th>Item Name:</th>
-                        <td>${name}</td>
-                    </tr>
-                    <tr>
-                        <th>Category:</th>
-                        <td>${category}</td>
-                    </tr>
-                    <tr>
-                        <th>Description:</th>
-                        <td>${description}</td>
-                    </tr>
-                    <tr>
-                        <th>Status:</th>
-                        <td><span class="badge bg-${status === 'active' ? 'success' : status === 'inactive' ? 'secondary' : 'danger'}">${status.charAt(0).toUpperCase() + status.slice(1)}</span></td>
-                    </tr>
-                </table>
-            </div>
-            <div class="col-md-6">
-                <table class="table table-sm table-borderless">
-                    <tr>
-                        <th width="40%">Stock:</th>
-                        <td>${Number(stock).toLocaleString()} ${unit}</td>
-                    </tr>
-                    <tr>
-                        <th>Unit Price:</th>
-                        <td>₱${Number(price).toFixed(2)}</td>
-                    </tr>
-                    <tr>
-                        <th>Reorder Level:</th>
-                        <td>${reorder}</td>
-                    </tr>
-                    <tr>
-                        <th>Stock Value:</th>
-                        <td>₱${(Number(stock) * Number(price)).toFixed(2)}</td>
-                    </tr>
-                </table>
-            </div>
-        `;
-        
-        new bootstrap.Modal(document.getElementById('viewItemModal')).show();
+        fetch('current_inventory.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            Swal.close();
+            
+            if (data.success) {
+                const item = data.item;
+                
+                const content = document.getElementById('viewItemContent');
+                content.innerHTML = `
+                    <div class="col-md-6">
+                        <table class="table table-sm table-borderless">
+                            <tr>
+                                <th width="40%">Item Code:</th>
+                                <td><strong>${item.item_code}</strong></td>
+                            </tr>
+                            <tr>
+                                <th>Item Name:</th>
+                                <td>${item.item_name}</td>
+                            </tr>
+                            <tr>
+                                <th>Category:</th>
+                                <td>${item.category || 'Uncategorized'}</td>
+                            </tr>
+                            <tr>
+                                <th>Description:</th>
+                                <td>${item.description || 'No description'}</td>
+                            </tr>
+                            <tr>
+                                <th>Status:</th>
+                                <td>
+                                    <span class="badge bg-${item.status === 'active' ? 'success' : item.status === 'inactive' ? 'secondary' : 'danger'}">
+                                        ${item.status.charAt(0).toUpperCase() + item.status.slice(1)}
+                                    </span>
+                                </td>
+                            </tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <table class="table table-sm table-borderless">
+                            <tr>
+                                <th width="40%">Stock:</th>
+                                <td>${Number(item.stock).toLocaleString()} ${item.unit_type}</td>
+                            </tr>
+                            <tr>
+                                <th>Unit Price:</th>
+                                <td>₱${Number(item.unit_price).toFixed(2)}</td>
+                            </tr>
+                            <tr>
+                                <th>Reorder Level:</th>
+                                <td>${item.reorder_level}</td>
+                            </tr>
+                            <tr>
+                                <th>Stock Value:</th>
+                                <td>₱${(Number(item.stock) * Number(item.unit_price)).toFixed(2)}</td>
+                            </tr>
+                            <tr>
+                                <th>Created At:</th>
+                                <td>${new Date(item.created_at).toLocaleString()}</td>
+                            </tr>
+                            <tr>
+                                <th>Last Updated:</th>
+                                <td>${new Date(item.updated_at).toLocaleString()}</td>
+                            </tr>
+                        </table>
+                    </div>
+                `;
+                
+                currentItemId = id;
+                new bootstrap.Modal(document.getElementById('viewItemModal')).show();
+            } else {
+                Swal.fire('Error', data.message, 'error');
+            }
+        })
+        .catch(error => {
+            Swal.close();
+            Swal.fire('Error', 'An error occurred while fetching item details', 'error');
+        });
+    }
+
+    // Edit from View Modal
+    function editFromView() {
+        bootstrap.Modal.getInstance(document.getElementById('viewItemModal')).hide();
+        setTimeout(() => {
+            editItem(currentItemId);
+        }, 300);
     }
 
     // Edit Item
     function editItem(id) {
-        const row = document.querySelector(`.inventory-row[data-id="${id}"]`);
-        if (!row) return;
+        showLoading();
         
-        document.getElementById('editItemId').value = id;
-        document.getElementById('editItemCode').value = row.dataset.code;
-        document.getElementById('editItemName').value = row.dataset.name;
-        document.getElementById('editDescription').value = row.dataset.description;
-        document.getElementById('editCategory').value = row.dataset.category;
-        document.getElementById('editStock').value = row.dataset.stock;
-        document.getElementById('editUnitType').value = row.dataset.unit;
-        document.getElementById('editUnitPrice').value = row.dataset.price;
-        document.getElementById('editReorderLevel').value = row.dataset.reorder;
-        document.getElementById('editStatus').value = row.dataset.status;
+        // Fetch item details via AJAX
+        const formData = new FormData();
+        formData.append('action', 'get_item');
+        formData.append('item_id', id);
         
-        currentItemId = id;
-        new bootstrap.Modal(document.getElementById('editItemModal')).show();
+        fetch('current_inventory.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            Swal.close();
+            
+            if (data.success) {
+                const item = data.item;
+                
+                document.getElementById('editItemId').value = item.item_id;
+                document.getElementById('editItemCode').value = item.item_code;
+                document.getElementById('editItemName').value = item.item_name;
+                document.getElementById('editDescription').value = item.description || '';
+                document.getElementById('editCategory').value = item.category || '';
+                document.getElementById('editStock').value = item.stock;
+                document.getElementById('editUnitType').value = item.unit_type;
+                document.getElementById('editUnitPrice').value = item.unit_price;
+                document.getElementById('editReorderLevel').value = item.reorder_level;
+                document.getElementById('editStatus').value = item.status;
+                
+                currentItemId = id;
+                new bootstrap.Modal(document.getElementById('editItemModal')).show();
+            } else {
+                Swal.fire('Error', data.message, 'error');
+            }
+        })
+        .catch(error => {
+            Swal.close();
+            Swal.fire('Error', 'An error occurred while fetching item details', 'error');
+        });
+    }
+
+    // Save Item (Add)
+    function saveItem() {
+        // Validate required fields
+        const itemName = document.getElementById('itemName').value;
+        const stock = document.getElementById('stock').value;
+        const unitPrice = document.getElementById('unitPrice').value;
+        const reorderLevel = document.getElementById('reorderLevel').value;
+        
+        if (!itemName) {
+            Swal.fire('Warning', 'Item Name is required', 'warning');
+            return;
+        }
+        
+        if (!stock || stock < 0) {
+            Swal.fire('Warning', 'Valid Stock quantity is required', 'warning');
+            return;
+        }
+        
+        if (!unitPrice || unitPrice < 0) {
+            Swal.fire('Warning', 'Valid Unit Price is required', 'warning');
+            return;
+        }
+        
+        if (!reorderLevel || reorderLevel < 0) {
+            Swal.fire('Warning', 'Valid Reorder Level is required', 'warning');
+            return;
+        }
+        
+        showLoading();
+        
+        // Prepare form data
+        const formData = new FormData(document.getElementById('itemForm'));
+        formData.append('action', 'add_item');
+        
+        fetch('current_inventory.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            Swal.close();
+            
+            if (data.success) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Success!',
+                    text: data.message,
+                    timer: 2000,
+                    showConfirmButton: false
+                }).then(() => {
+                    bootstrap.Modal.getInstance(document.getElementById('itemModal')).hide();
+                    location.reload();
+                });
+            } else {
+                Swal.fire('Error', data.message, 'error');
+            }
+        })
+        .catch(error => {
+            Swal.close();
+            Swal.fire('Error', 'An error occurred while saving the item', 'error');
+        });
     }
 
     // Update Item
     function updateItem() {
-        const id = document.getElementById('editItemId').value;
-        alert('Update item ' + id + ' - AJAX implementation needed');
-        bootstrap.Modal.getInstance(document.getElementById('editItemModal')).hide();
+        // Validate required fields
+        const itemName = document.getElementById('editItemName').value;
+        const stock = document.getElementById('editStock').value;
+        const unitPrice = document.getElementById('editUnitPrice').value;
+        const reorderLevel = document.getElementById('editReorderLevel').value;
+        
+        if (!itemName) {
+            Swal.fire('Warning', 'Item Name is required', 'warning');
+            return;
+        }
+        
+        if (!stock || stock < 0) {
+            Swal.fire('Warning', 'Valid Stock quantity is required', 'warning');
+            return;
+        }
+        
+        if (!unitPrice || unitPrice < 0) {
+            Swal.fire('Warning', 'Valid Unit Price is required', 'warning');
+            return;
+        }
+        
+        if (!reorderLevel || reorderLevel < 0) {
+            Swal.fire('Warning', 'Valid Reorder Level is required', 'warning');
+            return;
+        }
+        
+        showLoading();
+        
+        // Prepare form data
+        const formData = new FormData(document.getElementById('editItemForm'));
+        formData.append('action', 'update_item');
+        formData.append('item_id', document.getElementById('editItemId').value);
+        
+        fetch('current_inventory.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            Swal.close();
+            
+            if (data.success) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Success!',
+                    text: data.message,
+                    timer: 2000,
+                    showConfirmButton: false
+                }).then(() => {
+                    bootstrap.Modal.getInstance(document.getElementById('editItemModal')).hide();
+                    location.reload();
+                });
+            } else {
+                Swal.fire('Error', data.message, 'error');
+            }
+        })
+        .catch(error => {
+            Swal.close();
+            Swal.fire('Error', 'An error occurred while updating the item', 'error');
+        });
     }
 
     // Delete Item
@@ -781,14 +1127,39 @@ function getStockStatus($stock, $reorder_level) {
 
     // Confirm Delete
     function confirmDelete() {
-        alert('Delete item ' + currentItemId + ' - AJAX implementation needed');
-        bootstrap.Modal.getInstance(document.getElementById('deleteItemModal')).hide();
-    }
-
-    // Save Item (Add)
-    function saveItem() {
-        alert('Save item - AJAX implementation needed');
-        bootstrap.Modal.getInstance(document.getElementById('itemModal')).hide();
+        showLoading();
+        
+        const formData = new FormData();
+        formData.append('action', 'delete_item');
+        formData.append('item_id', currentItemId);
+        
+        fetch('current_inventory.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            Swal.close();
+            
+            if (data.success) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Deleted!',
+                    text: data.message,
+                    timer: 2000,
+                    showConfirmButton: false
+                }).then(() => {
+                    bootstrap.Modal.getInstance(document.getElementById('deleteItemModal')).hide();
+                    location.reload();
+                });
+            } else {
+                Swal.fire('Error', data.message, 'error');
+            }
+        })
+        .catch(error => {
+            Swal.close();
+            Swal.fire('Error', 'An error occurred while deleting the item', 'error');
+        });
     }
 
     // ========== FILTER FUNCTIONS ==========
@@ -836,53 +1207,110 @@ function getStockStatus($stock, $reorder_level) {
         filterItems();
     }
 
-    // ========== EXPORT FUNCTIONS ==========
-    
-    // Export to CSV
-    function exportToCSV() {
+    // ========== EXCEL EXPORT FUNCTION ==========
+    function exportToExcel() {
         const rows = document.querySelectorAll('.inventory-row:not([style*="display: none"])');
         if (rows.length === 0) {
-            alert('No items to export');
+            Swal.fire('Warning', 'No items to export', 'warning');
             return;
         }
         
-        let csv = 'Item Code,Item Name,Category,Stock,Unit Type,Unit Price (₱),Reorder Level,Status,Stock Value (₱)\n';
+        // Prepare data array for Excel
+        const excelData = [];
         
+        // Add headers
+        excelData.push([
+            'Item Code',
+            'Item Name',
+            'Category',
+            'Stock',
+            'Unit Type',
+            'Unit Price (₱)',
+            'Reorder Level',
+            'Status',
+            'Stock Value (₱)'
+        ]);
+
+        // Add data rows
         rows.forEach(row => {
             if (row.style.display !== 'none') {
                 const code = row.dataset.code;
-                const name = `"${row.dataset.name}"`;
+                const name = row.dataset.name;
                 const category = row.dataset.category || 'Uncategorized';
-                const stock = row.dataset.stock;
+                const stock = parseInt(row.dataset.stock);
                 const unit = row.querySelector('td:nth-child(5)')?.innerText || '';
-                const price = row.dataset.price;
-                const reorder = row.dataset.reorder;
+                const price = parseFloat(row.dataset.price);
+                const reorder = parseInt(row.dataset.reorder);
                 const status = row.dataset.status;
-                const value = parseFloat(stock) * parseFloat(price);
+                const value = stock * price;
                 
-                csv += `${code},${name},${category},${stock},${unit},${price},${reorder},${status},${value.toFixed(2)}\n`;
+                excelData.push([
+                    code,
+                    name,
+                    category,
+                    stock,
+                    unit,
+                    price,
+                    reorder,
+                    status.charAt(0).toUpperCase() + status.slice(1),
+                    parseFloat(value.toFixed(2))
+                ]);
             }
         });
+
+        // Create workbook and worksheet
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(excelData);
+
+        // Set column widths
+        ws['!cols'] = [
+            { wch: 15 }, // Item Code
+            { wch: 30 }, // Item Name
+            { wch: 20 }, // Category
+            { wch: 12 }, // Stock
+            { wch: 12 }, // Unit Type
+            { wch: 15 }, // Unit Price
+            { wch: 15 }, // Reorder Level
+            { wch: 15 }, // Status
+            { wch: 18 }  // Stock Value
+        ];
+
+        // Add worksheet to workbook
+        XLSX.utils.book_append_sheet(wb, ws, 'Current Inventory');
+
+        // Generate filename with current date
+        const date = new Date();
+        const dateStr = date.toISOString().slice(0,10).replace(/-/g, '');
+        const filename = `Current_Inventory_${dateStr}.xlsx`;
+
+        // Export Excel file
+        XLSX.writeFile(wb, filename);
         
-        const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `inventory_export_<?= date('Ymd') ?>.csv`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-        
-        alert('Export completed!');
+        Swal.fire({
+            icon: 'success',
+            title: 'Export Complete',
+            text: 'Excel export completed successfully!',
+            timer: 2000,
+            showConfirmButton: false
+        });
     }
 
     // ========== LOGOUT FUNCTION ==========
     function logout() {
-        if (confirm('Are you sure you want to logout?')) {
-            localStorage.removeItem('sidebarCollapsed');
-            window.location.href = '../login.php';
-        }
+        Swal.fire({
+            title: 'Are you sure?',
+            text: 'You will be logged out of the system',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#0d6efd',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Yes, logout'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                localStorage.removeItem('sidebarCollapsed');
+                window.location.href = '../login.php';
+            }
+        });
     }
 
     // ========== KEYBOARD SHORTCUTS ==========

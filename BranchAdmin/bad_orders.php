@@ -1,6 +1,164 @@
 <?php
 require_once '../config/database.php';
 
+// ========== HANDLE AJAX REQUESTS ==========
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    header('Content-Type: application/json');
+    
+    try {
+        $conn->begin_transaction();
+        
+        // PROCESS RMR (Change status to processing)
+        if ($_POST['action'] === 'process_rmr') {
+            $rmr_id = (int)$_POST['rmr_id'];
+            $inspector_name = $_POST['inspector_name'];
+            $inspection_type = $_POST['inspection_type'];
+            $user_id = $_SESSION['user_id'] ?? 1; // Default to 1 if not set
+            
+            // Update RMR status
+            $update_query = "UPDATE rmr_requests 
+                           SET rmr_status = 'processing', 
+                               inspector_name = ?, 
+                               inspection_type = ?,
+                               updated_at = NOW() 
+                           WHERE rmr_id = ?";
+            $update_stmt = $conn->prepare($update_query);
+            $update_stmt->bind_param("ssi", $inspector_name, $inspection_type, $rmr_id);
+            
+            if (!$update_stmt->execute()) {
+                throw new Exception('Failed to update RMR status');
+            }
+            
+            $conn->commit();
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'RMR is now being processed'
+            ]);
+            exit;
+        }
+        
+        // APPROVE RMR
+        elseif ($_POST['action'] === 'approve_rmr') {
+            $rmr_id = (int)$_POST['rmr_id'];
+            $disposition_type = $_POST['disposition_type'];
+            $approved_amount = (float)$_POST['approved_amount'];
+            $approval_notes = $_POST['approval_notes'] ?? null;
+            $user_id = $_SESSION['user_id'] ?? 1;
+            
+            // Update RMR status to approved
+            $update_query = "UPDATE rmr_requests 
+                           SET rmr_status = 'approved', 
+                               disposition_type = ?,
+                               updated_at = NOW() 
+                           WHERE rmr_id = ?";
+            $update_stmt = $conn->prepare($update_query);
+            $update_stmt->bind_param("si", $disposition_type, $rmr_id);
+            
+            if (!$update_stmt->execute()) {
+                throw new Exception('Failed to approve RMR');
+            }
+            
+            // Insert into RMR approval history
+            $history_query = "INSERT INTO rmr_approvals (rmr_id, approved_amount, approval_notes, approved_by, approved_at) 
+                            VALUES (?, ?, ?, ?, NOW())";
+            $history_stmt = $conn->prepare($history_query);
+            $history_stmt->bind_param("idsi", $rmr_id, $approved_amount, $approval_notes, $user_id);
+            $history_stmt->execute();
+            
+            $conn->commit();
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'RMR approved successfully'
+            ]);
+            exit;
+        }
+        
+        // REJECT RMR
+        elseif ($_POST['action'] === 'reject_rmr') {
+            $rmr_id = (int)$_POST['rmr_id'];
+            $rejection_reason = $_POST['rejection_reason'] ?? 'Rejected by QC';
+            $user_id = $_SESSION['user_id'] ?? 1;
+            
+            // Update RMR status to rejected
+            $update_query = "UPDATE rmr_requests 
+                           SET rmr_status = 'rejected', 
+                               reason_details = CONCAT(IFNULL(reason_details, ''), ' | Rejected: ', ?),
+                               updated_at = NOW() 
+                           WHERE rmr_id = ?";
+            $update_stmt = $conn->prepare($update_query);
+            $update_stmt->bind_param("si", $rejection_reason, $rmr_id);
+            
+            if (!$update_stmt->execute()) {
+                throw new Exception('Failed to reject RMR');
+            }
+            
+            $conn->commit();
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'RMR rejected successfully'
+            ]);
+            exit;
+        }
+        
+        // VIEW RMR DETAILS
+        elseif ($_POST['action'] === 'view_rmr') {
+            $rmr_id = (int)$_POST['rmr_id'];
+            
+            $query = "
+                SELECT 
+                    r.*,
+                    c.customer_name,
+                    c.customer_id,
+                    i.item_code,
+                    i.item_name,
+                    i.unit_price,
+                    i.unit_type,
+                    CONCAT(u.first_name, ' ', u.last_name) as received_by_name
+                FROM rmr_requests r
+                JOIN customers c ON r.customer_id = c.customer_id
+                JOIN items i ON r.item_id = i.item_id
+                LEFT JOIN users u ON r.received_by = u.user_id
+                WHERE r.rmr_id = ?
+            ";
+            $stmt = $conn->prepare($query);
+            $stmt->bind_param("i", $rmr_id);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            $rmr = $result->fetch_assoc();
+            
+            if ($rmr) {
+                // Get approval history if any
+                $approval_query = "SELECT * FROM rmr_approvals WHERE rmr_id = ? ORDER BY approved_at DESC LIMIT 1";
+                $approval_stmt = $conn->prepare($approval_query);
+                $approval_stmt->bind_param("i", $rmr_id);
+                $approval_stmt->execute();
+                $approval_result = $approval_stmt->get_result();
+                $approval = $approval_result->fetch_assoc();
+                
+                echo json_encode([
+                    'success' => true,
+                    'rmr' => $rmr,
+                    'approval' => $approval
+                ]);
+            } else {
+                throw new Exception('RMR not found');
+            }
+            exit;
+        }
+        
+    } catch (Exception $e) {
+        $conn->rollback();
+        echo json_encode([
+            'success' => false,
+            'message' => $e->getMessage()
+        ]);
+        exit;
+    }
+}
+
 // FETCH RMR REQUESTS FROM DATABASE WITH JOINS
 $rmr_query = "
     SELECT 
@@ -140,6 +298,11 @@ function formatDate($dateTimeStr) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <!-- SheetJS for Excel Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- SweetAlert2 -->
+    <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         /* Table styles for RMR */
         .rmr-table {
@@ -300,6 +463,35 @@ function formatDate($dateTimeStr) {
             color: #495057;
             margin-bottom: 4px;
             display: block;
+        }
+
+        /* RMR Details styling */
+        .rmr-details-card {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .detail-label {
+            font-size: 12px;
+            color: #6c757d;
+            margin-bottom: 4px;
+        }
+        
+        .detail-value {
+            font-size: 16px;
+            font-weight: 600;
+            color: #212529;
+        }
+        
+        .approval-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            background-color: #d4edda;
+            color: #155724;
+            border-radius: 20px;
+            font-weight: 500;
         }
     </style>
 </head>
@@ -488,15 +680,15 @@ function formatDate($dateTimeStr) {
                         <button class="btn btn-outline-primary" onclick="printRMRReport()">
                             <i class="bi bi-printer me-1"></i> Print
                         </button>
-                        <button class="btn btn-outline-primary" onclick="exportRMRToCSV()">
-                            <i class="bi bi-download me-1"></i> Export
+                        <button class="btn btn-outline-success" onclick="exportRMRToExcel()">
+                            <i class="bi bi-file-earmark-excel me-1"></i> Export to Excel
                         </button>
                     </div>
                 </div>
 
                 <!-- RMR Table - WITHOUT CHECKBOX COLUMN -->
                 <div class="table-responsive">
-                    <table class="table rmr-table">
+                    <table class="table rmr-table" id="rmrTable">
                         <thead>
                             <tr>
                                 <th class="col-rmr">RMR NUMBER</th>
@@ -583,9 +775,9 @@ function formatDate($dateTimeStr) {
     <div class="modal fade" id="processRMRModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Process RMR</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title"><i class="bi bi-gear me-2"></i>Process RMR</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     <p>Process the selected RMR for quality inspection?</p>
@@ -619,35 +811,43 @@ function formatDate($dateTimeStr) {
     <div class="modal fade" id="approvalModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
-                <div class="modal-header">
+                <div class="modal-header" id="approvalModalHeader">
                     <h5 class="modal-title" id="approvalModalTitle">Approve RMR</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     <p id="approvalMessage">Approve the selected RMR for credit/refund?</p>
-                    <div class="mb-3">
-                        <label class="form-label">Disposition *</label>
-                        <select class="form-select" id="dispositionType">
-                            <option value="credit">Credit to Customer</option>
-                            <option value="refund">Cash Refund</option>
-                            <option value="replacement">Replacement Item</option>
-                            <option value="disposal">Destroy Item</option>
-                            <option value="return-to-supplier">Return to Supplier</option>
-                        </select>
+                    <div id="approvalFields">
+                        <div class="mb-3">
+                            <label class="form-label">Disposition *</label>
+                            <select class="form-select" id="dispositionType">
+                                <option value="credit">Credit to Customer</option>
+                                <option value="refund">Cash Refund</option>
+                                <option value="replacement">Replacement Item</option>
+                                <option value="disposal">Destroy Item</option>
+                                <option value="return-to-supplier">Return to Supplier</option>
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Approved Amount *</label>
+                            <input type="number" class="form-control" id="approvedAmount" min="0" step="0.01" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Approval Notes</label>
+                            <textarea class="form-control" id="approvalNotes" rows="2"></textarea>
+                        </div>
                     </div>
-                    <div class="mb-3">
-                        <label class="form-label">Approved Amount *</label>
-                        <input type="number" class="form-control" id="approvedAmount" min="0" step="0.01" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Approval Notes</label>
-                        <textarea class="form-control" id="approvalNotes" rows="2"></textarea>
+                    <div id="rejectionFields" style="display: none;">
+                        <div class="mb-3">
+                            <label class="form-label">Rejection Reason *</label>
+                            <textarea class="form-control" id="rejectionReason" rows="3" placeholder="Enter reason for rejection..."></textarea>
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-success" onclick="confirmApproval('approve')">Approve</button>
-                    <button type="button" class="btn btn-danger" onclick="confirmApproval('reject')">Reject</button>
+                    <button type="button" class="btn btn-success" id="approveBtn" onclick="confirmApproval('approve')">Approve</button>
+                    <button type="button" class="btn btn-danger" id="rejectBtn" onclick="confirmApproval('reject')" style="display: none;">Reject</button>
                 </div>
             </div>
         </div>
@@ -657,9 +857,9 @@ function formatDate($dateTimeStr) {
     <div class="modal fade" id="viewRMRModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">RMR Details</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <div class="modal-header bg-info text-white">
+                    <h5 class="modal-title"><i class="bi bi-eye me-2"></i>RMR Details</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body" id="rmrDetailsContent">
                     <!-- RMR details will be loaded here -->
@@ -669,6 +869,7 @@ function formatDate($dateTimeStr) {
                     <button type="button" class="btn btn-primary" onclick="printRMRDetails()">
                         <i class="bi bi-printer me-1"></i> Print RMR
                     </button>
+                    <button type="button" class="btn btn-warning" id="editFromViewBtn" onclick="editRMRFromView()" style="display: none;">Edit</button>
                 </div>
             </div>
         </div>
@@ -680,6 +881,7 @@ function formatDate($dateTimeStr) {
     <script>
     // ========== GLOBAL VARIABLES ==========
     let selectedRMR = null;
+    let currentAction = null;
     
     // ========== SIDEBAR FUNCTIONS ==========
     function toggleSidebar() {
@@ -723,6 +925,18 @@ function formatDate($dateTimeStr) {
                 document.querySelectorAll('.nav-text').forEach(text => text.style.display = 'none');
             }
         }
+    }
+
+    // ========== SHOW LOADING ==========
+    function showLoading() {
+        Swal.fire({
+            title: 'Processing...',
+            text: 'Please wait',
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
     }
 
     // ========== FILTER FUNCTIONS ==========
@@ -922,53 +1136,583 @@ function formatDate($dateTimeStr) {
         });
     });
 
+    // Process RMR
     function processRMR(id) {
         selectedRMR = id;
         new bootstrap.Modal(document.getElementById('processRMRModal')).show();
     }
 
+    // Confirm Process RMR
     function confirmProcessRMR() {
-        alert('Process RMR ' + selectedRMR + ' - AJAX implementation needed');
-        bootstrap.Modal.getInstance(document.getElementById('processRMRModal')).hide();
-        selectedRMR = null;
+        const inspectorName = document.getElementById('inspectorName').value;
+        const inspectionType = document.getElementById('inspectionType').value;
+        
+        if (!inspectorName) {
+            Swal.fire('Warning', 'Inspector Name is required', 'warning');
+            return;
+        }
+        
+        showLoading();
+        
+        const formData = new FormData();
+        formData.append('action', 'process_rmr');
+        formData.append('rmr_id', selectedRMR);
+        formData.append('inspector_name', inspectorName);
+        formData.append('inspection_type', inspectionType);
+        
+        fetch('bad_orders.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            Swal.close();
+            
+            if (data.success) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Success!',
+                    text: data.message,
+                    timer: 2000,
+                    showConfirmButton: false
+                }).then(() => {
+                    bootstrap.Modal.getInstance(document.getElementById('processRMRModal')).hide();
+                    location.reload();
+                });
+            } else {
+                Swal.fire('Error', data.message, 'error');
+            }
+        })
+        .catch(error => {
+            Swal.close();
+            Swal.fire('Error', 'An error occurred while processing RMR', 'error');
+        });
     }
 
+    // Show Approval/Rejection Modal
     function showApprovalModal(id, action) {
         selectedRMR = id;
-        document.getElementById('approvalModalTitle').textContent = action === 'approve' ? 'Approve RMR' : 'Reject RMR';
-        document.getElementById('approvalMessage').textContent = action === 'approve' 
-            ? 'Approve the selected RMR for credit/refund?' 
-            : 'Reject the selected RMR?';
+        currentAction = action;
+        
+        const modalTitle = document.getElementById('approvalModalTitle');
+        const modalHeader = document.getElementById('approvalModalHeader');
+        const approvalMessage = document.getElementById('approvalMessage');
+        const approvalFields = document.getElementById('approvalFields');
+        const rejectionFields = document.getElementById('rejectionFields');
+        const approveBtn = document.getElementById('approveBtn');
+        const rejectBtn = document.getElementById('rejectBtn');
+        
+        if (action === 'approve') {
+            modalTitle.textContent = 'Approve RMR';
+            modalHeader.className = 'modal-header bg-success text-white';
+            approvalMessage.textContent = 'Approve the selected RMR for credit/refund?';
+            approvalFields.style.display = 'block';
+            rejectionFields.style.display = 'none';
+            approveBtn.style.display = 'inline-block';
+            rejectBtn.style.display = 'none';
+            
+            // Clear and set default amount
+            const row = document.querySelector(`.rmr-row[data-id="${id}"]`);
+            if (row) {
+                const amountCell = row.querySelector('.col-amount');
+                if (amountCell) {
+                    const amount = amountCell.innerText.replace('₱', '').replace(/,/g, '');
+                    document.getElementById('approvedAmount').value = parseFloat(amount).toFixed(2);
+                }
+            }
+        } else {
+            modalTitle.textContent = 'Reject RMR';
+            modalHeader.className = 'modal-header bg-danger text-white';
+            approvalMessage.textContent = 'Reject the selected RMR?';
+            approvalFields.style.display = 'none';
+            rejectionFields.style.display = 'block';
+            approveBtn.style.display = 'none';
+            rejectBtn.style.display = 'inline-block';
+        }
+        
         new bootstrap.Modal(document.getElementById('approvalModal')).show();
     }
 
+    // Confirm Approval/Rejection
     function confirmApproval(action) {
-        alert((action === 'approve' ? 'Approve' : 'Reject') + ' RMR ' + selectedRMR + ' - AJAX implementation needed');
-        bootstrap.Modal.getInstance(document.getElementById('approvalModal')).hide();
-        selectedRMR = null;
+        if (action === 'approve') {
+            const dispositionType = document.getElementById('dispositionType').value;
+            const approvedAmount = document.getElementById('approvedAmount').value;
+            const approvalNotes = document.getElementById('approvalNotes').value;
+            
+            if (!approvedAmount || approvedAmount <= 0) {
+                Swal.fire('Warning', 'Please enter a valid approved amount', 'warning');
+                return;
+            }
+            
+            showLoading();
+            
+            const formData = new FormData();
+            formData.append('action', 'approve_rmr');
+            formData.append('rmr_id', selectedRMR);
+            formData.append('disposition_type', dispositionType);
+            formData.append('approved_amount', approvedAmount);
+            formData.append('approval_notes', approvalNotes);
+            
+            fetch('bad_orders.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                Swal.close();
+                
+                if (data.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Approved!',
+                        text: data.message,
+                        timer: 2000,
+                        showConfirmButton: false
+                    }).then(() => {
+                        bootstrap.Modal.getInstance(document.getElementById('approvalModal')).hide();
+                        location.reload();
+                    });
+                } else {
+                    Swal.fire('Error', data.message, 'error');
+                }
+            })
+            .catch(error => {
+                Swal.close();
+                Swal.fire('Error', 'An error occurred while approving RMR', 'error');
+            });
+        } else {
+            const rejectionReason = document.getElementById('rejectionReason').value;
+            
+            if (!rejectionReason) {
+                Swal.fire('Warning', 'Please enter a rejection reason', 'warning');
+                return;
+            }
+            
+            showLoading();
+            
+            const formData = new FormData();
+            formData.append('action', 'reject_rmr');
+            formData.append('rmr_id', selectedRMR);
+            formData.append('rejection_reason', rejectionReason);
+            
+            fetch('bad_orders.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                Swal.close();
+                
+                if (data.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Rejected!',
+                        text: data.message,
+                        timer: 2000,
+                        showConfirmButton: false
+                    }).then(() => {
+                        bootstrap.Modal.getInstance(document.getElementById('approvalModal')).hide();
+                        location.reload();
+                    });
+                } else {
+                    Swal.fire('Error', data.message, 'error');
+                }
+            })
+            .catch(error => {
+                Swal.close();
+                Swal.fire('Error', 'An error occurred while rejecting RMR', 'error');
+            });
+        }
     }
 
+    // View RMR Details
     function viewRMR(id) {
-        alert('View RMR ' + id + ' - AJAX implementation needed');
+        showLoading();
+        
+        const formData = new FormData();
+        formData.append('action', 'view_rmr');
+        formData.append('rmr_id', id);
+        
+        fetch('bad_orders.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            Swal.close();
+            
+            if (data.success) {
+                const rmr = data.rmr;
+                const approval = data.approval;
+                
+                const totalAmount = rmr.return_quantity * rmr.unit_price;
+                
+                let approvalHtml = '';
+                if (approval) {
+                    approvalHtml = `
+                        <div class="alert alert-success mt-3">
+                            <h6><i class="bi bi-check-circle me-2"></i>Approval Details</h6>
+                            <p><strong>Approved Amount:</strong> ₱${Number(approval.approved_amount).toFixed(2)}</p>
+                            <p><strong>Approved By:</strong> User ID: ${approval.approved_by}</p>
+                            <p><strong>Approved At:</strong> ${new Date(approval.approved_at).toLocaleString()}</p>
+                            ${approval.approval_notes ? `<p><strong>Notes:</strong> ${approval.approval_notes}</p>` : ''}
+                        </div>
+                    `;
+                }
+                
+                const content = document.getElementById('rmrDetailsContent');
+                content.innerHTML = `
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="rmr-details-card">
+                                <h6 class="fw-bold mb-3">RMR Information</h6>
+                                <table class="table table-sm table-borderless">
+                                    <tr>
+                                        <td width="40%" class="detail-label">RMR Number:</td>
+                                        <td class="detail-value">${rmr.rmr_number}</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="detail-label">Status:</td>
+                                        <td><span class="status-badge ${getStatusClass(rmr.rmr_status)}">${getStatusText(rmr.rmr_status)}</span></td>
+                                    </tr>
+                                    <tr>
+                                        <td class="detail-label">Received Date:</td>
+                                        <td>${new Date(rmr.received_date).toLocaleString()}</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="detail-label">Received By:</td>
+                                        <td>${rmr.received_by_name || 'N/A'}</td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="rmr-details-card">
+                                <h6 class="fw-bold mb-3">Customer & Item Details</h6>
+                                <table class="table table-sm table-borderless">
+                                    <tr>
+                                        <td width="40%" class="detail-label">Customer:</td>
+                                        <td>${rmr.customer_name}</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="detail-label">Item Code:</td>
+                                        <td>${rmr.item_code}</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="detail-label">Item Name:</td>
+                                        <td>${rmr.item_name}</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="detail-label">Unit Type:</td>
+                                        <td>${rmr.unit_type}</td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="row mt-2">
+                        <div class="col-md-6">
+                            <div class="rmr-details-card">
+                                <h6 class="fw-bold mb-3">Return Details</h6>
+                                <table class="table table-sm table-borderless">
+                                    <tr>
+                                        <td width="40%" class="detail-label">Return Quantity:</td>
+                                        <td>${rmr.return_quantity} ${rmr.unit_type}</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="detail-label">Unit Price:</td>
+                                        <td>₱${Number(rmr.unit_price).toFixed(2)}</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="detail-label">Total Amount:</td>
+                                        <td class="fw-bold">₱${Number(totalAmount).toFixed(2)}</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="detail-label">Return Reason:</td>
+                                        <td><span class="return-reason ${getReasonClass(rmr.return_reason)}">${getReasonText(rmr.return_reason)}</span></td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="rmr-details-card">
+                                <h6 class="fw-bold mb-3">Inspection Details</h6>
+                                <table class="table table-sm table-borderless">
+                                    <tr>
+                                        <td width="40%" class="detail-label">Inspector:</td>
+                                        <td>${rmr.inspector_name || 'N/A'}</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="detail-label">Inspection Type:</td>
+                                        <td>${rmr.inspection_type ? rmr.inspection_type.charAt(0).toUpperCase() + rmr.inspection_type.slice(1) : 'N/A'}</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="detail-label">Disposition:</td>
+                                        <td>${rmr.disposition_type ? rmr.disposition_type.replace(/-/g, ' ') : 'N/A'}</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="detail-label">Reason Details:</td>
+                                        <td>${rmr.reason_details || 'N/A'}</td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                    ${approvalHtml}
+                `;
+                
+                selectedRMR = id;
+                
+                // Show/hide edit button based on status
+                const editBtn = document.getElementById('editFromViewBtn');
+                if (rmr.rmr_status === 'pending' || rmr.rmr_status === 'processing') {
+                    editBtn.style.display = 'inline-block';
+                } else {
+                    editBtn.style.display = 'none';
+                }
+                
+                new bootstrap.Modal(document.getElementById('viewRMRModal')).show();
+            } else {
+                Swal.fire('Error', data.message, 'error');
+            }
+        })
+        .catch(error => {
+            Swal.close();
+            Swal.fire('Error', 'An error occurred while fetching RMR details', 'error');
+        });
     }
 
+    // Edit RMR from View
+    function editRMRFromView() {
+        bootstrap.Modal.getInstance(document.getElementById('viewRMRModal')).hide();
+        setTimeout(() => {
+            if (selectedRMR) {
+                // Open appropriate action based on status
+                const row = document.querySelector(`.rmr-row[data-id="${selectedRMR}"]`);
+                if (row) {
+                    const status = row.dataset.status;
+                    if (status === 'pending') {
+                        processRMR(selectedRMR);
+                    } else if (status === 'processing') {
+                        showApprovalModal(selectedRMR, 'approve');
+                    }
+                }
+            }
+        }, 300);
+    }
+
+    // Helper functions
+    function getStatusClass(status) {
+        const classes = {
+            'pending': 'status-pending',
+            'processing': 'status-processing',
+            'approved': 'status-approved',
+            'rejected': 'status-rejected',
+            'resolved': 'status-resolved'
+        };
+        return classes[status] || 'status-pending';
+    }
+
+    function getStatusText(status) {
+        const texts = {
+            'pending': 'Pending',
+            'processing': 'Processing',
+            'approved': 'Approved',
+            'rejected': 'Rejected',
+            'resolved': 'Resolved'
+        };
+        return texts[status] || status;
+    }
+
+    function getReasonClass(reason) {
+        const classes = {
+            'damaged': 'reason-damaged',
+            'expired': 'reason-expired',
+            'wrong-item': 'reason-wrong-item',
+            'quality': 'reason-quality',
+            'overstock': 'reason-overstock',
+            'other': 'reason-other'
+        };
+        return classes[reason] || 'reason-other';
+    }
+
+    function getReasonText(reason) {
+        const texts = {
+            'damaged': 'Damaged',
+            'expired': 'Expired',
+            'wrong-item': 'Wrong Item',
+            'quality': 'Quality Issue',
+            'overstock': 'Overstock',
+            'other': 'Other'
+        };
+        return texts[reason] || reason;
+    }
+
+    // Print RMR Details
     function printRMRDetails() {
-        alert('Print RMR Details - AJAX implementation needed');
+        const content = document.getElementById('rmrDetailsContent').innerHTML;
+        const printWindow = window.open('', '_blank');
+        printWindow.document.write(`
+            <html>
+                <head>
+                    <title>RMR Details</title>
+                    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+                    <style>
+                        body { padding: 20px; }
+                        .status-badge { display: inline-block; padding: 5px 12px; font-size: 12px; border-radius: 20px; }
+                        .status-pending { background-color: #fff3cd; color: #856404; }
+                        .status-processing { background-color: #cce5ff; color: #004085; }
+                        .status-approved { background-color: #d4edda; color: #155724; }
+                        .status-rejected { background-color: #f8d7da; color: #721c24; }
+                        .return-reason { display: inline-block; padding: 4px 10px; font-size: 12px; border-radius: 4px; }
+                        .reason-damaged { background-color: #f8d7da; color: #721c24; }
+                        .reason-expired { background-color: #fff3cd; color: #856404; }
+                        .reason-wrong-item { background-color: #d1ecf1; color: #0c5460; }
+                        .reason-quality { background-color: #cce5ff; color: #004085; }
+                        .reason-overstock { background-color: #e2d5f2; color: #533f7c; }
+                        .reason-other { background-color: #e9ecef; color: #495057; }
+                    </style>
+                </head>
+                <body>
+                    <h2 class="mb-4">RMR Details</h2>
+                    ${content}
+                </body>
+            </html>
+        `);
+        printWindow.document.close();
+        printWindow.print();
     }
 
     function printRMRReport() {
         window.print();
     }
 
-    function exportRMRToCSV() {
-        alert('Export RMR to CSV - AJAX implementation needed');
+    // ========== EXCEL EXPORT FUNCTION ==========
+    function exportRMRToExcel() {
+        // Get the table
+        const table = document.getElementById('rmrTable');
+        if (!table) {
+            Swal.fire('Warning', 'Table not found', 'warning');
+            return;
+        }
+
+        // Get visible rows only
+        const rows = table.querySelectorAll('tbody tr.rmr-row:not([style*="display: none"])');
+        if (rows.length === 0) {
+            Swal.fire('Warning', 'No RMR requests to export', 'warning');
+            return;
+        }
+
+        // Prepare data array for Excel
+        const excelData = [];
+        
+        // Add headers
+        excelData.push([
+            'RMR Number',
+            'Customer',
+            'Item Name',
+            'Item Code',
+            'Quantity',
+            'Unit',
+            'Total Amount (₱)',
+            'Return Reason',
+            'Status',
+            'Received Date'
+        ]);
+
+        // Add data rows
+        rows.forEach(row => {
+            const cells = row.querySelectorAll('td');
+            
+            // Extract data from cells
+            const rmrNumber = cells[0]?.innerText.trim() || '';
+            const customer = cells[1]?.innerText.trim() || '';
+            
+            // Item details
+            const itemName = cells[2]?.innerText.split('\n')[0].trim() || '';
+            const itemCode = cells[2]?.querySelector('small')?.innerText.trim() || '';
+            
+            // Quantity with unit
+            const qtyCell = cells[3]?.innerText.trim() || '';
+            const qty = qtyCell.split(' ')[0] || '';
+            const unit = qtyCell.split(' ')[1] || '';
+            
+            // Amount (remove ₱ and commas)
+            const amount = cells[4]?.innerText.replace('₱', '').replace(/,/g, '') || '0';
+            
+            const reason = cells[5]?.innerText.trim() || '';
+            const status = cells[6]?.innerText.trim() || '';
+            const receivedDate = cells[7]?.innerText.trim() || '';
+            
+            excelData.push([
+                rmrNumber,
+                customer,
+                itemName,
+                itemCode,
+                qty,
+                unit,
+                parseFloat(amount),
+                reason,
+                status,
+                receivedDate
+            ]);
+        });
+
+        // Create workbook and worksheet
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(excelData);
+
+        // Set column widths
+        ws['!cols'] = [
+            { wch: 15 }, // RMR Number
+            { wch: 25 }, // Customer
+            { wch: 30 }, // Item Name
+            { wch: 15 }, // Item Code
+            { wch: 10 }, // Quantity
+            { wch: 8 },  // Unit
+            { wch: 15 }, // Total Amount
+            { wch: 15 }, // Return Reason
+            { wch: 15 }, // Status
+            { wch: 20 }  // Received Date
+        ];
+
+        // Add worksheet to workbook
+        XLSX.utils.book_append_sheet(wb, ws, 'RMR Requests');
+
+        // Generate filename with current date
+        const date = new Date();
+        const dateStr = date.toISOString().slice(0,10).replace(/-/g, '');
+        const filename = `RMR_Requests_${dateStr}.xlsx`;
+
+        // Export Excel file
+        XLSX.writeFile(wb, filename);
+        
+        Swal.fire({
+            icon: 'success',
+            title: 'Export Complete',
+            text: 'Excel export completed successfully!',
+            timer: 2000,
+            showConfirmButton: false
+        });
     }
 
+    // Logout Function
     function logout() {
-        if (confirm('Are you sure you want to logout?')) {
-            localStorage.removeItem('sidebarCollapsed');
-            window.location.href = 'login.php';
-        }
+        Swal.fire({
+            title: 'Are you sure?',
+            text: 'You will be logged out of the system',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#0d6efd',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Yes, logout'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                localStorage.removeItem('sidebarCollapsed');
+                window.location.href = 'login.php';
+            }
+        });
     }
     </script>
 </body>

@@ -465,6 +465,8 @@ function getStockStatusClass($stock, $reorder_level) {
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
     <!-- SweetAlert2 -->
     <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
+    <!-- SheetJS for Excel Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         /* Table styles for pick list items */
         .pick-list-table {
@@ -950,24 +952,6 @@ function getStockStatusClass($stock, $reorder_level) {
                                     <?php endforeach; ?>
                                 </select>
                             </div>
-                            
-                            <!-- Item Filter Dropdown -->
-                            <div class="filter-dropdown">
-                                <span class="filter-label">Item</span>
-                                <select class="form-select" id="itemFilter" onchange="applyFilters()">
-                                    <option value="all">All Items</option>
-                                    <?php 
-                                    $unique_items = [];
-                                    foreach ($picklist_items as $item) {
-                                        if ($item['item_id'] !== null && !in_array($item['item_code'], $unique_items)) {
-                                            $unique_items[] = $item['item_code'];
-                                            echo '<option value="' . htmlspecialchars($item['item_code']) . '">' . htmlspecialchars($item['item_name']) . '</option>';
-                                        }
-                                    }
-                                    ?>
-                                </select>
-                            </div>
-                            
                             <!-- Quantity Filter Dropdown -->
                             <div class="filter-dropdown">
                                 <span class="filter-label">Quantity to Pick</span>
@@ -987,8 +971,8 @@ function getStockStatusClass($stock, $reorder_level) {
                         <button class="btn btn-outline-primary" onclick="printPickList()">
                             <i class="bi bi-printer me-1"></i> Print
                         </button>
-                        <button class="btn btn-outline-primary" onclick="exportToCSV()">
-                            <i class="bi bi-download me-1"></i> Export
+                        <button class="btn btn-outline-success" onclick="exportToExcel()">
+                            <i class="bi bi-file-earmark-excel me-1"></i> Export to Excel
                         </button>
                         <button class="btn btn-primary" onclick="showAddItemModal()">
                             <i class="bi bi-plus-circle me-1"></i> Add Item
@@ -998,7 +982,7 @@ function getStockStatusClass($stock, $reorder_level) {
 
                 <!-- Pick List Items Table -->
                 <div class="table-responsive">
-                    <table class="table pick-list-table">
+                    <table class="table pick-list-table" id="pickListTable">
                         <thead>
                             <tr>
                                 <th class="col-so">SO NUMBER</th>
@@ -1090,9 +1074,7 @@ function getStockStatusClass($stock, $reorder_level) {
                                     <i class="bi bi-clipboard"></i>
                                     <h5>No Pick List Items Found</h5>
                                     <p class="text-muted">There are currently no pick list items in the database.</p>
-                                    <button class="btn btn-primary mt-3" onclick="showAddItemModal()">
-                                        <i class="bi bi-plus-circle me-1"></i> Create First Pick List Item
-                                    </button>
+
                                 </td>
                             </tr>
                             <?php endif; ?>
@@ -1678,7 +1660,6 @@ function getStockStatusClass($stock, $reorder_level) {
             document.getElementById('itemPreview').style.display = 'block';
             
             // Auto-fill quantities from SO
-            // Convert quantity ordered to case, inner pack, pieces
             // Assuming 1 Case = 12 pcs, 1 Inner Pack = 6 pcs
             let remainingQty = Math.min(quantityOrdered, currentStock);
             const cases = Math.floor(remainingQty / 12);
@@ -2023,6 +2004,108 @@ function getStockStatusClass($stock, $reorder_level) {
         return texts[status] || status;
     }
 
+    // ========== EXCEL EXPORT FUNCTION ==========
+    function exportToExcel() {
+        const rows = document.querySelectorAll('.pick-list-row:not([style*="display: none"])');
+        if (rows.length === 0) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'No Data',
+                text: 'No pick list items to export',
+                confirmButtonColor: '#0d6efd'
+            });
+            return;
+        }
+        
+        // Prepare data array for Excel
+        const excelData = [];
+        
+        // Add headers
+        excelData.push([
+            'SO Number',
+            'Item Code',
+            'Item Name',
+            'Quantity to Pick',
+            'Quantity Picked',
+            'Location/Bin',
+            'Status',
+            'Assigned Driver',
+            'Current Stock'
+        ]);
+
+        // Add data rows
+        rows.forEach(row => {
+            if (row.style.display !== 'none') {
+                const cells = row.querySelectorAll('td');
+                const soNumber = cells[0]?.innerText.replace(/\n/g, ' ').trim() || '';
+                const itemCode = cells[1]?.innerText || '';
+                const itemName = cells[2]?.innerText.split('\n')[0].trim() || '';
+                const toPick = parseInt(cells[3]?.innerText) || 0;
+                const picked = parseInt(cells[4]?.innerText) || 0;
+                const location = cells[5]?.innerText || '';
+                const status = cells[6]?.innerText || '';
+                const driver = cells[7]?.innerText || '';
+                
+                // Extract stock from the stock indicator
+                let stock = 0;
+                const stockElement = cells[2]?.querySelector('.stock-indicator');
+                if (stockElement) {
+                    const stockText = stockElement.innerText;
+                    const stockMatch = stockText.match(/\d+/);
+                    if (stockMatch) stock = parseInt(stockMatch[0]);
+                }
+                
+                excelData.push([
+                    soNumber,
+                    itemCode,
+                    itemName,
+                    toPick,
+                    picked,
+                    location,
+                    status,
+                    driver,
+                    stock
+                ]);
+            }
+        });
+
+        // Create workbook and worksheet
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(excelData);
+
+        // Set column widths
+        ws['!cols'] = [
+            { wch: 15 }, // SO Number
+            { wch: 15 }, // Item Code
+            { wch: 30 }, // Item Name
+            { wch: 15 }, // Quantity to Pick
+            { wch: 15 }, // Quantity Picked
+            { wch: 15 }, // Location/Bin
+            { wch: 15 }, // Status
+            { wch: 25 }, // Assigned Driver
+            { wch: 15 }  // Current Stock
+        ];
+
+        // Add worksheet to workbook
+        XLSX.utils.book_append_sheet(wb, ws, 'Pick List Items');
+
+        // Generate filename with current date
+        const date = new Date();
+        const dateStr = date.toISOString().slice(0,10).replace(/-/g, '');
+        const filename = `Pick_List_Items_${dateStr}.xlsx`;
+
+        // Export Excel file
+        XLSX.writeFile(wb, filename);
+        
+        Swal.fire({
+            icon: 'success',
+            title: 'Export Complete',
+            text: 'Pick list items exported successfully!',
+            confirmButtonColor: '#0d6efd',
+            timer: 2000
+        });
+    }
+
     // ========== PICK LIST FUNCTIONS ==========
     document.addEventListener('DOMContentLoaded', function() {
         console.log("Pick List Items - Live Database Mode with Driver Assignment");
@@ -2094,55 +2177,6 @@ function getStockStatusClass($stock, $reorder_level) {
 
     function printPickList() {
         window.print();
-    }
-
-    function exportToCSV() {
-        const rows = document.querySelectorAll('.pick-list-row:not([style*="display: none"])');
-        if (rows.length === 0) {
-            Swal.fire({
-                icon: 'warning',
-                title: 'No Data',
-                text: 'No pick list items to export',
-                confirmButtonColor: '#0d6efd'
-            });
-            return;
-        }
-        
-        let csv = 'SO Number,Item Code,Item Name,To Pick,Picked,Location,Status,Assigned Driver\n';
-        
-        rows.forEach(row => {
-            if (row.style.display !== 'none') {
-                const cells = row.querySelectorAll('td');
-                const soNumber = cells[0]?.innerText.replace(/\n/g, ' ') || '';
-                const itemCode = cells[1]?.innerText || '';
-                const itemName = `"${cells[2]?.innerText.split('\n')[0] || ''}"`;
-                const toPick = cells[3]?.innerText || '0';
-                const picked = cells[4]?.innerText || '0';
-                const location = `"${cells[5]?.innerText || ''}"`;
-                const status = cells[6]?.innerText || '';
-                const driver = `"${cells[7]?.innerText || ''}"`;
-                
-                csv += `${soNumber},${itemCode},${itemName},${toPick},${picked},${location},${status},${driver}\n`;
-            }
-        });
-        
-        const blob = new Blob(["\uFEFF" + csv], { type: 'text/csv;charset=utf-8;' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `pick_list_items_<?= date('Ymd') ?>.csv`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        window.URL.revokeObjectURL(url);
-        
-        Swal.fire({
-            icon: 'success',
-            title: 'Export Complete',
-            text: 'Pick list items exported successfully!',
-            confirmButtonColor: '#0d6efd',
-            timer: 2000
-        });
     }
 
     // Logout Function

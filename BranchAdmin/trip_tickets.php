@@ -91,6 +91,8 @@ function formatCompletion($percentage) {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <!-- Font Awesome for more icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- SheetJS for Excel Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <style>
         /* Completion percentage styling */
         .completion-cell {
@@ -290,8 +292,8 @@ function formatCompletion($percentage) {
                             <button class="btn btn-sm btn-outline-primary" onclick="refreshTripTickets()">
                                 <i class="bi bi-arrow-clockwise"></i> Refresh
                             </button>
-                            <button class="btn btn-sm btn-outline-primary" onclick="exportTripTickets()">
-                                <i class="bi bi-download"></i> Export
+                            <button class="btn btn-sm btn-outline-success" onclick="exportToExcel()">
+                                <i class="bi bi-file-earmark-excel"></i> Export to Excel
                             </button>
                             <button class="btn btn-sm btn-outline-danger" onclick="deleteSelected()">
                                 <i class="bi bi-trash"></i> Delete Selected
@@ -299,7 +301,7 @@ function formatCompletion($percentage) {
                         </div>
                     </div>
                     <div class="table-container">
-                        <table class="table custom-table compact-table">
+                        <table class="table custom-table compact-table" id="tripTicketsTable">
                             <thead>
                                 <tr>
                                     <th width="50">
@@ -1072,9 +1074,95 @@ function formatCompletion($percentage) {
         window.print();
     }
 
-    // Export trip tickets
-    function exportTripTickets() {
-        alert('Export trip tickets - AJAX implementation needed');
+    // ========== EXCEL EXPORT FUNCTION ==========
+    function exportToExcel() {
+        const rows = document.querySelectorAll('.trip-row:not([style*="display: none"])');
+        if (rows.length === 0) {
+            alert('No trip tickets to export');
+            return;
+        }
+        
+        // Prepare data array for Excel
+        const excelData = [];
+        
+        // Add headers
+        excelData.push([
+            'Trip Number',
+            'Driver',
+            'Branch',
+            'Trip Date',
+            'Status',
+            'Total Stops',
+            'Delivered',
+            'Failed',
+            'Completion %'
+        ]);
+
+        // Add data rows
+        rows.forEach(row => {
+            if (row.style.display !== 'none') {
+                const cells = row.querySelectorAll('td');
+                const tripNumber = cells[1]?.innerText || '';
+                const driver = cells[2]?.innerText || '';
+                const branch = cells[3]?.innerText || '';
+                const tripDate = cells[4]?.innerText || '';
+                const status = cells[5]?.innerText || '';
+                const stops = parseInt(cells[6]?.innerText) || 0;
+                const delivered = parseInt(cells[7]?.innerText) || 0;
+                const failed = parseInt(cells[8]?.innerText) || 0;
+                
+                // Extract completion percentage
+                let completion = 0;
+                const progressBar = cells[9]?.querySelector('.progress-bar');
+                if (progressBar) {
+                    const completionText = progressBar.innerText;
+                    const completionMatch = completionText.match(/(\d+(\.\d+)?)/);
+                    if (completionMatch) completion = parseFloat(completionMatch[0]);
+                }
+                
+                excelData.push([
+                    tripNumber,
+                    driver,
+                    branch,
+                    tripDate,
+                    status,
+                    stops,
+                    delivered,
+                    failed,
+                    completion
+                ]);
+            }
+        });
+
+        // Create workbook and worksheet
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(excelData);
+
+        // Set column widths
+        ws['!cols'] = [
+            { wch: 15 }, // Trip Number
+            { wch: 20 }, // Driver
+            { wch: 15 }, // Branch
+            { wch: 15 }, // Trip Date
+            { wch: 15 }, // Status
+            { wch: 12 }, // Total Stops
+            { wch: 12 }, // Delivered
+            { wch: 12 }, // Failed
+            { wch: 12 }  // Completion %
+        ];
+
+        // Add worksheet to workbook
+        XLSX.utils.book_append_sheet(wb, ws, 'Trip Tickets');
+
+        // Generate filename with current date
+        const date = new Date();
+        const dateStr = date.toISOString().slice(0,10).replace(/-/g, '');
+        const filename = `Trip_Tickets_${dateStr}.xlsx`;
+
+        // Export Excel file
+        XLSX.writeFile(wb, filename);
+        
+        alert('Excel export completed successfully!');
     }
 
     // Helper functions
