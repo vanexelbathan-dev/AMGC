@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Trip Tickets - Warehouse</title>
+    <title>Trip Tickets - Delivery Management</title>
     <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
     <link rel="shortcut icon" href="../Pictures/favicon.ico" />
@@ -15,7 +15,32 @@
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <style>
-    /* Mobile responsive adjustments ONLY - same as warehouse.php */
+        /* Branch badge styling */
+        .branch-badge {
+            background-color: #e7f1ff;
+            color: #0d6efd;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 5px;
+        }
+        
+        /* Alert for missing branch column */
+        .alert-info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        
+        .alert-info code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 4px;
+            color: #c7254e;
+        }
+        
+        /* Mobile responsive adjustments */
         @media (max-width: 768px) {
             .stat-card {
                 padding: 12px;
@@ -36,7 +61,6 @@
                 font-size: 0.8rem;
             }
             
-            /* Make cards 2 columns on mobile */
             .col-md-3 {
                 width: 50%;
                 padding-left: 8px;
@@ -53,7 +77,6 @@
             }
         }
         
-        /* Extra small devices (phones, less than 576px) */
         @media (max-width: 576px) {
             .stat-card {
                 min-height: 80px;
@@ -88,88 +111,219 @@
 </head>
 <body>
     <?php
-    session_start();
-    require_once '../config/database.php';
-    
-    // Check if user is logged in
-    if (!isset($_SESSION['user_id'])) {
-        header("Location: ../login.php");
-        exit();
+require_once '../config/database.php';
+require_once '../config/session_handler.php';
+
+// Check login
+if (!isset($_SESSION['user_id'])) {
+    header("Location: ../login.php");
+    exit();
+}
+
+// ================= USER CONTEXT =================
+$user_id = $_SESSION['user_id'];
+$user_name = $_SESSION['first_name'] . ' ' . $_SESSION['last_name'];
+$user_role = $_SESSION['role'];
+$branch_id = $_SESSION['branch_id'];
+$view_all_branches = $_SESSION['view_all_branches'] ?? false;
+
+
+// ================= CHECK COLUMNS =================
+$tt_branch_column_exists = false;
+$check_tt_column = $conn->query("SHOW COLUMNS FROM trip_tickets LIKE 'branch_id'");
+if ($check_tt_column && $check_tt_column->num_rows > 0) {
+    $tt_branch_column_exists = true;
+}
+
+$drivers_branch_column_exists = false;
+$check_drivers_column = $conn->query("SHOW COLUMNS FROM drivers LIKE 'branch_id'");
+if ($check_drivers_column && $check_drivers_column->num_rows > 0) {
+    $drivers_branch_column_exists = true;
+}
+
+
+// ================= BRANCH FILTER =================
+$branch_filter = "";
+
+if ($tt_branch_column_exists && !$view_all_branches) {
+    $branch_filter = " AND branch_id = $branch_id ";
+}
+
+
+// ================= ADD TRIP =================
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_trip') {
+
+    $prefix = "TRP" . date("Ymd");
+    $random = rand(1000, 9999);
+    $trip_number = $prefix . $random;
+
+    $driver_id = $_POST['driver_id'];
+    $trip_date = $_POST['trip_date'];
+    $trip_status = $_POST['trip_status'];
+    $total_stops = $_POST['total_stops'] ?: 0;
+    $created_by = $user_id;
+    $remarks = $_POST['remarks'] ?: NULL;
+
+    // Always use session branch_id for security
+    $insert_branch_id = $branch_id;
+
+    $stmt = $conn->prepare("
+        INSERT INTO trip_tickets 
+        (trip_number, driver_id, branch_id, trip_date, trip_status, total_stops, created_by, remarks) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    ");
+
+    $stmt->bind_param("siisssis",
+        $trip_number,
+        $driver_id,
+        $insert_branch_id,
+        $trip_date,
+        $trip_status,
+        $total_stops,
+        $created_by,
+        $remarks
+    );
+
+    if ($stmt->execute()) {
+        $success_message = "Trip ticket created successfully!";
+    } else {
+        $error_message = "Error: " . $stmt->error;
     }
-    
-    // Handle form submission
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_trip') {
-        // Generate trip number
-        $prefix = "TRP" . date("Ymd");
-        $random = rand(1000, 9999);
-        $trip_number = $prefix . $random;
-        
-        // Get form data
-        $driver_id = $_POST['driver_id'];
-        $branch_id = $_POST['branch_id'];
-        $trip_date = $_POST['trip_date'];
-        $trip_status = $_POST['trip_status'];
-        $total_stops = $_POST['total_stops'] ?: 0;
-        $created_by = $_SESSION['user_id'];
-        $remarks = $_POST['remarks'] ?: NULL;
-        
-        // Insert into database
-        $stmt = $conn->prepare("INSERT INTO trip_tickets (trip_number, driver_id, branch_id, trip_date, trip_status, total_stops, created_by, remarks) VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->bind_param("siisssis", $trip_number, $driver_id, $branch_id, $trip_date, $trip_status, $total_stops, $created_by, $remarks);
-        
-        if ($stmt->execute()) {
-            $success_message = "Trip ticket created successfully!";
-        } else {
-            $error_message = "Error creating trip ticket: " . $conn->error;
-        }
-        $stmt->close();
-    }
-    ?>
+
+    $stmt->close();
+}
+
+
+// ================= STATISTICS =================
+
+// Total Trips
+$total_query = "
+    SELECT COUNT(*) as count 
+    FROM trip_tickets 
+    WHERE 1=1 $branch_filter
+";
+$result = $conn->query($total_query);
+$stats['total_trips'] = $result->fetch_assoc()['count'] ?? 0;
+
+// Completed
+$completed_query = "
+    SELECT COUNT(*) as count 
+    FROM trip_tickets 
+    WHERE trip_status = 'completed' $branch_filter
+";
+$result = $conn->query($completed_query);
+$stats['completed'] = $result->fetch_assoc()['count'] ?? 0;
+
+// In Progress
+$in_progress_query = "
+    SELECT COUNT(*) as count 
+    FROM trip_tickets 
+    WHERE trip_status = 'in-progress' $branch_filter
+";
+$result = $conn->query($in_progress_query);
+$stats['in_transit'] = $result->fetch_assoc()['count'] ?? 0;
+
+// Planned
+$planned_query = "
+    SELECT COUNT(*) as count 
+    FROM trip_tickets 
+    WHERE trip_status = 'planned' $branch_filter
+";
+$result = $conn->query($planned_query);
+$stats['pending'] = $result->fetch_assoc()['count'] ?? 0;
+
+
+// ================= DRIVERS =================
+$drivers_query = "
+    SELECT driver_id, driver_name 
+    FROM drivers 
+    WHERE status = 'active'
+";
+
+if ($drivers_branch_column_exists && !$view_all_branches) {
+    $drivers_query .= " AND branch_id = $branch_id";
+}
+
+$drivers_result = $conn->query($drivers_query);
+$drivers = $drivers_result ? $drivers_result->fetch_all(MYSQLI_ASSOC) : [];
+
+
+// ================= BRANCH DROPDOWN =================
+$branches_query = "
+    SELECT branch_id, branch_name 
+    FROM branches
+";
+
+if (!$view_all_branches) {
+    $branches_query .= " WHERE branch_id = $branch_id";
+}
+
+$branches_result = $conn->query($branches_query);
+$branches = $branches_result ? $branches_result->fetch_all(MYSQLI_ASSOC) : [];
+
+
+// ================= TRIP LIST =================
+$trip_tickets_query = "
+    SELECT tt.*, d.driver_name, b.branch_name
+    FROM trip_tickets tt
+    LEFT JOIN drivers d ON tt.driver_id = d.driver_id
+    LEFT JOIN branches b ON tt.branch_id = b.branch_id
+    WHERE 1=1
+";
+
+if (!$view_all_branches) {
+    $trip_tickets_query .= " AND tt.branch_id = $branch_id";
+}
+
+$trip_tickets_query .= " ORDER BY tt.created_at DESC";
+
+$result = $conn->query($trip_tickets_query);
+$trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
+
+?>
 
     <!-- MAIN APPLICATION -->
     <div id="appPage">
-<!-- Sidebar -->
-<div class="sidebar" id="sidebar">
-    <div class="sidebar-header">
-         <h3>
-                    <!-- Burger icon moved before logo -->
+        <!-- Sidebar -->
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h3>
                     <button class="desktop-toggle-btn" id="desktopToggleBtn">
                         <i class="bi bi-list" id="toggleIcon"></i>
                     </button>
                     <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
                     <span class="nav-text">Delivery</span>
                 </h3>
-    </div>
-    
-    <div class="sidebar-menu">
-        <ul class="nav flex-column">
-            <li class="nav-item">
-                <a class="nav-link" href="fordelivery.php">
-                    <i class="bi bi-truck"></i>
-                    <span class="nav-text">For Delivery</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link active" href="trip_tickets.php">
-                    <i class="bi bi-ticket"></i>
-                    <span class="nav-text">Trip Tickets</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="rejecteddelivery.php">
-                    <i class="bi bi-exclamation-circle"></i>
-                    <span class="nav-text">Rejected Delivery Advice</span>
-                </a>
-            </li>
-        </ul>    
-    </div>
-    <!-- User Profile Section at the bottom of sidebar -->
+            </div>
+            
+            <div class="sidebar-menu">
+                <ul class="nav flex-column">
+                    <li class="nav-item">
+                        <a class="nav-link" href="fordelivery.php">
+                            <i class="bi bi-truck"></i>
+                            <span class="nav-text">For Delivery</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="trip_tickets.php">
+                            <i class="bi bi-ticket"></i>
+                            <span class="nav-text">Trip Tickets</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="rejecteddelivery.php">
+                            <i class="bi bi-exclamation-circle"></i>
+                            <span class="nav-text">Rejected Delivery Advice</span>
+                        </a>
+                    </li>
+                </ul>    
+            </div>
+            <!-- User Profile Section at the bottom of sidebar -->
             <div class="sidebar-footer">
                 <div class="user-profile-sidebar">
-                    <div class="user-avatar-sidebar"><?php echo substr($_SESSION['first_name'] ?? 'WM', 0, 2); ?></div>
+                    <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
                     <div class="user-details-sidebar">
-                        <span class="user-name-sidebar"><?php echo isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Warehouse Manager'; ?></span>
-                        <span class="user-role-sidebar"><?php echo isset($_SESSION['role']) ? ucfirst($_SESSION['role']) : 'Warehouse'; ?></span>
+                        <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
                     </div>
                 </div>
                 
@@ -178,7 +332,7 @@
                     <span class="logout-text">Logout</span>
                 </button>
             </div>
-</div>
+        </div>
 
         <!-- Main Content Area -->
         <div class="main-content">
@@ -193,30 +347,38 @@
                 </div>
             </div>
 
-            <?php
-            // Get trip ticket statistics
-            $stats = [];
-            
-            // Total Trips
-            $total_trips_query = "SELECT COUNT(*) as count FROM trip_tickets";
-            $result = $conn->query($total_trips_query);
-            $stats['total_trips'] = $result->fetch_assoc()['count'] ?? 0;
-            
-            // Completed Trips
-            $completed_trips_query = "SELECT COUNT(*) as count FROM trip_tickets WHERE trip_status = 'completed'";
-            $result = $conn->query($completed_trips_query);
-            $stats['completed'] = $result->fetch_assoc()['count'] ?? 0;
-            
-            // In Transit
-            $in_transit_query = "SELECT COUNT(*) as count FROM trip_tickets WHERE trip_status = 'in-progress'";
-            $result = $conn->query($in_transit_query);
-            $stats['in_transit'] = $result->fetch_assoc()['count'] ?? 0;
-            
-            // Pending
-            $pending_query = "SELECT COUNT(*) as count FROM trip_tickets WHERE trip_status = 'planned'";
-            $result = $conn->query($pending_query);
-            $stats['pending'] = $result->fetch_assoc()['count'] ?? 0;
-            ?>
+            <!-- Branch Info Alerts -->
+            <?php if (!$tt_branch_column_exists): ?>
+                <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    <i class="bi bi-info-circle"></i> 
+                    <strong>Branch filtering for trip tickets not yet set up.</strong> Please run this SQL in phpMyAdmin to enable branch-specific trip ticket data:
+                    <br><br>
+                    <code>ALTER TABLE trip_tickets ADD COLUMN branch_id INT NULL;</code>
+                    <br>
+                    <code>ALTER TABLE trip_tickets ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
+                    <br><br>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('trip_tickets')">
+                        <i class="bi bi-files"></i> Copy SQL
+                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
+
+            <?php if (!$drivers_branch_column_exists): ?>
+                <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    <i class="bi bi-info-circle"></i> 
+                    <strong>Branch filtering for drivers not yet set up.</strong> Please run this SQL in phpMyAdmin to enable branch-specific driver data:
+                    <br><br>
+                    <code>ALTER TABLE drivers ADD COLUMN branch_id INT NULL;</code>
+                    <br>
+                    <code>ALTER TABLE drivers ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
+                    <br><br>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('drivers')">
+                        <i class="bi bi-files"></i> Copy SQL
+                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
 
             <!-- Success/Error Messages -->
             <?php if (isset($success_message)): ?>
@@ -244,6 +406,9 @@
                         <div>
                             <div class="stat-value"><?php echo $stats['total_trips']; ?></div>
                             <div class="stat-label">Total Trips</div>
+                            <?php if ($tt_branch_column_exists && !$view_all_branches): ?>
+                                <small class="text-white-50">Your Branch</small>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
@@ -314,6 +479,19 @@
                 </div>
             </div>
 
+            <!-- No Trip Tickets Message -->
+            <?php if (empty($trip_tickets)): ?>
+                <div class="alert alert-info text-center py-4">
+                    <i class="bi bi-ticket" style="font-size: 2rem;"></i>
+                    <p class="mt-3 mb-0">
+                        No trip tickets found.
+                        <?php if ($tt_branch_column_exists && !$view_all_branches): ?>
+                            <br><small>No trip tickets for your branch yet.</small>
+                        <?php endif; ?>
+                    </p>
+                </div>
+            <?php else: ?>
+
             <!-- Trip Tickets Table -->
             <div class="card">
                 <div class="table-responsive">
@@ -330,49 +508,42 @@
                             </tr>
                         </thead>
                         <tbody>
-                            <?php
-                            $trip_tickets_query = "SELECT tt.*, d.driver_name, b.branch_name 
-                                                  FROM trip_tickets tt
-                                                  LEFT JOIN drivers d ON tt.driver_id = d.driver_id
-                                                  LEFT JOIN branches b ON tt.branch_id = b.branch_id
-                                                  ORDER BY tt.created_at DESC";
-                            $result = $conn->query($trip_tickets_query);
-                            
-                            if ($result->num_rows > 0) {
-                                while($row = $result->fetch_assoc()) {
-                                    $status_badge = '';
-                                    switch($row['trip_status']) {
-                                        case 'completed': $status_badge = 'bg-success'; break;
-                                        case 'in-progress': $status_badge = 'bg-warning'; break;
-                                        case 'cancelled': $status_badge = 'bg-danger'; break;
-                                        case 'delayed': $status_badge = 'bg-info'; break;
-                                        default: $status_badge = 'bg-secondary';
-                                    }
-                                    ?>
-                                    <tr>
-                                        <td><span class="badge bg-light text-dark"><?php echo $row['trip_number']; ?></span></td>
-                                        <td><?php echo $row['driver_name'] ?? 'N/A'; ?></td>
-                                        <td><?php echo $row['branch_name'] ?? 'N/A'; ?></td>
-                                        <td><?php echo date('Y-m-d', strtotime($row['trip_date'])); ?></td>
-                                        <td><span class="badge <?php echo $status_badge; ?>"><?php echo ucfirst(str_replace('-', ' ', $row['trip_status'])); ?></span></td>
-                                        <td><?php echo $row['total_stops'] ?? 0; ?></td>
-                                        <td>
-                                            <button class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#viewDetailsModal" 
-                                                    onclick="loadTripDetails('<?php echo $row['trip_id']; ?>')">
-                                                <i class="bi bi-eye"></i> View
-                                            </button>
-                                        </td>
-                                    </tr>
-                                    <?php
+                            <?php foreach ($trip_tickets as $row): ?>
+                                <?php
+                                $status_badge = '';
+                                switch($row['trip_status']) {
+                                    case 'completed': $status_badge = 'bg-success'; break;
+                                    case 'in-progress': $status_badge = 'bg-warning'; break;
+                                    case 'cancelled': $status_badge = 'bg-danger'; break;
+                                    case 'delayed': $status_badge = 'bg-info'; break;
+                                    default: $status_badge = 'bg-secondary';
                                 }
-                            } else {
-                                echo '<tr><td colspan="7" class="text-center">No trip tickets found</td></tr>';
-                            }
-                            ?>
+                                ?>
+                                <tr>
+                                    <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($row['trip_number']); ?></span></td>
+                                    <td><?php echo htmlspecialchars($row['driver_name'] ?? 'N/A'); ?></td>
+                                    <td>
+                                        <?php echo htmlspecialchars($row['branch_name'] ?? 'N/A'); ?>
+                                        <?php if ($tt_branch_column_exists && $view_all_branches): ?>
+                                            <small class="text-muted d-block">ID: <?php echo $row['branch_id']; ?></small>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td><?php echo date('Y-m-d', strtotime($row['trip_date'])); ?></td>
+                                    <td><span class="badge <?php echo $status_badge; ?>"><?php echo ucfirst(str_replace('-', ' ', $row['trip_status'])); ?></span></td>
+                                    <td><?php echo $row['total_stops'] ?? 0; ?></td>
+                                    <td>
+                                        <button class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#viewDetailsModal" 
+                                                onclick="loadTripDetails('<?php echo $row['trip_id']; ?>')">
+                                            <i class="bi bi-eye"></i> View
+                                        </button>
+                                    </td>
+                                </tr>
+                            <?php endforeach; ?>
                         </tbody>
                     </table>
                 </div>
             </div>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -387,32 +558,47 @@
                 <form id="addTicketForm" method="POST">
                     <input type="hidden" name="action" value="add_trip">
                     <div class="modal-body">
+                        <?php if ($tt_branch_column_exists && !$view_all_branches): ?>
+                            <div class="alert alert-info">
+                                <i class="bi bi-info-circle"></i> Creating trip ticket for Branch <?php echo $branch_id; ?>
+                                <input type="hidden" name="branch_id" value="<?php echo $branch_id; ?>">
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if (empty($drivers)): ?>
+                            <div class="alert alert-warning">
+                                <i class="bi bi-exclamation-triangle"></i> No drivers available for your branch.
+                                <?php if ($view_all_branches): ?>
+                                    Please add drivers first.
+                                <?php else: ?>
+                                    Please contact admin to assign drivers to your branch.
+                                <?php endif; ?>
+                            </div>
+                        <?php endif; ?>
+
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Driver <span class="text-danger">*</span></label>
-                                <select class="form-select" name="driver_id" required>
+                                <select class="form-select" name="driver_id" required <?php echo empty($drivers) ? 'disabled' : ''; ?>>
                                     <option value="">Select Driver</option>
-                                    <?php
-                                    $drivers_query = "SELECT driver_id, driver_name FROM drivers WHERE status = 'active'";
-                                    $result = $conn->query($drivers_query);
-                                    while($driver = $result->fetch_assoc()) {
-                                        echo '<option value="' . $driver['driver_id'] . '">' . $driver['driver_name'] . '</option>';
-                                    }
-                                    ?>
+                                    <?php foreach ($drivers as $driver): ?>
+                                        <option value="<?php echo $driver['driver_id']; ?>"><?php echo htmlspecialchars($driver['driver_name']); ?></option>
+                                    <?php endforeach; ?>
                                 </select>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Branch <span class="text-danger">*</span></label>
-                                <select class="form-select" name="branch_id" required>
-                                    <option value="">Select Branch</option>
-                                    <?php
-                                    $branches_query = "SELECT branch_id, branch_name FROM branches WHERE status = 'active'";
-                                    $result = $conn->query($branches_query);
-                                    while($branch = $result->fetch_assoc()) {
-                                        echo '<option value="' . $branch['branch_id'] . '">' . $branch['branch_name'] . '</option>';
-                                    }
-                                    ?>
-                                </select>
+                                <?php if ($tt_branch_column_exists && !$view_all_branches): ?>
+                                    <input type="text" class="form-control" value="Branch <?php echo $branch_id; ?>" readonly>
+                                    <input type="hidden" name="branch_id" value="<?php echo $branch_id; ?>">
+                                <?php else: ?>
+                                    <select class="form-select" name="branch_id" required>
+                                        <option value="">Select Branch</option>
+                                        <?php foreach ($branches as $branch): ?>
+                                            <option value="<?php echo $branch['branch_id']; ?>"><?php echo htmlspecialchars($branch['branch_name']); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                <?php endif; ?>
                             </div>
                         </div>
                         <div class="row">
@@ -438,7 +624,7 @@
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Created By</label>
-                                <input type="text" class="form-control" value="<?php echo isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Current User'; ?>" readonly>
+                                <input type="text" class="form-control" value="<?php echo htmlspecialchars($user_name); ?>" readonly>
                                 <small class="text-muted">Auto-filled from your session</small>
                             </div>
                         </div>
@@ -449,7 +635,7 @@
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Create Ticket</button>
+                        <button type="submit" class="btn btn-primary" <?php echo empty($drivers) ? 'disabled' : ''; ?>>Create Ticket</button>
                     </div>
                 </form>
             </div>
@@ -477,17 +663,20 @@
     <!-- JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // Branch context variables
+        const branchId = <?php echo $branch_id; ?>;
+        const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
+        const ttBranchColumnExists = <?php echo $tt_branch_column_exists ? 'true' : 'false'; ?>;
+        const driversBranchColumnExists = <?php echo $drivers_branch_column_exists ? 'true' : 'false'; ?>;
+
         // ================= SIDEBAR FUNCTIONS =================
-        // Toggle sidebar collapse/expand
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
             const isMobile = window.innerWidth <= 992;
             
             if (isMobile) {
-                // On mobile, toggle active state
                 sidebar.classList.toggle('active');
                 
-                // Create overlay for mobile
                 if (!document.querySelector('.sidebar-overlay')) {
                     const overlay = document.createElement('div');
                     overlay.className = 'sidebar-overlay';
@@ -501,7 +690,6 @@
                         overlay.classList.add('active');
                     }, 10);
                 } else {
-                    // If overlay exists, toggle its active state
                     const overlay = document.querySelector('.sidebar-overlay');
                     overlay.classList.toggle('active');
                     if (!sidebar.classList.contains('active')) {
@@ -513,18 +701,13 @@
                     }
                 }
             } else {
-                // On desktop, toggle between expanded and collapsed
                 sidebar.classList.toggle('collapsed');
-                
-                // Store preference in localStorage
                 localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
                 
-                // Show/hide nav text
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = sidebar.classList.contains('collapsed') ? 'none' : 'inline-block';
                 });
                 
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = sidebar.classList.contains('collapsed') ? '80px' : '250px';
@@ -532,7 +715,6 @@
             }
         }
 
-        // Close mobile sidebar
         function closeMobileSidebar() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.querySelector('.sidebar-overlay');
@@ -549,11 +731,9 @@
             }
         }
 
-        // Initialize sidebar when page loads
         function initializeSidebar() {
             const sidebar = document.getElementById('sidebar');
             
-            // Load saved preference from localStorage for desktop
             if (window.innerWidth > 992) {
                 const savedCollapsed = localStorage.getItem('sidebarCollapsed');
                 if (savedCollapsed === 'true') {
@@ -562,7 +742,6 @@
                         text.style.display = 'none';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '80px';
@@ -573,21 +752,18 @@
                         text.style.display = 'inline-block';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '250px';
                     }
                 }
             } else {
-                // On mobile, always start with closed sidebar
                 sidebar.classList.remove('active');
                 sidebar.classList.remove('collapsed');
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = 'inline-block';
                 });
                 
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = '0';
@@ -595,19 +771,16 @@
             }
         }
 
-        // Handle window resize for sidebar
         function handleSidebarResize() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.querySelector('.sidebar-overlay');
             
             if (window.innerWidth > 992) {
-                // Desktop mode - remove mobile overlay
                 if (overlay) {
                     overlay.remove();
                 }
                 sidebar.classList.remove('active');
                 
-                // Load saved preference
                 const savedCollapsed = localStorage.getItem('sidebarCollapsed');
                 if (savedCollapsed === 'true') {
                     sidebar.classList.add('collapsed');
@@ -615,7 +788,6 @@
                         text.style.display = 'none';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '80px';
@@ -626,20 +798,17 @@
                         text.style.display = 'inline-block';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '250px';
                     }
                 }
             } else {
-                // Mobile mode - always show expanded when visible
                 sidebar.classList.remove('collapsed');
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = 'inline-block';
                 });
                 
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = '0';
@@ -650,8 +819,7 @@
 
         // Load trip details via AJAX
         function loadTripDetails(tripId) {
-            // You'll need to create a PHP file named get_trip_details.php to handle this
-            fetch('get_trip_details.php?trip_id=' + tripId)
+            fetch('get_trip_details.php?trip_id=' + tripId + '&branch_id=' + branchId + '&view_all=' + viewAllBranches)
                 .then(response => response.text())
                 .then(data => {
                     document.getElementById('tripDetailsContent').innerHTML = data;
@@ -688,9 +856,23 @@
                     if (statusCell) {
                         const status = statusCell.textContent.toLowerCase();
                         const statusValue = status.replace('in transit', 'in-progress').trim();
-                        row.style.display = (filter === '' || statusValue === filter) ? '' : 'none';
+                        row.style.display = (filter === '' || statusValue.includes(filter)) ? '' : 'none';
                     }
                 });
+            });
+        }
+
+        // Copy SQL for database setup
+        function copySQL(table) {
+            let sql = '';
+            if (table === 'trip_tickets') {
+                sql = "ALTER TABLE trip_tickets ADD COLUMN branch_id INT NULL;\nALTER TABLE trip_tickets ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+            } else if (table === 'drivers') {
+                sql = "ALTER TABLE drivers ADD COLUMN branch_id INT NULL;\nALTER TABLE drivers ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+            }
+            
+            navigator.clipboard.writeText(sql).then(() => {
+                alert('SQL copied to clipboard!');
             });
         }
 
@@ -706,23 +888,25 @@
         if (addTicketForm) {
             addTicketForm.addEventListener('submit', function(e) {
                 const driverSelect = this.querySelector('select[name="driver_id"]');
+                
+                <?php if (!($tt_branch_column_exists && !$view_all_branches)): ?>
                 const branchSelect = this.querySelector('select[name="branch_id"]');
-                const tripDate = this.querySelector('input[name="trip_date"]');
-                
-                if (!driverSelect.value) {
-                    e.preventDefault();
-                    alert('Please select a driver');
-                    driverSelect.focus();
-                    return false;
-                }
-                
-                if (!branchSelect.value) {
+                if (!branchSelect || !branchSelect.value) {
                     e.preventDefault();
                     alert('Please select a branch');
-                    branchSelect.focus();
+                    if (branchSelect) branchSelect.focus();
+                    return false;
+                }
+                <?php endif; ?>
+                
+                if (!driverSelect || !driverSelect.value) {
+                    e.preventDefault();
+                    alert('Please select a driver');
+                    if (driverSelect) driverSelect.focus();
                     return false;
                 }
                 
+                const tripDate = this.querySelector('input[name="trip_date"]');
                 if (!tripDate.value) {
                     e.preventDefault();
                     alert('Please select a trip date');
@@ -735,11 +919,15 @@
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', function() {
             console.log("Trip Tickets page loaded!");
+            console.log("Branch ID:", branchId);
+            console.log("View All Branches:", viewAllBranches);
+            console.log("TT Branch Column Exists:", ttBranchColumnExists);
+            console.log("Drivers Branch Column Exists:", driversBranchColumnExists);
             
             // Initialize sidebar
             initializeSidebar();
             
-            // Setup mobile toggle button - support multiple button IDs
+            // Setup mobile toggle button
             const mobileToggleBtn = document.getElementById('mobileToggleBtn');
             if (mobileToggleBtn) {
                 mobileToggleBtn.addEventListener('click', function(e) {
@@ -748,15 +936,6 @@
                 });
             }
             
-            const mobileMenuBtn = document.getElementById('mobileMenuBtn');
-            if (mobileMenuBtn) {
-                mobileMenuBtn.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    toggleSidebar();
-                });
-            }
-            
-            // Setup desktop toggle button
             const desktopToggleBtn = document.getElementById('desktopToggleBtn');
             if (desktopToggleBtn) {
                 desktopToggleBtn.addEventListener('click', function(e) {
@@ -777,7 +956,7 @@
             // Close sidebar when clicking outside on mobile
             document.addEventListener('click', function(event) {
                 const sidebar = document.getElementById('sidebar');
-                const mobileBtn = document.getElementById('mobileToggleBtn') || document.getElementById('mobileMenuBtn');
+                const mobileBtn = document.getElementById('mobileToggleBtn');
                 const overlay = document.querySelector('.sidebar-overlay');
                 const isMobile = window.innerWidth <= 992;
                 
@@ -795,17 +974,14 @@
 
         // Keyboard shortcuts
         document.addEventListener('keydown', function(e) {
-            // Ctrl + B to toggle sidebar (desktop only)
             if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
                 e.preventDefault();
                 toggleSidebar();
             }
-            // Escape to close sidebar on mobile
             else if (e.key === 'Escape' && window.innerWidth <= 992) {
                 closeMobileSidebar();
             }
-            // Ctrl + F to focus search
-            else if (e.ctrlKey && e.key === 'f') {
+            else if (e.ctrlKey && e.key === 'f' && !e.target.matches('input, textarea')) {
                 e.preventDefault();
                 const searchInput = document.getElementById('searchInput');
                 if (searchInput) {

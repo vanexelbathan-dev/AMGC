@@ -15,12 +15,106 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <style>
+        /* Branch badge styling */
+        .branch-badge {
+            background-color: #e7f1ff;
+            color: #0d6efd;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 5px;
+        }
+        
+        /* Alert for missing branch column */
+        .alert-info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        
+        .alert-info code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 4px;
+            color: #c7254e;
+        }
+        
+        /* Mobile responsive adjustments */
+        @media (max-width: 768px) {
+            .stat-card {
+                padding: 12px;
+                min-height: 85px;
+                margin-bottom: 8px;
+            }
+            
+            .stat-icon {
+                font-size: 2rem;
+                margin-right: 12px;
+            }
+            
+            .stat-value {
+                font-size: 1.5rem;
+            }
+            
+            .stat-label {
+                font-size: 0.8rem;
+            }
+            
+            .col-md-3, .col-md-4, .col-md-6 {
+                width: 50%;
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+            
+            .row.g-3 {
+                margin-left: -8px;
+                margin-right: -8px;
+            }
+            
+            .mb-3 {
+                margin-bottom: 8px !important;
+            }
+        }
+        
+        @media (max-width: 576px) {
+            .stat-card {
+                min-height: 80px;
+                padding: 10px;
+            }
+            
+            .stat-icon {
+                font-size: 1.8rem;
+                margin-right: 10px;
+            }
+            
+            .stat-value {
+                font-size: 1.3rem;
+            }
+            
+            .stat-label {
+                font-size: 0.75rem;
+            }
+            
+            .col-md-3, .col-md-4, .col-md-6 {
+                width: 50%;
+                padding-left: 6px;
+                padding-right: 6px;
+            }
+            
+            .row.g-3 {
+                margin-left: -6px;
+                margin-right: -6px;
+            }
+        }
+    </style>
 </head>
 <body>
     <?php
     // Start session and include database connection
-    session_start();
     require_once '../config/database.php';
+    require_once '../config/session_handler.php';
     
     // Check if user is logged in
     if (!isset($_SESSION['user_id']) || !isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
@@ -28,17 +122,59 @@
         exit();
     }
     
-    // Get current user info
+    // Get current user info and branch context
     $user_id = $_SESSION['user_id'];
     $user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Driver User';
     $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'delivery';
+    $branch_id = $_SESSION['branch_id'] ?? 0;
+    $view_all_branches = $_SESSION['view_all_branches'] ?? false;
     
-    // Get driver information if available
+    // Check if branch_id column exists in deliveries table
+    $delivery_branch_column_exists = false;
+    $check_delivery_column = $conn->query("SHOW COLUMNS FROM deliveries LIKE 'branch_id'");
+    if ($check_delivery_column && $check_delivery_column->num_rows > 0) {
+        $delivery_branch_column_exists = true;
+    }
+    
+    // Check if branch_id column exists in sales_orders table
+    $so_branch_column_exists = false;
+    $check_so_column = $conn->query("SHOW COLUMNS FROM sales_orders LIKE 'branch_id'");
+    if ($check_so_column && $check_so_column->num_rows > 0) {
+        $so_branch_column_exists = true;
+    }
+    
+    // Check if branch_id column exists in drivers table
+    $drivers_branch_column_exists = false;
+    $check_drivers_column = $conn->query("SHOW COLUMNS FROM drivers LIKE 'branch_id'");
+    if ($check_drivers_column && $check_drivers_column->num_rows > 0) {
+        $drivers_branch_column_exists = true;
+    }
+    
+    // Determine branch filter condition
+    $so_branch_condition = "";
+    $delivery_branch_condition = "";
+    $drivers_branch_condition = "";
+    
+    if ($so_branch_column_exists && !$view_all_branches) {
+        $so_branch_condition = "AND so.branch_id = $branch_id";
+    }
+    
+    if ($delivery_branch_column_exists && !$view_all_branches) {
+        $delivery_branch_condition = "AND d.branch_id = $branch_id";
+    }
+    
+    if ($drivers_branch_column_exists && !$view_all_branches) {
+        $drivers_branch_condition = "AND branch_id = $branch_id";
+    }
+    
+    // Get driver information if available with branch filtering
     try {
+        $driver_info = null;
+        
         $query = "
             SELECT * FROM drivers 
-            WHERE user_id = ? 
-            OR driver_name LIKE ?
+            WHERE (user_id = ? OR driver_name LIKE ?)
+            $drivers_branch_condition
             LIMIT 1
         ";
         $stmt = $conn->prepare($query);
@@ -48,93 +184,146 @@
         $result = $stmt->get_result();
         $driver_info = $result->fetch_assoc();
         
-        // Get recent sales orders for dropdown
+        // Get recent sales orders for dropdown with branch filtering
+        $recent_orders = [];
         $query = "
             SELECT so.so_id, so.so_number, c.customer_name 
             FROM sales_orders so
             JOIN customers c ON so.customer_id = c.customer_id
             WHERE so.order_status IN ('confirmed', 'ready')
+            $so_branch_condition
             ORDER BY so.order_date DESC
             LIMIT 20
         ";
         $result = $conn->query($query);
-        $recent_orders = $result->fetch_all(MYSQLI_ASSOC);
+        if ($result) {
+            $recent_orders = $result->fetch_all(MYSQLI_ASSOC);
+        }
         
-        // Get recent rejected deliveries
+        // Get recent rejected deliveries with branch filtering
+        $recent_rejections = [];
         $query = "
             SELECT 
                 d.delivery_date,
+                d.delivery_id,
                 so.so_number,
                 c.customer_name,
                 d.remarks,
-                d.delivery_status
+                d.delivery_status,
+                d.branch_id
             FROM deliveries d
             JOIN sales_orders so ON d.so_id = so.so_id
             JOIN customers c ON d.customer_id = c.customer_id
             WHERE d.delivery_status = 'rejected'
+            $delivery_branch_condition
             ORDER BY d.delivery_date DESC
             LIMIT 10
         ";
         $result = $conn->query($query);
-        $recent_rejections = $result->fetch_all(MYSQLI_ASSOC);
+        if ($result) {
+            $recent_rejections = $result->fetch_all(MYSQLI_ASSOC);
+        }
+        
+        // Get rejection statistics
+        $stats = [];
+        
+        // Total rejected today
+        $query = "
+            SELECT COUNT(*) as count 
+            FROM deliveries d
+            WHERE d.delivery_status = 'rejected' 
+            AND DATE(d.delivery_date) = CURDATE()
+            $delivery_branch_condition
+        ";
+        $result = $conn->query($query);
+        $stats['rejected_today'] = $result ? $result->fetch_assoc()['count'] : 0;
+        
+        // Pending re-delivery
+        $query = "
+            SELECT COUNT(*) as count 
+            FROM deliveries d
+            WHERE d.delivery_status = 'rejected' 
+            AND d.retry_date IS NOT NULL
+            AND d.retry_date >= CURDATE()
+            $delivery_branch_condition
+        ";
+        $result = $conn->query($query);
+        $stats['pending_redelivery'] = $result ? $result->fetch_assoc()['count'] : 0;
+        
+        // Total rejected this month
+        $query = "
+            SELECT COUNT(*) as count 
+            FROM deliveries d
+            WHERE d.delivery_status = 'rejected' 
+            AND MONTH(d.delivery_date) = MONTH(CURDATE())
+            AND YEAR(d.delivery_date) = YEAR(CURDATE())
+            $delivery_branch_condition
+        ";
+        $result = $conn->query($query);
+        $stats['rejected_month'] = $result ? $result->fetch_assoc()['count'] : 0;
         
     } catch (Exception $e) {
-        die("Database error: " . $e->getMessage());
+        error_log("Database error in rejecteddelivery.php: " . $e->getMessage());
+        $recent_orders = [];
+        $recent_rejections = [];
+        $stats = [
+            'rejected_today' => 0,
+            'pending_redelivery' => 0,
+            'rejected_month' => 0
+        ];
     }
     ?>
     <!-- MAIN APPLICATION -->
     <div id="appPage">
-<!-- Sidebar -->
-<div class="sidebar" id="sidebar">
-    <div class="sidebar-header">
-        <h3>
-            <!-- Burger icon moved before logo -->
-            <button class="desktop-toggle-btn" id="desktopToggleBtn">
-                <i class="bi bi-list" id="toggleIcon"></i>
-            </button>
-                <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
-                <span class="nav-text">Delivery</span>
-        </h3>
-    </div>
-    
-    <div class="sidebar-menu">
-        <ul class="nav flex-column">
-            <li class="nav-item">
-                <a class="nav-link" href="fordelivery.php">
-                    <i class="bi bi-truck"></i>
-                    <span class="nav-text">For Delivery</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="trip_tickets.php">
-                    <i class="bi bi-ticket"></i>
-                    <span class="nav-text">Trip Tickets</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link active" href="rejecteddelivery.php">
-                    <i class="bi bi-exclamation-circle"></i>
-                    <span class="nav-text">Rejected Delivery Advice</span>
-                </a>
-            </li>
-        </ul>
-    </div>
-    <!-- User Profile Section at the bottom of sidebar -->
-        <div class="sidebar-footer">
-            <div class="user-profile-sidebar">
-                <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
-                <div class="user-details-sidebar">
-                    <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-                    <span class="user-role-sidebar"><?php echo htmlspecialchars(ucfirst($user_role)); ?></span>
-                </div>
+        <!-- Sidebar -->
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h3>
+                    <button class="desktop-toggle-btn" id="desktopToggleBtn">
+                        <i class="bi bi-list" id="toggleIcon"></i>
+                    </button>
+                    <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
+                    <span class="nav-text">Delivery</span>
+                </h3>
             </div>
-                
-            <button class="logout-btn-sidebar" onclick="logout()">
-                <i class="bi bi-box-arrow-right"></i>
-                <span class="logout-text">Logout</span>
-            </button>
+            
+            <div class="sidebar-menu">
+                <ul class="nav flex-column">
+                    <li class="nav-item">
+                        <a class="nav-link" href="fordelivery.php">
+                            <i class="bi bi-truck"></i>
+                            <span class="nav-text">For Delivery</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="trip_tickets.php">
+                            <i class="bi bi-ticket"></i>
+                            <span class="nav-text">Trip Tickets</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="rejecteddelivery.php">
+                            <i class="bi bi-exclamation-circle"></i>
+                            <span class="nav-text">Rejected Delivery Advice</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            <!-- User Profile Section at the bottom of sidebar -->
+            <div class="sidebar-footer">
+                <div class="user-profile-sidebar">
+                    <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
+                    <div class="user-details-sidebar">
+                        <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
+                    </div>
+                </div>
+                    
+                <button class="logout-btn-sidebar" onclick="logout()">
+                    <i class="bi bi-box-arrow-right"></i>
+                    <span class="logout-text">Logout</span>
+                </button>
+            </div>
         </div>
-</div>
 
         <!-- Main Content Area -->
         <div class="main-content">
@@ -149,13 +338,56 @@
                 </div>
             </div>
 
+            <!-- Branch Info Alerts -->
+            <?php if (!$delivery_branch_column_exists): ?>
+                <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    <i class="bi bi-info-circle"></i> 
+                    <strong>Branch filtering for deliveries not yet set up.</strong> Please run this SQL in phpMyAdmin to enable branch-specific delivery data:
+                    <br><br>
+                    <code>ALTER TABLE deliveries ADD COLUMN branch_id INT NULL;</code>
+                    <br>
+                    <code>ALTER TABLE deliveries ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
+                    <br><br>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('deliveries')">
+                        <i class="bi bi-files"></i> Copy SQL
+                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
+
+            <?php if (!$so_branch_column_exists): ?>
+                <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    <i class="bi bi-info-circle"></i> 
+                    <strong>Branch filtering for sales orders not yet set up.</strong> Please run this SQL in phpMyAdmin to enable branch-specific order data:
+                    <br><br>
+                    <code>ALTER TABLE sales_orders ADD COLUMN branch_id INT NULL;</code>
+                    <br>
+                    <code>ALTER TABLE sales_orders ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
+                    <br><br>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('sales_orders')">
+                        <i class="bi bi-files"></i> Copy SQL
+                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
+
+            <!-- No Orders Warning -->
+            <?php if (empty($recent_orders) && $so_branch_column_exists && !$view_all_branches): ?>
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i> 
+                    No confirmed or ready orders found for your branch. You can only report rejections for orders assigned to your branch.
+                </div>
+            <?php endif; ?>
+
             <!-- Rejected Delivery Form -->
             <div class="card">
-                <div class="card-header">
+                <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0"><i class="bi bi-pencil-square me-2"></i>Report Rejected Delivery</h5>
                 </div>
                 <div class="card-body">
                     <form id="rejectedDeliveryForm" action="submit_rejected_delivery.php" method="POST" enctype="multipart/form-data">
+                        <input type="hidden" name="branch_id" value="<?php echo $branch_id; ?>">
+                        
                         <!-- Order Information Section -->
                         <h6 class="mb-3"><i class="bi bi-box-seam me-2"></i>Order Information</h6>
                         <div class="row">
@@ -169,11 +401,14 @@
                                     </option>
                                     <?php endforeach; ?>
                                 </select>
+                                <?php if ($so_branch_column_exists && !$view_all_branches): ?>
+                                    <small class="text-muted">Only showing orders from your branch</small>
+                                <?php endif; ?>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Delivery Date <span class="text-danger">*</span></label>
                                 <input type="date" class="form-control" id="rejDeliveryDate" name="delivery_date" required 
-       value="<?php echo date('Y-m-d'); ?>" min="<?php echo date('Y-m-d'); ?>">
+                                       value="<?php echo date('Y-m-d'); ?>" min="<?php echo date('Y-m-d'); ?>">
                             </div>
                         </div>
 
@@ -306,13 +541,22 @@
             
             <!-- Recent Rejected Deliveries -->
             <div class="card mt-4">
-                <div class="card-header">
+                <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Recent Rejected Deliveries</h5>
+                    <?php if ($delivery_branch_column_exists && $view_all_branches): ?>
+                        <span class="badge bg-success">All Branches</span>
+                    <?php elseif ($delivery_branch_column_exists && !$view_all_branches): ?>
+                        <span class="badge bg-primary">Your Branch</span>
+                    <?php endif; ?>
                 </div>
                 <div class="card-body">
                     <?php if (empty($recent_rejections)): ?>
                         <div class="alert alert-info">
-                            <i class="bi bi-info-circle me-2"></i>No rejected deliveries found.
+                            <i class="bi bi-info-circle me-2"></i>
+                            No rejected deliveries found.
+                            <?php if ($delivery_branch_column_exists && !$view_all_branches): ?>
+                                <br><small>No rejections recorded for your branch yet.</small>
+                            <?php endif; ?>
                         </div>
                     <?php else: ?>
                     <div class="table-responsive">
@@ -324,6 +568,9 @@
                                     <th>Customer</th>
                                     <th>Reason</th>
                                     <th>Status</th>
+                                    <?php if ($delivery_branch_column_exists && $view_all_branches): ?>
+                                        <th>Branch</th>
+                                    <?php endif; ?>
                                 </tr>
                             </thead>
                             <tbody>
@@ -333,9 +580,16 @@
                                     <td><?php echo htmlspecialchars($rejection['so_number']); ?></td>
                                     <td><?php echo htmlspecialchars($rejection['customer_name']); ?></td>
                                     <td>
-                                        <small><?php echo htmlspecialchars(substr($rejection['remarks'], 0, 50)); ?>...</small>
+                                        <small><?php echo htmlspecialchars(substr($rejection['remarks'] ?? '', 0, 50)); ?>...</small>
                                     </td>
                                     <td><span class="badge bg-danger">Rejected</span></td>
+                                    <?php if ($delivery_branch_column_exists && $view_all_branches): ?>
+                                        <td>
+                                            <span class="badge bg-info">
+                                                Branch <?php echo $rejection['branch_id'] ?? 'N/A'; ?>
+                                            </span>
+                                        </td>
+                                    <?php endif; ?>
                                 </tr>
                                 <?php endforeach; ?>
                             </tbody>
@@ -349,18 +603,22 @@
 
     <!-- JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-   <script>
+    <script>
+        // Branch context variables
+        const branchId = <?php echo $branch_id; ?>;
+        const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
+        const deliveryBranchColumnExists = <?php echo $delivery_branch_column_exists ? 'true' : 'false'; ?>;
+        const soBranchColumnExists = <?php echo $so_branch_column_exists ? 'true' : 'false'; ?>;
+        const driversBranchColumnExists = <?php echo $drivers_branch_column_exists ? 'true' : 'false'; ?>;
+
         // ================= SIDEBAR FUNCTIONS =================
-        // Toggle sidebar collapse/expand
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
             const isMobile = window.innerWidth <= 992;
             
             if (isMobile) {
-                // On mobile, toggle active state
                 sidebar.classList.toggle('active');
                 
-                // Create overlay for mobile
                 if (!document.querySelector('.sidebar-overlay')) {
                     const overlay = document.createElement('div');
                     overlay.className = 'sidebar-overlay';
@@ -374,7 +632,6 @@
                         overlay.classList.add('active');
                     }, 10);
                 } else {
-                    // If overlay exists, toggle its active state
                     const overlay = document.querySelector('.sidebar-overlay');
                     overlay.classList.toggle('active');
                     if (!sidebar.classList.contains('active')) {
@@ -386,18 +643,13 @@
                     }
                 }
             } else {
-                // On desktop, toggle between expanded and collapsed
                 sidebar.classList.toggle('collapsed');
-                
-                // Store preference in localStorage
                 localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
                 
-                // Show/hide nav text
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = sidebar.classList.contains('collapsed') ? 'none' : 'inline-block';
                 });
                 
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = sidebar.classList.contains('collapsed') ? '80px' : '250px';
@@ -405,7 +657,6 @@
             }
         }
 
-        // Close mobile sidebar
         function closeMobileSidebar() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.querySelector('.sidebar-overlay');
@@ -422,11 +673,9 @@
             }
         }
 
-        // Initialize sidebar when page loads
         function initializeSidebar() {
             const sidebar = document.getElementById('sidebar');
             
-            // Load saved preference from localStorage for desktop
             if (window.innerWidth > 992) {
                 const savedCollapsed = localStorage.getItem('sidebarCollapsed');
                 if (savedCollapsed === 'true') {
@@ -435,7 +684,6 @@
                         text.style.display = 'none';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '80px';
@@ -446,21 +694,18 @@
                         text.style.display = 'inline-block';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '250px';
                     }
                 }
             } else {
-                // On mobile, always start with closed sidebar
                 sidebar.classList.remove('active');
                 sidebar.classList.remove('collapsed');
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = 'inline-block';
                 });
                 
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = '0';
@@ -468,19 +713,16 @@
             }
         }
 
-        // Handle window resize for sidebar
         function handleSidebarResize() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.querySelector('.sidebar-overlay');
             
             if (window.innerWidth > 992) {
-                // Desktop mode - remove mobile overlay
                 if (overlay) {
                     overlay.remove();
                 }
                 sidebar.classList.remove('active');
                 
-                // Load saved preference
                 const savedCollapsed = localStorage.getItem('sidebarCollapsed');
                 if (savedCollapsed === 'true') {
                     sidebar.classList.add('collapsed');
@@ -488,7 +730,6 @@
                         text.style.display = 'none';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '80px';
@@ -499,20 +740,17 @@
                         text.style.display = 'inline-block';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '250px';
                     }
                 }
             } else {
-                // Mobile mode - always show expanded when visible
                 sidebar.classList.remove('collapsed');
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = 'inline-block';
                 });
                 
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = '0';
@@ -561,6 +799,22 @@
             }
         }
 
+        // Copy SQL for database setup
+        function copySQL(table) {
+            let sql = '';
+            if (table === 'deliveries') {
+                sql = "ALTER TABLE deliveries ADD COLUMN branch_id INT NULL;\nALTER TABLE deliveries ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+            } else if (table === 'sales_orders') {
+                sql = "ALTER TABLE sales_orders ADD COLUMN branch_id INT NULL;\nALTER TABLE sales_orders ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+            } else if (table === 'drivers') {
+                sql = "ALTER TABLE drivers ADD COLUMN branch_id INT NULL;\nALTER TABLE drivers ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+            }
+            
+            navigator.clipboard.writeText(sql).then(() => {
+                alert('SQL copied to clipboard!');
+            });
+        }
+
         // Logout function
         function logout() {
             if (confirm('Are you sure you want to logout?')) {
@@ -571,11 +825,15 @@
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', function() {
             console.log("Rejection Management page loaded!");
+            console.log("Branch ID:", branchId);
+            console.log("View All Branches:", viewAllBranches);
+            console.log("Delivery Branch Column Exists:", deliveryBranchColumnExists);
+            console.log("SO Branch Column Exists:", soBranchColumnExists);
             
             // Initialize sidebar
             initializeSidebar();
             
-            // Setup mobile toggle button - support multiple button IDs
+            // Setup mobile toggle button
             const mobileToggleBtn = document.getElementById('mobileToggleBtn');
             if (mobileToggleBtn) {
                 mobileToggleBtn.addEventListener('click', function(e) {
@@ -584,15 +842,6 @@
                 });
             }
             
-            const mobileMenuBtn = document.getElementById('mobileMenuBtn');
-            if (mobileMenuBtn) {
-                mobileMenuBtn.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    toggleSidebar();
-                });
-            }
-            
-            // Setup desktop toggle button
             const desktopToggleBtn = document.getElementById('desktopToggleBtn');
             if (desktopToggleBtn) {
                 desktopToggleBtn.addEventListener('click', function(e) {
@@ -613,7 +862,7 @@
             // Close sidebar when clicking outside on mobile
             document.addEventListener('click', function(event) {
                 const sidebar = document.getElementById('sidebar');
-                const mobileBtn = document.getElementById('mobileToggleBtn') || document.getElementById('mobileMenuBtn');
+                const mobileBtn = document.getElementById('mobileToggleBtn');
                 const overlay = document.querySelector('.sidebar-overlay');
                 const isMobile = window.innerWidth <= 992;
                 
@@ -633,23 +882,33 @@
             if (rejReason) {
                 rejReason.addEventListener('change', handleReasonChange);
             }
+            
+            // Initialize retry date min attribute
+            const retryDate = document.getElementById('rejRetryDate');
+            if (retryDate) {
+                retryDate.min = '<?php echo date('Y-m-d'); ?>';
+            }
         });
 
         // Keyboard shortcuts
         document.addEventListener('keydown', function(e) {
-            // Ctrl + B to toggle sidebar (desktop only)
             if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
                 e.preventDefault();
                 toggleSidebar();
             }
-            // Escape to close sidebar on mobile
             else if (e.key === 'Escape' && window.innerWidth <= 992) {
                 closeMobileSidebar();
             }
-            // Ctrl + R to reset form
-            else if (e.ctrlKey && e.key === 'r') {
+            else if (e.ctrlKey && e.key === 'r' && !e.target.matches('input, textarea, select')) {
                 e.preventDefault();
                 resetForm();
+            }
+            else if (e.ctrlKey && e.key === 'f' && !e.target.matches('input, textarea, select')) {
+                e.preventDefault();
+                const searchInput = document.querySelector('input[type="search"]');
+                if (searchInput) {
+                    searchInput.focus();
+                }
             }
         });
     </script>

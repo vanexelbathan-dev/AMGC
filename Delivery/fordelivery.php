@@ -15,12 +15,36 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
-   
+    <style>
+        /* Branch badge styling */
+        .branch-badge {
+            background-color: #e7f1ff;
+            color: #0d6efd;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 5px;
+        }
+        
+        /* Alert for missing branch column */
+        .alert-info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        
+        .alert-info code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 4px;
+            color: #c7254e;
+        }
+    </style>
 </head>
 <body>
     <?php
     // Start session and include database connection
-    session_start();
     require_once '../config/database.php';
     require_once '../config/session_handler.php';
     
@@ -34,34 +58,106 @@
     $user_id = $_SESSION['user_id'];
     $user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Driver User';
     $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'delivery';
-    $branch_id = getBranchId();
-    $is_admin = isAdmin();
-    $branch_where = $is_admin ? "" : "AND so.branch_id = $branch_id";
+    $branch_id = $_SESSION['branch_id'] ?? 0;
+    $view_all_branches = $_SESSION['view_all_branches'] ?? false;
     
-    // Get delivery statistics
+    // Check if branch_id column exists in sales_orders table
+    $so_branch_column_exists = false;
+    $check_so_column = $conn->query("SHOW COLUMNS FROM sales_orders LIKE 'branch_id'");
+    if ($check_so_column && $check_so_column->num_rows > 0) {
+        $so_branch_column_exists = true;
+    }
+    
+    // Check if branch_id column exists in trip_tickets table
+    $tt_branch_column_exists = false;
+    $check_tt_column = $conn->query("SHOW COLUMNS FROM trip_tickets LIKE 'branch_id'");
+    if ($check_tt_column && $check_tt_column->num_rows > 0) {
+        $tt_branch_column_exists = true;
+    }
+    
+    // Check if branch_id column exists in deliveries table
+    $delivery_branch_column_exists = false;
+    $check_delivery_column = $conn->query("SHOW COLUMNS FROM deliveries LIKE 'branch_id'");
+    if ($check_delivery_column && $check_delivery_column->num_rows > 0) {
+        $delivery_branch_column_exists = true;
+    }
+    
+    // Determine branch filter condition
+    $branch_condition = "";
+    $tt_branch_condition = "";
+    $delivery_branch_condition = "";
+    
+    if ($so_branch_column_exists && !$view_all_branches) {
+        $branch_condition = "AND so.branch_id = $branch_id";
+    }
+    
+    if ($tt_branch_column_exists && !$view_all_branches) {
+        $tt_branch_condition = "AND tt.branch_id = $branch_id";
+    }
+    
+    if ($delivery_branch_column_exists && !$view_all_branches) {
+        $delivery_branch_condition = "AND d.branch_id = $branch_id";
+    }
+    
+    // Get delivery statistics with branch filtering
     try {
+            $total_for_delivery = 0;
+            $in_transit = 0;
+            $completed_today = 0;
         // Total for delivery (sales orders with status 'ready' or 'processing')
-        $query = "SELECT COUNT(*) as total_for_delivery FROM sales_orders WHERE order_status IN ('processing', 'ready') $branch_where";
+        $query = "SELECT COUNT(*) as total_for_delivery 
+                  FROM sales_orders 
+                  WHERE order_status IN ('processing', 'ready') 
+                  $branch_condition";
         $result = $conn->query($query);
-        $total_for_delivery = $result->fetch_assoc()['total_for_delivery'];
+        if ($result) {
+            $row = $result->fetch_assoc();
+            $total_for_delivery = $row['total_for_delivery'] ?? 0;
+        }
         
         // In transit (trip tickets in progress)
-        $query = "SELECT COUNT(*) as in_transit FROM trip_tickets WHERE trip_status = 'in-progress' $branch_where";
+        if ($tt_branch_column_exists && !$view_all_branches) {
+            $query = "SELECT COUNT(*) as in_transit 
+                      FROM trip_tickets 
+                      WHERE trip_status = 'in-progress' 
+                      AND branch_id = $branch_id";
+        } else {
+            $query = "SELECT COUNT(*) as in_transit 
+                      FROM trip_tickets 
+                      WHERE trip_status = 'in-progress'";
+        }
         $result = $conn->query($query);
-        $in_transit = $result->fetch_assoc()['in_transit'];
+            if ($result) {
+            $row = $result->fetch_assoc();
+            $in_transit = $row['in_transit'] ?? 0;
+        }
         
         // Completed today (deliveries completed today)
-        $query = "
-            SELECT COUNT(DISTINCT d.delivery_id) as completed_today 
-            FROM deliveries d
-            JOIN sales_orders so ON d.so_id = so.so_id
-            WHERE d.delivery_status = 'delivered' 
-            AND DATE(d.delivery_date) = CURDATE() $branch_where
-        ";
+        if ($delivery_branch_column_exists && !$view_all_branches) {
+            $query = "
+                SELECT COUNT(DISTINCT d.delivery_id) as completed_today 
+                FROM deliveries d
+                JOIN sales_orders so ON d.so_id = so.so_id
+                WHERE d.delivery_status = 'delivered' 
+                AND DATE(d.delivery_date) = CURDATE()
+                AND d.branch_id = $branch_id
+            ";
+        } else {
+            $query = "
+                SELECT COUNT(DISTINCT d.delivery_id) as completed_today 
+                FROM deliveries d
+                JOIN sales_orders so ON d.so_id = so.so_id
+                WHERE d.delivery_status = 'delivered' 
+                AND DATE(d.delivery_date) = CURDATE()
+            ";
+        }
         $result = $conn->query($query);
-        $completed_today = $result->fetch_assoc()['completed_today'];
+        if ($result) {
+            $row = $result->fetch_assoc();
+            $completed_today = $row['completed_today'] ?? 0;
+        }
         
-        // Get delivery orders data
+        // Get delivery orders data with branch filtering
         $query = "
             SELECT 
                 so.so_id,
@@ -75,67 +171,74 @@
                 so.total_amount,
                 so.order_date,
                 so.delivery_date,
+                so.branch_id,
                 GROUP_CONCAT(CONCAT(i.item_name, ' (', soi.quantity_ordered, ')') SEPARATOR '; ') as items
             FROM sales_orders so
             JOIN customers c ON so.customer_id = c.customer_id
             LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
             LEFT JOIN items i ON soi.item_id = i.item_id
-            WHERE so.order_status IN ('processing', 'ready', 'confirmed') $branch_where
+            WHERE so.order_status IN ('processing', 'ready', 'confirmed')
+            $branch_condition
             GROUP BY so.so_id
             ORDER BY so.delivery_date ASC, so.order_date ASC
         ";
+        
         $result = $conn->query($query);
-        $delivery_orders = $result->fetch_all(MYSQLI_ASSOC);
+        $delivery_orders = [];
+        if ($result) {
+            $delivery_orders = $result->fetch_all(MYSQLI_ASSOC);
+        }
         
     } catch (Exception $e) {
-        die("Database error: " . $e->getMessage());
+        error_log("Database error in fordelivery.php: " . $e->getMessage());
+        $delivery_orders = [];
     }
     ?>
 
     <!-- MAIN APPLICATION -->
     <div id="appPage">
-<!-- Sidebar -->
-<div class="sidebar" id="sidebar">
-    <div class="sidebar-header">
-        <h3>
-            <!-- Burger icon moved before logo -->
-            <button class="desktop-toggle-btn" id="desktopToggleBtn">
-                <i class="bi bi-list" id="toggleIcon"></i>
-            </button>
-                <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
+        <!-- Sidebar -->
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h3>
+                    <!-- Burger icon moved before logo -->
+                    <button class="desktop-toggle-btn" id="desktopToggleBtn">
+                        <i class="bi bi-list" id="toggleIcon"></i>
+                    </button>
+                    <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
                     <span class="nav-text">Delivery</span>
-            </h3>
-    </div>
-    
-    <div class="sidebar-menu">
-        <ul class="nav flex-column">
-            <li class="nav-item">
-                <a class="nav-link active" href="fordelivery.php">
-                    <i class="bi bi-truck"></i>
-                    <span class="nav-text">For Delivery</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="trip_tickets.php">
-                    <i class="bi bi-ticket"></i>
-                    <span class="nav-text">Trip Tickets</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="rejecteddelivery.php">
-                    <i class="bi bi-exclamation-circle"></i>
-                    <span class="nav-text">Rejected Delivery Advice</span>
-                </a>
-            </li>
-        </ul>
-    </div>
-    <!-- User Profile Section at the bottom of sidebar -->
+                </h3>
+            </div>
+            
+            <div class="sidebar-menu">
+                <ul class="nav flex-column">
+                    <li class="nav-item">
+                        <a class="nav-link active" href="fordelivery.php">
+                            <i class="bi bi-truck"></i>
+                            <span class="nav-text">For Delivery</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="trip_tickets.php">
+                            <i class="bi bi-ticket"></i>
+                            <span class="nav-text">Trip Tickets</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="rejecteddelivery.php">
+                            <i class="bi bi-exclamation-circle"></i>
+                            <span class="nav-text">Rejected Delivery Advice</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            <!-- User Profile Section at the bottom of sidebar -->
             <div class="sidebar-footer">
                 <div class="user-profile-sidebar">
                     <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
                     <div class="user-details-sidebar">
                         <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-                        <span class="user-role-sidebar"><?php echo htmlspecialchars(ucfirst($user_role)); ?></span>
+
                     </div>
                 </div>
                 
@@ -144,7 +247,7 @@
                     <span class="logout-text">Logout</span>
                 </button>
             </div>
-</div>
+        </div>
 
         <!-- Main Content Area -->
         <div class="main-content">
@@ -159,9 +262,57 @@
                 </div>
             </div>
 
+            <!-- Branch Info Alert (if no branch_id column in sales_orders) -->
+            <?php if (!$so_branch_column_exists): ?>
+                <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    <i class="bi bi-info-circle"></i> 
+                    <strong>Branch filtering for sales orders not yet set up.</strong> Please run this SQL in phpMyAdmin to enable branch-specific order data:
+                    <br><br>
+                    <code>ALTER TABLE sales_orders ADD COLUMN branch_id INT NULL;</code>
+                    <br>
+                    <code>ALTER TABLE sales_orders ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
+                    <br><br>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('sales_orders')">
+                        <i class="bi bi-files"></i> Copy SQL
+                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
+
+            <?php if (!$tt_branch_column_exists): ?>
+                <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    <i class="bi bi-info-circle"></i> 
+                    <strong>Branch filtering for trip tickets not yet set up.</strong> Please run this SQL in phpMyAdmin to enable branch-specific trip ticket data:
+                    <br><br>
+                    <code>ALTER TABLE trip_tickets ADD COLUMN branch_id INT NULL;</code>
+                    <br>
+                    <code>ALTER TABLE trip_tickets ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
+                    <br><br>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('trip_tickets')">
+                        <i class="bi bi-files"></i> Copy SQL
+                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
+
+            <?php if (!$delivery_branch_column_exists): ?>
+                <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    <i class="bi bi-info-circle"></i> 
+                    <strong>Branch filtering for deliveries not yet set up.</strong> Please run this SQL in phpMyAdmin to enable branch-specific delivery data:
+                    <br><br>
+                    <code>ALTER TABLE deliveries ADD COLUMN branch_id INT NULL;</code>
+                    <br>
+                    <code>ALTER TABLE deliveries ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
+                    <br><br>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('deliveries')">
+                        <i class="bi bi-files"></i> Copy SQL
+                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
+
             <!-- Delivery Stats -->
             <div class="row g-3 mb-4 delivery-stats">
-
                 <!-- Total for Delivery -->
                 <div class="col-md-4 mb-3">
                     <div class="stat-card inventory">
@@ -171,6 +322,7 @@
                         <div>
                             <div class="stat-value"><?php echo $total_for_delivery; ?></div>
                             <div class="stat-label">Total for Delivery</div>
+                            
                         </div>
                     </div>
                 </div>
@@ -184,6 +336,7 @@
                         <div>
                             <div class="stat-value"><?php echo $in_transit; ?></div>
                             <div class="stat-label">In Transit</div>
+                            
                         </div>
                     </div>
                 </div>
@@ -197,11 +350,12 @@
                         <div>
                             <div class="stat-value"><?php echo $completed_today; ?></div>
                             <div class="stat-label">Completed Today</div>
+                        
                         </div>
                     </div>
                 </div>
-
             </div>
+
 
             <!-- Search and Filter -->
             <div class="card mb-4">
@@ -226,6 +380,19 @@
                     </div>
                 </div>
             </div>
+
+            <!-- No Orders Message -->
+            <?php if (empty($delivery_orders)): ?>
+                <div class="alert alert-info text-center py-4">
+                    <i class="bi bi-truck" style="font-size: 2rem;"></i>
+                    <p class="mt-3 mb-0">
+                        No orders ready for delivery at this time.
+                        <?php if ($so_branch_column_exists && !$view_all_branches): ?>
+                            <br><small>No orders found for your branch.</small>
+                        <?php endif; ?>
+                    </p>
+                </div>
+            <?php else: ?>
 
             <!-- Delivery Orders Table -->
             <div class="card">
@@ -301,7 +468,7 @@
                                         <i class="bi bi-truck"></i>
                                     </button>
                                     <?php elseif ($order['order_status'] == 'confirmed'): ?>
-                                    <button class="btn btn-sm btn-success" title="Mark as Delivered" onclick="showDeliveryModal(<?php echo $order['so_id']; ?>, '<?php echo $order['so_number']; ?>')">
+                                    <button class="btn btn-sm btn-success" title="Mark as Delivered" onclick="showDeliveryModal(<?php echo $order['so_id']; ?>, '<?php echo htmlspecialchars($order['so_number']); ?>')">
                                         <i class="bi bi-check-lg"></i>
                                     </button>
                                     <?php endif; ?>
@@ -312,6 +479,7 @@
                     </table>
                 </div>
             </div>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -327,9 +495,13 @@
                     <form id="deliveryForm" enctype="multipart/form-data" action="update_delivery.php" method="POST">
                         <input type="hidden" name="so_id" id="modalSoId">
                         <input type="hidden" name="so_number" id="modalSoNumber">
+                        <input type="hidden" name="branch_id" value="<?php echo $branch_id; ?>">
                         
                         <div class="alert alert-info">
                             <strong id="orderIdDisplay"></strong> - Delivery Confirmation Required
+                            <?php if ($so_branch_column_exists && !$view_all_branches): ?>
+                                <br><small>Branch: <?php echo $branch_id; ?></small>
+                            <?php endif; ?>
                         </div>
 
                         <h6 class="mb-3">Delivery Information</h6>
@@ -375,7 +547,14 @@
 
     <!-- JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-   <script>
+    <script>
+        // Branch context variables
+        const branchId = <?php echo $branch_id; ?>;
+        const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
+        const soBranchColumnExists = <?php echo $so_branch_column_exists ? 'true' : 'false'; ?>;
+        const ttBranchColumnExists = <?php echo $tt_branch_column_exists ? 'true' : 'false'; ?>;
+        const deliveryBranchColumnExists = <?php echo $delivery_branch_column_exists ? 'true' : 'false'; ?>;
+
         let currentOrderId = null;
         let currentOrderNumber = null;
 
@@ -591,7 +770,7 @@
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
                     },
-                    body: 'so_id=' + orderId + '&new_status=' + newStatus
+                    body: 'so_id=' + orderId + '&new_status=' + newStatus + '&branch_id=' + branchId
                 })
                 .then(response => response.json())
                 .then(data => {
@@ -602,6 +781,7 @@
                     }
                 })
                 .catch(error => {
+                    console.error('Error:', error);
                     alert('Error updating status');
                 });
             }
@@ -619,6 +799,22 @@
             modal.show();
         }
 
+        // Copy SQL for database setup
+        function copySQL(table) {
+            let sql = '';
+            if (table === 'sales_orders') {
+                sql = "ALTER TABLE sales_orders ADD COLUMN branch_id INT NULL;\nALTER TABLE sales_orders ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+            } else if (table === 'trip_tickets') {
+                sql = "ALTER TABLE trip_tickets ADD COLUMN branch_id INT NULL;\nALTER TABLE trip_tickets ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+            } else if (table === 'deliveries') {
+                sql = "ALTER TABLE deliveries ADD COLUMN branch_id INT NULL;\nALTER TABLE deliveries ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+            }
+            
+            navigator.clipboard.writeText(sql).then(() => {
+                alert('SQL copied to clipboard!');
+            });
+        }
+
         // Logout function
         function logout() {
             if (confirm('Are you sure you want to logout?')) {
@@ -629,11 +825,16 @@
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', function() {
             console.log("Delivery Management page loaded!");
+            console.log("Branch ID:", branchId);
+            console.log("View All Branches:", viewAllBranches);
+            console.log("SO Branch Column Exists:", soBranchColumnExists);
+            console.log("TT Branch Column Exists:", ttBranchColumnExists);
+            console.log("Delivery Branch Column Exists:", deliveryBranchColumnExists);
             
             // Initialize sidebar
             initializeSidebar();
             
-            // Setup mobile toggle button - support multiple button IDs
+            // Setup mobile toggle button
             const mobileToggleBtn = document.getElementById('mobileToggleBtn');
             if (mobileToggleBtn) {
                 mobileToggleBtn.addEventListener('click', function(e) {
@@ -699,7 +900,7 @@
                 closeMobileSidebar();
             }
             // Ctrl + F to focus search
-            else if (e.ctrlKey && e.key === 'f') {
+            else if (e.ctrlKey && e.key === 'f' && !e.target.matches('input, textarea')) {
                 e.preventDefault();
                 const searchInput = document.getElementById('searchInput');
                 if (searchInput) {
