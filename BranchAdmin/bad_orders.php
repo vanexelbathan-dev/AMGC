@@ -269,37 +269,37 @@ function formatDate($dateTimeStr) {
             gap: 10px;
         }
         
-        .sort-controls {
+        .filter-dropdowns {
             display: flex;
-            gap: 5px;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
         }
         
-        .sort-btn {
-            background: white;
-            border: 1px solid #ced4da;
-            padding: 6px 12px;
+        .filter-dropdown {
+            min-width: 160px;
+        }
+        
+        .filter-dropdown .form-select {
             font-size: 13px;
-            border-radius: 4px;
-            color: #495057;
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid #ced4da;
+            background-color: white;
             cursor: pointer;
         }
         
-        .sort-btn.active {
-            background-color: #0d6efd;
-            color: white;
+        .filter-dropdown .form-select:focus {
             border-color: #0d6efd;
+            box-shadow: 0 0 0 0.2rem rgba(13,110,253,0.25);
         }
         
-        .sort-btn:hover {
-            background-color: #e9ecef;
-        }
-        
-        .sort-btn.active:hover {
-            background-color: #0b5ed7;
-        }
-        
-        .action-bar {
-            margin-bottom: 20px;
+        .filter-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 4px;
+            display: block;
         }
     </style>
 </head>
@@ -420,14 +420,67 @@ function formatDate($dateTimeStr) {
                     </div>
                 </div>
 
-                <!-- FILTER SECTION - WITH SORT CONTROLS AND BUTTONS TOGETHER -->
+                <!-- FILTER SECTION - WITH DROPDOWN FILTERS ONLY -->
                 <div class="filter-section">
                     <div class="filter-controls">
-                        <div class="sort-controls">
-                            <button class="sort-btn active" onclick="sortRMR('date')">By Date</button>
-                            <button class="sort-btn" onclick="sortRMR('status')">By Status</button>
-                            <button class="sort-btn" onclick="sortRMR('reason')">By Reason</button>
-                            <button class="sort-btn" onclick="sortRMR('quantity')">By Quantity</button>
+                        <div class="filter-dropdowns">
+                            <!-- Date Filter Dropdown -->
+                            <div class="filter-dropdown">
+                                <span class="filter-label">Date</span>
+                                <select class="form-select" id="dateFilter" onchange="applyFilters()">
+                                    <option value="all">All Dates</option>
+                                    <option value="today">Today</option>
+                                    <option value="yesterday">Yesterday</option>
+                                    <option value="this_week">This Week</option>
+                                    <option value="last_week">Last Week</option>
+                                    <option value="this_month">This Month</option>
+                                    <option value="last_month">Last Month</option>
+                                    <option value="this_quarter">This Quarter</option>
+                                    <option value="last_quarter">Last Quarter</option>
+                                    <option value="this_year">This Year</option>
+                                    <option value="last_year">Last Year</option>
+                                </select>
+                            </div>
+                            
+                            <!-- Status Filter Dropdown -->
+                            <div class="filter-dropdown">
+                                <span class="filter-label">Status</span>
+                                <select class="form-select" id="statusFilter" onchange="applyFilters()">
+                                    <option value="all">All Status</option>
+                                    <option value="pending">Pending</option>
+                                    <option value="processing">Processing</option>
+                                    <option value="approved">Approved</option>
+                                    <option value="rejected">Rejected</option>
+                                    <option value="resolved">Resolved</option>
+                                </select>
+                            </div>
+                            
+                            <!-- Reason Filter Dropdown -->
+                            <div class="filter-dropdown">
+                                <span class="filter-label">Reason</span>
+                                <select class="form-select" id="reasonFilter" onchange="applyFilters()">
+                                    <option value="all">All Reasons</option>
+                                    <option value="damaged">Damaged</option>
+                                    <option value="expired">Expired</option>
+                                    <option value="wrong-item">Wrong Item</option>
+                                    <option value="quality">Quality Issue</option>
+                                    <option value="overstock">Overstock</option>
+                                    <option value="other">Other</option>
+                                </select>
+                            </div>
+                            
+                            <!-- Quantity Filter Dropdown -->
+                            <div class="filter-dropdown">
+                                <span class="filter-label">Quantity</span>
+                                <select class="form-select" id="quantityFilter" onchange="applyFilters()">
+                                    <option value="all">All Quantities</option>
+                                    <option value="lt10">Less than 10</option>
+                                    <option value="10-50">10 - 50</option>
+                                    <option value="51-100">51 - 100</option>
+                                    <option value="101-500">101 - 500</option>
+                                    <option value="gt500">Greater than 500</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
                     
@@ -441,14 +494,11 @@ function formatDate($dateTimeStr) {
                     </div>
                 </div>
 
-                <!-- ACTION BAR - REMOVED (moved to filter section) -->
-
                 <!-- RMR Table - WITHOUT CHECKBOX COLUMN -->
                 <div class="table-responsive">
                     <table class="table rmr-table">
                         <thead>
                             <tr>
-                                <!-- CHECKBOX HEADER REMOVED -->
                                 <th class="col-rmr">RMR NUMBER</th>
                                 <th class="col-customer">CUSTOMER</th>
                                 <th class="col-item">ITEM</th>
@@ -477,8 +527,10 @@ function formatDate($dateTimeStr) {
                                 <tr class="rmr-row" 
                                     data-id="<?= $rmr['rmr_id'] ?>"
                                     data-rmr-number="<?= htmlspecialchars($rmr['rmr_number']) ?>"
-                                    data-status="<?= $rmr['rmr_status'] ?>">
-                                    <!-- CHECKBOX CELL REMOVED -->
+                                    data-status="<?= $rmr['rmr_status'] ?>"
+                                    data-reason="<?= $rmr['return_reason'] ?>"
+                                    data-received-date="<?= $rmr['received_date'] ?>"
+                                    data-quantity="<?= $rmr['return_quantity'] ?>">
                                     <td class="col-rmr"><strong><?= htmlspecialchars($rmr['rmr_number']) ?></strong></td>
                                     <td class="col-customer"><?= htmlspecialchars($rmr['customer_name']) ?></td>
                                     <td class="col-item">
@@ -628,7 +680,6 @@ function formatDate($dateTimeStr) {
     <script>
     // ========== GLOBAL VARIABLES ==========
     let selectedRMR = null;
-    let currentSort = 'date';
     
     // ========== SIDEBAR FUNCTIONS ==========
     function toggleSidebar() {
@@ -670,6 +721,151 @@ function formatDate($dateTimeStr) {
             if (savedCollapsed === 'true') {
                 sidebar.classList.add('collapsed');
                 document.querySelectorAll('.nav-text').forEach(text => text.style.display = 'none');
+            }
+        }
+    }
+
+    // ========== FILTER FUNCTIONS ==========
+    function applyFilters() {
+        const dateFilter = document.getElementById('dateFilter').value;
+        const statusFilter = document.getElementById('statusFilter').value;
+        const reasonFilter = document.getElementById('reasonFilter').value;
+        const quantityFilter = document.getElementById('quantityFilter').value;
+        
+        const rows = document.querySelectorAll('.rmr-row');
+        let visibleCount = 0;
+        
+        rows.forEach(row => {
+            let showRow = true;
+            
+            // Status filter
+            if (statusFilter !== 'all') {
+                const rowStatus = row.dataset.status;
+                if (rowStatus !== statusFilter) showRow = false;
+            }
+            
+            // Reason filter
+            if (showRow && reasonFilter !== 'all') {
+                const rowReason = row.dataset.reason;
+                if (rowReason !== reasonFilter) showRow = false;
+            }
+            
+            // Quantity filter
+            if (showRow && quantityFilter !== 'all') {
+                const rowQuantity = parseFloat(row.dataset.quantity);
+                switch(quantityFilter) {
+                    case 'lt10':
+                        if (rowQuantity >= 10) showRow = false;
+                        break;
+                    case '10-50':
+                        if (rowQuantity < 10 || rowQuantity > 50) showRow = false;
+                        break;
+                    case '51-100':
+                        if (rowQuantity < 51 || rowQuantity > 100) showRow = false;
+                        break;
+                    case '101-500':
+                        if (rowQuantity < 101 || rowQuantity > 500) showRow = false;
+                        break;
+                    case 'gt500':
+                        if (rowQuantity <= 500) showRow = false;
+                        break;
+                }
+            }
+            
+            // Date filter
+            if (showRow && dateFilter !== 'all') {
+                const rowDate = new Date(row.dataset.receivedDate);
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                
+                const yesterday = new Date(today);
+                yesterday.setDate(yesterday.getDate() - 1);
+                
+                const startOfWeek = new Date(today);
+                startOfWeek.setDate(today.getDate() - today.getDay());
+                
+                const endOfWeek = new Date(startOfWeek);
+                endOfWeek.setDate(startOfWeek.getDate() + 6);
+                
+                const startOfLastWeek = new Date(startOfWeek);
+                startOfLastWeek.setDate(startOfLastWeek.getDate() - 7);
+                
+                const endOfLastWeek = new Date(startOfLastWeek);
+                endOfLastWeek.setDate(startOfLastWeek.getDate() + 6);
+                
+                const startOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+                const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+                
+                const startOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                const endOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+                
+                const startOfQuarter = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 1);
+                const endOfQuarter = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3 + 3, 0);
+                
+                const startOfLastQuarter = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3 - 3, 1);
+                const endOfLastQuarter = new Date(today.getFullYear(), Math.floor(today.getMonth() / 3) * 3, 0);
+                
+                const startOfYear = new Date(today.getFullYear(), 0, 1);
+                const endOfYear = new Date(today.getFullYear(), 11, 31);
+                
+                const startOfLastYear = new Date(today.getFullYear() - 1, 0, 1);
+                const endOfLastYear = new Date(today.getFullYear() - 1, 11, 31);
+                
+                switch(dateFilter) {
+                    case 'today':
+                        if (rowDate < today || rowDate > new Date(today.getTime() + 86400000 - 1)) showRow = false;
+                        break;
+                    case 'yesterday':
+                        if (rowDate < yesterday || rowDate > new Date(yesterday.getTime() + 86400000 - 1)) showRow = false;
+                        break;
+                    case 'this_week':
+                        if (rowDate < startOfWeek || rowDate > new Date(endOfWeek.getTime() + 86400000 - 1)) showRow = false;
+                        break;
+                    case 'last_week':
+                        if (rowDate < startOfLastWeek || rowDate > new Date(endOfLastWeek.getTime() + 86400000 - 1)) showRow = false;
+                        break;
+                    case 'this_month':
+                        if (rowDate < startOfMonth || rowDate > new Date(endOfMonth.getTime() + 86400000 - 1)) showRow = false;
+                        break;
+                    case 'last_month':
+                        if (rowDate < startOfLastMonth || rowDate > new Date(endOfLastMonth.getTime() + 86400000 - 1)) showRow = false;
+                        break;
+                    case 'this_quarter':
+                        if (rowDate < startOfQuarter || rowDate > new Date(endOfQuarter.getTime() + 86400000 - 1)) showRow = false;
+                        break;
+                    case 'last_quarter':
+                        if (rowDate < startOfLastQuarter || rowDate > new Date(endOfLastQuarter.getTime() + 86400000 - 1)) showRow = false;
+                        break;
+                    case 'this_year':
+                        if (rowDate < startOfYear || rowDate > new Date(endOfYear.getTime() + 86400000 - 1)) showRow = false;
+                        break;
+                    case 'last_year':
+                        if (rowDate < startOfLastYear || rowDate > new Date(endOfLastYear.getTime() + 86400000 - 1)) showRow = false;
+                        break;
+                }
+            }
+            
+            row.style.display = showRow ? '' : 'none';
+            if (showRow) visibleCount++;
+        });
+        
+        // Show empty state if no rows visible
+        const emptyStateRow = document.querySelector('.empty-state-table');
+        if (emptyStateRow) {
+            const emptyStateParent = emptyStateRow.closest('tr');
+            if (visibleCount === 0) {
+                if (emptyStateParent) {
+                    emptyStateParent.style.display = '';
+                    emptyStateRow.innerHTML = `
+                        <td colspan="9" class="empty-state-table">
+                            <i class="bi bi-funnel"></i>
+                            <h5>No matching RMR requests</h5>
+                            <p class="text-muted">No requests match your filter criteria.</p>
+                        </td>
+                    `;
+                }
+            } else {
+                if (emptyStateParent) emptyStateParent.style.display = 'none';
             }
         }
     }
@@ -726,13 +922,6 @@ function formatDate($dateTimeStr) {
         });
     });
 
-    function sortRMR(criteria) {
-        currentSort = criteria;
-        document.querySelectorAll('.sort-btn').forEach(btn => btn.classList.remove('active'));
-        if (event && event.target) event.target.classList.add('active');
-        alert('Sort by ' + criteria + ' - AJAX implementation needed');
-    }
-
     function processRMR(id) {
         selectedRMR = id;
         new bootstrap.Modal(document.getElementById('processRMRModal')).show();
@@ -765,18 +954,6 @@ function formatDate($dateTimeStr) {
 
     function printRMRDetails() {
         alert('Print RMR Details - AJAX implementation needed');
-    }
-
-    function processBatchRMR() {
-        alert('Process batch RMR - AJAX implementation needed');
-    }
-
-    function approveBatchRMR() {
-        alert('Approve batch RMR - AJAX implementation needed');
-    }
-
-    function rejectBatchRMR() {
-        alert('Reject batch RMR - AJAX implementation needed');
     }
 
     function printRMRReport() {

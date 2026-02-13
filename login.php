@@ -486,7 +486,7 @@ function getDashboardByRole($role) {
             <!-- Header -->
             <div class="form-header">
                 <h1>Welcome Back!</h1>
-                <p>A. MACALINDONG GROUP OF COMPANIES</p>
+                <p>A. MACALINDONG DEVELOPMENT CORP.</p>
             </div>
 
             <!-- Error Message -->
