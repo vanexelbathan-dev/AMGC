@@ -6,14 +6,30 @@ require_once '../config/session_handler.php';
 requireLogin();
 requireRole(['sales']);
 
-// Get current user info
-    $user_id = $_SESSION['user_id'];
-    $user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Driver User';
-    $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'delivery';
+// Get current user info and branch context
+$user_id = $_SESSION['user_id'];
+$user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Sales User';
+$user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'sales';
+$branch_id = $_SESSION['branch_id'] ?? 0;
+$view_all_branches = $_SESSION['view_all_branches'] ?? false;
 
 // Get user ID for filtering
 $user_id = getUserId();
 $branch_id = getUserBranchId();
+
+// Check if branch_id column exists in sales_orders table
+$branch_column_exists = false;
+$check_column = $conn->query("SHOW COLUMNS FROM sales_orders LIKE 'branch_id'");
+if ($check_column && $check_column->num_rows > 0) {
+    $branch_column_exists = true;
+}
+
+// Check if branch_id column exists in customers table
+$customers_branch_column_exists = false;
+$check_customers_column = $conn->query("SHOW COLUMNS FROM customers LIKE 'branch_id'");
+if ($check_customers_column && $check_customers_column->num_rows > 0) {
+    $customers_branch_column_exists = true;
+}
 
 // Detect AJAX request
 $is_ajax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && 
@@ -28,19 +44,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $order_id = (int)$_POST['order_id'];
         
         try {
-            // Verify order belongs to user's branch
-            $check_sql = "SELECT so_id FROM sales_orders WHERE so_id = ? AND branch_id = ?";
-            $check_stmt = $conn->prepare($check_sql);
-            if (!$check_stmt) {
-                throw new Exception("Database prepare error");
-            }
-            $check_stmt->bind_param('ii', $order_id, $branch_id);
-            $check_stmt->execute();
-            $check_result = $check_stmt->get_result();
-            
-            if ($check_result->num_rows === 0) {
-                echo json_encode(['success' => false, 'message' => 'Order not found or access denied']);
-                exit;
+            // Verify order belongs to user's branch (if branch column exists and not admin)
+            if ($branch_column_exists && !$view_all_branches) {
+                $check_sql = "SELECT so_id FROM sales_orders WHERE so_id = ? AND branch_id = ?";
+                $check_stmt = $conn->prepare($check_sql);
+                if (!$check_stmt) {
+                    throw new Exception("Database prepare error");
+                }
+                $check_stmt->bind_param('ii', $order_id, $branch_id);
+                $check_stmt->execute();
+                $check_result = $check_stmt->get_result();
+                
+                if ($check_result->num_rows === 0) {
+                    echo json_encode(['success' => false, 'message' => 'Order not found or access denied']);
+                    exit;
+                }
             }
             
             // Get order details
@@ -50,14 +68,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         so.order_date,
                         so.total_amount,
                         so.order_status,
+                        so.branch_id,
                         c.customer_name,
                         c.email,
                         c.phone_number,
                         c.address,
-                        u.first_name as created_by
+                        u.first_name as created_by,
+                        b.branch_name
                     FROM sales_orders so
                     LEFT JOIN customers c ON so.customer_id = c.customer_id
                     LEFT JOIN users u ON so.created_by = u.user_id
+                    LEFT JOIN branches b ON so.branch_id = b.branch_id
                     WHERE so.so_id = ?";
             
             $stmt = $conn->prepare($sql);
@@ -129,11 +150,16 @@ $where_conditions = ["1=1"];
 $params = [];
 $param_types = "";
 
-// Branch filter
-if ($branch_id > 0) {
-    $where_conditions[] = "so.branch_id = ?";
-    $params[] = $branch_id;
-    $param_types .= "i";
+// Branch filter - only apply if branch column exists
+if ($branch_column_exists) {
+    if ($view_all_branches) {
+        // Admin sees all branches - no filter needed
+    } else {
+        // Regular user sees only their branch
+        $where_conditions[] = "so.branch_id = ?";
+        $params[] = $branch_id;
+        $param_types .= "i";
+    }
 }
 
 // Status filter
@@ -165,42 +191,60 @@ if (isset($_GET['search']) && !empty($_GET['search'])) {
     $param_types .= "ss";
 }
 
-// Build query
+// Build query with branch information
 $sql = "SELECT 
             so.so_id,
             so.so_number,
             so.order_date,
             so.total_amount,
             so.order_status,
+            so.branch_id,
             c.customer_name,
+            b.branch_name,
             (SELECT COUNT(*) FROM sales_order_items WHERE so_id = so.so_id) as item_count
         FROM sales_orders so
         LEFT JOIN customers c ON so.customer_id = c.customer_id
+        LEFT JOIN branches b ON so.branch_id = b.branch_id
         WHERE " . implode(" AND ", $where_conditions) . "
         ORDER BY so.order_date DESC";
 
 // Prepare and execute
-$stmt = $conn->prepare($sql);
 if (!empty($params)) {
+    $stmt = $conn->prepare($sql);
     $stmt->bind_param($param_types, ...$params);
+} else {
+    $stmt = $conn->prepare($sql);
 }
 $stmt->execute();
 $result = $stmt->get_result();
 $orders = $result->fetch_all(MYSQLI_ASSOC);
 
-// Get order statistics
-$stats_sql = "SELECT 
-                COUNT(*) as total_orders,
-                SUM(CASE WHEN order_status = 'pending' THEN 1 ELSE 0 END) as pending,
-                SUM(CASE WHEN order_status = 'processing' THEN 1 ELSE 0 END) as processing,
-                SUM(CASE WHEN order_status = 'shipped' THEN 1 ELSE 0 END) as shipped,
-                SUM(CASE WHEN order_status = 'delivered' THEN 1 ELSE 0 END) as delivered,
-                SUM(CASE WHEN order_status = 'cancelled' THEN 1 ELSE 0 END) as cancelled,
-                COALESCE(SUM(total_amount), 0) as total_revenue
-              FROM sales_orders 
-              WHERE branch_id = ?";
-$stats_stmt = $conn->prepare($stats_sql);
-$stats_stmt->bind_param('i', $branch_id);
+// Get order statistics - branch specific
+if ($branch_column_exists && !$view_all_branches) {
+    $stats_sql = "SELECT 
+                    COUNT(*) as total_orders,
+                    SUM(CASE WHEN order_status = 'pending' THEN 1 ELSE 0 END) as pending,
+                    SUM(CASE WHEN order_status = 'processing' THEN 1 ELSE 0 END) as processing,
+                    SUM(CASE WHEN order_status = 'shipped' THEN 1 ELSE 0 END) as shipped,
+                    SUM(CASE WHEN order_status = 'delivered' THEN 1 ELSE 0 END) as delivered,
+                    SUM(CASE WHEN order_status = 'cancelled' THEN 1 ELSE 0 END) as cancelled,
+                    COALESCE(SUM(total_amount), 0) as total_revenue
+                  FROM sales_orders 
+                  WHERE branch_id = ?";
+    $stats_stmt = $conn->prepare($stats_sql);
+    $stats_stmt->bind_param('i', $branch_id);
+} else {
+    $stats_sql = "SELECT 
+                    COUNT(*) as total_orders,
+                    SUM(CASE WHEN order_status = 'pending' THEN 1 ELSE 0 END) as pending,
+                    SUM(CASE WHEN order_status = 'processing' THEN 1 ELSE 0 END) as processing,
+                    SUM(CASE WHEN order_status = 'shipped' THEN 1 ELSE 0 END) as shipped,
+                    SUM(CASE WHEN order_status = 'delivered' THEN 1 ELSE 0 END) as delivered,
+                    SUM(CASE WHEN order_status = 'cancelled' THEN 1 ELSE 0 END) as cancelled,
+                    COALESCE(SUM(total_amount), 0) as total_revenue
+                  FROM sales_orders";
+    $stats_stmt = $conn->prepare($stats_sql);
+}
 $stats_stmt->execute();
 $stats_result = $stats_stmt->get_result();
 $stats = $stats_result->fetch_assoc();
@@ -211,7 +255,7 @@ $stats = $stats_result->fetch_assoc();
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sales Orders - Sales Dashboard</title>
-     <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
     <link rel="shortcut icon" href="../Pictures/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="../Pictures/apple-touch-icon.png" />
@@ -223,6 +267,68 @@ $stats = $stats_result->fetch_assoc();
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <!-- DataTables CSS -->
     <link rel="stylesheet" type="text/css" href="https://cdn.datatables.net/1.11.5/css/dataTables.bootstrap5.min.css">
+    <style>
+        /* Branch badge styling */
+        .branch-badge {
+            background-color: #e7f1ff;
+            color: #0d6efd;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 5px;
+        }
+        
+        /* Alert for missing branch column */
+        .alert-info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        
+        .alert-info code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 4px;
+            color: #c7254e;
+        }
+        
+        /* Mobile responsive adjustments */
+        @media (max-width: 768px) {
+            .stat-card {
+                padding: 12px;
+                min-height: 85px;
+                margin-bottom: 8px;
+            }
+            
+            .stat-icon {
+                font-size: 2rem;
+                margin-right: 12px;
+            }
+            
+            .stat-value {
+                font-size: 1.5rem;
+            }
+            
+            .stat-label {
+                font-size: 0.8rem;
+            }
+            
+            .col-md-3 {
+                width: 50%;
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+        }
+        
+        @media (max-width: 576px) {
+            .col-md-3 {
+                width: 50%;
+                padding-left: 6px;
+                padding-right: 6px;
+            }
+        }
+    </style>
 </head>
 <body>
     <!-- MAIN APPLICATION -->
@@ -230,14 +336,13 @@ $stats = $stats_result->fetch_assoc();
         <!-- Sidebar - No Print -->
         <div class="sidebar no-print" id="sidebar">
             <div class="sidebar-header">
-               <h3>
-            <!-- Burger icon moved before logo -->
-            <button class="desktop-toggle-btn" id="desktopToggleBtn">
-                <i class="bi bi-list" id="toggleIcon"></i>
-            </button>
-                <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
-                <span class="nav-text">Sales</span>
-        </h3>
+                <h3>
+                    <button class="desktop-toggle-btn" id="desktopToggleBtn">
+                        <i class="bi bi-list" id="toggleIcon"></i>
+                    </button>
+                    <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
+                    <span class="nav-text">Sales</span>
+                </h3>
             </div>
             <div class="sidebar-menu">
                 <ul class="nav flex-column">
@@ -273,16 +378,14 @@ $stats = $stats_result->fetch_assoc();
                     </li>
                 </ul>
             </div>
-             <!-- User Profile Section at the bottom of sidebar -->
+            <!-- User Profile Section at the bottom of sidebar -->
             <div class="sidebar-footer">
                 <div class="user-profile-sidebar">
                     <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
                     <div class="user-details-sidebar">
                         <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-                        <span class="user-role-sidebar"><?php echo htmlspecialchars(ucfirst($user_role)); ?></span>
                     </div>
                 </div>
-                    
                 <button class="logout-btn-sidebar" onclick="logout()">
                     <i class="bi bi-box-arrow-right"></i>
                     <span class="logout-text">Logout</span>
@@ -298,10 +401,59 @@ $stats = $stats_result->fetch_assoc();
                     <i class="bi bi-list"></i>
                 </button>
                 <div class="page-title">
-                    <h2></i>Sales Orders</h2>
+                    <h2>Sales Orders</h2>
                     <p>View and manage customer orders</p>
                 </div>
             </div>
+
+            <!-- Branch Info Alert (if no branch_id column) -->
+            <?php if (!$branch_column_exists): ?>
+                <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    <i class="bi bi-info-circle"></i> 
+                    <strong>Branch filtering for sales orders not yet set up.</strong> Please run this SQL in phpMyAdmin to enable branch-specific order data:
+                    <br><br>
+                    <code>ALTER TABLE sales_orders ADD COLUMN branch_id INT NULL;</code>
+                    <br>
+                    <code>ALTER TABLE sales_orders ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
+                    <br><br>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="copySQL()">
+                        <i class="bi bi-files"></i> Copy SQL
+                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+                <script>
+                    function copySQL() {
+                        const sql = "ALTER TABLE sales_orders ADD COLUMN branch_id INT NULL;\nALTER TABLE sales_orders ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+                        navigator.clipboard.writeText(sql).then(() => {
+                            alert('SQL copied to clipboard!');
+                        });
+                    }
+                </script>
+            <?php endif; ?>
+
+            <?php if (!$customers_branch_column_exists): ?>
+                <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    <i class="bi bi-info-circle"></i> 
+                    <strong>Branch filtering for customers not yet set up.</strong> Please run this SQL in phpMyAdmin to enable branch-specific customer data:
+                    <br><br>
+                    <code>ALTER TABLE customers ADD COLUMN branch_id INT NULL;</code>
+                    <br>
+                    <code>ALTER TABLE customers ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
+                    <br><br>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="copyCustomersSQL()">
+                        <i class="bi bi-files"></i> Copy SQL
+                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+                <script>
+                    function copyCustomersSQL() {
+                        const sql = "ALTER TABLE customers ADD COLUMN branch_id INT NULL;\nALTER TABLE customers ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+                        navigator.clipboard.writeText(sql).then(() => {
+                            alert('SQL copied to clipboard!');
+                        });
+                    }
+                </script>
+            <?php endif; ?>
 
             <!-- Statistics Cards - gaya ng customer.php - No Print -->
             <div class="row g-3 mb-4 no-print">
@@ -313,6 +465,9 @@ $stats = $stats_result->fetch_assoc();
                         <div>
                             <div class="stat-value"><?php echo $stats['total_orders'] ?? 0; ?></div>
                             <div class="stat-label">Total Orders</div>
+                            <?php if ($branch_column_exists && !$view_all_branches): ?>
+                                <small class="text-white-50">Your Branch</small>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
@@ -359,6 +514,7 @@ $stats = $stats_result->fetch_assoc();
                 <div class="card-body">
                     <div class="row g-3">
                         <div class="col-md-3">
+                            <label class="form-label fw-bold">Status Filter</label>
                             <select class="form-select" id="statusFilter">
                                 <option value="all" <?php echo (!isset($_GET['status']) || $_GET['status'] === 'all') ? 'selected' : ''; ?>>All Status</option>
                                 <option value="pending" <?php echo (isset($_GET['status']) && $_GET['status'] === 'pending') ? 'selected' : ''; ?>>Pending</option>
@@ -369,12 +525,18 @@ $stats = $stats_result->fetch_assoc();
                             </select>
                         </div>
                         <div class="col-md-3">
-                            <input type="date" class="form-control" name="start_date" id="startDate" 
+                            <label class="form-label fw-bold">Start Date</label>
+                            <input type="date" class="form-control" id="startDate" 
                                    value="<?php echo isset($_GET['start_date']) ? $_GET['start_date'] : ''; ?>">
                         </div>
                         <div class="col-md-3">
-                            <input type="date" class="form-control" name="end_date" id="endDate" 
+                            <label class="form-label fw-bold">End Date</label>
+                            <input type="date" class="form-control" id="endDate" 
                                    value="<?php echo isset($_GET['end_date']) ? $_GET['end_date'] : ''; ?>">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label fw-bold">Search</label>
+                            <input type="text" class="form-control" id="searchInput" placeholder="Order # or Customer...">
                         </div>
                     </div>
                 </div>
@@ -398,11 +560,14 @@ $stats = $stats_result->fetch_assoc();
                 <div class="card-body">
                     <div class="table-responsive">
                         <table class="table table-hover mb-0" id="ordersTable">
-                            <thead>
+                            <thead class="table-light">
                                 <tr>
                                     <th>Order #</th>
                                     <th>Date</th>
                                     <th>Customer</th>
+                                    <?php if ($branch_column_exists && $view_all_branches): ?>
+                                        <th>Branch</th>
+                                    <?php endif; ?>
                                     <th>Items</th>
                                     <th>Total Amount</th>
                                     <th>Status</th>
@@ -412,20 +577,30 @@ $stats = $stats_result->fetch_assoc();
                             <tbody>
                                 <?php if (empty($orders)): ?>
                                     <tr>
-                                        <td colspan="7" class="text-center text-muted py-4">
+                                        <td colspan="<?php echo ($branch_column_exists && $view_all_branches) ? '8' : '7'; ?>" class="text-center text-muted py-4">
                                             <i class="bi bi-inbox" style="font-size: 2rem;"></i><br>
                                             No orders found
+                                            <?php if ($branch_column_exists && !$view_all_branches): ?>
+                                                <br><small>No orders for your branch yet</small>
+                                            <?php endif; ?>
                                         </td>
                                     </tr>
                                 <?php else: ?>
                                     <?php foreach ($orders as $order): ?>
                                         <tr>
-                                            <td><span class="badge bg-light"><?php echo htmlspecialchars($order['so_number']); ?></span></td>
+                                            <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($order['so_number']); ?></span></td>
                                             <td>
                                                 <?php echo date('M d, Y', strtotime($order['order_date'])); ?><br>
                                                 <small class="text-muted"><?php echo date('h:i A', strtotime($order['order_date'])); ?></small>
                                             </td>
-                                            <td><?php echo htmlspecialchars($order['customer_name']); ?></td>
+                                            <td><?php echo htmlspecialchars($order['customer_name'] ?? 'Walk-in Customer'); ?></td>
+                                            <?php if ($branch_column_exists && $view_all_branches): ?>
+                                                <td>
+                                                    <span class="badge bg-info">
+                                                        <?php echo htmlspecialchars($order['branch_name'] ?? 'Branch ' . $order['branch_id']); ?>
+                                                    </span>
+                                                </td>
+                                            <?php endif; ?>
                                             <td><span class="badge bg-info"><?php echo $order['item_count']; ?> items</span></td>
                                             <td><strong>₱<?php echo number_format($order['total_amount'], 2); ?></strong></td>
                                             <td>
@@ -499,18 +674,15 @@ $stats = $stats_result->fetch_assoc();
     <!-- DataTables -->
     <script type="text/javascript" src="https://cdn.datatables.net/1.11.5/js/jquery.dataTables.min.js"></script>
     <script type="text/javascript" src="https://cdn.datatables.net/1.11.5/js/dataTables.bootstrap5.min.js"></script>
- <script>
+    <script>
         // ================= SIDEBAR FUNCTIONS =================
-        // Toggle sidebar collapse/expand
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
             const isMobile = window.innerWidth <= 992;
             
             if (isMobile) {
-                // On mobile, toggle active state
                 sidebar.classList.toggle('active');
                 
-                // Create overlay for mobile
                 if (!document.querySelector('.sidebar-overlay')) {
                     const overlay = document.createElement('div');
                     overlay.className = 'sidebar-overlay';
@@ -524,7 +696,6 @@ $stats = $stats_result->fetch_assoc();
                         overlay.classList.add('active');
                     }, 10);
                 } else {
-                    // If overlay exists, toggle its active state
                     const overlay = document.querySelector('.sidebar-overlay');
                     overlay.classList.toggle('active');
                     if (!sidebar.classList.contains('active')) {
@@ -536,18 +707,13 @@ $stats = $stats_result->fetch_assoc();
                     }
                 }
             } else {
-                // On desktop, toggle between expanded and collapsed
                 sidebar.classList.toggle('collapsed');
-                
-                // Store preference in localStorage
                 localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
                 
-                // Show/hide nav text
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = sidebar.classList.contains('collapsed') ? 'none' : 'inline-block';
                 });
                 
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = sidebar.classList.contains('collapsed') ? '80px' : '250px';
@@ -555,7 +721,6 @@ $stats = $stats_result->fetch_assoc();
             }
         }
 
-        // Close mobile sidebar
         function closeMobileSidebar() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.querySelector('.sidebar-overlay');
@@ -572,11 +737,9 @@ $stats = $stats_result->fetch_assoc();
             }
         }
 
-        // Initialize sidebar when page loads
         function initializeSidebar() {
             const sidebar = document.getElementById('sidebar');
             
-            // Load saved preference from localStorage for desktop
             if (window.innerWidth > 992) {
                 const savedCollapsed = localStorage.getItem('sidebarCollapsed');
                 if (savedCollapsed === 'true') {
@@ -585,7 +748,6 @@ $stats = $stats_result->fetch_assoc();
                         text.style.display = 'none';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '80px';
@@ -596,21 +758,18 @@ $stats = $stats_result->fetch_assoc();
                         text.style.display = 'inline-block';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '250px';
                     }
                 }
             } else {
-                // On mobile, always start with closed sidebar
                 sidebar.classList.remove('active');
                 sidebar.classList.remove('collapsed');
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = 'inline-block';
                 });
                 
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = '0';
@@ -618,19 +777,16 @@ $stats = $stats_result->fetch_assoc();
             }
         }
 
-        // Handle window resize for sidebar
         function handleSidebarResize() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.querySelector('.sidebar-overlay');
             
             if (window.innerWidth > 992) {
-                // Desktop mode - remove mobile overlay
                 if (overlay) {
                     overlay.remove();
                 }
                 sidebar.classList.remove('active');
                 
-                // Load saved preference
                 const savedCollapsed = localStorage.getItem('sidebarCollapsed');
                 if (savedCollapsed === 'true') {
                     sidebar.classList.add('collapsed');
@@ -638,7 +794,6 @@ $stats = $stats_result->fetch_assoc();
                         text.style.display = 'none';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '80px';
@@ -649,20 +804,17 @@ $stats = $stats_result->fetch_assoc();
                         text.style.display = 'inline-block';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '250px';
                     }
                 }
             } else {
-                // Mobile mode - always show expanded when visible
                 sidebar.classList.remove('collapsed');
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = 'inline-block';
                 });
                 
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = '0';
@@ -671,17 +823,25 @@ $stats = $stats_result->fetch_assoc();
         }
         // ================= END SIDEBAR FUNCTIONS =================
 
+        // Branch context variables
+        const branchId = <?php echo $branch_id; ?>;
+        const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
+        const branchColumnExists = <?php echo $branch_column_exists ? 'true' : 'false'; ?>;
+
         // Global variables
         let currentOrderId = null;
 
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
             console.log("Sales Orders page loaded!");
+            console.log("Branch ID:", branchId);
+            console.log("View All Branches:", viewAllBranches);
+            console.log("Branch Column Exists:", branchColumnExists);
             
             // Initialize sidebar
             initializeSidebar();
             
-            // Setup mobile toggle button - support multiple button IDs
+            // Setup mobile toggle buttons
             const mobileToggleBtn = document.getElementById('mobileToggleBtn');
             if (mobileToggleBtn) {
                 mobileToggleBtn.addEventListener('click', function(e) {
@@ -690,15 +850,6 @@ $stats = $stats_result->fetch_assoc();
                 });
             }
             
-            const mobileMenuBtn = document.getElementById('mobileMenuBtn');
-            if (mobileMenuBtn) {
-                mobileMenuBtn.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    toggleSidebar();
-                });
-            }
-            
-            // Setup desktop toggle button
             const desktopToggleBtn = document.getElementById('desktopToggleBtn');
             if (desktopToggleBtn) {
                 desktopToggleBtn.addEventListener('click', function(e) {
@@ -719,7 +870,7 @@ $stats = $stats_result->fetch_assoc();
             // Close sidebar when clicking outside on mobile
             document.addEventListener('click', function(event) {
                 const sidebar = document.getElementById('sidebar');
-                const mobileBtn = document.getElementById('mobileToggleBtn') || document.getElementById('mobileMenuBtn');
+                const mobileBtn = document.getElementById('mobileToggleBtn');
                 const overlay = document.querySelector('.sidebar-overlay');
                 const isMobile = window.innerWidth <= 992;
                 
@@ -793,7 +944,7 @@ $stats = $stats_result->fetch_assoc();
             const statusFilter = document.getElementById('statusFilter');
             if (statusFilter) {
                 statusFilter.addEventListener('change', function() {
-                    const filter = this.value;
+                    const filter = this.value.toLowerCase();
                     const rows = document.querySelectorAll('#ordersTable tbody tr');
                     
                     rows.forEach(row => {
@@ -803,7 +954,7 @@ $stats = $stats_result->fetch_assoc();
                                 return;
                             }
                             
-                            const statusCell = row.cells[5];
+                            const statusCell = row.cells[branchColumnExists && viewAllBranches ? 6 : 5];
                             const statusText = statusCell.textContent.toLowerCase().trim();
                             row.style.display = statusText.includes(filter) ? '' : 'none';
                         }
@@ -916,6 +1067,12 @@ $stats = $stats_result->fetch_assoc();
                                         <label class="form-label text-muted small mb-1">Order Date</label>
                                         <p class="mb-0">${new Date(order.order_date).toLocaleString()}</p>
                                     </div>
+                                    ${order.branch_name ? `
+                                    <div class="mb-3">
+                                        <label class="form-label text-muted small mb-1">Branch</label>
+                                        <p class="mb-0"><span class="badge bg-info">${order.branch_name}</span></p>
+                                    </div>
+                                    ` : ''}
                                 </div>
                                 <div class="col-md-6">
                                     <div class="mb-3">
@@ -961,13 +1118,6 @@ $stats = $stats_result->fetch_assoc();
                                     </tbody>
                                 </table>
                             </div>
-                            
-                            ${order.notes ? `
-                            <h6 class="border-bottom pb-2">Order Notes</h6>
-                            <div class="alert alert-info">
-                                <i class="bi bi-info-circle"></i> ${order.notes}
-                            </div>
-                            ` : ''}
                         `;
                     }
                     
@@ -1007,8 +1157,15 @@ $stats = $stats_result->fetch_assoc();
             // Show loading indicator
             const printBtn = event ? event.target.closest('button') : null;
             if (printBtn) {
+                const originalHTML = printBtn.innerHTML;
                 printBtn.innerHTML = '<i class="bi bi-printer"></i> Printing...';
                 printBtn.disabled = true;
+                
+                // Restore button after timeout
+                setTimeout(() => {
+                    printBtn.innerHTML = originalHTML;
+                    printBtn.disabled = false;
+                }, 3000);
             }
             
             // Get order details
@@ -1057,20 +1214,10 @@ $stats = $stats_result->fetch_assoc();
                 } else {
                     alert('Error loading order details: ' + data.message);
                 }
-                
-                // Restore button
-                if (printBtn) {
-                    printBtn.innerHTML = '<i class="bi bi-printer"></i>';
-                    printBtn.disabled = false;
-                }
             })
             .catch(error => {
                 console.error('Error:', error);
                 alert('Network error: ' + error.message);
-                if (printBtn) {
-                    printBtn.innerHTML = '<i class="bi bi-printer"></i>';
-                    printBtn.disabled = false;
-                }
             });
         }
         
@@ -1096,6 +1243,11 @@ $stats = $stats_result->fetch_assoc();
                 const originalText = printBtn.innerHTML;
                 printBtn.innerHTML = '<i class="bi bi-printer"></i> Printing...';
                 printBtn.disabled = true;
+                
+                setTimeout(() => {
+                    printBtn.innerHTML = originalText;
+                    printBtn.disabled = false;
+                }, 3000);
             }
             
             // Create iframe for printing - PARA HINDI LUMIPAT NG PAGE
@@ -1124,15 +1276,11 @@ $stats = $stats_result->fetch_assoc();
                 // Remove iframe after print
                 setTimeout(() => {
                     document.body.removeChild(iframe);
-                    if (printBtn) {
-                        printBtn.innerHTML = '<i class="bi bi-printer"></i> Print All Orders';
-                        printBtn.disabled = false;
-                    }
                 }, 100);
             }, 250);
         }
         
-        // Generate HTML for single order - GAYA NG NASA PICTURE
+        // Generate HTML for single order
         function generateSingleOrderHTML(order, items) {
             let itemsHtml = '';
             let totalAmount = 0;
@@ -1245,6 +1393,10 @@ $stats = $stats_result->fetch_assoc();
                             border-top: 1px solid #000;
                             padding-top: 10px;
                         }
+                        .branch-info {
+                            margin-top: 10px;
+                            font-size: 11px;
+                        }
                     </style>
                 </head>
                 <body>
@@ -1253,6 +1405,7 @@ $stats = $stats_result->fetch_assoc();
                             <div class="company-name">AMGC</div>
                             <div class="order-title">SALES ORDER</div>
                             <div style="margin-top: 5px; font-size: 11px;">${order.so_number}</div>
+                            ${order.branch_name ? `<div class="branch-info">Branch: ${order.branch_name}</div>` : ''}
                         </div>
                         
                         <div style="margin-bottom: 20px; display: flex; justify-content: space-between;">
@@ -1294,7 +1447,7 @@ $stats = $stats_result->fetch_assoc();
                         
                         <div class="footer">
                             <div>Printed on: ${new Date().toLocaleString()}</div>
-                            <div style="margin-top: 5px;">Prepared by: ${document.querySelector('#userName')?.textContent || 'Sales Staff'}</div>
+                            <div style="margin-top: 5px;">Prepared by: ${document.querySelector('.user-name-sidebar')?.textContent || 'Sales Staff'}</div>
                         </div>
                     </div>
                 </body>
@@ -1302,36 +1455,56 @@ $stats = $stats_result->fetch_assoc();
             `;
         }
         
-        // Generate HTML for all orders - GAYA NG NASA PICTURE
+        // Generate HTML for all orders
         function generateAllOrdersHTML(rows) {
             let tableRows = '';
             let totalAmount = 0;
             
             rows.forEach(row => {
                 const cells = row.querySelectorAll('td');
+                const hasBranchColumn = branchColumnExists && viewAllBranches;
+                const colOffset = hasBranchColumn ? 1 : 0;
+                
                 if (cells.length >= 6) {
                     const orderNumber = cells[0].textContent.trim();
                     const date = cells[1].textContent.trim().replace(/\n/g, ' ');
                     const customer = cells[2].textContent.trim();
-                    const items = cells[3].textContent.trim();
-                    const amount = cells[4].textContent.trim();
-                    const status = cells[5].textContent.trim();
+                    
+                    let branch = '';
+                    let items = '';
+                    let amount = '';
+                    let status = '';
+                    
+                    if (hasBranchColumn) {
+                        branch = cells[3].textContent.trim();
+                        items = cells[4].textContent.trim();
+                        amount = cells[5].textContent.trim();
+                        status = cells[6].textContent.trim();
+                    } else {
+                        items = cells[3].textContent.trim();
+                        amount = cells[4].textContent.trim();
+                        status = cells[5].textContent.trim();
+                    }
                     
                     const amountValue = parseFloat(amount.replace('₱', '').replace(',', '')) || 0;
                     totalAmount += amountValue;
                     
-                    tableRows += `
-                        <tr>
-                            <td style="padding: 6px; border: 1px solid #000;">${orderNumber}</td>
-                            <td style="padding: 6px; border: 1px solid #000;">${date}</td>
-                            <td style="padding: 6px; border: 1px solid #000;">${customer}</td>
-                            <td style="padding: 6px; border: 1px solid #000; text-align: center;">${items}</td>
-                            <td style="padding: 6px; border: 1px solid #000; text-align: right;">${amount}</td>
-                            <td style="padding: 6px; border: 1px solid #000;">${status}</td>
-                        </tr>
-                    `;
+                    tableRows += '<tr>';
+                    tableRows += `<td style="padding: 6px; border: 1px solid #000;">${orderNumber}</td>`;
+                    tableRows += `<td style="padding: 6px; border: 1px solid #000;">${date}</td>`;
+                    tableRows += `<td style="padding: 6px; border: 1px solid #000;">${customer}</td>`;
+                    if (hasBranchColumn) {
+                        tableRows += `<td style="padding: 6px; border: 1px solid #000;">${branch}</td>`;
+                    }
+                    tableRows += `<td style="padding: 6px; border: 1px solid #000; text-align: center;">${items}</td>`;
+                    tableRows += `<td style="padding: 6px; border: 1px solid #000; text-align: right;">${amount}</td>`;
+                    tableRows += `<td style="padding: 6px; border: 1px solid #000;">${status}</td>`;
+                    tableRows += '</tr>';
                 }
             });
+            
+            const columnCount = branchColumnExists && viewAllBranches ? 7 : 6;
+            const totalColspan = branchColumnExists && viewAllBranches ? 5 : 4;
             
             return `
                 <!DOCTYPE html>
@@ -1413,6 +1586,7 @@ $stats = $stats_result->fetch_assoc();
                         <div class="header">
                             <div class="company-name">AMGC</div>
                             <div class="report-title">SALES ORDERS REPORT</div>
+                            ${!viewAllBranches && branchId > 0 ? `<div style="margin-top: 5px;">Branch ID: ${branchId}</div>` : ''}
                         </div>
                         
                         <div class="summary">
@@ -1428,6 +1602,7 @@ $stats = $stats_result->fetch_assoc();
                                     <th>Order #</th>
                                     <th>Date</th>
                                     <th>Customer</th>
+                                    ${branchColumnExists && viewAllBranches ? '<th>Branch</th>' : ''}
                                     <th style="text-align: center;">Items</th>
                                     <th style="text-align: right;">Total Amount</th>
                                     <th>Status</th>
@@ -1436,7 +1611,7 @@ $stats = $stats_result->fetch_assoc();
                             <tbody>
                                 ${tableRows}
                                 <tr class="total-row">
-                                    <td colspan="4" style="text-align: right;"><strong>GRAND TOTAL</strong></td>
+                                    <td colspan="${totalColspan}" style="text-align: right;"><strong>GRAND TOTAL</strong></td>
                                     <td style="text-align: right;"><strong>₱${totalAmount.toFixed(2)}</strong></td>
                                     <td></td>
                                 </tr>
@@ -1445,7 +1620,7 @@ $stats = $stats_result->fetch_assoc();
                         
                         <div class="footer">
                             <div>Printed on: ${new Date().toLocaleString()}</div>
-                            <div style="margin-top: 5px;">Prepared by: ${document.querySelector('#userName')?.textContent || 'Sales Staff'}</div>
+                            <div style="margin-top: 5px;">Prepared by: ${document.querySelector('.user-name-sidebar')?.textContent || 'Sales Staff'}</div>
                         </div>
                     </div>
                 </body>
@@ -1494,18 +1669,19 @@ $stats = $stats_result->fetch_assoc();
                 <body>
                     <table border="1">
                         <tr>
-                            <td colspan="6" style="font-size: 20px; font-weight: bold; text-align: center; background: #4e73df; color: white;">
+                            <td colspan="${branchColumnExists && viewAllBranches ? '8' : '7'}" style="font-size: 20px; font-weight: bold; text-align: center; background: #4e73df; color: white;">
                                 SALES ORDERS REPORT
                             </td>
                         </tr>
                         <tr>
-                            <td colspan="6" style="text-align: center;">
+                            <td colspan="${branchColumnExists && viewAllBranches ? '8' : '7'}" style="text-align: center;">
                                 Export Date: ${new Date().toLocaleString()}
                             </td>
                         </tr>
                         <tr>
-                            <td colspan="6" style="text-align: center;">
+                            <td colspan="${branchColumnExists && viewAllBranches ? '8' : '7'}" style="text-align: center;">
                                 Total Orders: ${visibleRows.length} | Total Amount: ₱${calculateTotalAmount(visibleRows).toFixed(2)}
+                                ${!viewAllBranches && branchId > 0 ? ` | Branch: ${branchId}` : ''}
                             </td>
                         </tr>
                         <tr></tr>
@@ -1513,6 +1689,7 @@ $stats = $stats_result->fetch_assoc();
                             <th>Order #</th>
                             <th>Date</th>
                             <th>Customer</th>
+                            ${branchColumnExists && viewAllBranches ? '<th>Branch</th>' : ''}
                             <th>Items</th>
                             <th>Total Amount</th>
                             <th>Status</th>
@@ -1521,21 +1698,33 @@ $stats = $stats_result->fetch_assoc();
             
             visibleRows.forEach(row => {
                 const cells = row.querySelectorAll('td');
-                if (cells.length >= 6) {
-                    excelContent += '<tr>';
-                    for (let i = 0; i < 6; i++) {
-                        let value = cells[i].textContent.trim();
-                        excelContent += `<td>${value}</td>`;
-                    }
-                    excelContent += '</tr>';
+                const hasBranchColumn = branchColumnExists && viewAllBranches;
+                
+                excelContent += '<tr>';
+                excelContent += `<td>${cells[0].textContent.trim()}</td>`;
+                excelContent += `<td>${cells[1].textContent.trim().replace(/\n/g, ' ')}</td>`;
+                excelContent += `<td>${cells[2].textContent.trim()}</td>`;
+                
+                if (hasBranchColumn) {
+                    excelContent += `<td>${cells[3].textContent.trim()}</td>`;
+                    excelContent += `<td>${cells[4].textContent.trim()}</td>`;
+                    excelContent += `<td>${cells[5].textContent.trim()}</td>`;
+                    excelContent += `<td>${cells[6].textContent.trim()}</td>`;
+                } else {
+                    excelContent += `<td>${cells[3].textContent.trim()}</td>`;
+                    excelContent += `<td>${cells[4].textContent.trim()}</td>`;
+                    excelContent += `<td>${cells[5].textContent.trim()}</td>`;
                 }
+                
+                excelContent += '</tr>';
             });
             
             excelContent += `
                         <tr style="font-weight: bold; background: #f0f0f0;">
-                            <td colspan="4" style="text-align: right;">GRAND TOTAL</td>
+                            <td colspan="${branchColumnExists && viewAllBranches ? '5' : '4'}" style="text-align: right;">GRAND TOTAL</td>
                             <td>₱${calculateTotalAmount(visibleRows).toFixed(2)}</td>
                             <td></td>
+                            ${branchColumnExists && viewAllBranches ? '<td></td>' : ''}
                         </tr>
                     </table>
                 </body>
@@ -1550,7 +1739,8 @@ $stats = $stats_result->fetch_assoc();
             const link = document.createElement('a');
             const url = URL.createObjectURL(blob);
             link.setAttribute('href', url);
-            link.setAttribute('download', 'sales_orders_' + new Date().toISOString().split('T')[0] + '.xls');
+            link.setAttribute('download', 'sales_orders_' + new Date().toISOString().split('T')[0] + 
+                           (!viewAllBranches && branchId > 0 ? '_branch_' + branchId : '') + '.xls');
             link.style.visibility = 'hidden';
             document.body.appendChild(link);
             link.click();
@@ -1563,39 +1753,41 @@ $stats = $stats_result->fetch_assoc();
             let total = 0;
             rows.forEach(row => {
                 const cells = row.querySelectorAll('td');
-                if (cells.length >= 6) {
-                    const amount = cells[4].textContent.trim();
+                const hasBranchColumn = branchColumnExists && viewAllBranches;
+                const amountIndex = hasBranchColumn ? 5 : 4;
+                
+                if (cells.length > amountIndex) {
+                    const amount = cells[amountIndex].textContent.trim();
                     total += parseFloat(amount.replace('₱', '').replace(',', '')) || 0;
                 }
             });
             return total;
         }
 
+        function logout() {
+            window.location.href = '../logout.php';
+        }
+
         // Keyboard shortcuts
         document.addEventListener('keydown', function(e) {
-            // Ctrl + B to toggle sidebar (desktop only)
             if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
                 e.preventDefault();
                 toggleSidebar();
             }
-            // Escape to close sidebar on mobile
             else if (e.key === 'Escape' && window.innerWidth <= 992) {
                 closeMobileSidebar();
             }
-            // Ctrl + F to focus search
-            else if (e.ctrlKey && e.key === 'f') {
+            else if (e.ctrlKey && e.key === 'f' && !e.target.matches('input, textarea')) {
                 e.preventDefault();
                 const searchInput = document.getElementById('searchInput');
                 if (searchInput) {
                     searchInput.focus();
                 }
             }
-            // Ctrl + R to refresh
             else if (e.ctrlKey && e.key === 'r' && !e.target.matches('input, textarea')) {
                 e.preventDefault();
                 refreshOrders();
             }
-            // Ctrl + P to print all
             else if (e.ctrlKey && e.key === 'p' && !e.target.matches('input, textarea')) {
                 e.preventDefault();
                 printAllOrders();

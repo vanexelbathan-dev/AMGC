@@ -6,10 +6,44 @@ require_once '../config/session_handler.php';
 requireLogin();
 requireRole(['sales']);
 
-// Get current user info
-    $user_id = $_SESSION['user_id'];
-    $user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Driver User';
-    $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'delivery';
+// Get current user info and branch context
+$user_id = $_SESSION['user_id'];
+$user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Sales User';
+$user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'sales';
+$branch_id = $_SESSION['branch_id'] ?? 0;
+$view_all_branches = $_SESSION['view_all_branches'] ?? false;
+
+// Get user ID for filtering
+$user_id = getUserId();
+$branch_id = getUserBranchId();
+
+// Check if branch_id column exists in rmr_requests table
+$branch_column_exists = false;
+$check_column = $conn->query("SHOW COLUMNS FROM rmr_requests LIKE 'branch_id'");
+if ($check_column && $check_column->num_rows > 0) {
+    $branch_column_exists = true;
+}
+
+// Check if branch_id column exists in sales_orders table
+$so_branch_column_exists = false;
+$check_so_column = $conn->query("SHOW COLUMNS FROM sales_orders LIKE 'branch_id'");
+if ($check_so_column && $check_so_column->num_rows > 0) {
+    $so_branch_column_exists = true;
+}
+
+// Check if branch_id column exists in customers table
+$customers_branch_column_exists = false;
+$check_customers_column = $conn->query("SHOW COLUMNS FROM customers LIKE 'branch_id'");
+if ($check_customers_column && $check_customers_column->num_rows > 0) {
+    $customers_branch_column_exists = true;
+}
+
+// Check if branch_id column exists in items table
+$items_branch_column_exists = false;
+$check_items_column = $conn->query("SHOW COLUMNS FROM items LIKE 'branch_id'");
+if ($check_items_column && $check_items_column->num_rows > 0) {
+    $items_branch_column_exists = true;
+}
 
 // Handle Add Return
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_return') {
@@ -35,12 +69,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $rmr_number = 'RMR-' . date('Ymd') . '-' . time();
     
     if ($customer_id && $item_id && $return_quantity > 0) {
-        $sql = "INSERT INTO rmr_requests (rmr_number, so_id, customer_id, item_id, return_quantity, return_reason, reason_details, rmr_status)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-        $stmt = $conn->prepare($sql);
-        $reason_details = 'Return via sales interface';
-        
-        $stmt->bind_param('siiiisss', $rmr_number, $so_id, $customer_id, $item_id, $return_quantity, $reason_enum, $reason_details, $status);
+        // Add branch_id to the insert if column exists
+        if ($branch_column_exists) {
+            $sql = "INSERT INTO rmr_requests (rmr_number, so_id, customer_id, item_id, return_quantity, return_reason, reason_details, rmr_status, branch_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            $stmt = $conn->prepare($sql);
+            $reason_details = 'Return via sales interface';
+            $stmt->bind_param('siiiisssi', $rmr_number, $so_id, $customer_id, $item_id, $return_quantity, $reason_enum, $reason_details, $status, $branch_id);
+        } else {
+            $sql = "INSERT INTO rmr_requests (rmr_number, so_id, customer_id, item_id, return_quantity, return_reason, reason_details, rmr_status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+            $stmt = $conn->prepare($sql);
+            $reason_details = 'Return via sales interface';
+            $stmt->bind_param('siiiisss', $rmr_number, $so_id, $customer_id, $item_id, $return_quantity, $reason_enum, $reason_details, $status);
+        }
         
         if ($stmt->execute()) {
             $success = 'Return request added successfully!';
@@ -57,10 +99,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
 // Handle Status Update via AJAX or Form
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_status') {
+    header('Content-Type: application/json');
     $rmr_id = isset($_POST['rmr_id']) ? (int)$_POST['rmr_id'] : 0;
     $new_status = isset($_POST['status']) ? trim($_POST['status']) : '';
     
     if ($rmr_id > 0 && in_array($new_status, ['pending', 'approved', 'rejected', 'processing', 'completed'])) {
+        // Verify return belongs to user's branch (if branch column exists and not admin)
+        if ($branch_column_exists && !$view_all_branches) {
+            $check_sql = "SELECT rmr_id FROM rmr_requests WHERE rmr_id = ? AND branch_id = ?";
+            $check_stmt = $conn->prepare($check_sql);
+            $check_stmt->bind_param('ii', $rmr_id, $branch_id);
+            $check_stmt->execute();
+            $check_result = $check_stmt->get_result();
+            
+            if ($check_result->num_rows === 0) {
+                echo json_encode(['success' => false, 'error' => 'Return request not found or access denied']);
+                exit;
+            }
+        }
+        
         $update_sql = "UPDATE rmr_requests SET rmr_status = ? WHERE rmr_id = ?";
         $update_stmt = $conn->prepare($update_sql);
         $update_stmt->bind_param('si', $new_status, $rmr_id);
@@ -73,15 +130,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             exit();
         }
     }
+    echo json_encode(['success' => false, 'error' => 'Invalid parameters']);
+    exit;
 }
 
 // Handle AJAX request to get SO details with customer info
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['action'] === 'get_so_details') {
+    header('Content-Type: application/json');
     $so_id = isset($_GET['so_id']) ? (int)$_GET['so_id'] : 0;
     
     if ($so_id > 0) {
+        // Verify order belongs to user's branch (if branch column exists and not admin)
+        if ($so_branch_column_exists && !$view_all_branches) {
+            $check_sql = "SELECT so_id FROM sales_orders WHERE so_id = ? AND branch_id = ?";
+            $check_stmt = $conn->prepare($check_sql);
+            $check_stmt->bind_param('ii', $so_id, $branch_id);
+            $check_stmt->execute();
+            $check_result = $check_stmt->get_result();
+            
+            if ($check_result->num_rows === 0) {
+                echo json_encode(['success' => false, 'message' => 'Order not found or access denied']);
+                exit;
+            }
+        }
+        
         // Join with customers table to get customer name
-        $query = "SELECT so.*, c.customer_id, c.customer_name 
+        $query = "SELECT so.*, c.customer_id, c.customer_name, c.branch_id as customer_branch_id
                   FROM sales_orders so
                   JOIN customers c ON so.customer_id = c.customer_id
                   WHERE so.so_id = ?";
@@ -91,67 +165,111 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['act
         $result = $stmt->get_result();
         $order = $result->fetch_assoc();
         
-        // Get order items - Using quantity_ordered column
-        $items_query = "SELECT soi.*, i.item_id, i.item_code, i.item_name, i.unit_price 
-                       FROM sales_order_items soi
-                       JOIN items i ON soi.item_id = i.item_id
-                       WHERE soi.so_id = ?";
-        $items_stmt = $conn->prepare($items_query);
-        $items_stmt->bind_param('i', $so_id);
-        $items_stmt->execute();
-        $items_result = $items_stmt->get_result();
-        $items = [];
-        
-        if ($items_result) {
-            while ($item = $items_result->fetch_assoc()) {
-                // Use quantity_ordered as the column name
-                $ordered_qty = isset($item['quantity_ordered']) ? (int)$item['quantity_ordered'] : 0;
-                
-                $items[] = [
-                    'item_id' => $item['item_id'],
-                    'item_code' => $item['item_code'],
-                    'item_name' => $item['item_name'],
-                    'unit_price' => $item['unit_price'],
-                    'quantity' => $ordered_qty,
-                    'quantity_ordered' => $ordered_qty
-                ];
+        // Get order items - Only show items from the same branch
+        if ($order) {
+            $items_query = "SELECT soi.*, i.item_id, i.item_code, i.item_name, i.unit_price, i.branch_id as item_branch_id
+                           FROM sales_order_items soi
+                           JOIN items i ON soi.item_id = i.item_id
+                           WHERE soi.so_id = ?";
+            
+            // Add branch filter for items if branch column exists and not admin
+            if ($items_branch_column_exists && !$view_all_branches) {
+                $items_query .= " AND i.branch_id = ?";
             }
+            
+            $items_stmt = $conn->prepare($items_query);
+            
+            if ($items_branch_column_exists && !$view_all_branches) {
+                $items_stmt->bind_param('ii', $so_id, $branch_id);
+            } else {
+                $items_stmt->bind_param('i', $so_id);
+            }
+            
+            $items_stmt->execute();
+            $items_result = $items_stmt->get_result();
+            $items = [];
+            
+            if ($items_result) {
+                while ($item = $items_result->fetch_assoc()) {
+                    // Use quantity_ordered as the column name
+                    $ordered_qty = isset($item['quantity_ordered']) ? (int)$item['quantity_ordered'] : 0;
+                    
+                    $items[] = [
+                        'item_id' => $item['item_id'],
+                        'item_code' => $item['item_code'],
+                        'item_name' => $item['item_name'],
+                        'unit_price' => $item['unit_price'],
+                        'quantity' => $ordered_qty,
+                        'quantity_ordered' => $ordered_qty
+                    ];
+                }
+            }
+            
+            echo json_encode([
+                'success' => true,
+                'order' => $order,
+                'items' => $items
+            ]);
+            exit;
         }
-        
-        header('Content-Type: application/json');
-        echo json_encode([
-            'success' => true,
-            'order' => $order,
-            'items' => $items
-        ]);
-        exit;
     }
     
-    header('Content-Type: application/json');
-    echo json_encode(['success' => false, 'message' => 'Invalid SO ID']);
+    echo json_encode(['success' => false, 'message' => 'Invalid SO ID or order not found']);
     exit;
+}
+
+// Build query for returns with branch filtering
+$where_conditions = ["1=1"];
+$params = [];
+$param_types = "";
+
+// Branch filter for rmr_requests
+if ($branch_column_exists) {
+    if ($view_all_branches) {
+        // Admin sees all returns - no filter needed
+    } else {
+        // Regular user sees only their branch returns
+        $where_conditions[] = "rmr.branch_id = ?";
+        $params[] = $branch_id;
+        $param_types .= "i";
+    }
 }
 
 // Get all returns with item price and SO number
 $returns = [];
-$query = "SELECT rmr.*, c.customer_name, i.item_name, i.item_code, i.unit_price, so.so_number
+$query = "SELECT rmr.*, c.customer_name, i.item_name, i.item_code, i.unit_price, so.so_number, so.branch_id as so_branch_id,
+          b.branch_name
           FROM rmr_requests rmr
           JOIN customers c ON rmr.customer_id = c.customer_id
           JOIN items i ON rmr.item_id = i.item_id
           LEFT JOIN sales_orders so ON rmr.so_id = so.so_id
+          LEFT JOIN branches b ON rmr.branch_id = b.branch_id
+          WHERE " . implode(" AND ", $where_conditions) . "
           ORDER BY rmr.created_at DESC";
-$result = $conn->query($query);
+
+if (!empty($params)) {
+    $stmt = $conn->prepare($query);
+    $stmt->bind_param($param_types, ...$params);
+    $stmt->execute();
+    $result = $stmt->get_result();
+} else {
+    $result = $conn->query($query);
+}
+
 if ($result) {
     $returns = $result->fetch_all(MYSQLI_ASSOC);
 }
 
-// Get stats
-$pending = 0;
-$approved = 0;
-$rejected = 0;
-$processing = 0;
-$completed = 0;
-$total_refunds = 0;
+// Get stats with branch filtering
+$stats_where = ["1=1"];
+$stats_params = [];
+$stats_param_types = "";
+
+if ($branch_column_exists && !$view_all_branches) {
+    $stats_where[] = "rmr.branch_id = ?";
+    $stats_params[] = $branch_id;
+    $stats_param_types .= "i";
+}
 
 $stats_query = "SELECT 
                 SUM(CASE WHEN rmr_status = 'pending' THEN 1 ELSE 0 END) as pending,
@@ -160,9 +278,26 @@ $stats_query = "SELECT
                 SUM(CASE WHEN rmr_status = 'processing' THEN 1 ELSE 0 END) as processing,
                 SUM(CASE WHEN rmr_status = 'completed' THEN 1 ELSE 0 END) as completed,
                 COALESCE(SUM(CASE WHEN rmr_status IN ('approved', 'completed') THEN return_quantity * i.unit_price ELSE 0 END), 0) as total_refunds
-                FROM rmr_requests
-                LEFT JOIN items i ON rmr_requests.item_id = i.item_id";
-$stats_result = $conn->query($stats_query);
+                FROM rmr_requests rmr
+                LEFT JOIN items i ON rmr.item_id = i.item_id
+                WHERE " . implode(" AND ", $stats_where);
+
+if (!empty($stats_params)) {
+    $stats_stmt = $conn->prepare($stats_query);
+    $stats_stmt->bind_param($stats_param_types, ...$stats_params);
+    $stats_stmt->execute();
+    $stats_result = $stats_stmt->get_result();
+} else {
+    $stats_result = $conn->query($stats_query);
+}
+
+$pending = 0;
+$approved = 0;
+$rejected = 0;
+$processing = 0;
+$completed = 0;
+$total_refunds = 0;
+
 if ($stats_result) {
     $stats = $stats_result->fetch_assoc();
     $pending = $stats['pending'] ?? 0;
@@ -173,18 +308,71 @@ if ($stats_result) {
     $total_refunds = $stats['total_refunds'] ?? 0;
 }
 
-// Get customers for dropdown (active customers only)
-$customers_result = $conn->query("SELECT customer_id, customer_name FROM customers WHERE status = 'active' ORDER BY customer_name");
-$customers = $customers_result ? $customers_result->fetch_all(MYSQLI_ASSOC) : [];
+// Get customers for dropdown - filter by branch if not admin
+$customers = [];
 
-// Get sales orders with customer names from customers table
-$so_query = "SELECT so.so_id, so.so_number, so.customer_id, so.order_date, so.total_amount, c.customer_name
-             FROM sales_orders so
-             JOIN customers c ON so.customer_id = c.customer_id
-             WHERE order_status != 'cancelled'
-             ORDER BY so.created_at DESC LIMIT 100";
-$so_result = $conn->query($so_query);
-$sales_orders = $so_result ? $so_result->fetch_all(MYSQLI_ASSOC) : [];
+if ($customers_branch_column_exists) {
+    if ($view_all_branches) {
+        $customers_query = "SELECT customer_id, customer_name, branch_id, 
+                           (SELECT branch_name FROM branches WHERE branch_id = customers.branch_id) as branch_name
+                           FROM customers WHERE status = 'active' ORDER BY customer_name";
+    } else {
+        $customers_query = "SELECT customer_id, customer_name FROM customers 
+                           WHERE status = 'active' AND branch_id = ? ORDER BY customer_name";
+        $customers_stmt = $conn->prepare($customers_query);
+        $customers_stmt->bind_param('i', $branch_id);
+        $customers_stmt->execute();
+        $customers_result = $customers_stmt->get_result();
+    }
+} else {
+    $customers_query = "SELECT customer_id, customer_name FROM customers WHERE status = 'active' ORDER BY customer_name";
+}
+
+if (!isset($customers_stmt)) {
+    $customers_result = $conn->query($customers_query);
+}
+
+if ($customers_result) {
+    $customers = $customers_result->fetch_all(MYSQLI_ASSOC);
+}
+
+// Get sales orders with customer names - filter by branch if not admin
+$sales_orders = [];
+
+if ($so_branch_column_exists) {
+    if ($view_all_branches) {
+        $so_query = "SELECT so.so_id, so.so_number, so.customer_id, so.order_date, so.total_amount, so.branch_id,
+                     c.customer_name, b.branch_name
+                     FROM sales_orders so
+                     JOIN customers c ON so.customer_id = c.customer_id
+                     LEFT JOIN branches b ON so.branch_id = b.branch_id
+                     WHERE order_status != 'cancelled'
+                     ORDER BY so.created_at DESC LIMIT 100";
+        $so_result = $conn->query($so_query);
+    } else {
+        $so_query = "SELECT so.so_id, so.so_number, so.customer_id, so.order_date, so.total_amount,
+                     c.customer_name
+                     FROM sales_orders so
+                     JOIN customers c ON so.customer_id = c.customer_id
+                     WHERE order_status != 'cancelled' AND so.branch_id = ?
+                     ORDER BY so.created_at DESC LIMIT 100";
+        $so_stmt = $conn->prepare($so_query);
+        $so_stmt->bind_param('i', $branch_id);
+        $so_stmt->execute();
+        $so_result = $so_stmt->get_result();
+    }
+} else {
+    $so_query = "SELECT so.so_id, so.so_number, so.customer_id, so.order_date, so.total_amount, c.customer_name
+                 FROM sales_orders so
+                 JOIN customers c ON so.customer_id = c.customer_id
+                 WHERE order_status != 'cancelled'
+                 ORDER BY so.created_at DESC LIMIT 100";
+    $so_result = $conn->query($so_query);
+}
+
+if ($so_result) {
+    $sales_orders = $so_result->fetch_all(MYSQLI_ASSOC);
+}
 
 // Check for success message from redirect
 $success = '';
@@ -210,6 +398,67 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <style>
+        .branch-badge {
+            background-color: #e7f1ff;
+            color: #0d6efd;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 5px;
+        }
+        
+        /* Alert for missing branch column */
+        .alert-info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        
+        .alert-info code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 4px;
+            color: #c7254e;
+        }
+        
+        /* Mobile responsive adjustments */
+        @media (max-width: 768px) {
+            .stat-card {
+                padding: 12px;
+                min-height: 85px;
+                margin-bottom: 8px;
+            }
+            
+            .stat-icon {
+                font-size: 2rem;
+                margin-right: 12px;
+            }
+            
+            .stat-value {
+                font-size: 1.5rem;
+            }
+            
+            .stat-label {
+                font-size: 0.8rem;
+            }
+            
+            .row.g-3.mb-4 .col {
+                width: 50%;
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+        }
+        
+        @media (max-width: 576px) {
+            .row.g-3.mb-4 .col {
+                width: 50%;
+                padding-left: 6px;
+                padding-right: 6px;
+            }
+        }
+    </style>
 </head>
 <body>
     <!-- MAIN APPLICATION -->
@@ -217,14 +466,13 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
         <!-- Sidebar -->
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
-               <h3>
-            <!-- Burger icon moved before logo -->
-            <button class="desktop-toggle-btn" id="desktopToggleBtn">
-                <i class="bi bi-list" id="toggleIcon"></i>
-            </button>
-                <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
-                <span class="nav-text">Sales</span>
-        </h3>
+                <h3>
+                    <button class="desktop-toggle-btn" id="desktopToggleBtn">
+                        <i class="bi bi-list" id="toggleIcon"></i>
+                    </button>
+                    <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
+                    <span class="nav-text">Sales</span>
+                </h3>
             </div>
             
             <div class="sidebar-menu">
@@ -261,21 +509,19 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                     </li>
                 </ul>
             </div>
-             <!-- User Profile Section at the bottom of sidebar -->
-        <div class="sidebar-footer">
-            <div class="user-profile-sidebar">
-                <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
-                <div class="user-details-sidebar">
-                    <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-                    <span class="user-role-sidebar"><?php echo htmlspecialchars(ucfirst($user_role)); ?></span>
+            <!-- User Profile Section at the bottom of sidebar -->
+            <div class="sidebar-footer">
+                <div class="user-profile-sidebar">
+                    <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
+                    <div class="user-details-sidebar">
+                        <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
+                    </div>
                 </div>
+                <button class="logout-btn-sidebar" onclick="logout()">
+                    <i class="bi bi-box-arrow-right"></i>
+                    <span class="logout-text">Logout</span>
+                </button>
             </div>
-                
-            <button class="logout-btn-sidebar" onclick="logout()">
-                <i class="bi bi-box-arrow-right"></i>
-                <span class="logout-text">Logout</span>
-            </button>
-        </div>
         </div>
 
         <!-- Main Content Area -->
@@ -291,6 +537,39 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                 </div>
             </div>
 
+            <!-- Branch Info Alerts -->
+            <?php if (!$branch_column_exists): ?>
+                <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    <i class="bi bi-info-circle"></i> 
+                    <strong>Branch filtering for returns not yet set up.</strong> Please run this SQL in phpMyAdmin to enable branch-specific return data:
+                    <br><br>
+                    <code>ALTER TABLE rmr_requests ADD COLUMN branch_id INT NULL;</code>
+                    <br>
+                    <code>ALTER TABLE rmr_requests ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
+                    <br><br>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('rmr')">
+                        <i class="bi bi-files"></i> Copy SQL
+                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
+
+            <?php if (!$so_branch_column_exists): ?>
+                <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    <i class="bi bi-info-circle"></i> 
+                    <strong>Branch filtering for sales orders not yet set up.</strong> Please run this SQL in phpMyAdmin to enable branch-specific order data:
+                    <br><br>
+                    <code>ALTER TABLE sales_orders ADD COLUMN branch_id INT NULL;</code>
+                    <br>
+                    <code>ALTER TABLE sales_orders ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
+                    <br><br>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('sales_orders')">
+                        <i class="bi bi-files"></i> Copy SQL
+                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
+
             <!-- Messages -->
             <?php if (!empty($success)): ?>
                 <div class="alert alert-success alert-dismissible fade show" role="alert">
@@ -305,64 +584,67 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                 </div>
             <?php endif; ?>
 
-          <!-- Return Stats -->
-<div class="row g-3 mb-4">
-    <div class="col">
-        <div class="stat-card pending">
-            <div class="stat-icon">
-                <i class="bi bi-hourglass-split"></i>
+            <!-- Return Stats -->
+            <div class="row g-3 mb-4">
+                <div class="col">
+                    <div class="stat-card pending">
+                        <div class="stat-icon">
+                            <i class="bi bi-hourglass-split"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value"><?php echo $pending; ?></div>
+                            <div class="stat-label">Pending</div>
+                            <?php if ($branch_column_exists && !$view_all_branches): ?>
+                                <small class="text-white-50">Your Branch</small>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="stat-card processing">
+                        <div class="stat-icon">
+                            <i class="bi bi-gear"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value"><?php echo $processing; ?></div>
+                            <div class="stat-label">Processing</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="stat-card complete">
+                        <div class="stat-icon">
+                            <i class="bi bi-check-circle"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value"><?php echo $approved; ?></div>
+                            <div class="stat-label">Approved</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="stat-card complete">
+                        <div class="stat-icon">
+                            <i class="bi bi-check-circle-fill"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value"><?php echo $completed; ?></div>
+                            <div class="stat-label">Completed</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col">
+                    <div class="stat-card sales">
+                        <div class="stat-icon">
+                            <i class="bi bi-x-circle"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value"><?php echo $rejected; ?></div>
+                            <div class="stat-label">Rejected</div>
+                        </div>
+                    </div>
+                </div>
             </div>
-            <div>
-                <div class="stat-value"><?php echo $pending; ?></div>
-                <div class="stat-label">Pending</div>
-            </div>
-        </div>
-    </div>
-    <div class="col">
-        <div class="stat-card processing">
-            <div class="stat-icon">
-                <i class="bi bi-gear"></i>
-            </div>
-            <div>
-                <div class="stat-value"><?php echo $processing; ?></div>
-                <div class="stat-label">Processing</div>
-            </div>
-        </div>
-    </div>
-    <div class="col">
-        <div class="stat-card complete">
-            <div class="stat-icon">
-                <i class="bi bi-check-circle"></i>
-            </div>
-            <div>
-                <div class="stat-value"><?php echo $approved; ?></div>
-                <div class="stat-label">Approved</div>
-            </div>
-        </div>
-    </div>
-    <div class="col">
-        <div class="stat-card complete">
-            <div class="stat-icon">
-                <i class="bi bi-check-circle-fill"></i>
-            </div>
-            <div>
-                <div class="stat-value"><?php echo $completed; ?></div>
-                <div class="stat-label">Completed</div>
-            </div>
-        </div>
-    </div>
-    <div class="col">
-        <div class="stat-card sales">
-            <div class="stat-icon">
-                <i class="bi bi-x-circle"></i>
-            </div>
-            <div>
-                <div class="stat-value"><?php echo $rejected; ?></div>
-                <div class="stat-label">Rejected</div>
-            </div>
-        </div>
-    </div>
-</div>
 
             <!-- Search and Filter with Add Button -->
             <div class="card mb-4">
@@ -404,6 +686,9 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                                 <th>Return ID</th>
                                 <th>SO Number</th>
                                 <th>Customer</th>
+                                <?php if ($branch_column_exists && $view_all_branches): ?>
+                                    <th>Branch</th>
+                                <?php endif; ?>
                                 <th>Product</th>
                                 <th>Qty</th>
                                 <th>Reason</th>
@@ -432,6 +717,13 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                                         <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($return['rmr_number']); ?></span></td>
                                         <td><?php echo htmlspecialchars($return['so_number'] ?? 'N/A'); ?></td>
                                         <td><?php echo htmlspecialchars($return['customer_name']); ?></td>
+                                        <?php if ($branch_column_exists && $view_all_branches): ?>
+                                            <td>
+                                                <span class="badge bg-info">
+                                                    <?php echo htmlspecialchars($return['branch_name'] ?? 'Branch ' . $return['branch_id']); ?>
+                                                </span>
+                                            </td>
+                                        <?php endif; ?>
                                         <td><?php echo htmlspecialchars($return['item_name']); ?></td>
                                         <td><?php echo $return['return_quantity']; ?></td>
                                         <td><?php echo htmlspecialchars($return['return_reason']); ?></td>
@@ -471,7 +763,12 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                                 <?php endforeach; ?>
                             <?php else: ?>
                                 <tr>
-                                    <td colspan="9" class="text-center text-muted py-4">No returns found</td>
+                                    <td colspan="<?php echo ($branch_column_exists && $view_all_branches) ? '10' : '9'; ?>" class="text-center text-muted py-4">
+                                        No returns found
+                                        <?php if ($branch_column_exists && !$view_all_branches): ?>
+                                            <br><small>No returns for your branch yet</small>
+                                        <?php endif; ?>
+                                    </td>
                                 </tr>
                             <?php endif; ?>
                         </tbody>
@@ -493,6 +790,20 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                     <form id="addReturnForm" method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>">
                         <input type="hidden" name="action" value="add_return">
                         
+                        <?php if (!$so_branch_column_exists && !$branch_column_exists): ?>
+                            <div class="alert alert-warning">
+                                <i class="bi bi-exclamation-triangle"></i> 
+                                Branch filtering is not fully set up. You may see orders from all branches.
+                            </div>
+                        <?php endif; ?>
+                        
+                        <?php if ($so_branch_column_exists && !$view_all_branches && count($sales_orders) === 0): ?>
+                            <div class="alert alert-warning">
+                                <i class="bi bi-exclamation-triangle"></i> 
+                                No sales orders found for your branch. You can only create returns for orders from your branch.
+                            </div>
+                        <?php endif; ?>
+                        
                         <!-- Sales Order Selection - Required to Auto Fill -->
                         <div class="mb-4">
                             <label class="form-label fw-bold">Select Sales Order *</label>
@@ -503,7 +814,10 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                                             data-customer-id="<?php echo $order['customer_id']; ?>"
                                             data-customer-name="<?php echo htmlspecialchars($order['customer_name']); ?>"
                                             data-order-date="<?php echo $order['order_date']; ?>"
-                                            data-total="<?php echo $order['total_amount']; ?>">
+                                            data-total="<?php echo $order['total_amount']; ?>"
+                                            <?php if (isset($order['branch_name']) && $view_all_branches): ?>
+                                            data-branch="<?php echo htmlspecialchars($order['branch_name']); ?>"
+                                            <?php endif; ?>>
                                         <?php 
                                         echo htmlspecialchars(
                                             $order['so_number'] . ' - ' . 
@@ -511,11 +825,18 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                                             date('Y-m-d', strtotime($order['order_date'])) . ' - ' .
                                             '₱' . number_format($order['total_amount'], 2)
                                         ); 
+                                        if (isset($order['branch_name']) && $view_all_branches) {
+                                            echo ' [' . htmlspecialchars($order['branch_name']) . ']';
+                                        }
                                         ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
-                            <small class="text-muted">Select a sales order to automatically fill customer and product details</small>
+                            <?php if ($so_branch_column_exists && !$view_all_branches): ?>
+                                <small class="text-muted">Only showing orders from your branch</small>
+                            <?php else: ?>
+                                <small class="text-muted">Select a sales order to automatically fill customer and product details</small>
+                            <?php endif; ?>
                         </div>
 
                         <!-- Order Information Card - Auto-filled from customers table -->
@@ -541,6 +862,9 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                             <select class="form-select" name="item_id" id="item_id" required disabled>
                                 <option value="">-- Select Product from Order --</option>
                             </select>
+                            <?php if ($items_branch_column_exists && !$view_all_branches): ?>
+                                <small class="text-muted">Only showing products from your branch</small>
+                            <?php endif; ?>
                         </div>
 
                         <!-- Quantity and Reason - User Input -->
@@ -589,18 +913,15 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
 
     <!-- JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-<script>
+    <script>
         // ================= SIDEBAR FUNCTIONS =================
-        // Toggle sidebar collapse/expand
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
             const isMobile = window.innerWidth <= 992;
             
             if (isMobile) {
-                // On mobile, toggle active state
                 sidebar.classList.toggle('active');
                 
-                // Create overlay for mobile
                 if (!document.querySelector('.sidebar-overlay')) {
                     const overlay = document.createElement('div');
                     overlay.className = 'sidebar-overlay';
@@ -614,7 +935,6 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                         overlay.classList.add('active');
                     }, 10);
                 } else {
-                    // If overlay exists, toggle its active state
                     const overlay = document.querySelector('.sidebar-overlay');
                     overlay.classList.toggle('active');
                     if (!sidebar.classList.contains('active')) {
@@ -626,18 +946,13 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                     }
                 }
             } else {
-                // On desktop, toggle between expanded and collapsed
                 sidebar.classList.toggle('collapsed');
-                
-                // Store preference in localStorage
                 localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
                 
-                // Show/hide nav text
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = sidebar.classList.contains('collapsed') ? 'none' : 'inline-block';
                 });
                 
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = sidebar.classList.contains('collapsed') ? '80px' : '250px';
@@ -645,7 +960,6 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
             }
         }
 
-        // Close mobile sidebar
         function closeMobileSidebar() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.querySelector('.sidebar-overlay');
@@ -662,11 +976,9 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
             }
         }
 
-        // Initialize sidebar when page loads
         function initializeSidebar() {
             const sidebar = document.getElementById('sidebar');
             
-            // Load saved preference from localStorage for desktop
             if (window.innerWidth > 992) {
                 const savedCollapsed = localStorage.getItem('sidebarCollapsed');
                 if (savedCollapsed === 'true') {
@@ -675,7 +987,6 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                         text.style.display = 'none';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '80px';
@@ -686,21 +997,18 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                         text.style.display = 'inline-block';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '250px';
                     }
                 }
             } else {
-                // On mobile, always start with closed sidebar
                 sidebar.classList.remove('active');
                 sidebar.classList.remove('collapsed');
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = 'inline-block';
                 });
                 
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = '0';
@@ -708,19 +1016,16 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
             }
         }
 
-        // Handle window resize for sidebar
         function handleSidebarResize() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.querySelector('.sidebar-overlay');
             
             if (window.innerWidth > 992) {
-                // Desktop mode - remove mobile overlay
                 if (overlay) {
                     overlay.remove();
                 }
                 sidebar.classList.remove('active');
                 
-                // Load saved preference
                 const savedCollapsed = localStorage.getItem('sidebarCollapsed');
                 if (savedCollapsed === 'true') {
                     sidebar.classList.add('collapsed');
@@ -728,7 +1033,6 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                         text.style.display = 'none';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '80px';
@@ -739,20 +1043,17 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                         text.style.display = 'inline-block';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '250px';
                     }
                 }
             } else {
-                // Mobile mode - always show expanded when visible
                 sidebar.classList.remove('collapsed');
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = 'inline-block';
                 });
                 
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = '0';
@@ -761,14 +1062,25 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
         }
         // ================= END SIDEBAR FUNCTIONS =================
 
+        // Branch context variables
+        const branchId = <?php echo $branch_id; ?>;
+        const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
+        const branchColumnExists = <?php echo $branch_column_exists ? 'true' : 'false'; ?>;
+        const soBranchColumnExists = <?php echo $so_branch_column_exists ? 'true' : 'false'; ?>;
+        const itemsBranchColumnExists = <?php echo $items_branch_column_exists ? 'true' : 'false'; ?>;
+        const customersBranchColumnExists = <?php echo $customers_branch_column_exists ? 'true' : 'false'; ?>;
+
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
             console.log("Returns Management page loaded!");
+            console.log("Branch ID:", branchId);
+            console.log("View All Branches:", viewAllBranches);
+            console.log("Branch Column Exists:", branchColumnExists);
             
             // Initialize sidebar
             initializeSidebar();
             
-            // Setup mobile toggle button - support multiple button IDs
+            // Setup mobile toggle button
             const mobileToggleBtn = document.getElementById('mobileToggleBtn');
             if (mobileToggleBtn) {
                 mobileToggleBtn.addEventListener('click', function(e) {
@@ -777,15 +1089,6 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                 });
             }
             
-            const mobileMenuBtn = document.getElementById('mobileMenuBtn');
-            if (mobileMenuBtn) {
-                mobileMenuBtn.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    toggleSidebar();
-                });
-            }
-            
-            // Setup desktop toggle button
             const desktopToggleBtn = document.getElementById('desktopToggleBtn');
             if (desktopToggleBtn) {
                 desktopToggleBtn.addEventListener('click', function(e) {
@@ -806,7 +1109,7 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
             // Close sidebar when clicking outside on mobile
             document.addEventListener('click', function(event) {
                 const sidebar = document.getElementById('sidebar');
-                const mobileBtn = document.getElementById('mobileToggleBtn') || document.getElementById('mobileMenuBtn');
+                const mobileBtn = document.getElementById('mobileToggleBtn');
                 const overlay = document.querySelector('.sidebar-overlay');
                 const isMobile = window.innerWidth <= 992;
                 
@@ -1011,7 +1314,8 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                     
                     rows.forEach(row => {
                         if (row.cells.length > 1) {
-                            const status = row.cells[7]?.textContent.toLowerCase() || '';
+                            const statusIndex = branchColumnExists && viewAllBranches ? 8 : 7;
+                            const status = row.cells[statusIndex]?.textContent.toLowerCase() || '';
                             row.style.display = (filter === '' || status.includes(filter)) ? '' : 'none';
                         }
                     });
@@ -1111,7 +1415,7 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
             if (submitReturnBtn) submitReturnBtn.disabled = true;
         }
 
-        // Update return status - Kept for AJAX functionality but not used in UI
+        // Update return status
         function updateStatus(rmrId, newStatus) {
             if (confirm('Are you sure you want to update this return status to ' + newStatus + '?')) {
                 const formData = new FormData();
@@ -1138,34 +1442,51 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
             }
         }
 
+        // Copy SQL for database setup
+        function copySQL(table) {
+            let sql = '';
+            if (table === 'rmr') {
+                sql = "ALTER TABLE rmr_requests ADD COLUMN branch_id INT NULL;\nALTER TABLE rmr_requests ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+            } else if (table === 'sales_orders') {
+                sql = "ALTER TABLE sales_orders ADD COLUMN branch_id INT NULL;\nALTER TABLE sales_orders ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+            } else if (table === 'customers') {
+                sql = "ALTER TABLE customers ADD COLUMN branch_id INT NULL;\nALTER TABLE customers ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+            } else if (table === 'items') {
+                sql = "ALTER TABLE items ADD COLUMN branch_id INT NULL;\nALTER TABLE items ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+            }
+            
+            navigator.clipboard.writeText(sql).then(() => {
+                alert('SQL copied to clipboard!');
+            });
+        }
+
+        function logout() {
+            window.location.href = '../logout.php';
+        }
+
         // Keyboard shortcuts
         document.addEventListener('keydown', function(e) {
-            // Ctrl + B to toggle sidebar (desktop only)
             if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
                 e.preventDefault();
                 toggleSidebar();
             }
-            // Escape to close sidebar on mobile
             else if (e.key === 'Escape' && window.innerWidth <= 992) {
                 closeMobileSidebar();
             }
-            // Ctrl + F to focus search
-            else if (e.ctrlKey && e.key === 'f') {
+            else if (e.ctrlKey && e.key === 'f' && !e.target.matches('input, textarea')) {
                 e.preventDefault();
                 const searchInput = document.getElementById('searchInput');
                 if (searchInput) {
                     searchInput.focus();
                 }
             }
-            // Ctrl + N to add new return
-            else if (e.ctrlKey && e.key === 'n') {
+            else if (e.ctrlKey && e.key === 'n' && !e.target.matches('input, textarea')) {
                 e.preventDefault();
                 const addButton = document.querySelector('[data-bs-target="#addReturnModal"]');
                 if (addButton) {
                     addButton.click();
                 }
             }
-            // Ctrl + R to reset form
             else if (e.ctrlKey && e.key === 'r' && !e.target.matches('input, textarea')) {
                 e.preventDefault();
                 const soSelect = document.getElementById('so_id');

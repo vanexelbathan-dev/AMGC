@@ -6,29 +6,98 @@ require_once '../config/session_handler.php';
 requireLogin();
 requireRole(['sales']);
 
-// Get current user info
-    $user_id = $_SESSION['user_id'];
-    $user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Driver User';
-    $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'delivery';
+// Get current user info and branch context
+$user_id = $_SESSION['user_id'];
+$user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Sales User';
+$user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'sales';
+$branch_id = $_SESSION['branch_id'] ?? 0;
+$view_all_branches = $_SESSION['view_all_branches'] ?? false;
 
-// Get all items with available stock from items table
-$items_result = $conn->query("SELECT i.item_id, i.item_code, i.item_name, i.description, i.category, 
-                              i.stock, i.unit_type, i.unit_price, i.reorder_level, i.status
-                              FROM items i
-                              WHERE i.status = 'active'
-                              ORDER BY i.item_code ASC");
+// Check if branch_id column exists in customers table
+$branch_column_exists = false;
+$check_column = $conn->query("SHOW COLUMNS FROM customers LIKE 'branch_id'");
+if ($check_column && $check_column->num_rows > 0) {
+    $branch_column_exists = true;
+}
+
+// Check if branch_id column exists in items table
+$items_branch_column_exists = false;
+$check_items_column = $conn->query("SHOW COLUMNS FROM items LIKE 'branch_id'");
+if ($check_items_column && $check_items_column->num_rows > 0) {
+    $items_branch_column_exists = true;
+}
+
+// Get all items with available stock - filter by branch if not admin AND if branch_id column exists
 $items = [];
+
+if ($items_branch_column_exists) {
+    // Branch column exists - apply filtering
+    if ($view_all_branches) {
+        // Admin sees all branches
+        $items_query = "SELECT i.item_id, i.item_code, i.item_name, i.description, i.category, 
+                       i.stock, i.unit_type, i.unit_price, i.reorder_level, i.status,
+                       b.branch_name
+                       FROM items i
+                       LEFT JOIN branches b ON i.branch_id = b.branch_id
+                       WHERE i.status = 'active'
+                       ORDER BY i.item_code ASC";
+    } else {
+        // Regular user sees only their branch
+        $items_query = "SELECT i.item_id, i.item_code, i.item_name, i.description, i.category, 
+                       i.stock, i.unit_type, i.unit_price, i.reorder_level, i.status,
+                       b.branch_name
+                       FROM items i
+                       LEFT JOIN branches b ON i.branch_id = b.branch_id
+                       WHERE i.status = 'active' AND i.branch_id = $branch_id
+                       ORDER BY i.item_code ASC";
+    }
+} else {
+    // Branch column doesn't exist - show all items
+    $items_query = "SELECT i.item_id, i.item_code, i.item_name, i.description, i.category, 
+                   i.stock, i.unit_type, i.unit_price, i.reorder_level, i.status
+                   FROM items i
+                   WHERE i.status = 'active'
+                   ORDER BY i.item_code ASC";
+}
+
+$items_result = $conn->query($items_query);
 if ($items_result) {
     $items = $items_result->fetch_all(MYSQLI_ASSOC);
 }
 
-// Get all customers for dropdown
-$customers_result = $conn->query("SELECT customer_id, customer_name, email, phone_number, address FROM customers WHERE status = 'active' ORDER BY customer_name ASC");
+// Get all customers - filter by branch if not admin AND if branch_id column exists
 $customers = [];
+
+if ($branch_column_exists) {
+    // Branch column exists - apply filtering
+    if ($view_all_branches) {
+        // Admin sees all customers
+        $customers_query = "SELECT c.customer_id, c.customer_name, c.email, c.phone_number, c.address, c.city,
+                           b.branch_name
+                           FROM customers c
+                           LEFT JOIN branches b ON c.branch_id = b.branch_id
+                           WHERE c.status = 'active'
+                           ORDER BY c.customer_name ASC";
+    } else {
+        // Regular user sees only their branch
+        $customers_query = "SELECT c.customer_id, c.customer_name, c.email, c.phone_number, c.address, c.city
+                           FROM customers c
+                           WHERE c.status = 'active' AND c.branch_id = $branch_id
+                           ORDER BY c.customer_name ASC";
+    }
+} else {
+    // Branch column doesn't exist - show all customers
+    $customers_query = "SELECT customer_id, customer_name, email, phone_number, address, city
+                       FROM customers
+                       WHERE status = 'active'
+                       ORDER BY customer_name ASC";
+}
+
+$customers_result = $conn->query($customers_query);
 if ($customers_result) {
     $customers = $customers_result->fetch_all(MYSQLI_ASSOC);
 }
- 
+
 // Handle order submission via AJAX
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'submit_order') {
     header('Content-Type: application/json');
@@ -58,10 +127,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         if ($customer_id === 0 && !empty($customer_name)) {
             error_log("Creating/updating customer: $customer_name");
             
-            // Check if customer already exists with this name
-            $check_sql = "SELECT customer_id FROM customers WHERE customer_name = ? AND status = 'active'";
-            $check_stmt = $conn->prepare($check_sql);
-            $check_stmt->bind_param('s', $customer_name);
+            // Check if customer already exists with this name for this branch
+            if ($branch_column_exists && !$view_all_branches) {
+                $check_sql = "SELECT customer_id FROM customers WHERE customer_name = ? AND branch_id = ? AND status = 'active'";
+                $check_stmt = $conn->prepare($check_sql);
+                $check_stmt->bind_param('si', $customer_name, $branch_id);
+            } else {
+                $check_sql = "SELECT customer_id FROM customers WHERE customer_name = ? AND status = 'active'";
+                $check_stmt = $conn->prepare($check_sql);
+                $check_stmt->bind_param('s', $customer_name);
+            }
+            
             $check_stmt->execute();
             $check_result = $check_stmt->get_result();
             
@@ -79,18 +155,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 error_log("Updated existing customer ID: $customer_id");
             } else {
                 // Create new customer - generate customer code
-                $customer_code = 'CUST' . str_pad(rand(1000, 9999), 4, '0', STR_PAD_LEFT);
-                $sql_new_cust = "INSERT INTO customers (customer_name, customer_code, email, phone_number, address, status) VALUES (?, ?, ?, ?, ?, 'active')";
-                $stmt_new_cust = $conn->prepare($sql_new_cust);
-                if (!$stmt_new_cust) {
-                    throw new Exception("Database error preparing new customer: " . $conn->error);
+                $customer_code = 'CUST-' . date('Ymd') . '-' . str_pad(rand(1000, 9999), 4, '0', STR_PAD_LEFT);
+                
+                if ($branch_column_exists && !$view_all_branches) {
+                    $sql_new_cust = "INSERT INTO customers (customer_name, customer_code, email, phone_number, address, status, branch_id) 
+                                   VALUES (?, ?, ?, ?, ?, 'active', ?)";
+                    $stmt_new_cust = $conn->prepare($sql_new_cust);
+                    if (!$stmt_new_cust) {
+                        throw new Exception("Database error preparing new customer: " . $conn->error);
+                    }
+                    $stmt_new_cust->bind_param('sssssi', $customer_name, $customer_code, $email, $phone, $address, $branch_id);
+                } else {
+                    $sql_new_cust = "INSERT INTO customers (customer_name, customer_code, email, phone_number, address, status) 
+                                   VALUES (?, ?, ?, ?, ?, 'active')";
+                    $stmt_new_cust = $conn->prepare($sql_new_cust);
+                    if (!$stmt_new_cust) {
+                        throw new Exception("Database error preparing new customer: " . $conn->error);
+                    }
+                    $stmt_new_cust->bind_param('sssss', $customer_name, $customer_code, $email, $phone, $address);
                 }
-                $stmt_new_cust->bind_param('sssss', $customer_name, $customer_code, $email, $phone, $address);
+                
                 if (!$stmt_new_cust->execute()) {
                     throw new Exception("Failed to create new customer: " . $stmt_new_cust->error);
                 }
                 $customer_id = $stmt_new_cust->insert_id;
-                error_log("Created new customer ID: $customer_id");
+                error_log("Created new customer ID: $customer_id for branch ID: $branch_id");
             }
         }
         
@@ -105,8 +194,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $item_id = (int)$item['id'];
             $quantity = (int)$item['quantity'];
             
-            // Check current stock from items table
-            $stock_check = $conn->query("SELECT stock FROM items WHERE item_id = $item_id");
+            // Check current stock from items table with branch filter
+            if ($items_branch_column_exists && !$view_all_branches) {
+                $stock_check = $conn->query("SELECT stock FROM items WHERE item_id = $item_id AND branch_id = $branch_id");
+            } else {
+                $stock_check = $conn->query("SELECT stock FROM items WHERE item_id = $item_id");
+            }
+            
             $stock_row = $stock_check->fetch_assoc();
             $current_stock = $stock_row ? (int)$stock_row['stock'] : 0;
             
@@ -141,14 +235,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
         
         $status = 'pending';
-        // Fixed: Using 'siisdss' format
-        // s = string (so_number)
-        // i = integer (customer_id)
-        // i = integer (branch_id)
-        // s = string (order_date)
-        // d = double (total_amount)
-        // s = string (order_status)
-        // i = integer (created_by)
         $stmt->bind_param('siisdss', $so_number, $customer_id, $branch_id, $order_date, $total_amount, $status, $user_id);
 
         if (!$stmt->execute()) {
@@ -178,16 +264,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             
             error_log("Added order item: Item ID: $item_id, Qty: $quantity, Price: $unit_price");
             
-            // Deduct inventory from items table stock column
-            $sql_deduct = "UPDATE items 
-                          SET stock = stock - ? 
-                          WHERE item_id = ? 
-                          AND stock >= ?";
-            $stmt_deduct = $conn->prepare($sql_deduct);
-            if (!$stmt_deduct) {
-                throw new Exception("Prepare failed for stock update: " . $conn->error);
+            // Deduct inventory from items table stock column with branch filter
+            if ($items_branch_column_exists && !$view_all_branches) {
+                $sql_deduct = "UPDATE items 
+                              SET stock = stock - ? 
+                              WHERE item_id = ? AND branch_id = ? 
+                              AND stock >= ?";
+                $stmt_deduct = $conn->prepare($sql_deduct);
+                if (!$stmt_deduct) {
+                    throw new Exception("Prepare failed for stock update: " . $conn->error);
+                }
+                $stmt_deduct->bind_param('iiii', $quantity, $item_id, $branch_id, $quantity);
+            } else {
+                $sql_deduct = "UPDATE items 
+                              SET stock = stock - ? 
+                              WHERE item_id = ? 
+                              AND stock >= ?";
+                $stmt_deduct = $conn->prepare($sql_deduct);
+                if (!$stmt_deduct) {
+                    throw new Exception("Prepare failed for stock update: " . $conn->error);
+                }
+                $stmt_deduct->bind_param('iii', $quantity, $item_id, $quantity);
             }
-            $stmt_deduct->bind_param('iii', $quantity, $item_id, $quantity);
             
             if (!$stmt_deduct->execute()) {
                 throw new Exception("Error updating inventory: " . $stmt_deduct->error);
@@ -336,15 +434,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             cursor: not-allowed;
         }
         
-        /* Add to Cart Button - GREEN WITHOUT BORDER - SAME FOR BOTH */
+        /* Add to Cart Button */
         .btn-add-to-cart {
             height: 36px;
             font-size: 14px;
             padding: 6px 12px;
             border-radius: 6px;
-            background: #28a745; /* Green background */
-            color: white; /* White text */
-            border: none !important; /* Remove border */
+            background: #28a745;
+            color: white;
+            border: none !important;
             font-weight: 500;
             width: 100%;
             display: flex;
@@ -356,15 +454,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
         
         .btn-add-to-cart:hover {
-            background: #218838; /* Dark green on hover */
+            background: #218838;
         }
         
         .btn-add-to-cart:active {
-            background: #1e7e34; /* Even darker green when clicked */
+            background: #1e7e34;
         }
         
         .btn-add-to-cart:disabled {
-            background: #6c757d; /* Gray when disabled */
+            background: #6c757d;
             color: white;
             cursor: not-allowed;
         }
@@ -424,16 +522,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             margin-bottom: 10px;
         }
         
-        /* MOBILE PREVIEW STYLES ONLY */
+        /* Branch Badge */
+        .branch-badge {
+            background-color: #e7f1ff;
+            color: #0d6efd;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 5px;
+        }
+        
+        /* Alert for missing branch column */
+        .alert-info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        
+        .alert-info code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 4px;
+            color: #c7254e;
+        }
+        
+        /* MOBILE PREVIEW STYLES */
         @media (max-width: 768px) {
-            /* Products Grid for Mobile - 2 Columns */
             #productsContainer {
                 display: grid !important;
                 grid-template-columns: repeat(2, 1fr) !important;
                 gap: 12px !important;
             }
             
-            /* Remove Bootstrap row/col spacing for mobile */
             #productsContainer .col-md-6 {
                 width: 100% !important;
                 padding: 0 !important;
@@ -464,7 +585,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 flex-direction: column !important;
             }
             
-            /* Product Title */
             .product-card-mobile .card-title {
                 font-size: 14px !important;
                 font-weight: 600 !important;
@@ -478,7 +598,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 color: #333 !important;
             }
             
-            /* SKU Badge */
             .product-card-mobile .badge {
                 font-size: 10px !important;
                 padding: 4px 8px !important;
@@ -487,7 +606,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 border: 1px solid #dee2e6 !important;
             }
             
-            /* Stock Info */
             .product-stock-mobile {
                 font-size: 12px !important;
                 color: #6c757d !important;
@@ -495,7 +613,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 line-height: 1.4 !important;
             }
             
-            /* Price */
             .product-price-mobile {
                 font-size: 16px !important;
                 font-weight: 700 !important;
@@ -503,12 +620,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 margin-bottom: 12px !important;
             }
             
-            /* Quantity Input Group - IMPROVED SPACING */
             .product-input-group-mobile {
                 margin-top: auto !important;
             }
             
-            /* Error Message */
             .product-input-group-mobile .error-message {
                 font-size: 11px !important;
                 text-align: center !important;
@@ -516,21 +631,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 min-height: 16px !important;
             }
             
-            /* Cart adjustments for mobile */
             .order-summary {
                 position: static !important;
                 margin-top: 20px !important;
                 border-radius: 10px !important;
             }
             
-            /* Cart Items in Mobile */
             .cart-item {
                 padding: 12px !important;
                 margin-bottom: 8px !important;
                 border-radius: 8px !important;
             }
             
-            /* Buttons in Mobile */
             .btn-group-mobile .btn {
                 padding: 12px !important;
                 font-size: 14px !important;
@@ -539,7 +651,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
         }
         
-        /* DESKTOP VIEW - ALIGN PROPERLY */
+        /* DESKTOP VIEW */
         @media (min-width: 769px) {
             #productsContainer {
                 display: flex !important;
@@ -568,19 +680,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 flex-direction: column;
             }
             
-            /* FOR DESKTOP: Keep button below quantity controls */
             .product-input-group-mobile {
                 margin-top: auto;
                 display: flex;
                 flex-direction: column;
             }
             
-            /* FOR DESKTOP: Align quantity controls properly */
             .quantity-control {
                 width: 100%;
             }
             
-            /* FOR DESKTOP: Add to Cart button positioned at bottom right */
             .btn-add-to-cart {
                 margin-top: auto;
                 align-self: flex-end;
@@ -621,13 +730,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <h3>
-            <!-- Burger icon moved before logo -->
-            <button class="desktop-toggle-btn" id="desktopToggleBtn">
-                <i class="bi bi-list" id="toggleIcon"></i>
-            </button>
-                <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
-                <span class="nav-text">Sales</span>
-        </h3>
+                    <button class="desktop-toggle-btn" id="desktopToggleBtn">
+                        <i class="bi bi-list" id="toggleIcon"></i>
+                    </button>
+                    <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
+                    <span class="nav-text">Sales</span>
+                </h3>
             </div>
             <div class="sidebar-menu">
                 <ul class="nav flex-column">
@@ -663,16 +771,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     </li>
                 </ul>
             </div>
-             <!-- User Profile Section at the bottom of sidebar -->
+            <!-- User Profile Section at the bottom of sidebar -->
             <div class="sidebar-footer">
                 <div class="user-profile-sidebar">
                     <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
                     <div class="user-details-sidebar">
                         <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-                        <span class="user-role-sidebar"><?php echo htmlspecialchars(ucfirst($user_role)); ?></span>
+                        <span class="user-role-sidebar">
+                            <?php echo htmlspecialchars(ucfirst($user_role)); ?>
+                            <?php if ($items_branch_column_exists || $branch_column_exists): ?>
+                            <?php endif; ?>
+                        </span>
                     </div>
                 </div>
-                    
                 <button class="logout-btn-sidebar" onclick="logout()">
                     <i class="bi bi-box-arrow-right"></i>
                     <span class="logout-text">Logout</span>
@@ -682,26 +793,84 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         <!-- Main Content Area -->
         <div class="main-content">
-            <!-- Header Section with User Info and Logout -->
+            <!-- Header Section -->
             <div class="navbar-top">
                 <button class="mobile-toggle-btn" id="mobileToggleBtn">
                     <i class="bi bi-list"></i>
                 </button>
                 <div class="page-title">
-                    <h2></i>Order Products</h2>
+                    <h2>Order Products</h2>
                     <p>Select products and quantities to create an order</p>
                 </div>
             </div>
+
+            <!-- Branch Info Alert (if no branch_id column in items or customers) -->
+            <?php if (!$items_branch_column_exists): ?>
+                <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    <i class="bi bi-info-circle"></i> 
+                    <strong>Branch filtering for products not yet set up.</strong> Please run this SQL in phpMyAdmin to enable branch-specific product data:
+                    <br><br>
+                    <code>ALTER TABLE items ADD COLUMN branch_id INT NULL;</code>
+                    <br>
+                    <code>ALTER TABLE items ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
+                    <br><br>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="copyItemsSQL()">
+                        <i class="bi bi-files"></i> Copy SQL
+                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+                <script>
+                    function copyItemsSQL() {
+                        const sql = "ALTER TABLE items ADD COLUMN branch_id INT NULL;\nALTER TABLE items ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+                        navigator.clipboard.writeText(sql).then(() => {
+                            alert('SQL copied to clipboard!');
+                        });
+                    }
+                </script>
+            <?php endif; ?>
+
+            <?php if (!$branch_column_exists): ?>
+                <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    <i class="bi bi-info-circle"></i> 
+                    <strong>Branch filtering for customers not yet set up.</strong> Please run this SQL in phpMyAdmin to enable branch-specific customer data:
+                    <br><br>
+                    <code>ALTER TABLE customers ADD COLUMN branch_id INT NULL;</code>
+                    <br>
+                    <code>ALTER TABLE customers ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
+                    <br><br>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="copyCustomersSQL()">
+                        <i class="bi bi-files"></i> Copy SQL
+                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+                <script>
+                    function copyCustomersSQL() {
+                        const sql = "ALTER TABLE customers ADD COLUMN branch_id INT NULL;\nALTER TABLE customers ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+                        navigator.clipboard.writeText(sql).then(() => {
+                            alert('SQL copied to clipboard!');
+                        });
+                    }
+                </script>
+            <?php endif; ?>
 
             <div class="row">
                 <!-- Products Section -->
                 <div class="col-lg-8">
                     <!-- Available Products -->
                     <div class="card mb-4">
-                        <div class="card-header bg-light">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
                             <h5 class="mb-0">Available Products</h5>
+                            <?php if ($items_branch_column_exists && !$view_all_branches): ?>
+                            <?php elseif ($view_all_branches): ?>
+                                <span class="badge bg-success">All Branches</span>
+                            <?php endif; ?>
                         </div>
                         <div class="card-body">
+                            <?php if (count($items) === 0): ?>
+                                <div class="alert alert-warning">
+                                    <i class="bi bi-exclamation-triangle"></i> No products available for your branch.
+                                </div>
+                            <?php endif; ?>
                             <div class="row g-3" id="productsContainer">
                                 <!-- Products will be populated here -->
                             </div>
@@ -710,10 +879,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
                     <!-- Customer Information -->
                     <div class="card">
-                        <div class="card-header bg-light">
+                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
                             <h5 class="mb-0">Customer Information</h5>
+                            <?php if ($branch_column_exists && !$view_all_branches): ?>
+                            <?php elseif ($view_all_branches): ?>
+                                <span class="badge bg-success">All Branches</span>
+                            <?php endif; ?>
                         </div>
                         <div class="card-body">
+                            <?php if ($branch_column_exists && !$view_all_branches && count($customers) === 0): ?>
+                                <div class="alert alert-warning mb-3">
+                                    <i class="bi bi-exclamation-triangle"></i> No customers found for your branch. You can add new customers.
+                                </div>
+                            <?php endif; ?>
                             <div class="row g-3">
                                 <div class="col-md-6">
                                     <label class="form-label">Select Customer</label>
@@ -721,17 +899,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                         <option value="">-- Choose Customer --</option>
                                         <?php foreach ($customers as $customer): ?>
                                             <option value="<?php echo $customer['customer_id']; ?>" 
-                                                    data-email="<?php echo htmlspecialchars($customer['email']); ?>"
-                                                    data-phone="<?php echo htmlspecialchars($customer['phone_number']); ?>"
-                                                    data-address="<?php echo htmlspecialchars($customer['address']); ?>">
+                                                    data-email="<?php echo htmlspecialchars($customer['email'] ?? ''); ?>"
+                                                    data-phone="<?php echo htmlspecialchars($customer['phone_number'] ?? ''); ?>"
+                                                    data-address="<?php echo htmlspecialchars($customer['address'] ?? ''); ?>">
                                                 <?php echo htmlspecialchars($customer['customer_name']); ?>
+                                                <?php if (isset($customer['branch_name']) && $view_all_branches): ?>
+                                                    (<?php echo htmlspecialchars($customer['branch_name'] ?? 'No Branch'); ?>)
+                                                <?php endif; ?>
                                             </option>
                                         <?php endforeach; ?>
                                     </select>
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">Or Enter New Customer</label>
-                                    <input type="text" class="form-control" id="newCustomerName" placeholder="Customer name">
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label">Email</label>
@@ -741,9 +918,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                     <label class="form-label">Phone</label>
                                     <input type="tel" class="form-control" id="customerPhone" placeholder="(555) 000-0000">
                                 </div>
-                                <div class="col-12">
+                                <div class="col-6">
                                     <label class="form-label">Address</label>
-                                    <textarea class="form-control" id="customerAddress" rows="2" placeholder="Delivery address"></textarea>
+                                    <textarea class="form-control" id="customerAddress" rows="3" placeholder="Delivery address"></textarea>
                                 </div>
                             </div>
                         </div>
@@ -854,6 +1031,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         <h6>Order Details</h6>
                         <p class="mb-2"><strong>Order Number:</strong> <span id="successSoNumber">-</span></p>
                         <p class="mb-2"><strong>Date:</strong> <span id="successOrderDate">-</span></p>
+                        <p class="mb-2"><strong>Branch:</strong> <span id="successBranch">Branch <?php echo $branch_id; ?></span></p>
                         <p class="mb-0"><strong>Status:</strong> <span class="badge bg-success">Pending</span></p>
                     </div>
                     
@@ -875,16 +1053,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
    <script>
         // ================= SIDEBAR FUNCTIONS =================
-        // Toggle sidebar collapse/expand
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
             const isMobile = window.innerWidth <= 992;
             
             if (isMobile) {
-                // On mobile, toggle active state
                 sidebar.classList.toggle('active');
                 
-                // Create overlay for mobile
                 if (!document.querySelector('.sidebar-overlay')) {
                     const overlay = document.createElement('div');
                     overlay.className = 'sidebar-overlay';
@@ -898,7 +1073,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         overlay.classList.add('active');
                     }, 10);
                 } else {
-                    // If overlay exists, toggle its active state
                     const overlay = document.querySelector('.sidebar-overlay');
                     overlay.classList.toggle('active');
                     if (!sidebar.classList.contains('active')) {
@@ -910,18 +1084,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     }
                 }
             } else {
-                // On desktop, toggle between expanded and collapsed
                 sidebar.classList.toggle('collapsed');
-                
-                // Store preference in localStorage
                 localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
                 
-                // Show/hide nav text
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = sidebar.classList.contains('collapsed') ? 'none' : 'inline-block';
                 });
                 
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = sidebar.classList.contains('collapsed') ? '80px' : '250px';
@@ -929,7 +1098,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
         }
 
-        // Close mobile sidebar
         function closeMobileSidebar() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.querySelector('.sidebar-overlay');
@@ -946,11 +1114,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
         }
 
-        // Initialize sidebar when page loads
         function initializeSidebar() {
             const sidebar = document.getElementById('sidebar');
             
-            // Load saved preference from localStorage for desktop
             if (window.innerWidth > 992) {
                 const savedCollapsed = localStorage.getItem('sidebarCollapsed');
                 if (savedCollapsed === 'true') {
@@ -959,7 +1125,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         text.style.display = 'none';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '80px';
@@ -970,21 +1135,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         text.style.display = 'inline-block';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '250px';
                     }
                 }
             } else {
-                // On mobile, always start with closed sidebar
                 sidebar.classList.remove('active');
                 sidebar.classList.remove('collapsed');
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = 'inline-block';
                 });
                 
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = '0';
@@ -992,19 +1154,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
         }
 
-        // Handle window resize for sidebar
         function handleSidebarResize() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.querySelector('.sidebar-overlay');
             
             if (window.innerWidth > 992) {
-                // Desktop mode - remove mobile overlay
                 if (overlay) {
                     overlay.remove();
                 }
                 sidebar.classList.remove('active');
                 
-                // Load saved preference
                 const savedCollapsed = localStorage.getItem('sidebarCollapsed');
                 if (savedCollapsed === 'true') {
                     sidebar.classList.add('collapsed');
@@ -1012,7 +1171,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         text.style.display = 'none';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '80px';
@@ -1023,20 +1181,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         text.style.display = 'inline-block';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '250px';
                     }
                 }
             } else {
-                // Mobile mode - always show expanded when visible
                 sidebar.classList.remove('collapsed');
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = 'inline-block';
                 });
                 
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = '0';
@@ -1045,7 +1200,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
         // ================= END SIDEBAR FUNCTIONS =================
 
-        // Inventory data from database
+        // Inventory data from database with branch context
         const inventory = <?php echo json_encode(array_map(function($item) {
             return [
                 'id' => (int)$item['item_id'],
@@ -1055,6 +1210,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 'stock' => (int)($item['stock'] ?? 0)
             ];
         }, $items)); ?>;
+
+        // Branch context
+        const branchId = <?php echo $branch_id; ?>;
+        const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
+        const itemsBranchColumnExists = <?php echo $items_branch_column_exists ? 'true' : 'false'; ?>;
+        const customersBranchColumnExists = <?php echo $branch_column_exists ? 'true' : 'false'; ?>;
 
         let cart = [];
 
@@ -1089,9 +1250,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 newCustomerName.addEventListener('input', function() {
                     if (this.value.trim() !== '') {
                         document.getElementById('customerSelect').value = '';
-                        document.getElementById('customerEmail').value = '';
-                        document.getElementById('customerPhone').value = '';
-                        document.getElementById('customerAddress').value = '';
                     }
                 });
             }
@@ -1114,6 +1272,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         function renderProducts() {
             const container = document.getElementById('productsContainer');
             if (!container) return;
+            
+            if (inventory.length === 0) {
+                container.innerHTML = `
+                    <div class="col-12">
+                        <div class="alert alert-info text-center py-4">
+                            <i class="bi bi-box-seam" style="font-size: 2rem;"></i>
+                            <p class="mt-3 mb-0">No products available for your branch.</p>
+                        </div>
+                    </div>
+                `;
+                return;
+            }
             
             container.innerHTML = inventory.map(product => {
                 const availableStock = getAvailableStock(product.id);
@@ -1387,7 +1557,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             const address = document.getElementById('customerAddress')?.value.trim() || '';
             
             const selectedCustomer = customerSelect?.options[customerSelect.selectedIndex];
-            const customerName = selectedCustomer?.value ? selectedCustomer.text : newCustomer;
+            const customerName = selectedCustomer?.value ? selectedCustomer.text.split('(')[0].trim() : newCustomer;
 
             if (!customerSelect?.value && !newCustomer) {
                 showToast('Please select or enter a customer');
@@ -1472,7 +1642,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             if (reviewTotal) reviewTotal.textContent = `₱${subtotal.toFixed(2)}`;
         }
 
-        // Submit order - FIXED VERSION
+        // Submit order
         function submitOrder() {
             const customerSelect = document.getElementById('customerSelect');
             const customer_id = customerSelect?.value ? parseInt(customerSelect.value) : 0;
@@ -1514,8 +1684,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             formData.append('items', JSON.stringify(cartData));
             
             const submitBtn = document.querySelector('#cartModal .btn-success');
+            let originalText = '';
             if (submitBtn) {
-                const originalText = submitBtn.innerHTML;
+                originalText = submitBtn.innerHTML;
                 submitBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Processing...';
                 submitBtn.disabled = true;
             }
@@ -1568,9 +1739,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     
                     const successSoNumber = document.getElementById('successSoNumber');
                     const successOrderDate = document.getElementById('successOrderDate');
+                    const successBranch = document.getElementById('successBranch');
                     
                     if (successSoNumber) successSoNumber.textContent = data.so_number;
                     if (successOrderDate) successOrderDate.textContent = new Date().toLocaleDateString();
+                    if (successBranch) successBranch.textContent = `Branch ${branchId}`;
                     
                     const successModal = new bootstrap.Modal(document.getElementById('successModal'));
                     successModal.show();
@@ -1620,14 +1793,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             window.location.href = 'sales_order.php';
         }
 
+        function logout() {
+            window.location.href = '../logout.php';
+        }
+
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', function() {
             console.log("Sales Order page loaded!");
+            console.log("Branch ID:", branchId);
+            console.log("View All Branches:", viewAllBranches);
+            console.log("Items Branch Column Exists:", itemsBranchColumnExists);
+            console.log("Customers Branch Column Exists:", customersBranchColumnExists);
+            console.log("Products loaded:", inventory.length);
             
             // Initialize sidebar
             initializeSidebar();
             
-            // Setup mobile toggle button - support multiple button IDs
+            // Setup mobile toggle button
             const mobileToggleBtn = document.getElementById('mobileToggleBtn');
             if (mobileToggleBtn) {
                 mobileToggleBtn.addEventListener('click', function(e) {
@@ -1636,15 +1818,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 });
             }
             
-            const mobileMenuBtn = document.getElementById('mobileMenuBtn');
-            if (mobileMenuBtn) {
-                mobileMenuBtn.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    toggleSidebar();
-                });
-            }
-            
-            // Setup desktop toggle button
             const desktopToggleBtn = document.getElementById('desktopToggleBtn');
             if (desktopToggleBtn) {
                 desktopToggleBtn.addEventListener('click', function(e) {
@@ -1665,7 +1838,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             // Close sidebar when clicking outside on mobile
             document.addEventListener('click', function(event) {
                 const sidebar = document.getElementById('sidebar');
-                const mobileBtn = document.getElementById('mobileToggleBtn') || document.getElementById('mobileMenuBtn');
+                const mobileBtn = document.getElementById('mobileToggleBtn');
                 const overlay = document.querySelector('.sidebar-overlay');
                 const isMobile = window.innerWidth <= 992;
                 
@@ -1680,28 +1853,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             // Add resize event listener
             window.addEventListener('resize', handleSidebarResize);
             
-            // Initialize the sales order functionality
+            // Initialize the order product functionality
             init();
         });
 
         // Keyboard shortcuts
         document.addEventListener('keydown', function(e) {
-            // Ctrl + B to toggle sidebar (desktop only)
             if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
                 e.preventDefault();
                 toggleSidebar();
-            }
-            // Escape to close sidebar on mobile
-            else if (e.key === 'Escape' && window.innerWidth <= 992) {
+            } else if (e.key === 'Escape' && window.innerWidth <= 992) {
                 closeMobileSidebar();
-            }
-            // Ctrl + N for new order
-            else if (e.ctrlKey && e.key === 'n') {
+            } else if (e.ctrlKey && e.key === 'n') {
                 e.preventDefault();
                 createNewOrder();
-            }
-            // Ctrl + V to view cart
-            else if (e.ctrlKey && e.key === 'v') {
+            } else if (e.ctrlKey && e.key === 'v') {
                 e.preventDefault();
                 viewCart();
             }

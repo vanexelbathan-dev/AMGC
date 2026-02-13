@@ -8,11 +8,15 @@ requireLogin();
 requireRole(['sales']);
 
 // Get current user info
-    $user_id = $_SESSION['user_id'];
-    $user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Driver User';
-    $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'delivery';
+$user_id = $_SESSION['user_id'];
+$user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Driver User';
+$user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'delivery';
+$branch_id = getBranchId();
+$is_admin = isAdmin();
 
-// Get inventory for sales view - from items table with stock tracking
+// Get inventory for sales view - from items table with stock tracking, filtered by branch
+$branch_where = $is_admin ? "" : "AND i.branch_id = $branch_id";
+
 $query = "SELECT 
             i.item_id,
             i.item_code, 
@@ -22,7 +26,7 @@ $query = "SELECT
             i.reorder_level,
             COALESCE(i.stock, 0) as current_stock
           FROM items i
-          WHERE i.status = 'active'
+          WHERE i.status = 'active' $branch_where
           ORDER BY i.item_name ASC";
 
 $stmt = $conn->prepare($query);

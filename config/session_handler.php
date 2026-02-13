@@ -1,6 +1,9 @@
 <?php
 session_start();
 
+// Include branch manager for branch-based access control
+require_once __DIR__ . '/branch_manager.php';
+
 /* Check if user is logged in */
 function isLoggedIn() {
     return isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true;

@@ -22,6 +22,7 @@
     // Start session and include database connection
     session_start();
     require_once '../config/database.php';
+    require_once '../config/session_handler.php';
     
     // Check if user is logged in
     if (!isset($_SESSION['user_id']) || !isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
@@ -29,20 +30,23 @@
         exit();
     }
     
-    // Get current user info
+    // Get current user info and branch context
     $user_id = $_SESSION['user_id'];
     $user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Driver User';
     $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'delivery';
+    $branch_id = getBranchId();
+    $is_admin = isAdmin();
+    $branch_where = $is_admin ? "" : "AND so.branch_id = $branch_id";
     
     // Get delivery statistics
     try {
         // Total for delivery (sales orders with status 'ready' or 'processing')
-        $query = "SELECT COUNT(*) as total_for_delivery FROM sales_orders WHERE order_status IN ('processing', 'ready')";
+        $query = "SELECT COUNT(*) as total_for_delivery FROM sales_orders WHERE order_status IN ('processing', 'ready') $branch_where";
         $result = $conn->query($query);
         $total_for_delivery = $result->fetch_assoc()['total_for_delivery'];
         
         // In transit (trip tickets in progress)
-        $query = "SELECT COUNT(*) as in_transit FROM trip_tickets WHERE trip_status = 'in-progress'";
+        $query = "SELECT COUNT(*) as in_transit FROM trip_tickets WHERE trip_status = 'in-progress' $branch_where";
         $result = $conn->query($query);
         $in_transit = $result->fetch_assoc()['in_transit'];
         
@@ -52,7 +56,7 @@
             FROM deliveries d
             JOIN sales_orders so ON d.so_id = so.so_id
             WHERE d.delivery_status = 'delivered' 
-            AND DATE(d.delivery_date) = CURDATE()
+            AND DATE(d.delivery_date) = CURDATE() $branch_where
         ";
         $result = $conn->query($query);
         $completed_today = $result->fetch_assoc()['completed_today'];
@@ -76,7 +80,7 @@
             JOIN customers c ON so.customer_id = c.customer_id
             LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
             LEFT JOIN items i ON soi.item_id = i.item_id
-            WHERE so.order_status IN ('processing', 'ready', 'confirmed')
+            WHERE so.order_status IN ('processing', 'ready', 'confirmed') $branch_where
             GROUP BY so.so_id
             ORDER BY so.delivery_date ASC, so.order_date ASC
         ";

@@ -6,10 +6,12 @@ require_once '../config/session_handler.php';
 requireLogin();
 requireRole(['sales']);
 
-// Get current user info
-    $user_id = $_SESSION['user_id'];
-    $user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Driver User';
-    $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'delivery';
+// Get current user info and branch context
+$user_id = $_SESSION['user_id'];
+$user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Sales User';
+$user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'sales';
+$branch_id = $_SESSION['branch_id'] ?? 0;
+$view_all_branches = $_SESSION['view_all_branches'] ?? false;
 
 // Function to generate unique customer code
 function generateCustomerCode($conn) {
@@ -37,6 +39,13 @@ function generateCustomerCode($conn) {
     return $new_code;
 }
 
+// Check if branch_id column exists in customers table
+$branch_column_exists = false;
+$check_column = $conn->query("SHOW COLUMNS FROM customers LIKE 'branch_id'");
+if ($check_column && $check_column->num_rows > 0) {
+    $branch_column_exists = true;
+}
+
 // Handle Add Customer
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['action']) && $_POST['action'] === 'add_customer') {
@@ -56,10 +65,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (empty($customer_name) || empty($email)) {
             $error = 'Please fill in all required fields';
         } else {
-            $sql = "INSERT INTO customers (customer_name, customer_code, contact_person, email, phone_number, address, city, latitude, longitude, status) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
-            $stmt = $conn->prepare($sql);
-            $stmt->bind_param('ssssssssss', $customer_name, $customer_code, $contact_person, $email, $phone, $address, $city, $latitude, $longitude, $status);
+            if ($branch_column_exists) {
+                // Column exists, include branch_id
+                $sql = "INSERT INTO customers (customer_name, customer_code, contact_person, email, phone_number, address, city, latitude, longitude, status, branch_id) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                $stmt = $conn->prepare($sql);
+                $stmt->bind_param('ssssssssssi', $customer_name, $customer_code, $contact_person, $email, $phone, $address, $city, $latitude, $longitude, $status, $branch_id);
+            } else {
+                // Column doesn't exist, insert without branch_id
+                $sql = "INSERT INTO customers (customer_name, customer_code, contact_person, email, phone_number, address, city, latitude, longitude, status) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                $stmt = $conn->prepare($sql);
+                $stmt->bind_param('ssssssssss', $customer_name, $customer_code, $contact_person, $email, $phone, $address, $city, $latitude, $longitude, $status);
+            }
             
             if ($stmt->execute()) {
                 $success = 'Customer added successfully! Customer Code: ' . $customer_code;
@@ -73,7 +91,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['action']) && $_POST['action'] === 'update_customer') {
         $customer_id = (int)$_POST['customer_id'];
         $customer_name = trim($_POST['customer_name']);
-        $customer_code = trim($_POST['customer_code']); // Keep existing code
+        $customer_code = trim($_POST['customer_code']);
         $contact_person = trim($_POST['contact_person']);
         $email = trim($_POST['email']);
         $phone = trim($_POST['phone_number']);
@@ -111,14 +129,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-// Get all customers
+// Get all customers - filter by branch if not admin AND if branch_id column exists
 $customers = [];
-$query = "SELECT c.*, COUNT(so.so_id) as total_orders 
-          FROM customers c 
-          LEFT JOIN sales_orders so ON c.customer_id = so.customer_id 
-          WHERE c.status = 'active' 
-          GROUP BY c.customer_id 
-          ORDER BY c.created_at DESC";
+
+if ($branch_column_exists) {
+    // Branch column exists - apply filtering
+    if ($view_all_branches) {
+        // Admin sees all
+        $query = "SELECT c.*, COUNT(so.so_id) as total_orders 
+                  FROM customers c 
+                  LEFT JOIN sales_orders so ON c.customer_id = so.customer_id 
+                  WHERE c.status = 'active'
+                  GROUP BY c.customer_id 
+                  ORDER BY c.created_at DESC";
+    } else {
+        // Regular user sees only their branch
+        $query = "SELECT c.*, COUNT(so.so_id) as total_orders 
+                  FROM customers c 
+                  LEFT JOIN sales_orders so ON c.customer_id = so.customer_id 
+                  WHERE c.status = 'active' AND c.branch_id = $branch_id
+                  GROUP BY c.customer_id 
+                  ORDER BY c.created_at DESC";
+    }
+} else {
+    // Branch column doesn't exist - show all customers
+    $query = "SELECT c.*, COUNT(so.so_id) as total_orders 
+              FROM customers c 
+              LEFT JOIN sales_orders so ON c.customer_id = so.customer_id 
+              WHERE c.status = 'active'
+              GROUP BY c.customer_id 
+              ORDER BY c.created_at DESC";
+}
+
 $result = $conn->query($query);
 if ($result) {
     $customers = $result->fetch_all(MYSQLI_ASSOC);
@@ -129,15 +171,31 @@ $total_customers = 0;
 $active_customers = 0;
 $total_orders = 0;
 
-$stats_query = "SELECT 
-                COUNT(*) as total,
-                SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active
-                FROM customers";
+if ($branch_column_exists) {
+    if ($view_all_branches) {
+        $stats_query = "SELECT 
+                        COUNT(*) as total,
+                        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active
+                        FROM customers";
+    } else {
+        $stats_query = "SELECT 
+                        COUNT(*) as total,
+                        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active
+                        FROM customers 
+                        WHERE branch_id = $branch_id";
+    }
+} else {
+    $stats_query = "SELECT 
+                    COUNT(*) as total,
+                    SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active
+                    FROM customers";
+}
+
 $stats_result = $conn->query($stats_query);
 if ($stats_result) {
     $stats = $stats_result->fetch_assoc();
-    $total_customers = $stats['total'];
-    $active_customers = $stats['active'];
+    $total_customers = $stats['total'] ?? 0;
+    $active_customers = $stats['active'] ?? 0;
 }
 
 // Get total orders count
@@ -145,7 +203,7 @@ $orders_query = "SELECT COUNT(*) as total_orders FROM sales_orders";
 $orders_result = $conn->query($orders_query);
 if ($orders_result) {
     $orders_stats = $orders_result->fetch_assoc();
-    $total_orders = $orders_stats['total_orders'];
+    $total_orders = $orders_stats['total_orders'] ?? 0;
 }
 
 // Generate a preview code for the modal
@@ -173,7 +231,7 @@ $success = '';
     <!-- Leaflet CSS for Maps -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        /* Mobile responsive adjustments ONLY - same as warehouse.php */
+        /* Mobile responsive adjustments */
         @media (max-width: 768px) {
             .stat-card {
                 padding: 12px;
@@ -194,7 +252,6 @@ $success = '';
                 font-size: 0.8rem;
             }
             
-            /* Make cards 2 columns on mobile - CHANGED FROM col-md-4 TO col-md-3 for 2x2 layout */
             .col-md-4 {
                 width: 50%;
                 padding-left: 8px;
@@ -211,7 +268,6 @@ $success = '';
             }
         }
         
-        /* Extra small devices (phones, less than 576px) */
         @media (max-width: 576px) {
             .stat-card {
                 min-height: 80px;
@@ -231,7 +287,6 @@ $success = '';
                 font-size: 0.75rem;
             }
             
-            /* Make cards 2 columns on mobile - CHANGED FROM col-md-4 TO col-md-3 for 2x2 layout */
             .col-md-4 {
                 width: 50%;
                 padding-left: 6px;
@@ -364,6 +419,31 @@ $success = '';
         .refresh-code:hover {
             color: #0a58ca;
         }
+        
+        /* Branch badge */
+        .branch-badge {
+            background-color: #e7f1ff;
+            color: #0d6efd;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 5px;
+        }
+        
+        /* Alert for missing branch column */
+        .alert-info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        
+        .alert-info code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 4px;
+            color: #c7254e;
+        }
     </style>
 </head>
 <body>
@@ -373,13 +453,12 @@ $success = '';
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <h3>
-            <!-- Burger icon moved before logo -->
-            <button class="desktop-toggle-btn" id="desktopToggleBtn">
-                <i class="bi bi-list" id="toggleIcon"></i>
-            </button>
-                <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
-                <span class="nav-text">Sales</span>
-        </h3>
+                    <button class="desktop-toggle-btn" id="desktopToggleBtn">
+                        <i class="bi bi-list" id="toggleIcon"></i>
+                    </button>
+                    <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
+                    <span class="nav-text">Sales</span>
+                </h3>
             </div>
             
             <div class="sidebar-menu">
@@ -416,21 +495,25 @@ $success = '';
                     </li>
                 </ul>
             </div>
+            
             <!-- User Profile Section at the bottom of sidebar -->
-        <div class="sidebar-footer">
-            <div class="user-profile-sidebar">
-                <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
-                <div class="user-details-sidebar">
-                    <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-                    <span class="user-role-sidebar"><?php echo htmlspecialchars(ucfirst($user_role)); ?></span>
+            <div class="sidebar-footer">
+                <div class="user-profile-sidebar">
+                    <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
+                    <div class="user-details-sidebar">
+                        <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
+                        <span class="user-role-sidebar">
+                            <?php echo htmlspecialchars(ucfirst($user_role)); ?>
+                            <?php if ($branch_column_exists): ?>
+                            <?php endif; ?>
+                        </span>
+                    </div>
                 </div>
+                <button class="logout-btn-sidebar" onclick="logout()">
+                    <i class="bi bi-box-arrow-right"></i>
+                    <span class="logout-text">Logout</span>
+                </button>
             </div>
-                
-            <button class="logout-btn-sidebar" onclick="logout()">
-                <i class="bi bi-box-arrow-right"></i>
-                <span class="logout-text">Logout</span>
-            </button>
-        </div>
         </div>
 
         <!-- Main Content Area -->
@@ -441,10 +524,35 @@ $success = '';
                     <i class="bi bi-list"></i>
                 </button>
                 <div class="page-title">
-                    <h2></i>Customer Information</h2>
+                    <h2>Customer Information</h2>
                     <p>Manage customer database and details</p>
                 </div>
             </div>
+
+            <!-- Branch Info Alert (if no branch_id column) -->
+            <?php if (!$branch_column_exists): ?>
+                <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    <i class="bi bi-info-circle"></i> 
+                    <strong>Branch filtering not yet set up.</strong> Please run this SQL in phpMyAdmin to enable branch-specific customer data:
+                    <br><br>
+                    <code>ALTER TABLE customers ADD COLUMN branch_id INT NULL;</code>
+                    <br>
+                    <code>ALTER TABLE customers ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
+                    <br><br>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="copySQL()">
+                        <i class="bi bi-files"></i> Copy SQL
+                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+                <script>
+                    function copySQL() {
+                        const sql = "ALTER TABLE customers ADD COLUMN branch_id INT NULL;\nALTER TABLE customers ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+                        navigator.clipboard.writeText(sql).then(() => {
+                            alert('SQL copied to clipboard!');
+                        });
+                    }
+                </script>
+            <?php endif; ?>
 
             <!-- Messages -->
             <?php if (!empty($success)): ?>
@@ -679,10 +787,11 @@ $success = '';
                             <button type="button" class="btn btn-outline-secondary" onclick="getCurrentLocation()">
                                 <i class="bi bi-geo-alt"></i> Use My Location
                             </button>
-                            <button type="button" class="btn btn-outline-secondary" onclick="geocodeAddress()">
-                                <i class="bi bi-search"></i> Geocode Address
-                            </button>
                         </div>
+                        
+                        <?php if (!$branch_column_exists): ?>
+                            <input type="hidden" name="branch_id" value="<?php echo $branch_id; ?>">
+                        <?php endif; ?>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -761,32 +870,25 @@ $success = '';
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <!-- Leaflet JS for Maps -->
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-   <script>
+    <script>
         // ================= SIDEBAR FUNCTIONS =================
-        // Toggle sidebar collapse/expand
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
             const isMobile = window.innerWidth <= 992;
             
             if (isMobile) {
-                // On mobile, toggle active state
                 sidebar.classList.toggle('active');
-                
-                // Create overlay for mobile
                 if (!document.querySelector('.sidebar-overlay')) {
                     const overlay = document.createElement('div');
                     overlay.className = 'sidebar-overlay';
                     document.body.appendChild(overlay);
-                    
                     overlay.addEventListener('click', () => {
                         closeMobileSidebar();
                     });
-                    
                     setTimeout(() => {
                         overlay.classList.add('active');
                     }, 10);
                 } else {
-                    // If overlay exists, toggle its active state
                     const overlay = document.querySelector('.sidebar-overlay');
                     overlay.classList.toggle('active');
                     if (!sidebar.classList.contains('active')) {
@@ -798,18 +900,11 @@ $success = '';
                     }
                 }
             } else {
-                // On desktop, toggle between expanded and collapsed
                 sidebar.classList.toggle('collapsed');
-                
-                // Store preference in localStorage
                 localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
-                
-                // Show/hide nav text
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = sidebar.classList.contains('collapsed') ? 'none' : 'inline-block';
                 });
-                
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = sidebar.classList.contains('collapsed') ? '80px' : '250px';
@@ -817,13 +912,10 @@ $success = '';
             }
         }
 
-        // Close mobile sidebar
         function closeMobileSidebar() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.querySelector('.sidebar-overlay');
-            
             sidebar.classList.remove('active');
-            
             if (overlay) {
                 overlay.classList.remove('active');
                 setTimeout(() => {
@@ -834,11 +926,8 @@ $success = '';
             }
         }
 
-        // Initialize sidebar when page loads
         function initializeSidebar() {
             const sidebar = document.getElementById('sidebar');
-            
-            // Load saved preference from localStorage for desktop
             if (window.innerWidth > 992) {
                 const savedCollapsed = localStorage.getItem('sidebarCollapsed');
                 if (savedCollapsed === 'true') {
@@ -846,8 +935,6 @@ $success = '';
                     document.querySelectorAll('.nav-text').forEach(text => {
                         text.style.display = 'none';
                     });
-                    
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '80px';
@@ -857,22 +944,17 @@ $success = '';
                     document.querySelectorAll('.nav-text').forEach(text => {
                         text.style.display = 'inline-block';
                     });
-                    
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '250px';
                     }
                 }
             } else {
-                // On mobile, always start with closed sidebar
                 sidebar.classList.remove('active');
                 sidebar.classList.remove('collapsed');
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = 'inline-block';
                 });
-                
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = '0';
@@ -880,27 +962,21 @@ $success = '';
             }
         }
 
-        // Handle window resize for sidebar
         function handleSidebarResize() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.querySelector('.sidebar-overlay');
             
             if (window.innerWidth > 992) {
-                // Desktop mode - remove mobile overlay
                 if (overlay) {
                     overlay.remove();
                 }
                 sidebar.classList.remove('active');
-                
-                // Load saved preference
                 const savedCollapsed = localStorage.getItem('sidebarCollapsed');
                 if (savedCollapsed === 'true') {
                     sidebar.classList.add('collapsed');
                     document.querySelectorAll('.nav-text').forEach(text => {
                         text.style.display = 'none';
                     });
-                    
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '80px';
@@ -910,21 +986,16 @@ $success = '';
                     document.querySelectorAll('.nav-text').forEach(text => {
                         text.style.display = 'inline-block';
                     });
-                    
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '250px';
                     }
                 }
             } else {
-                // Mobile mode - always show expanded when visible
                 sidebar.classList.remove('collapsed');
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = 'inline-block';
                 });
-                
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = '0';
@@ -948,7 +1019,7 @@ $success = '';
             // Initialize sidebar
             initializeSidebar();
             
-            // Setup mobile toggle button - support multiple button IDs
+            // Setup mobile toggle button
             const mobileToggleBtn = document.getElementById('mobileToggleBtn');
             if (mobileToggleBtn) {
                 mobileToggleBtn.addEventListener('click', function(e) {
@@ -1023,7 +1094,6 @@ $success = '';
                     initAddCustomerMap();
                 });
                 
-                // Clean up map when modal is hidden
                 addCustomerModal.addEventListener('hidden.bs.modal', function() {
                     if (map) {
                         map.remove();
@@ -1060,13 +1130,11 @@ $success = '';
 
         // Setup event listeners
         function setupEventListeners() {
-            // Search functionality
             const searchInput = document.getElementById('searchInput');
             if (searchInput) {
                 searchInput.addEventListener('keyup', function() {
                     const filter = this.value.toLowerCase();
                     const rows = document.querySelectorAll('tbody tr');
-                    
                     rows.forEach(row => {
                         const text = row.textContent.toLowerCase();
                         row.style.display = text.includes(filter) ? '' : 'none';
@@ -1074,13 +1142,11 @@ $success = '';
                 });
             }
 
-            // Status filter
             const statusFilter = document.getElementById('statusFilter');
             if (statusFilter) {
                 statusFilter.addEventListener('change', function() {
                     const filter = this.value.toLowerCase();
                     const rows = document.querySelectorAll('tbody tr');
-                    
                     rows.forEach(row => {
                         if (row.cells.length < 6) return;
                         const status = row.cells[5].textContent.toLowerCase();
@@ -1114,7 +1180,6 @@ $success = '';
         // Initialize add customer map
         function initAddCustomerMap() {
             if (document.getElementById('locationMap')) {
-                // Default to Manila coordinates
                 const defaultLat = 14.5995;
                 const defaultLng = 120.9842;
                 
@@ -1128,7 +1193,6 @@ $success = '';
                     draggable: true
                 }).addTo(map);
                 
-                // Update input fields when marker is moved
                 marker.on('dragend', function(e) {
                     const position = marker.getLatLng();
                     const latInput = document.getElementById('latitudeInput');
@@ -1137,7 +1201,6 @@ $success = '';
                     if (lngInput) lngInput.value = position.lng.toFixed(6);
                 });
                 
-                // Add click event to map to move marker
                 map.on('click', function(e) {
                     marker.setLatLng(e.latlng);
                     const latInput = document.getElementById('latitudeInput');
@@ -1146,7 +1209,6 @@ $success = '';
                     if (lngInput) lngInput.value = e.latlng.lng.toFixed(6);
                 });
                 
-                // Update marker when coordinates are manually entered
                 const latInput = document.getElementById('latitudeInput');
                 const lngInput = document.getElementById('longitudeInput');
                 
@@ -1155,38 +1217,28 @@ $success = '';
             }
         }
 
-        // Update marker position from input fields
         function updateMarkerFromInputs() {
             const latInput = document.getElementById('latitudeInput');
             const lngInput = document.getElementById('longitudeInput');
-            
             if (!latInput || !lngInput) return;
-            
             const lat = parseFloat(latInput.value);
             const lng = parseFloat(lngInput.value);
-            
-            if (!isNaN(lat) && !isNaN(lng)) {
-                if (map && marker) {
-                    marker.setLatLng([lat, lng]);
-                    map.setView([lat, lng], 13);
-                }
+            if (!isNaN(lat) && !isNaN(lng) && map && marker) {
+                marker.setLatLng([lat, lng]);
+                map.setView([lat, lng], 13);
             }
         }
 
-        // Get current location
         function getCurrentLocation() {
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
                     function(position) {
                         const lat = position.coords.latitude;
                         const lng = position.coords.longitude;
-                        
                         const latInput = document.getElementById('latitudeInput');
                         const lngInput = document.getElementById('longitudeInput');
-                        
                         if (latInput) latInput.value = lat.toFixed(6);
                         if (lngInput) lngInput.value = lng.toFixed(6);
-                        
                         if (map && marker) {
                             marker.setLatLng([lat, lng]);
                             map.setView([lat, lng], 13);
@@ -1201,31 +1253,23 @@ $success = '';
             }
         }
 
-        // Geocode address to coordinates
         function geocodeAddress() {
             const address = document.getElementById('addressInput');
-            
             if (!address || !address.value) {
                 alert('Please enter an address first');
                 return;
             }
-            
-            // Using Nominatim (OpenStreetMap's geocoding service)
             const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(address.value)}&limit=1`;
-            
             fetch(url)
                 .then(response => response.json())
                 .then(data => {
                     if (data && data.length > 0) {
                         const lat = parseFloat(data[0].lat);
                         const lng = parseFloat(data[0].lon);
-                        
                         const latInput = document.getElementById('latitudeInput');
                         const lngInput = document.getElementById('longitudeInput');
-                        
                         if (latInput) latInput.value = lat.toFixed(6);
                         if (lngInput) lngInput.value = lng.toFixed(6);
-                        
                         if (map && marker) {
                             marker.setLatLng([lat, lng]);
                             map.setView([lat, lng], 13);
@@ -1240,7 +1284,6 @@ $success = '';
                 });
         }
 
-        // View customer details
         function viewCustomerDetails(customerId) {
             fetch('get_customer_details.php?id=' + customerId)
                 .then(response => response.json())
@@ -1248,7 +1291,6 @@ $success = '';
                     if (data.success) {
                         const customer = data.customer;
                         const modal = new bootstrap.Modal(document.getElementById('viewCustomerModal'));
-                        
                         const customerDetailsContent = document.getElementById('customerDetailsContent');
                         if (customerDetailsContent) {
                             customerDetailsContent.innerHTML = `
@@ -1283,7 +1325,6 @@ $success = '';
                                 ` : ''}
                             `;
                         }
-                        
                         modal.show();
                     }
                 })
@@ -1293,7 +1334,6 @@ $success = '';
                 });
         }
 
-        // Edit customer
         function editCustomer(customerId) {
             fetch('get_customer_details.php?id=' + customerId)
                 .then(response => response.json())
@@ -1301,10 +1341,8 @@ $success = '';
                     if (data.success) {
                         const customer = data.customer;
                         const modal = new bootstrap.Modal(document.getElementById('editCustomerModal'));
-                        
                         const editCustomerId = document.getElementById('editCustomerId');
                         if (editCustomerId) editCustomerId.value = customerId;
-                        
                         const editCustomerContent = document.getElementById('editCustomerContent');
                         if (editCustomerContent) {
                             editCustomerContent.innerHTML = `
@@ -1343,7 +1381,6 @@ $success = '';
                                     <label class="form-label">Address</label>
                                     <textarea class="form-control" name="address" rows="2">${customer.address || ''}</textarea>
                                 </div>
-                                
                                 <div class="mb-3">
                                     <label class="form-label">Status</label>
                                     <select class="form-select" name="status">
@@ -1352,11 +1389,9 @@ $success = '';
                                         <option value="pending" ${customer.status === 'pending' ? 'selected' : ''}>Pending</option>
                                     </select>
                                 </div>
-                                
                                 <div class="location-info">
                                     <small><i class="bi bi-info-circle"></i> Update location coordinates</small>
                                 </div>
-                                
                                 <div class="row">
                                     <div class="col-md-6 mb-3">
                                         <label class="form-label">Latitude</label>
@@ -1367,9 +1402,7 @@ $success = '';
                                         <input type="text" class="form-control" name="longitude" id="editLongitude" value="${customer.longitude || '120.9842'}">
                                     </div>
                                 </div>
-                                
                                 <div id="editLocationMap" style="height: 250px; margin-bottom: 15px; border-radius: 8px;"></div>
-                                
                                 <div class="location-buttons">
                                     <button type="button" class="btn btn-outline-secondary" onclick="getCurrentLocationForEdit()">
                                         <i class="bi bi-geo-alt"></i> Use My Location
@@ -1380,7 +1413,6 @@ $success = '';
                                 </div>
                             `;
                         }
-                        
                         modal.show();
                         initEditCustomerMap(customer);
                     }
@@ -1391,24 +1423,18 @@ $success = '';
                 });
         }
 
-        // Initialize edit customer map
         function initEditCustomerMap(customer) {
             setTimeout(() => {
                 if (document.getElementById('editLocationMap')) {
                     const lat = parseFloat(customer.latitude) || 14.5995;
                     const lng = parseFloat(customer.longitude) || 120.9842;
-                    
                     editMap = L.map('editLocationMap').setView([lat, lng], 13);
-                    
                     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                         attribution: '© OpenStreetMap contributors'
                     }).addTo(editMap);
-                    
                     editMarker = L.marker([lat, lng], {
                         draggable: true
                     }).addTo(editMap);
-                    
-                    // Update input fields when marker is moved
                     editMarker.on('dragend', function(e) {
                         const position = editMarker.getLatLng();
                         const editLatitude = document.getElementById('editLatitude');
@@ -1416,8 +1442,6 @@ $success = '';
                         if (editLatitude) editLatitude.value = position.lat.toFixed(6);
                         if (editLongitude) editLongitude.value = position.lng.toFixed(6);
                     });
-                    
-                    // Add click event to map to move marker
                     editMap.on('click', function(e) {
                         editMarker.setLatLng(e.latlng);
                         const editLatitude = document.getElementById('editLatitude');
@@ -1425,47 +1449,36 @@ $success = '';
                         if (editLatitude) editLatitude.value = e.latlng.lat.toFixed(6);
                         if (editLongitude) editLongitude.value = e.latlng.lng.toFixed(6);
                     });
-                    
-                    // Update marker when coordinates are manually entered
                     const editLatitude = document.getElementById('editLatitude');
                     const editLongitude = document.getElementById('editLongitude');
-                    
                     if (editLatitude) editLatitude.addEventListener('change', updateEditMarkerFromInputs);
                     if (editLongitude) editLongitude.addEventListener('change', updateEditMarkerFromInputs);
                 }
             }, 300);
         }
 
-        // Update edit marker position from input fields
         function updateEditMarkerFromInputs() {
             const editLatitude = document.getElementById('editLatitude');
             const editLongitude = document.getElementById('editLongitude');
-            
             if (!editLatitude || !editLongitude) return;
-            
             const lat = parseFloat(editLatitude.value);
             const lng = parseFloat(editLongitude.value);
-            
             if (!isNaN(lat) && !isNaN(lng) && editMap && editMarker) {
                 editMarker.setLatLng([lat, lng]);
                 editMap.setView([lat, lng], 13);
             }
         }
 
-        // Get current location for edit form
         function getCurrentLocationForEdit() {
             if (navigator.geolocation) {
                 navigator.geolocation.getCurrentPosition(
                     function(position) {
                         const lat = position.coords.latitude;
                         const lng = position.coords.longitude;
-                        
                         const editLatitude = document.getElementById('editLatitude');
                         const editLongitude = document.getElementById('editLongitude');
-                        
                         if (editLatitude) editLatitude.value = lat.toFixed(6);
                         if (editLongitude) editLongitude.value = lng.toFixed(6);
-                        
                         if (editMap && editMarker) {
                             editMarker.setLatLng([lat, lng]);
                             editMap.setView([lat, lng], 13);
@@ -1480,30 +1493,23 @@ $success = '';
             }
         }
 
-        // Geocode address for edit form
         function geocodeAddressForEdit() {
             const addressField = document.querySelector('#editCustomerContent textarea[name="address"]');
-            
             if (!addressField || !addressField.value) {
                 alert('Please enter an address first');
                 return;
             }
-            
             const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(addressField.value)}&limit=1`;
-            
             fetch(url)
                 .then(response => response.json())
                 .then(data => {
                     if (data && data.length > 0) {
                         const lat = parseFloat(data[0].lat);
                         const lng = parseFloat(data[0].lon);
-                        
                         const editLatitude = document.getElementById('editLatitude');
                         const editLongitude = document.getElementById('editLongitude');
-                        
                         if (editLatitude) editLatitude.value = lat.toFixed(6);
                         if (editLongitude) editLongitude.value = lng.toFixed(6);
-                        
                         if (editMap && editMarker) {
                             editMarker.setLatLng([lat, lng]);
                             editMap.setView([lat, lng], 13);
@@ -1518,62 +1524,50 @@ $success = '';
                 });
         }
 
-        // View location on map
         function viewLocationOnMap(customerId, customerName, latitude, longitude) {
             const locationCustomerName = document.getElementById('locationCustomerName');
             const viewLatitude = document.getElementById('viewLatitude');
             const viewLongitude = document.getElementById('viewLongitude');
-            
             if (locationCustomerName) locationCustomerName.textContent = customerName;
             if (viewLatitude) viewLatitude.textContent = latitude;
             if (viewLongitude) viewLongitude.textContent = longitude;
-            
             const modal = new bootstrap.Modal(document.getElementById('viewLocationModal'));
             modal.show();
-            
-            // Initialize map after modal is shown
             setTimeout(() => {
                 if (document.getElementById('viewLocationMap')) {
                     if (viewMap) {
                         viewMap.remove();
                     }
-                    
                     const lat = parseFloat(latitude);
                     const lng = parseFloat(longitude);
-                    
                     viewMap = L.map('viewLocationMap').setView([lat, lng], 15);
-                    
                     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                         attribution: '© OpenStreetMap contributors'
                     }).addTo(viewMap);
-                    
                     viewMarker = L.marker([lat, lng]).addTo(viewMap);
                     viewMarker.bindPopup(`<b>${customerName}</b><br>${lat.toFixed(6)}, ${lng.toFixed(6)}`).openPopup();
                 }
             }, 300);
         }
 
+        function logout() {
+            window.location.href = '../logout.php';
+        }
+
         // Keyboard shortcuts
         document.addEventListener('keydown', function(e) {
-            // Ctrl + B to toggle sidebar (desktop only)
             if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
                 e.preventDefault();
                 toggleSidebar();
-            }
-            // Escape to close sidebar on mobile
-            else if (e.key === 'Escape' && window.innerWidth <= 992) {
+            } else if (e.key === 'Escape' && window.innerWidth <= 992) {
                 closeMobileSidebar();
-            }
-            // Ctrl + F to focus search
-            else if (e.ctrlKey && e.key === 'f') {
+            } else if (e.ctrlKey && e.key === 'f') {
                 e.preventDefault();
                 const searchInput = document.getElementById('searchInput');
                 if (searchInput) {
                     searchInput.focus();
                 }
-            }
-            // Ctrl + N to add new customer
-            else if (e.ctrlKey && e.key === 'n') {
+            } else if (e.ctrlKey && e.key === 'n') {
                 e.preventDefault();
                 const addButton = document.querySelector('[data-bs-target="#addCustomerModal"]');
                 if (addButton) {
