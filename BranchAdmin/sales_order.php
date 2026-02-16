@@ -23,6 +23,26 @@ if ($check_customers_column && $check_customers_column->num_rows > 0) {
     $customers_branch_column_exists = true;
 }
 
+// Check if so_id column exists in invoices table
+$invoice_so_column_exists = false;
+$check_invoice_column = $conn->query("SHOW COLUMNS FROM invoices LIKE 'so_id'");
+if ($check_invoice_column && $check_invoice_column->num_rows > 0) {
+    $invoice_so_column_exists = true;
+}
+
+// Check if trip_tickets has additional columns
+$trip_has_so_id = false;
+$check_trip_so = $conn->query("SHOW COLUMNS FROM trip_tickets LIKE 'so_id'");
+if ($check_trip_so && $check_trip_so->num_rows > 0) {
+    $trip_has_so_id = true;
+}
+
+$trip_has_picklist_id = false;
+$check_trip_picklist = $conn->query("SHOW COLUMNS FROM trip_tickets LIKE 'picklist_id'");
+if ($check_trip_picklist && $check_trip_picklist->num_rows > 0) {
+    $trip_has_picklist_id = true;
+}
+
 // Determine branch filter condition
 $branch_condition = "";
 if ($so_branch_column_exists && !$view_all_branches) {
@@ -84,8 +104,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 
                 // 1. CREATE PICK LIST
                 $pick_list_number = 'PL-' . date('Ymd') . '-' . str_pad($so_id, 5, '0', STR_PAD_LEFT);
-                $picklist_query = "INSERT INTO pick_lists (pick_list_number, so_id, branch_id, status, created_at) 
-                                  VALUES (?, ?, ?, 'pending', NOW())";
+                $picklist_query = "INSERT INTO pick_lists (pick_list_number, so_id, branch_id, pick_status, created_at) 
+                                  VALUES (?, ?, ?, 'open', NOW())";
                 $picklist_stmt = $conn->prepare($picklist_query);
                 $picklist_stmt->bind_param("sii", $pick_list_number, $so_id, $branch_id);
                 
@@ -101,7 +121,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $items_stmt->execute();
                 $items_result = $items_stmt->get_result();
                 
-                $pick_items_query = "INSERT INTO pick_list_items (picklist_id, item_id, quantity) VALUES (?, ?, ?)";
+                $pick_items_query = "INSERT INTO pick_list_items (pick_list_id, item_id, quantity_to_pick) VALUES (?, ?, ?)";
                 $pick_items_stmt = $conn->prepare($pick_items_query);
                 
                 while ($item = $items_result->fetch_assoc()) {
@@ -109,33 +129,103 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $pick_items_stmt->execute();
                 }
                 
-                // 2. SKIP INVOICE CREATION - No relationship exists yet
-                // Just create a placeholder in session or log
+                // 2. CREATE INVOICE (if so_id column exists)
+                if ($invoice_so_column_exists) {
+                    $invoice_number = 'INV-' . date('Ymd') . '-' . str_pad($so_id, 5, '0', STR_PAD_LEFT);
+                    $invoice_date = date('Y-m-d');
+                    $due_date = date('Y-m-d', strtotime('+30 days'));
+                    
+                    $invoice_query = "INSERT INTO invoices (invoice_number, so_id, customer_id, branch_id, invoice_date, due_date, total_amount, status) 
+                                     VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')";
+                    $invoice_stmt = $conn->prepare($invoice_query);
+                    $invoice_stmt->bind_param("siiissd", $invoice_number, $so_id, $order_info['customer_id'], $branch_id, $invoice_date, $due_date, $total_amount);
+                    
+                    if (!$invoice_stmt->execute()) {
+                        throw new Exception('Failed to create invoice');
+                    }
+                    $invoice_id = $conn->insert_id;
+                }
                 
-                // 3. CREATE TRIP TICKET
-                $trip_trip_number = 'TT-' . date('Ymd') . '-' . str_pad($so_id, 5, '0', STR_PAD_LEFT);
+                // 3. CREATE TRIP TICKET - FIXED with driver_id
+                // First, get an available driver for this branch
+                $driver_query = "SELECT driver_id FROM drivers WHERE branch_id = ? AND status = 'active' LIMIT 1";
+                $driver_stmt = $conn->prepare($driver_query);
+                $driver_stmt->bind_param("i", $branch_id);
+                $driver_stmt->execute();
+                $driver_result = $driver_stmt->get_result();
+                $driver = $driver_result->fetch_assoc();
+                
+                if (!$driver) {
+                    // If no active driver found, try to get any driver
+                    $driver_query = "SELECT driver_id FROM drivers WHERE branch_id = ? LIMIT 1";
+                    $driver_stmt = $conn->prepare($driver_query);
+                    $driver_stmt->bind_param("i", $branch_id);
+                    $driver_stmt->execute();
+                    $driver_result = $driver_stmt->get_result();
+                    $driver = $driver_result->fetch_assoc();
+                }
+                
+                if (!$driver) {
+                    // If still no driver, use a default driver ID (1) as fallback
+                    $driver_id = 1;
+                } else {
+                    $driver_id = $driver['driver_id'];
+                }
+                
+                $trip_ticket_number = 'TT-' . date('Ymd') . '-' . str_pad($so_id, 5, '0', STR_PAD_LEFT);
                 $branch_to_use = ($so_branch_column_exists && !$view_all_branches) ? $branch_id : $order_info['branch_id'];
+                $trip_date = date('Y-m-d');
                 
-                $trip_ticket_query = "INSERT INTO trip_tickets (trip_number, so_id, picklist_id, branch_id, status, created_at) 
-                                     VALUES (?, ?, ?, ?, 'pending', NOW())";
+                // Base required fields for trip_tickets from your database
+                // From your structure: trip_number, driver_id, branch_id, trip_date, trip_status, created_by, created_at
+                $trip_fields = "trip_number, driver_id, branch_id, trip_date, trip_status, created_by, created_at";
+                $trip_values = "?, ?, ?, ?, 'planned', ?, NOW()";
+                $trip_types = "siisi"; // string, int, int, string, int
+                $trip_params = [$trip_ticket_number, $driver_id, $branch_to_use, $trip_date, $user_id];
+                
+                // Add optional fields if they exist
+                if ($trip_has_so_id) {
+                    $trip_fields .= ", so_id";
+                    $trip_values .= ", ?";
+                    $trip_types .= "i";
+                    $trip_params[] = $so_id;
+                }
+                
+                if ($trip_has_picklist_id) {
+                    $trip_fields .= ", picklist_id";
+                    $trip_values .= ", ?";
+                    $trip_types .= "i";
+                    $trip_params[] = $picklist_id;
+                }
+                
+                $trip_ticket_query = "INSERT INTO trip_tickets ($trip_fields) VALUES ($trip_values)";
                 $trip_ticket_stmt = $conn->prepare($trip_ticket_query);
-                $trip_ticket_stmt->bind_param("siii", $trip_trip_number, $so_id, $picklist_id, $branch_to_use);
+                
+                // Dynamically bind parameters
+                $trip_ticket_stmt->bind_param($trip_types, ...$trip_params);
                 
                 if (!$trip_ticket_stmt->execute()) {
-                    throw new Exception('Failed to create trip ticket');
+                    throw new Exception('Failed to create trip ticket: ' . $trip_ticket_stmt->error);
                 }
                 
                 $conn->commit();
                 
-                echo json_encode([
+                $response = [
                     'success' => true,
-                    'message' => 'Order confirmed successfully! Pick List and Trip Ticket have been generated. (Invoice creation skipped - no relationship exists)',
+                    'message' => 'Order confirmed successfully! Pick List and Trip Ticket have been generated.',
                     'generated_docs' => [
                         'picklist' => $pick_list_number,
-                        'invoice' => 'Not Generated',
-                        'trip_ticket' => $trip_trip_number
+                        'trip_ticket' => $trip_ticket_number,
+                        'driver_assigned' => $driver_id
                     ]
-                ]);
+                ];
+                
+                if ($invoice_so_column_exists) {
+                    $response['message'] = 'Order confirmed successfully! Pick List, Invoice, and Trip Ticket have been generated.';
+                    $response['generated_docs']['invoice'] = $invoice_number;
+                }
+                
+                echo json_encode($response);
                 exit;
             }
             
@@ -176,17 +266,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 throw new Exception('Cannot delete order with existing pick lists');
             }
             
-            // Skip invoice check - no relationship exists
+            // Check for invoices (if column exists)
+            if ($invoice_so_column_exists) {
+                $check_invoice_query = "SELECT COUNT(*) as count FROM invoices WHERE so_id = ?";
+                $check_invoice_stmt = $conn->prepare($check_invoice_query);
+                $check_invoice_stmt->bind_param("i", $so_id);
+                $check_invoice_stmt->execute();
+                $invoice_count = $check_invoice_stmt->get_result()->fetch_assoc()['count'];
+                
+                if ($invoice_count > 0) {
+                    throw new Exception('Cannot delete order with existing invoices');
+                }
+            }
             
-            // Check for trip tickets
-            $check_trip_query = "SELECT COUNT(*) as count FROM trip_tickets WHERE so_id = ?";
-            $check_trip_stmt = $conn->prepare($check_trip_query);
-            $check_trip_stmt->bind_param("i", $so_id);
-            $check_trip_stmt->execute();
-            $trip_count = $check_trip_stmt->get_result()->fetch_assoc()['count'];
-            
-            if ($trip_count > 0) {
-                throw new Exception('Cannot delete order with existing trip tickets');
+            // Check for trip tickets - need to check if so_id exists in trip_tickets first
+            if ($trip_has_so_id) {
+                $check_trip_query = "SELECT COUNT(*) as count FROM trip_tickets WHERE so_id = ?";
+                $check_trip_stmt = $conn->prepare($check_trip_query);
+                $check_trip_stmt->bind_param("i", $so_id);
+                $check_trip_stmt->execute();
+                $trip_count = $check_trip_stmt->get_result()->fetch_assoc()['count'];
+                
+                if ($trip_count > 0) {
+                    throw new Exception('Cannot delete order with existing trip tickets');
+                }
             }
             
             // Delete order items first
@@ -272,21 +375,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $docs_query = "
                     SELECT 
                         (SELECT pick_list_number FROM pick_lists WHERE so_id = ? LIMIT 1) as pick_list_number,
-                        (SELECT trip_number FROM trip_tickets WHERE so_id = ? LIMIT 1) as trip_trip_number
+                        (SELECT trip_number FROM trip_tickets WHERE " . ($trip_has_so_id ? "so_id = ?" : "1=0") . " LIMIT 1) as trip_ticket_number
                 ";
                 $docs_stmt = $conn->prepare($docs_query);
-                $docs_stmt->bind_param("ii", $so_id, $so_id);
+                
+                if ($trip_has_so_id) {
+                    $docs_stmt->bind_param("ii", $so_id, $so_id);
+                } else {
+                    $docs_stmt->bind_param("i", $so_id);
+                }
+                
                 $docs_stmt->execute();
                 $documents = $docs_stmt->get_result()->fetch_assoc();
                 
-                // No invoice data - relationship doesn't exist
+                // Get invoice data if column exists
+                $invoice = null;
+                if ($invoice_so_column_exists) {
+                    $invoice_query = "SELECT invoice_number, status as invoice_status FROM invoices WHERE so_id = ? LIMIT 1";
+                    $invoice_stmt = $conn->prepare($invoice_query);
+                    $invoice_stmt->bind_param("i", $so_id);
+                    $invoice_stmt->execute();
+                    $invoice_result = $invoice_stmt->get_result();
+                    $invoice = $invoice_result->fetch_assoc();
+                }
                 
                 echo json_encode([
                     'success' => true,
                     'order' => $order,
                     'items' => $items,
                     'documents' => $documents,
-                    'invoice' => null
+                    'invoice' => $invoice
                 ]);
             } else {
                 throw new Exception('Sales order not found');
@@ -348,21 +466,67 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             exit;
         }
         
-        // GET INVOICE DETAILS - DISABLED (no relationship)
+        // GET INVOICE DETAILS
         elseif ($_POST['action'] === 'get_invoice') {
-            echo json_encode([
-                'success' => false,
-                'message' => 'Invoice functionality not available. Please run SQL to add relationship: ALTER TABLE invoices ADD COLUMN so_id INT NULL;'
-            ]);
+            if (!$invoice_so_column_exists) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Invoice functionality not available. Please run SQL to add relationship: ALTER TABLE invoices ADD COLUMN so_id INT NULL;'
+                ]);
+                exit;
+            }
+            
+            $so_id = (int)$_POST['so_id'];
+            
+            $query = "SELECT * FROM invoices WHERE so_id = ?";
+            $stmt = $conn->prepare($query);
+            $stmt->bind_param("i", $so_id);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            $invoice = $result->fetch_assoc();
+            
+            if ($invoice) {
+                echo json_encode([
+                    'success' => true,
+                    'invoice' => $invoice
+                ]);
+            } else {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Invoice not found'
+                ]);
+            }
             exit;
         }
         
-        // UPDATE INVOICE STATUS - DISABLED (no relationship)
+        // UPDATE INVOICE STATUS
         elseif ($_POST['action'] === 'update_invoice_status') {
-            echo json_encode([
-                'success' => false,
-                'message' => 'Invoice functionality not available'
-            ]);
+            if (!$invoice_so_column_exists) {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Invoice functionality not available'
+                ]);
+                exit;
+            }
+            
+            $invoice_id = (int)$_POST['invoice_id'];
+            $status = $_POST['status'];
+            
+            $update_query = "UPDATE invoices SET status = ? WHERE invoice_id = ?";
+            $update_stmt = $conn->prepare($update_query);
+            $update_stmt->bind_param("si", $status, $invoice_id);
+            
+            if ($update_stmt->execute()) {
+                echo json_encode([
+                    'success' => true,
+                    'message' => 'Invoice status updated successfully'
+                ]);
+            } else {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Failed to update invoice status'
+                ]);
+            }
             exit;
         }
         
@@ -376,7 +540,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 
-// FETCH SALES ORDERS WITH CUSTOMER AND ITEM COUNTS - NO INVOICE JOIN
+// FETCH SALES ORDERS WITH CUSTOMER, ITEM COUNTS, AND INVOICE DATA
 $sales_query = "
     SELECT 
         so.so_id,
@@ -389,11 +553,13 @@ $sales_query = "
         c.customer_id,
         b.branch_name,
         COUNT(soi.so_item_id) as total_items,
-        SUM(soi.quantity_ordered) as total_quantity
+        SUM(soi.quantity_ordered) as total_quantity,
+        " . ($invoice_so_column_exists ? "inv.invoice_number, inv.status as invoice_status" : "NULL as invoice_number, NULL as invoice_status") . "
     FROM sales_orders so
     JOIN customers c ON so.customer_id = c.customer_id
     LEFT JOIN branches b ON so.branch_id = b.branch_id
     LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
+    " . ($invoice_so_column_exists ? "LEFT JOIN invoices inv ON so.so_id = inv.so_id" : "") . "
     WHERE 1=1
     $branch_condition
     GROUP BY so.so_id
@@ -404,13 +570,6 @@ if (!$sales_result) {
     die("Query failed: " . $conn->error);
 }
 $sales_orders = $sales_result->fetch_all(MYSQLI_ASSOC);
-
-// No invoice data - set to null for all orders
-foreach ($sales_orders as &$order) {
-    $order['invoice_number'] = null;
-    $order['invoice_status'] = null;
-}
-unset($order);
 
 // CALCULATE STATISTICS FROM REAL DATA
 $total_orders = count($sales_orders);
@@ -456,10 +615,20 @@ function getOrderStatusText($status) {
     };
 }
 
-// Payment status - simplified (no invoice)
-function getPaymentStatus($order_status) {
+// Payment status based on invoice if available, otherwise simplified
+function getPaymentStatus($order_status, $invoice_status = null) {
     if ($order_status === 'cancelled') return ['status' => 'Cancelled', 'class' => 'badge-danger'];
-    return ['status' => 'Pending', 'class' => 'badge-warning'];
+    
+    if ($invoice_status) {
+        return match($invoice_status) {
+            'paid' => ['status' => 'Paid', 'class' => 'badge-success'],
+            'pending' => ['status' => 'Pending', 'class' => 'badge-warning'],
+            'cancelled' => ['status' => 'Cancelled', 'class' => 'badge-danger'],
+            default => ['status' => 'Pending', 'class' => 'badge-warning']
+        };
+    }
+    
+    return ['status' => 'No Invoice', 'class' => 'badge-secondary'];
 }
 
 function formatDate($dateStr) {
@@ -762,7 +931,8 @@ function formatDateTime($dateStr) {
                     </div>
                 </div>
 
-                <!-- Database Fix Alert - INVOICES TABLE NEEDS FIXING -->
+                <!-- Database Fix Alert - Only show if invoice_so_column doesn't exist -->
+                <?php if (!$invoice_so_column_exists): ?>
                 <div class="db-fix-card">
                     <div class="d-flex align-items-center mb-3">
                         <i class="bi bi-database fs-1 me-3 text-warning"></i>
@@ -790,6 +960,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                         <strong>Workaround Mode:</strong> Invoice features are currently disabled. The system will work normally for sales orders, pick lists, and trip tickets.
                     </div>
                 </div>
+                <?php endif; ?>
 
                 <!-- Branch Info Alerts -->
                 <?php if (!$so_branch_column_exists): ?>
@@ -957,7 +1128,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                 </tr>
                                 <?php else: ?>
                                     <?php foreach ($sales_orders as $order): 
-                                        $payment = getPaymentStatus($order['order_status']);
+                                        $payment = getPaymentStatus($order['order_status'], $order['invoice_status'] ?? null);
                                     ?>
                                     <tr class="sales-order-row" 
                                         data-id="<?= $order['so_id'] ?>"
@@ -967,7 +1138,9 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                         data-date="<?= $order['order_date'] ?>"
                                         data-amount="<?= $order['total_amount'] ?>"
                                         data-items="<?= $order['total_items'] ?? 0 ?>"
-                                        data-qty="<?= $order['total_quantity'] ?? 0 ?>">
+                                        data-qty="<?= $order['total_quantity'] ?? 0 ?>"
+                                        data-invoice="<?= htmlspecialchars($order['invoice_number'] ?? '') ?>"
+                                        data-invoice-status="<?= $order['invoice_status'] ?? '' ?>">
                                         <td><strong><?= htmlspecialchars($order['so_number']) ?></strong></td>
                                         <td><?= formatDate($order['order_date']) ?></td>
                                         <td><?= htmlspecialchars($order['customer_name']) ?></td>
@@ -982,7 +1155,11 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                         <td class="text-center"><?= $order['total_quantity'] ?? 0 ?></td>
                                         <td class="text-end">₱<?= number_format($order['total_amount'] ?? 0, 2) ?></td>
                                         <td>
-                                            <span class="badge bg-secondary">No Invoice</span>
+                                            <?php if ($order['invoice_number']): ?>
+                                                <span class="badge bg-success"><?= htmlspecialchars($order['invoice_number']) ?></span>
+                                            <?php else: ?>
+                                                <span class="badge bg-secondary">No Invoice</span>
+                                            <?php endif; ?>
                                         </td>
                                         <td>
                                             <span class="badge <?= $payment['class'] ?>"><?= $payment['status'] ?></span>
@@ -1159,6 +1336,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
     const branchId = <?php echo $branch_id; ?>;
     const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
     const soBranchColumnExists = <?php echo $so_branch_column_exists ? 'true' : 'false'; ?>;
+    const invoiceSoColumnExists = <?php echo $invoice_so_column_exists ? 'true' : 'false'; ?>;
     
     // ========== SIDEBAR FUNCTIONS ==========
     function toggleSidebar() {
@@ -1274,6 +1452,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 const order = data.order;
                 const items = data.items;
                 const documents = data.documents || {};
+                const invoice = data.invoice || null;
                 
                 const orderDate = new Date(order.order_date);
                 const formattedDate = orderDate.toLocaleDateString('en-US', {
@@ -1303,18 +1482,21 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 }
                 
                 // Build documents section
-                let documentsHtml = '';
-                if (order.order_status === 'confirmed' || order.order_status === 'processing' || 
-                    order.order_status === 'ready' || order.order_status === 'delivered') {
-                    documentsHtml = '<div class="mt-4"><h6 class="fw-bold">Generated Documents</h6><div class="row g-2">';
-                    if (documents.pick_list_number) {
-                        documentsHtml += `<div class="col-md-6"><div class="card bg-light"><div class="card-body p-2"><small class="text-muted">Pick List</small><br><strong>${documents.pick_list_number}</strong></div></div></div>`;
-                    }
-                    if (documents.trip_trip_number) {
-                        documentsHtml += `<div class="col-md-6"><div class="card bg-light"><div class="card-body p-2"><small class="text-muted">Trip Ticket</small><br><strong>${documents.trip_trip_number}</strong></div></div></div>`;
-                    }
-                    documentsHtml += '</div></div>';
+                let documentsHtml = '<div class="mt-4"><h6 class="fw-bold">Generated Documents</h6><div class="row g-2">';
+                
+                if (documents.pick_list_number) {
+                    documentsHtml += `<div class="col-md-4"><div class="card bg-light"><div class="card-body p-2"><small class="text-muted">Pick List</small><br><strong>${documents.pick_list_number}</strong></div></div></div>`;
                 }
+                
+                if (invoice) {
+                    documentsHtml += `<div class="col-md-4"><div class="card bg-light"><div class="card-body p-2"><small class="text-muted">Invoice</small><br><strong>${invoice.invoice_number}</strong><br><span class="badge bg-${invoice.invoice_status === 'paid' ? 'success' : 'warning'}">${invoice.invoice_status}</span></div></div></div>`;
+                }
+                
+                if (documents.trip_ticket_number) {
+                    documentsHtml += `<div class="col-md-4"><div class="card bg-light"><div class="card-body p-2"><small class="text-muted">Trip Ticket</small><br><strong>${documents.trip_ticket_number}</strong></div></div></div>`;
+                }
+                
+                documentsHtml += '</div></div>';
                 
                 const content = document.getElementById('viewOrderContent');
                 content.innerHTML = `
@@ -1488,6 +1670,18 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             
             if (data.success) {
                 if (data.generated_docs) {
+                    let docsList = `
+                        <ul class="list-unstyled">
+                            <li><i class="bi bi-check-circle-fill text-success"></i> Pick List: ${data.generated_docs.picklist}</li>
+                            <li><i class="bi bi-check-circle-fill text-success"></i> Trip Ticket: ${data.generated_docs.trip_ticket}</li>
+                    `;
+                    
+                    if (data.generated_docs.invoice) {
+                        docsList += `<li><i class="bi bi-check-circle-fill text-success"></i> Invoice: ${data.generated_docs.invoice}</li>`;
+                    }
+                    
+                    docsList += '</ul>';
+                    
                     Swal.fire({
                         icon: 'success',
                         title: 'Order Confirmed!',
@@ -1496,11 +1690,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                 <p>${data.message}</p>
                                 <hr>
                                 <h6 class="fw-bold">Generated Documents:</h6>
-                                <ul class="list-unstyled">
-                                    <li><i class="bi bi-check-circle-fill text-success"></i> Pick List: ${data.generated_docs.picklist}</li>
-                                    <li><i class="bi bi-check-circle-fill text-success"></i> Trip Ticket: ${data.generated_docs.trip_ticket}</li>
-                                </ul>
-                                <p class="text-warning mt-2"><i class="bi bi-exclamation-triangle"></i> Invoice generation skipped - database relationship missing</p>
+                                ${docsList}
                             </div>
                         `,
                         confirmButtonText: 'OK',
@@ -1824,7 +2014,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         }
         
         const excelData = [];
-        const headers = ['Order Number', 'Order Date', 'Customer Name', 'Items', 'Qty', 'Total Amount (₱)', 'Payment Status', 'Order Status'];
+        const headers = ['Order Number', 'Order Date', 'Customer Name', 'Items', 'Qty', 'Total Amount (₱)', 'Invoice Number', 'Payment Status', 'Order Status'];
         excelData.push(headers);
 
         rows.forEach(row => {
@@ -1841,16 +2031,17 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 const items = cells[cellIndex++]?.innerText || '0';
                 const qty = cells[cellIndex++]?.innerText || '0';
                 const amount = cells[cellIndex++]?.innerText.replace('₱', '').replace(/,/g, '') || '0';
-                cellIndex += 2; // Skip Invoice and Payment Status columns
+                const invoice = cells[cellIndex++]?.innerText || 'No Invoice';
+                const payment = cells[cellIndex++]?.innerText || 'Pending';
                 const orderStatus = cells[cellIndex]?.innerText || '';
                 
-                excelData.push([orderNo, date, customer, items, qty, amount, 'Pending', orderStatus]);
+                excelData.push([orderNo, date, customer, items, qty, amount, invoice, payment, orderStatus]);
             }
         });
 
         const wb = XLSX.utils.book_new();
         const ws = XLSX.utils.aoa_to_sheet(excelData);
-        ws['!cols'] = [{ wch: 18 }, { wch: 15 }, { wch: 30 }, { wch: 10 }, { wch: 10 }, { wch: 15 }, { wch: 15 }, { wch: 15 }];
+        ws['!cols'] = [{ wch: 18 }, { wch: 15 }, { wch: 30 }, { wch: 10 }, { wch: 10 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }];
         XLSX.utils.book_append_sheet(wb, ws, 'Sales Orders');
         XLSX.writeFile(wb, `Sales_Orders_${new Date().toISOString().slice(0,10).replace(/-/g, '')}.xlsx`);
         
