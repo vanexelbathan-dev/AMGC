@@ -12,13 +12,6 @@ $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'warehouse';
 $branch_id = $_SESSION['branch_id'] ?? 0;
 $view_all_branches = $_SESSION['view_all_branches'] ?? false;
 
-// Check if branch_id column exists in customers table
-$branch_column_exists = false;
-$check_column = $conn->query("SHOW COLUMNS FROM customers LIKE 'branch_id'");
-if ($check_column && $check_column->num_rows > 0) {
-    $branch_column_exists = true;
-}
-
 // Check if branch_id column exists in items table
 $items_branch_column_exists = false;
 $check_items_column = $conn->query("SHOW COLUMNS FROM items LIKE 'branch_id'");
@@ -89,9 +82,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception('Reorder level cannot be negative');
             }
             
-            // Insert
-            $stmt = $conn->prepare("INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, reorder_level, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
-            $stmt->bind_param("ssssisdis", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status);
+            // Insert with branch_id if column exists
+            if ($items_branch_column_exists) {
+                $stmt = $conn->prepare("INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, reorder_level, status, branch_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
+                $stmt->bind_param("ssssisdisi", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status, $branch_id);
+            } else {
+                $stmt = $conn->prepare("INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, reorder_level, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
+                $stmt->bind_param("ssssisdis", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status);
+            }
             
             if (!$stmt->execute()) {
                 throw new Exception('Failed to add item: ' . $stmt->error);
@@ -191,39 +189,81 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+// Determine branch filter condition for statistics - FIXED: Use items.branch_id to avoid ambiguity
+$branch_condition = "";
+if ($items_branch_column_exists && !$view_all_branches) {
+    $branch_condition = "AND items.branch_id = $branch_id";
+}
+
 // Get inventory statistics
 $stats = [];
 
 // Total Items
-$total_items_query = "SELECT COUNT(*) as total_items FROM items WHERE status = 'active'";
+$total_items_query = "SELECT COUNT(*) as total_items FROM items WHERE status = 'active' $branch_condition";
 $result = $conn->query($total_items_query);
 $stats['total_items'] = $result->fetch_assoc()['total_items'] ?? 0;
 
 // Current Stock
-$current_stock_query = "SELECT SUM(stock) as current_stock FROM items WHERE status = 'active'";
+$current_stock_query = "SELECT SUM(stock) as current_stock FROM items WHERE status = 'active' $branch_condition";
 $result = $conn->query($current_stock_query);
 $stats['current_stock'] = $result->fetch_assoc()['current_stock'] ?? 0;
 
 // Low Stock Items
 $low_stock_query = "SELECT COUNT(*) as count FROM items 
-                   WHERE stock <= reorder_level AND status = 'active'";
+                   WHERE stock <= reorder_level AND status = 'active' $branch_condition";
 $result = $conn->query($low_stock_query);
 $stats['low_stock'] = $result->fetch_assoc()['count'] ?? 0;
 
 // Out of Stock Items
 $out_of_stock_query = "SELECT COUNT(*) as count FROM items 
-                      WHERE stock <= 0 AND status = 'active'";
+                      WHERE stock <= 0 AND status = 'active' $branch_condition";
 $result = $conn->query($out_of_stock_query);
 $stats['out_of_stock'] = $result->fetch_assoc()['count'] ?? 0;
 
-// Get inventory items
-$inventory_query = "SELECT i.item_id, i.item_code, i.item_name, i.category, i.stock, 
-                   i.reorder_level, i.status, i.unit_type, i.description
-                   FROM items i
-                   WHERE i.status = 'active'
-                   ORDER BY i.item_name";
+// Get inventory items with branch info - FIXED: Use items.branch_id in WHERE clause
+$inventory_query = "
+    SELECT 
+        i.item_id, 
+        i.item_code, 
+        i.item_name, 
+        i.category, 
+        i.stock, 
+        i.reorder_level, 
+        i.status, 
+        i.unit_type, 
+        i.description, 
+        i.branch_id,
+        b.branch_name
+    FROM items i
+    LEFT JOIN branches b ON i.branch_id = b.branch_id
+    WHERE i.status = 'active'";
+
+// Add branch filter if needed - FIXED: Use i.branch_id to avoid ambiguity
+if ($items_branch_column_exists && !$view_all_branches) {
+    $inventory_query .= " AND i.branch_id = $branch_id";
+}
+
+$inventory_query .= " ORDER BY i.item_name";
+
 $items_result = $conn->query($inventory_query);
+if (!$items_result) {
+    die("Query failed: " . $conn->error);
+}
 $items = $items_result->fetch_all(MYSQLI_ASSOC);
+
+// Get unique categories for filter - FIXED: Use i.branch_id in WHERE clause
+$categories_query = "
+    SELECT DISTINCT category 
+    FROM items 
+    WHERE category IS NOT NULL AND category != ''";
+    
+if ($items_branch_column_exists && !$view_all_branches) {
+    $categories_query .= " AND branch_id = $branch_id";
+}
+$categories_query .= " ORDER BY category";
+
+$categories_result = $conn->query($categories_query);
+$categories = $categories_result->fetch_all(MYSQLI_ASSOC);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -243,6 +283,17 @@ $items = $items_result->fetch_all(MYSQLI_ASSOC);
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <!-- SweetAlert2 -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <style>
+        .branch-badge {
+            background-color: #e7f1ff;
+            color: #0d6efd;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 5px;
+        }
+    </style>
 </head>
 <body>
     <!-- MAIN APPLICATION -->
@@ -293,11 +344,6 @@ $items = $items_result->fetch_all(MYSQLI_ASSOC);
                     <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
                     <div class="user-details-sidebar">
                         <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-                        <span class="user-role-sidebar">
-                            <?php echo htmlspecialchars(ucfirst($user_role)); ?>
-                            <?php if ($items_branch_column_exists || $branch_column_exists): ?>
-                            <?php endif; ?>
-                        </span>
                     </div>
                 </div>
                 <button class="logout-btn-sidebar" onclick="logout()">
@@ -319,6 +365,15 @@ $items = $items_result->fetch_all(MYSQLI_ASSOC);
                     <p>Manage and view warehouse inventory</p>
                 </div>
             </div>
+
+            <!-- Branch Info Alert -->
+            <?php if (!$items_branch_column_exists): ?>
+                <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    <i class="bi bi-info-circle"></i> 
+                    <strong>Branch filtering for items not yet set up.</strong> Items will be visible to all branches.
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
 
             <!-- Inventory Stats -->
             <div class="row g-3 mb-4">
@@ -366,7 +421,7 @@ $items = $items_result->fetch_all(MYSQLI_ASSOC);
             <div class="card mb-4">
                 <div class="card-body">
                     <div class="row g-3">
-                        <div class="col-md-6 col-12">
+                        <div class="col-md-5 col-12">
                             <div class="input-group">
                                 <span class="input-group-text">
                                     <i class="bi bi-search"></i>
@@ -377,16 +432,14 @@ $items = $items_result->fetch_all(MYSQLI_ASSOC);
                         <div class="col-md-4 col-12">
                             <select class="form-select" id="categoryFilter">
                                 <option value="">All Categories</option>
-                                <?php
-                                $categories_query = "SELECT DISTINCT category FROM items WHERE category IS NOT NULL AND category != ''";
-                                $result = $conn->query($categories_query);
-                                while($row = $result->fetch_assoc()) {
-                                    echo '<option value="' . htmlspecialchars($row['category']) . '">' . htmlspecialchars($row['category']) . '</option>';
-                                }
-                                ?>
+                                <?php foreach ($categories as $cat): ?>
+                                    <option value="<?php echo htmlspecialchars($cat['category']); ?>">
+                                        <?php echo htmlspecialchars($cat['category']); ?>
+                                    </option>
+                                <?php endforeach; ?>
                             </select>
                         </div>
-                        <div class="col-md-2 col-12">
+                        <div class="col-md-3 col-12">
                             <button class="btn btn-outline-success w-100" onclick="showAddItemModal()">
                                 <i class="bi bi-plus-lg"></i> Add Item
                             </button>
@@ -404,6 +457,9 @@ $items = $items_result->fetch_all(MYSQLI_ASSOC);
                                 <th>Item Code</th>
                                 <th>Item Name</th>
                                 <th>Category</th>
+                                <?php if ($view_all_branches && $items_branch_column_exists): ?>
+                                    <th>Branch</th>
+                                <?php endif; ?>
                                 <th>Total Stock</th>
                                 <th>Unit Type</th>
                                 <th>Reorder Level</th>
@@ -430,6 +486,13 @@ $items = $items_result->fetch_all(MYSQLI_ASSOC);
                                         <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($row['item_code']); ?></span></td>
                                         <td><?php echo htmlspecialchars($row['item_name']); ?></td>
                                         <td><?php echo htmlspecialchars($row['category'] ?? 'N/A'); ?></td>
+                                        <?php if ($view_all_branches && $items_branch_column_exists): ?>
+                                            <td>
+                                                <span class="badge bg-info">
+                                                    <?php echo htmlspecialchars($row['branch_name'] ?? 'Branch ' . $row['branch_id']); ?>
+                                                </span>
+                                            </td>
+                                        <?php endif; ?>
                                         <td>
                                             <span class="<?php echo $row['stock'] <= $row['reorder_level'] ? 'text-danger fw-bold' : ''; ?>">
                                                 <?php echo number_format($row['stock']); ?>
@@ -450,7 +513,8 @@ $items = $items_result->fetch_all(MYSQLI_ASSOC);
                                     <?php
                                 }
                             } else {
-                                echo '<tr><td colspan="8" class="text-center py-4"><i class="bi bi-inbox fs-1 d-block text-muted mb-2"></i><p class="text-muted mb-0">No inventory items found</p><button class="btn btn-sm btn-primary mt-2" onclick="showAddItemModal()"><i class="bi bi-plus-circle"></i> Add Item</button></td></tr>';
+                                $colspan = $view_all_branches && $items_branch_column_exists ? 9 : 8;
+                                echo '<tr><td colspan="' . $colspan . '" class="text-center py-4"><i class="bi bi-inbox fs-1 d-block text-muted mb-2"></i><p class="text-muted mb-0">No inventory items found</p><button class="btn btn-sm btn-primary mt-2" onclick="showAddItemModal()"><i class="bi bi-plus-circle"></i> Add Item</button></td></tr>';
                             }
                             ?>
                         </tbody>
@@ -473,7 +537,11 @@ $items = $items_result->fetch_all(MYSQLI_ASSOC);
                         <input type="hidden" name="add_item" value="1">
                         
                         <div class="alert alert-info">
-                            <i class="bi bi-info-circle"></i> Item code will be auto-generated and guaranteed unique.
+                            <i class="bi bi-info-circle"></i> 
+                            Item code will be auto-generated and guaranteed unique.
+                            <?php if ($items_branch_column_exists): ?>
+                                <br>This item will be assigned to Branch <?php echo $branch_id; ?>.
+                            <?php endif; ?>
                         </div>
                         
                         <div class="row">
@@ -769,6 +837,12 @@ $items = $items_result->fetch_all(MYSQLI_ASSOC);
                                         <th>Status:</th>
                                         <td><span class="badge bg-${statusClass}">${item.status}</span></td>
                                     </tr>
+                                    <?php if ($items_branch_column_exists): ?>
+                                    <tr>
+                                        <th>Branch:</th>
+                                        <td><span class="badge bg-info">Branch ${item.branch_id || 'N/A'}</span></td>
+                                    </tr>
+                                    <?php endif; ?>
                                 </table>
                             </div>
                             <div class="col-md-6">
