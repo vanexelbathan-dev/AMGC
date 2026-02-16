@@ -1,12 +1,12 @@
- <?php
-    session_start();
-    require_once '../config/database.php';
-    
-    // Check if user is logged in
-    if (!isset($_SESSION['user_id'])) {
-        header("Location: ../login.php");
-        exit();
-    }
+<?php
+session_start();
+require_once '../config/database.php';
+
+// Check if user is logged in
+if (!isset($_SESSION['user_id'])) {
+    header("Location: ../login.php");
+    exit();
+}
 
 // Get current user info and branch context
 $user_id = $_SESSION['user_id'];
@@ -28,153 +28,178 @@ $check_items_column = $conn->query("SHOW COLUMNS FROM items LIKE 'branch_id'");
 if ($check_items_column && $check_items_column->num_rows > 0) {
     $items_branch_column_exists = true;
 }
-    // Handle form submission
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_pick_item') {
-        // Get form data
-        $pick_list_id = $_POST['pick_list_id'];
-        $item_id = $_POST['item_id'];
-        $quantity_to_pick = $_POST['quantity_to_pick'];
-        $location_bin = $_POST['location_bin'] ?: NULL;
+
+// Handle form submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_pick_item') {
+    // Get form data
+    $pick_list_id = $_POST['pick_list_id'];
+    $item_id = $_POST['item_id'];
+    $quantity_to_pick = $_POST['quantity_to_pick'];
+    $location_bin = $_POST['location_bin'] ?: NULL;
+    
+    // Check if item already exists in the pick list
+    $check_query = "SELECT * FROM pick_list_items WHERE pick_list_id = ? AND item_id = ?";
+    $stmt = $conn->prepare($check_query);
+    $stmt->bind_param("ii", $pick_list_id, $item_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    
+    if ($result->num_rows > 0) {
+        $error_message = "This item already exists in the selected pick list!";
+    } else {
+        // Insert into database
+        $insert_query = "INSERT INTO pick_list_items (pick_list_id, item_id, quantity_to_pick, location_bin) VALUES (?, ?, ?, ?)";
+        $stmt = $conn->prepare($insert_query);
+        $stmt->bind_param("iiis", $pick_list_id, $item_id, $quantity_to_pick, $location_bin);
         
-        // Check if item already exists in the pick list
-        $check_query = "SELECT * FROM pick_list_items WHERE pick_list_id = ? AND item_id = ?";
-        $stmt = $conn->prepare($check_query);
-        $stmt->bind_param("ii", $pick_list_id, $item_id);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        
-        if ($result->num_rows > 0) {
-            $error_message = "This item already exists in the selected pick list!";
+        if ($stmt->execute()) {
+            // Update inventory reserved quantity
+            $branch_query = "SELECT branch_id FROM pick_lists WHERE pick_list_id = ?";
+            $branch_stmt = $conn->prepare($branch_query);
+            $branch_stmt->bind_param("i", $pick_list_id);
+            $branch_stmt->execute();
+            $branch_result = $branch_stmt->get_result();
+            
+            if ($branch_row = $branch_result->fetch_assoc()) {
+                $branch_id = $branch_row['branch_id'];
+                
+                $update_inventory_query = "UPDATE inventory SET quantity_reserved = quantity_reserved + ? WHERE branch_id = ? AND item_id = ?";
+                $update_stmt = $conn->prepare($update_inventory_query);
+                $update_stmt->bind_param("iii", $quantity_to_pick, $branch_id, $item_id);
+                $update_stmt->execute();
+                $update_stmt->close();
+            }
+            
+            $branch_stmt->close();
+            
+            $success_message = "Pick list item added successfully!";
         } else {
-            // Insert into database
-            $insert_query = "INSERT INTO pick_list_items (pick_list_id, item_id, quantity_to_pick, location_bin) VALUES (?, ?, ?, ?)";
-            $stmt = $conn->prepare($insert_query);
-            $stmt->bind_param("iiis", $pick_list_id, $item_id, $quantity_to_pick, $location_bin);
-            
-            if ($stmt->execute()) {
-                // Update inventory reserved quantity
-                $branch_query = "SELECT branch_id FROM pick_lists WHERE pick_list_id = ?";
-                $branch_stmt = $conn->prepare($branch_query);
-                $branch_stmt->bind_param("i", $pick_list_id);
-                $branch_stmt->execute();
-                $branch_result = $branch_stmt->get_result();
-                
-                if ($branch_row = $branch_result->fetch_assoc()) {
-                    $branch_id = $branch_row['branch_id'];
+            $error_message = "Error adding pick list item: " . $conn->error;
+        }
+    }
+    $stmt->close();
+}
+
+// Handle update pick quantity
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_pick_quantity') {
+    $pick_item_id = $_POST['pick_item_id'];
+    $quantity_picked = $_POST['quantity_picked'];
+    $pick_notes = isset($_POST['pick_notes']) ? $_POST['pick_notes'] : '';
+    
+    $get_query = "SELECT pli.quantity_to_pick, pli.quantity_picked as old_quantity, pli.pick_list_id, pli.item_id, 
+                         pl.branch_id, pl.so_id
+                  FROM pick_list_items pli
+                  JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
+                  WHERE pli.pick_item_id = ?";
+    $stmt = $conn->prepare($get_query);
+    $stmt->bind_param("i", $pick_item_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $item = $result->fetch_assoc();
+    
+    if ($item) {
+        $quantity_difference = $quantity_picked - $item['old_quantity'];
+        
+        $update_query = "UPDATE pick_list_items SET quantity_picked = ?, notes = CONCAT(IFNULL(notes, ''), ?) WHERE pick_item_id = ?";
+        $notes_update = "\n[" . date('Y-m-d H:i:s') . "] Quantity updated from " . $item['old_quantity'] . " to " . $quantity_picked . ($pick_notes ? " - Notes: " . $pick_notes : "");
+        $update_stmt = $conn->prepare($update_query);
+        $update_stmt->bind_param("isi", $quantity_picked, $notes_update, $pick_item_id);
+        
+        if ($update_stmt->execute()) {
+            // Update inventory reserved quantity based on the difference
+            if ($quantity_difference != 0) {
+                if ($quantity_difference > 0) {
+                    // More items picked, reduce reserved and stock
+                    $update_inventory_query = "UPDATE inventory SET quantity_reserved = quantity_reserved - ? WHERE branch_id = ? AND item_id = ?";
+                    $update_inventory_stmt = $conn->prepare($update_inventory_query);
+                    $update_inventory_stmt->bind_param("iii", $quantity_difference, $item['branch_id'], $item['item_id']);
+                    $update_inventory_stmt->execute();
+                    $update_inventory_stmt->close();
                     
+                    $update_items_query = "UPDATE items SET stock = stock - ? WHERE item_id = ? AND stock >= ?";
+                    $update_items_stmt = $conn->prepare($update_items_query);
+                    $update_items_stmt->bind_param("iii", $quantity_difference, $item['item_id'], $quantity_difference);
+                    $update_items_stmt->execute();
+                    $update_items_stmt->close();
+                } else {
+                    // Less items picked, increase reserved (return to reserved)
+                    $quantity_difference_abs = abs($quantity_difference);
                     $update_inventory_query = "UPDATE inventory SET quantity_reserved = quantity_reserved + ? WHERE branch_id = ? AND item_id = ?";
-                    $update_stmt = $conn->prepare($update_inventory_query);
-                    $update_stmt->bind_param("iii", $quantity_to_pick, $branch_id, $item_id);
-                    $update_stmt->execute();
-                    $update_stmt->close();
-                }
-                
-                $branch_stmt->close();
-                
-                $success_message = "Pick list item added successfully!";
-            } else {
-                $error_message = "Error adding pick list item: " . $conn->error;
-            }
-        }
-        $stmt->close();
-    }
-    
-    // Handle update pick quantity
-    if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_pick_quantity') {
-        $pick_item_id = $_POST['pick_item_id'];
-        $quantity_picked = $_POST['quantity_picked'];
-        
-        $get_query = "SELECT pli.quantity_to_pick, pli.pick_list_id, pli.item_id, 
-                             pl.branch_id, pl.so_id
-                      FROM pick_list_items pli
-                      JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
-                      WHERE pli.pick_item_id = ?";
-        $stmt = $conn->prepare($get_query);
-        $stmt->bind_param("i", $pick_item_id);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $item = $result->fetch_assoc();
-        
-        if ($item) {
-            $update_query = "UPDATE pick_list_items SET quantity_picked = ? WHERE pick_item_id = ?";
-            $update_stmt = $conn->prepare($update_query);
-            $update_stmt->bind_param("ii", $quantity_picked, $pick_item_id);
-            
-            if ($update_stmt->execute()) {
-                $update_inventory_query = "UPDATE inventory SET quantity_reserved = quantity_reserved - ? WHERE branch_id = ? AND item_id = ?";
-                $update_inventory_stmt = $conn->prepare($update_inventory_query);
-                $update_inventory_stmt->bind_param("iii", $quantity_picked, $item['branch_id'], $item['item_id']);
-                $update_inventory_stmt->execute();
-                $update_inventory_stmt->close();
-                
-                $update_items_query = "UPDATE items SET stock = stock - ? WHERE item_id = ? AND stock >= ?";
-                $update_items_stmt = $conn->prepare($update_items_query);
-                $update_items_stmt->bind_param("iii", $quantity_picked, $item['item_id'], $quantity_picked);
-                $update_items_stmt->execute();
-                $update_items_stmt->close();
-                
-                // Check if all items in pick list are picked
-                $check_all_picked_query = "SELECT 
-                                            SUM(quantity_to_pick) as total_to_pick,
-                                            SUM(quantity_picked) as total_picked
-                                          FROM pick_list_items 
-                                          WHERE pick_list_id = ?";
-                $check_stmt = $conn->prepare($check_all_picked_query);
-                $check_stmt->bind_param("i", $item['pick_list_id']);
-                $check_stmt->execute();
-                $check_result = $check_stmt->get_result();
-                $pick_totals = $check_result->fetch_assoc();
-                
-                if ($pick_totals['total_picked'] >= $pick_totals['total_to_pick']) {
-                    $update_pl_status = "UPDATE pick_lists SET pick_status = 'completed', updated_at = NOW() WHERE pick_list_id = ?";
-                    $pl_status_stmt = $conn->prepare($update_pl_status);
-                    $pl_status_stmt->bind_param("i", $item['pick_list_id']);
-                    $pl_status_stmt->execute();
-                    $pl_status_stmt->close();
+                    $update_inventory_stmt = $conn->prepare($update_inventory_query);
+                    $update_inventory_stmt->bind_param("iii", $quantity_difference_abs, $item['branch_id'], $item['item_id']);
+                    $update_inventory_stmt->execute();
+                    $update_inventory_stmt->close();
                     
-                    if ($item['so_id']) {
-                        $update_so_status = "UPDATE sales_orders SET order_status = 'ready', updated_at = NOW() WHERE so_id = ?";
-                        $so_status_stmt = $conn->prepare($update_so_status);
-                        $so_status_stmt->bind_param("i", $item['so_id']);
-                        $so_status_stmt->execute();
-                        $so_status_stmt->close();
-                    }
+                    $update_items_query = "UPDATE items SET stock = stock + ? WHERE item_id = ?";
+                    $update_items_stmt = $conn->prepare($update_items_query);
+                    $update_items_stmt->bind_param("ii", $quantity_difference_abs, $item['item_id']);
+                    $update_items_stmt->execute();
+                    $update_items_stmt->close();
                 }
-                
-                echo json_encode(['success' => true]);
-                exit;
-            } else {
-                echo json_encode(['success' => false, 'message' => $conn->error]);
-                exit;
             }
+            
+            // Check if all items in pick list are picked
+            $check_all_picked_query = "SELECT 
+                                        SUM(quantity_to_pick) as total_to_pick,
+                                        SUM(quantity_picked) as total_picked
+                                      FROM pick_list_items 
+                                      WHERE pick_list_id = ?";
+            $check_stmt = $conn->prepare($check_all_picked_query);
+            $check_stmt->bind_param("i", $item['pick_list_id']);
+            $check_stmt->execute();
+            $check_result = $check_stmt->get_result();
+            $pick_totals = $check_result->fetch_assoc();
+            
+            if ($pick_totals['total_picked'] >= $pick_totals['total_to_pick']) {
+                $update_pl_status = "UPDATE pick_lists SET pick_status = 'completed', updated_at = NOW() WHERE pick_list_id = ?";
+                $pl_status_stmt = $conn->prepare($update_pl_status);
+                $pl_status_stmt->bind_param("i", $item['pick_list_id']);
+                $pl_status_stmt->execute();
+                $pl_status_stmt->close();
+                
+                if ($item['so_id']) {
+                    $update_so_status = "UPDATE sales_orders SET order_status = 'ready', updated_at = NOW() WHERE so_id = ?";
+                    $so_status_stmt = $conn->prepare($update_so_status);
+                    $so_status_stmt->bind_param("i", $item['so_id']);
+                    $so_status_stmt->execute();
+                    $so_status_stmt->close();
+                }
+            }
+            
+            echo json_encode(['success' => true]);
+            exit;
+        } else {
+            echo json_encode(['success' => false, 'message' => $conn->error]);
+            exit;
         }
     }
-    
-    // Helper function for order status badge
-    function getOrderStatusBadge($status) {
-        switch($status) {
-            case 'pending': return 'status-pending';
-            case 'confirmed': return 'status-confirmed';
-            case 'processing': return 'status-processing';
-            case 'ready': return 'status-ready';
-            case 'delivered': return 'status-delivered';
-            case 'cancelled': return 'status-cancelled';
-            default: return 'bg-secondary text-white';
-        }
+}
+
+// Helper function for order status badge
+function getOrderStatusBadge($status) {
+    switch($status) {
+        case 'pending': return 'status-pending';
+        case 'confirmed': return 'status-confirmed';
+        case 'processing': return 'status-processing';
+        case 'ready': return 'status-ready';
+        case 'delivered': return 'status-delivered';
+        case 'cancelled': return 'status-cancelled';
+        default: return 'bg-secondary text-white';
     }
-    
-    function getOrderStatusText($status) {
-        switch($status) {
-            case 'pending': return 'Pending';
-            case 'confirmed': return 'Confirmed';
-            case 'processing': return 'Processing';
-            case 'ready': return 'Ready for Delivery';
-            case 'delivered': return 'Delivered';
-            case 'cancelled': return 'Cancelled';
-            default: return ucfirst($status);
-        }
+}
+
+function getOrderStatusText($status) {
+    switch($status) {
+        case 'pending': return 'Pending';
+        case 'confirmed': return 'Confirmed';
+        case 'processing': return 'Processing';
+        case 'ready': return 'Ready for Delivery';
+        case 'delivered': return 'Delivered';
+        case 'cancelled': return 'Cancelled';
+        default: return ucfirst($status);
     }
-    ?>
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -305,6 +330,24 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
         .quantity-display {
             font-size: 14px;
             font-weight: 600;
+        }
+        
+        /* Modal enhancements */
+        .quick-pick-btn {
+            transition: all 0.2s;
+        }
+        
+        .quick-pick-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .is-invalid {
+            border-color: #dc3545;
+        }
+        
+        .is-invalid:focus {
+            box-shadow: 0 0 0 0.25rem rgba(220, 53, 69, 0.25);
         }
     </style>
 </head>
@@ -512,7 +555,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                 </div>
             </div>
 
-            <!-- Pick List Items Table - REMOVED PICK STATUS COLUMN -->
+            <!-- Pick List Items Table -->
             <div class="card">
                 <div class="table-responsive">
                     <table class="table table-hover mb-0">
@@ -591,7 +634,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                                 </button>
                                                 <?php if ($row['order_status'] != 'delivered' && $row['order_status'] != 'cancelled'): ?>
                                                 <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#updatePickModal"
-                                                        onclick="setUpdatePickItem('<?php echo $row['pick_item_id']; ?>', '<?php echo $row['quantity_to_pick']; ?>', '<?php echo $row['quantity_picked']; ?>')">
+                                                        onclick="setUpdatePickItem('<?php echo $row['pick_item_id']; ?>', '<?php echo $row['quantity_to_pick']; ?>', '<?php echo $row['quantity_picked']; ?>', '<?php echo addslashes($row['item_name']); ?>', '<?php echo $row['item_code']; ?>')">
                                                     <i class="bi bi-pencil"></i>
                                                 </button>
                                                 <?php endif; ?>
@@ -760,31 +803,103 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
         </div>
     </div>
 
-    <!-- Update Pick Quantity Modal -->
-    <div class="modal fade" id="updatePickModal" tabindex="-1">
+    <!-- Update Pick Quantity Modal - Enhanced Version -->
+    <div class="modal fade" id="updatePickModal" tabindex="-1" aria-labelledby="updatePickModalLabel" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Update Picked Quantity</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title" id="updatePickModalLabel">
+                        <i class="bi bi-pencil-square me-2"></i>Update Picked Quantity
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <form id="updatePickForm" method="POST">
                     <input type="hidden" name="action" value="update_pick_quantity">
                     <input type="hidden" name="pick_item_id" id="update_pick_item_id">
+                    <input type="hidden" name="original_quantity_picked" id="original_quantity_picked">
+                    
                     <div class="modal-body">
-                        <div class="mb-3">
-                            <label class="form-label">Quantity to Pick</label>
-                            <input type="number" class="form-control" id="update_quantity_to_pick" readonly>
+                        <!-- Item Information Summary -->
+                        <div class="alert alert-info mb-3" id="itemSummaryInfo">
+                            <div class="d-flex align-items-center">
+                                <i class="bi bi-box-seam fs-4 me-3"></i>
+                                <div>
+                                    <strong id="summaryItemName">Loading...</strong><br>
+                                    <span id="summaryItemCode" class="text-muted"></span>
+                                </div>
+                            </div>
                         </div>
+
+                        <!-- Quick Pick Buttons -->
+                        <div class="btn-group w-100 mb-3" role="group" aria-label="Quick pick buttons">
+                            <button type="button" class="btn btn-outline-primary quick-pick-btn" onclick="quickPick(25)">25%</button>
+                            <button type="button" class="btn btn-outline-primary quick-pick-btn" onclick="quickPick(50)">50%</button>
+                            <button type="button" class="btn btn-outline-primary quick-pick-btn" onclick="quickPick(75)">75%</button>
+                            <button type="button" class="btn btn-outline-primary quick-pick-btn" onclick="quickPick(100)">100%</button>
+                        </div>
+
+                        <!-- Quantity Information -->
+                        <div class="card bg-light mb-3">
+                            <div class="card-body p-3">
+                                <div class="row">
+                                    <div class="col-6">
+                                        <label class="form-label text-muted mb-1">Quantity to Pick</label>
+                                        <div class="h4 mb-0" id="update_quantity_to_pick">0</div>
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label text-muted mb-1">Previously Picked</label>
+                                        <div class="h4 mb-0" id="previously_picked">0</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Current Picked Quantity Input -->
                         <div class="mb-3">
-                            <label class="form-label">Quantity Picked <span class="text-danger">*</span></label>
-                            <input type="number" class="form-control" name="quantity_picked" id="update_quantity_picked" 
-                                   placeholder="Enter picked quantity" min="0" required>
+                            <label for="update_quantity_picked" class="form-label fw-bold">
+                                Current Picked Quantity <span class="text-danger">*</span>
+                            </label>
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-123"></i></span>
+                                <input type="number" class="form-control form-control-lg" 
+                                       name="quantity_picked" id="update_quantity_picked" 
+                                       placeholder="Enter picked quantity" min="0" required>
+                            </div>
+                            <div class="form-text" id="quantityHelpText">
+                                Enter the quantity that has been picked up
+                            </div>
+                        </div>
+
+                        <!-- Validation Messages -->
+                        <div class="alert alert-warning alert-dismissible fade show" id="quantityWarning" style="display: none;">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <span id="warningMessage"></span>
+                        </div>
+
+                        <!-- Progress Bar for Pick Completion -->
+                        <div class="mb-3" id="progressContainer" style="display: none;">
+                            <label class="form-label">Pick Completion Progress</label>
+                            <div class="progress" style="height: 20px;">
+                                <div class="progress-bar bg-success" id="pickProgress" role="progressbar" style="width: 0%;" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100">0%</div>
+                            </div>
+                        </div>
+
+                        <!-- Additional Notes -->
+                        <div class="mb-3">
+                            <label for="pick_notes" class="form-label">Notes (Optional)</label>
+                            <textarea class="form-control" id="pick_notes" name="pick_notes" 
+                                      rows="2" placeholder="Add any notes about the picked items..."></textarea>
                         </div>
                     </div>
+
+                    <!-- Action Buttons -->
                     <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-warning">Update Picked Quantity</button>
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                            <i class="bi bi-x-circle me-1"></i>Cancel
+                        </button>
+                        <button type="submit" class="btn btn-warning" id="submitUpdateBtn">
+                            <i class="bi bi-check-circle me-1"></i>Update Quantity
+                        </button>
                     </div>
                 </form>
             </div>
@@ -981,153 +1096,102 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                 }
             }
         }
-        // ================= END SIDEBAR FUNCTIONS =================
 
-        // Initialize on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log("Pick List Management page loaded!");
+        // Enhanced function to set values for update pick modal
+        function setUpdatePickItem(pickItemId, quantityToPick, quantityPicked, itemName, itemCode) {
+            console.log('Setting update for pick item:', pickItemId, quantityToPick, quantityPicked);
             
-            // Initialize sidebar
-            initializeSidebar();
+            // Set basic values
+            document.getElementById('update_pick_item_id').value = pickItemId;
+            document.getElementById('update_quantity_to_pick').textContent = quantityToPick;
+            document.getElementById('previously_picked').textContent = quantityPicked;
+            document.getElementById('original_quantity_picked').value = quantityPicked;
             
-            // Setup mobile toggle button - support multiple button IDs
-            const mobileToggleBtn = document.getElementById('mobileToggleBtn');
-            if (mobileToggleBtn) {
-                mobileToggleBtn.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    toggleSidebar();
-                });
+            // Set item summary
+            document.getElementById('summaryItemName').textContent = itemName || 'Item Name';
+            document.getElementById('summaryItemCode').textContent = itemCode || '';
+            
+            const quantityInput = document.getElementById('update_quantity_picked');
+            quantityInput.value = quantityPicked;
+            quantityInput.max = quantityToPick;
+            quantityInput.min = 0;
+            quantityInput.setAttribute('data-max', quantityToPick);
+            quantityInput.setAttribute('data-current', quantityPicked);
+            
+            // Reset warning message
+            document.getElementById('quantityWarning').style.display = 'none';
+            
+            // Update help text with remaining quantity
+            const remainingToPick = quantityToPick - quantityPicked;
+            document.getElementById('quantityHelpText').innerHTML = `Remaining to pick: <strong>${remainingToPick}</strong> of ${quantityToPick}`;
+            
+            // Update progress bar
+            updateProgressBar(quantityPicked, quantityToPick);
+            
+            // Clear notes field
+            document.getElementById('pick_notes').value = '';
+        }
+
+        // Update progress bar
+        function updateProgressBar(current, total) {
+            const progressContainer = document.getElementById('progressContainer');
+            const progressBar = document.getElementById('pickProgress');
+            
+            if (total > 0) {
+                const percentage = Math.round((current / total) * 100);
+                progressBar.style.width = percentage + '%';
+                progressBar.textContent = percentage + '%';
+                progressBar.setAttribute('aria-valuenow', percentage);
+                progressContainer.style.display = 'block';
             }
+        }
+
+        // Quick pick function
+        function quickPick(percentage) {
+            const quantityToPick = parseInt(document.getElementById('update_quantity_to_pick').textContent);
+            const quantityPicked = document.getElementById('update_quantity_picked');
             
-            const mobileMenuBtn = document.getElementById('mobileMenuBtn');
-            if (mobileMenuBtn) {
-                mobileMenuBtn.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    toggleSidebar();
-                });
+            if (quantityPicked && quantityToPick) {
+                const value = Math.floor(quantityToPick * (percentage / 100));
+                quantityPicked.value = value;
+                validateQuantity();
+                updateProgressBar(value, quantityToPick);
             }
+        }
+
+        // Validate quantity input
+        function validateQuantity() {
+            const quantityPicked = document.getElementById('update_quantity_picked');
+            const quantityToPick = parseInt(document.getElementById('update_quantity_to_pick').textContent);
+            const warningDiv = document.getElementById('quantityWarning');
+            const warningMessage = document.getElementById('warningMessage');
+            const submitBtn = document.getElementById('submitUpdateBtn');
             
-            // Setup desktop toggle button
-            const desktopToggleBtn = document.getElementById('desktopToggleBtn');
-            if (desktopToggleBtn) {
-                desktopToggleBtn.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    toggleSidebar();
-                });
-            }
-            
-            // Add click listeners to sidebar links to close on mobile
-            document.querySelectorAll('.sidebar .nav-link').forEach(link => {
-                link.addEventListener('click', function() {
-                    if (window.innerWidth <= 992) {
-                        closeMobileSidebar();
-                    }
-                });
-            });
-            
-            // Close sidebar when clicking outside on mobile
-            document.addEventListener('click', function(event) {
-                const sidebar = document.getElementById('sidebar');
-                const mobileBtn = document.getElementById('mobileToggleBtn') || document.getElementById('mobileMenuBtn');
-                const overlay = document.querySelector('.sidebar-overlay');
-                const isMobile = window.innerWidth <= 992;
+            if (quantityPicked && warningDiv && warningMessage) {
+                const value = parseInt(quantityPicked.value);
                 
-                if (isMobile && sidebar && sidebar.classList.contains('active') && 
-                    !sidebar.contains(event.target) && 
-                    (!mobileBtn || !mobileBtn.contains(event.target)) &&
-                    (!overlay || !overlay.contains(event.target))) {
-                    closeMobileSidebar();
+                if (isNaN(value) || value < 0) {
+                    warningDiv.style.display = 'block';
+                    warningMessage.textContent = 'Please enter a valid quantity (minimum 0)';
+                    quantityPicked.classList.add('is-invalid');
+                    if (submitBtn) submitBtn.disabled = true;
+                } else if (value > quantityToPick) {
+                    warningDiv.style.display = 'block';
+                    warningMessage.textContent = `Quantity picked (${value}) cannot exceed quantity to pick (${quantityToPick})`;
+                    quantityPicked.classList.add('is-invalid');
+                    if (submitBtn) submitBtn.disabled = true;
+                } else {
+                    warningDiv.style.display = 'none';
+                    quantityPicked.classList.remove('is-invalid');
+                    if (submitBtn) submitBtn.disabled = false;
                 }
-            });
-
-            // Add resize event listener
-            window.addEventListener('resize', handleSidebarResize);
-
-            // Initialize tooltips
-            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-            tooltipTriggerList.map(function(tooltipTriggerEl) {
-                return new bootstrap.Tooltip(tooltipTriggerEl);
-            });
-
-            // Setup event listeners
-            setupEventListeners();
-        });
-
-        // Setup event listeners
-        function setupEventListeners() {
-            // Handle update pick form submission
-            const updatePickForm = document.getElementById('updatePickForm');
-            if (updatePickForm) {
-                updatePickForm.addEventListener('submit', function(e) {
-                    e.preventDefault();
-                    
-                    const formData = new FormData(this);
-                    
-                    fetch('pick_list_items.php', {
-                        method: 'POST',
-                        body: formData
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            alert('Pick quantity updated successfully!');
-                            window.location.reload();
-                        } else {
-                            alert('Error: ' + data.message);
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Error:', error);
-                        alert('Failed to update pick quantity');
-                    });
-                });
-            }
-
-            // Filter table event listeners
-            const searchInput = document.getElementById('searchInput');
-            const statusFilter = document.getElementById('statusFilter');
-            const driverFilter = document.getElementById('driverFilter');
-            
-            if (searchInput) searchInput.addEventListener('keyup', filterTable);
-            if (statusFilter) statusFilter.addEventListener('change', filterTable);
-            if (driverFilter) driverFilter.addEventListener('change', filterTable);
-
-            // Form validation for add pick list
-            const addPickListForm = document.getElementById('addPickListForm');
-            if (addPickListForm) {
-                addPickListForm.addEventListener('submit', function(e) {
-                    const pickListSelect = this.querySelector('select[name="pick_list_id"]');
-                    const itemSelect = this.querySelector('select[name="item_id"]');
-                    const quantityInput = this.querySelector('input[name="quantity_to_pick"]');
-                    
-                    if (!pickListSelect || !pickListSelect.value) {
-                        e.preventDefault();
-                        alert('Please select a pick list');
-                        if (pickListSelect) pickListSelect.focus();
-                        return false;
-                    }
-                    
-                    if (!itemSelect || !itemSelect.value) {
-                        e.preventDefault();
-                        alert('Please select an item');
-                        if (itemSelect) itemSelect.focus();
-                        return false;
-                    }
-                    
-                    if (!quantityInput || !quantityInput.value || parseInt(quantityInput.value) <= 0) {
-                        e.preventDefault();
-                        alert('Please enter a valid quantity (minimum 1)');
-                        if (quantityInput) quantityInput.focus();
-                        return false;
-                    }
-                    
-                    if (!confirm('Are you sure you want to add this item to the pick list?')) {
-                        e.preventDefault();
-                        return false;
-                    }
-                    
-                    return true;
-                });
+                
+                // Update help text
+                const remainingToPick = quantityToPick - value;
+                document.getElementById('quantityHelpText').innerHTML = `Remaining to pick: <strong>${remainingToPick}</strong> of ${quantityToPick}`;
+                
+                // Update progress bar
+                updateProgressBar(value, quantityToPick);
             }
         }
 
@@ -1156,20 +1220,6 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                         pickItemDetailsContent.innerHTML = '<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> Failed to load item details. Please try again.</div>';
                     }
                 });
-        }
-
-        // Set values for update pick modal
-        function setUpdatePickItem(pickItemId, quantityToPick, quantityPicked) {
-            const updatePickItemId = document.getElementById('update_pick_item_id');
-            const updateQuantityToPick = document.getElementById('update_quantity_to_pick');
-            const updateQuantityPicked = document.getElementById('update_quantity_picked');
-            
-            if (updatePickItemId) updatePickItemId.value = pickItemId;
-            if (updateQuantityToPick) updateQuantityToPick.value = quantityToPick;
-            if (updateQuantityPicked) {
-                updateQuantityPicked.value = quantityPicked;
-                updateQuantityPicked.max = quantityToPick;
-            }
         }
 
         // Filter table function
@@ -1207,14 +1257,9 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
 
         // Clear all filters
         function clearFilters() {
-            const searchInput = document.getElementById('searchInput');
-            const statusFilter = document.getElementById('statusFilter');
-            const driverFilter = document.getElementById('driverFilter');
-            
-            if (searchInput) searchInput.value = '';
-            if (statusFilter) statusFilter.value = '';
-            if (driverFilter) driverFilter.value = '';
-            
+            document.getElementById('searchInput').value = '';
+            document.getElementById('statusFilter').value = '';
+            document.getElementById('driverFilter').value = '';
             filterTable();
         }
 
@@ -1225,38 +1270,163 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
             }
         }
 
-        // Keyboard shortcuts
-        document.addEventListener('keydown', function(e) {
-            // Ctrl + B to toggle sidebar (desktop only)
-            if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
-                e.preventDefault();
-                toggleSidebar();
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("Pick List Management page loaded!");
+            
+            // Initialize sidebar
+            initializeSidebar();
+            
+            // Setup mobile toggle button
+            const mobileToggleBtn = document.getElementById('mobileToggleBtn');
+            if (mobileToggleBtn) {
+                mobileToggleBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleSidebar();
+                });
             }
-            // Escape to close sidebar on mobile
-            else if (e.key === 'Escape' && window.innerWidth <= 992) {
-                closeMobileSidebar();
+            
+            // Setup desktop toggle button
+            const desktopToggleBtn = document.getElementById('desktopToggleBtn');
+            if (desktopToggleBtn) {
+                desktopToggleBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleSidebar();
+                });
             }
-            // Ctrl + F to focus search
-            else if (e.ctrlKey && e.key === 'f') {
-                e.preventDefault();
-                const searchInput = document.getElementById('searchInput');
-                if (searchInput) {
-                    searchInput.focus();
+            
+            // Add click listeners to sidebar links to close on mobile
+            document.querySelectorAll('.sidebar .nav-link').forEach(link => {
+                link.addEventListener('click', function() {
+                    if (window.innerWidth <= 992) {
+                        closeMobileSidebar();
+                    }
+                });
+            });
+            
+            // Close sidebar when clicking outside on mobile
+            document.addEventListener('click', function(event) {
+                const sidebar = document.getElementById('sidebar');
+                const mobileBtn = document.getElementById('mobileToggleBtn');
+                const overlay = document.querySelector('.sidebar-overlay');
+                const isMobile = window.innerWidth <= 992;
+                
+                if (isMobile && sidebar && sidebar.classList.contains('active') && 
+                    !sidebar.contains(event.target) && 
+                    (!mobileBtn || !mobileBtn.contains(event.target)) &&
+                    (!overlay || !overlay.contains(event.target))) {
+                    closeMobileSidebar();
                 }
+            });
+
+            // Add resize event listener
+            window.addEventListener('resize', handleSidebarResize);
+
+            // Initialize tooltips
+            var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            tooltipTriggerList.map(function(tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+
+            // Setup event listeners for update modal
+            const quantityPicked = document.getElementById('update_quantity_picked');
+            if (quantityPicked) {
+                quantityPicked.addEventListener('input', validateQuantity);
+                quantityPicked.addEventListener('change', validateQuantity);
             }
-            // Ctrl + N to add new pick list
-            else if (e.ctrlKey && e.key === 'n') {
-                e.preventDefault();
-                const addButton = document.querySelector('[data-bs-target="#addPickListModal"]');
-                if (addButton) {
-                    addButton.click();
+            
+            // Handle update pick form submission
+            const updatePickForm = document.getElementById('updatePickForm');
+            if (updatePickForm) {
+                updatePickForm.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    
+                    const quantityPicked = document.getElementById('update_quantity_picked');
+                    const quantityToPick = parseInt(document.getElementById('update_quantity_to_pick').textContent);
+                    
+                    if (!quantityPicked.value) {
+                        alert('Please enter the picked quantity');
+                        quantityPicked.focus();
+                        return false;
+                    }
+                    
+                    const pickedValue = parseInt(quantityPicked.value);
+                    if (isNaN(pickedValue) || pickedValue < 0) {
+                        alert('Please enter a valid quantity (minimum 0)');
+                        quantityPicked.focus();
+                        return false;
+                    }
+                    
+                    if (pickedValue > quantityToPick) {
+                        alert(`Quantity picked cannot exceed ${quantityToPick}`);
+                        quantityPicked.focus();
+                        return false;
+                    }
+                    
+                    if (!confirm('Are you sure you want to update the picked quantity? This will adjust inventory levels.')) {
+                        return false;
+                    }
+                    
+                    const formData = new FormData(this);
+                    
+                    fetch('pick_list_items.php', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert('Pick quantity updated successfully!');
+                            window.location.reload();
+                        } else {
+                            alert('Error: ' + data.message);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Failed to update pick quantity. Please try again.');
+                    });
+                });
+            }
+
+            // Reset form when modal is closed
+            const updatePickModal = document.getElementById('updatePickModal');
+            if (updatePickModal) {
+                updatePickModal.addEventListener('hidden.bs.modal', function() {
+                    document.getElementById('quantityWarning').style.display = 'none';
+                    document.getElementById('update_quantity_picked').classList.remove('is-invalid');
+                    document.getElementById('submitUpdateBtn').disabled = false;
+                    document.getElementById('progressContainer').style.display = 'none';
+                });
+            }
+
+            // Filter table event listeners
+            document.getElementById('searchInput').addEventListener('keyup', filterTable);
+            document.getElementById('statusFilter').addEventListener('change', filterTable);
+            document.getElementById('driverFilter').addEventListener('change', filterTable);
+
+            // Keyboard shortcuts
+            document.addEventListener('keydown', function(e) {
+                // Ctrl + B to toggle sidebar (desktop only)
+                if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
+                    e.preventDefault();
+                    toggleSidebar();
                 }
-            }
-            // Ctrl + C to clear filters
-            else if (e.ctrlKey && e.key === 'c') {
-                e.preventDefault();
-                clearFilters();
-            }
+                // Escape to close sidebar on mobile
+                else if (e.key === 'Escape' && window.innerWidth <= 992) {
+                    closeMobileSidebar();
+                }
+                // Ctrl + F to focus search
+                else if (e.ctrlKey && e.key === 'f') {
+                    e.preventDefault();
+                    document.getElementById('searchInput').focus();
+                }
+                // Ctrl + C to clear filters
+                else if (e.ctrlKey && e.key === 'c') {
+                    e.preventDefault();
+                    clearFilters();
+                }
+            });
         });
     </script>
 </body>
