@@ -423,7 +423,7 @@
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Contact Number <span class="text-danger">*</span></label>
-                                <input type="tel" class="form-control" id="rejContactNumber" name="contact_number" required placeholder="(555) 000-0000">
+                                <input type="tel" class="form-control" id="rejContactNumber" name="contact_number" required placeholder="09XX-XXX-XXXX">
                             </div>
                         </div>
 
@@ -512,7 +512,7 @@
                             <label class="form-label">Driver Contact Number <span class="text-danger">*</span></label>
                             <input type="tel" class="form-control" id="rejDriverContact" name="driver_contact" required 
                                    value="<?php echo $driver_info ? htmlspecialchars($driver_info['contact_number']) : ''; ?>" 
-                                   placeholder="(555) 000-0000">
+                                   placeholder="09XX-XXX-XXXX">
                         </div>
 
                         <div class="mb-3">
@@ -543,11 +543,6 @@
             <div class="card mt-4">
                 <div class="card-header d-flex justify-content-between align-items-center">
                     <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Recent Rejected Deliveries</h5>
-                    <?php if ($delivery_branch_column_exists && $view_all_branches): ?>
-                        <span class="badge bg-success">All Branches</span>
-                    <?php elseif ($delivery_branch_column_exists && !$view_all_branches): ?>
-                        <span class="badge bg-primary">Your Branch</span>
-                    <?php endif; ?>
                 </div>
                 <div class="card-body">
                     <?php if (empty($recent_rejections)): ?>
