@@ -1,3 +1,185 @@
+<?php
+require_once '../config/database.php';
+session_start();
+
+// Check if user is logged in
+if (!isset($_SESSION['user_id'])) {
+    header('Location: ../login.php');
+    exit;
+}
+
+// Get filter parameters
+$period = isset($_GET['period']) ? $_GET['period'] : 'monthly';
+$date = isset($_GET['date']) ? $_GET['date'] : '2026-02';
+
+// Handle AJAX request
+if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
+    header('Content-Type: application/json');
+    
+    $response = [
+        'success' => true,
+        'metrics' => [
+            'totalSales' => 0,
+            'itemsSold' => 0,
+            'avgOrderValue' => 0
+        ],
+        'topItems' => [],
+        'locationSales' => [],
+        'periodBreakdown' => []
+    ];
+
+    // Parse date for filtering
+    $year = substr($date, 0, 4);
+    $month = substr($date, 5, 2);
+    
+    // Build WHERE clause based on period
+    $where_clause = " WHERE so.order_status != 'cancelled' AND so.order_date != '0000-00-00 00:00:00'";
+    $location_where = " WHERE b.status = 'active'";
+    $location_join = "";
+    
+    if ($period == 'monthly' && !empty($date)) {
+        $where_clause .= " AND YEAR(so.order_date) = $year AND MONTH(so.order_date) = $month";
+        $location_join = " AND YEAR(so.order_date) = $year AND MONTH(so.order_date) = $month";
+    } elseif ($period == 'daily' && !empty($date)) {
+        $where_clause .= " AND DATE(so.order_date) = '$date'";
+        $location_join = " AND DATE(so.order_date) = '$date'";
+    }
+    
+    // Get total sales, items sold, and average order value
+    $metrics_sql = "SELECT 
+                    IFNULL(SUM(so.total_amount), 0) as total_sales,
+                    COUNT(DISTINCT so.so_id) as total_orders,
+                    IFNULL(SUM(soi.quantity_ordered), 0) as total_items
+                    FROM sales_orders so
+                    LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
+                    $where_clause";
+    
+    $metrics_result = $conn->query($metrics_sql);
+    if ($metrics_result) {
+        $metrics_row = $metrics_result->fetch_assoc();
+        
+        $total_sales = $metrics_row['total_sales'] ?? 0;
+        $total_orders = $metrics_row['total_orders'] ?? 0;
+        $total_items = $metrics_row['total_items'] ?? 0;
+        $avg_order = $total_orders > 0 ? $total_sales / $total_orders : 0;
+        
+        $response['metrics'] = [
+            'totalSales' => $total_sales,
+            'itemsSold' => $total_items,
+            'avgOrderValue' => $avg_order
+        ];
+    }
+
+    // Get top selling items - with filtering
+    $top_items_sql = "SELECT 
+                        i.item_name,
+                        i.item_code,
+                        b.branch_name as location,
+                        SUM(soi.quantity_ordered) as units_sold,
+                        SUM(soi.quantity_ordered * soi.unit_price) as revenue
+                      FROM sales_order_items soi
+                      INNER JOIN sales_orders so ON soi.so_id = so.so_id
+                      INNER JOIN items i ON soi.item_id = i.item_id
+                      INNER JOIN branches b ON so.branch_id = b.branch_id
+                      $where_clause
+                      GROUP BY i.item_id, b.branch_id
+                      ORDER BY revenue DESC
+                      LIMIT 10";
+    
+    $top_items_result = $conn->query($top_items_sql);
+    if ($top_items_result) {
+        while ($row = $top_items_result->fetch_assoc()) {
+            $response['topItems'][] = [
+                'item_name' => $row['item_name'],
+                'item_code' => $row['item_code'],
+                'location' => $row['location'],
+                'units_sold' => (int)$row['units_sold'],
+                'revenue' => (float)$row['revenue']
+            ];
+        }
+    }
+
+    // Get sales by location/branch - with filtering
+    $location_sales_sql = "SELECT 
+                            b.branch_name as location,
+                            COUNT(DISTINCT so.so_id) as total_orders,
+                            IFNULL(SUM(so.total_amount), 0) as total_revenue,
+                            IFNULL(SUM(soi.quantity_ordered), 0) as total_items
+                          FROM branches b
+                          LEFT JOIN sales_orders so ON b.branch_id = so.branch_id 
+                              AND so.order_status != 'cancelled'
+                              AND so.order_date != '0000-00-00 00:00:00'
+                              $location_join
+                          LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
+                          $location_where
+                          GROUP BY b.branch_id
+                          ORDER BY total_revenue DESC";
+    
+    $location_result = $conn->query($location_sales_sql);
+    if ($location_result) {
+        while ($row = $location_result->fetch_assoc()) {
+            $response['locationSales'][] = [
+                'location' => $row['location'],
+                'totalOrders' => (int)$row['total_orders'],
+                'totalRevenue' => (float)$row['total_revenue'],
+                'totalItems' => (int)$row['total_items']
+            ];
+        }
+    }
+
+    // Get period breakdown - with filtering
+    $breakdown_sql = "SELECT 
+                        DATE_FORMAT(so.order_date, '%Y-%m-%d') as sale_date,
+                        b.branch_name as location,
+                        COUNT(DISTINCT so.so_id) as orders,
+                        IFNULL(SUM(soi.quantity_ordered), 0) as items_sold,
+                        IFNULL(SUM(so.total_amount), 0) as revenue
+                      FROM sales_orders so
+                      INNER JOIN branches b ON so.branch_id = b.branch_id
+                      LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
+                      $where_clause
+                      GROUP BY DATE(so.order_date), b.branch_id
+                      ORDER BY so.order_date DESC";
+    
+    if ($period == 'monthly') {
+        $breakdown_sql .= " LIMIT 31";
+    } else {
+        $breakdown_sql .= " LIMIT 20";
+    }
+    
+    $breakdown_result = $conn->query($breakdown_sql);
+    if ($breakdown_result) {
+        while ($row = $breakdown_result->fetch_assoc()) {
+            $response['periodBreakdown'][] = [
+                'period' => date('F j, Y', strtotime($row['sale_date'])),
+                'location' => $row['location'],
+                'orders' => (int)$row['orders'],
+                'itemsSold' => (int)$row['items_sold'],
+                'revenue' => (float)$row['revenue']
+            ];
+        }
+    }
+
+    echo json_encode($response);
+    exit;
+}
+
+// Get user info from session
+$user_name = $_SESSION['user_name'] ?? 'Quality Control';
+$user_role = $_SESSION['user_role'] ?? 'QC Officer';
+$user_initials = '';
+if (!empty($user_name)) {
+    $name_parts = explode(' ', $user_name);
+    foreach ($name_parts as $part) {
+        if (!empty($part)) {
+            $user_initials .= strtoupper(substr($part, 0, 1));
+        }
+    }
+}
+if (empty($user_initials)) {
+    $user_initials = 'AD';
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -14,6 +196,22 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <style>
+        .table td, .table th {
+            vertical-align: middle;
+        }
+        .text-end {
+            text-align: right !important;
+        }
+        .text-start {
+            text-align: left !important;
+        }
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: 600;
+            line-height: 1.2;
+        }
+    </style>
 </head>
 <body>
     <!-- MAIN APPLICATION -->
@@ -22,7 +220,6 @@
        <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <h3>
-                    <!-- Burger icon moved before logo -->
                     <button class="desktop-toggle-btn" id="desktopToggleBtn">
                         <i class="bi bi-list" id="toggleIcon"></i>
                     </button>
@@ -71,42 +268,39 @@
                     <hr class="sidebar-divider">
                 </ul>
             </div>
-             <!-- User Profile Section at the bottom of sidebar -->
-     <div class="sidebar-footer">
-        <div class="user-profile-sidebar">
-            <div class="user-avatar-sidebar">AD</div>
-            <div class="user-details-sidebar">
-                <span class="user-name-sidebar">Quality Control</span>
-                <span class="user-role-sidebar">QC Officer</span>
+            <div class="sidebar-footer">
+                <div class="user-profile-sidebar">
+                    <div class="user-avatar-sidebar"><?php echo $user_initials; ?></div>
+                    <div class="user-details-sidebar">
+                        <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
+                        <span class="user-role-sidebar"><?php echo htmlspecialchars($user_role); ?></span>
+                    </div>
+                </div>
+                
+                <button class="logout-btn-sidebar" onclick="logout()">
+                    <i class="bi bi-box-arrow-right"></i>
+                    <span class="logout-text">Logout</span>
+                </button>
             </div>
-        </div>
-        
-        <button class="logout-btn-sidebar" onclick="logout()">
-            <i class="bi bi-box-arrow-right"></i>
-            <span class="logout-text">Logout</span>
-        </button>
-    </div>
         </div>
 
         <!-- Main Content -->
         <div class="main-content" id="mainContent">
-            <!-- SALES REPORTS PAGE -->
             <div id="reportsContent" class="page-content active">
                 <div class="navbar-top">
-
-                <button class="mobile-menu-btn" id="mobileMenuBtn">
-                    <i class="bi bi-list"></i>
-                </button>
+                    <button class="mobile-toggle-btn" id="mobileToggleBtn">
+                        <i class="bi bi-list"></i>
+                    </button>
                     <div class="page-title">
                         <h2>Sales Reports</h2>
-                        <p>Monitor sales trends by location, period, and season</p>
+                        <p>Monitor sales performance by period</p>
                     </div>
                 </div>
 
                 <div class="row g-3 mb-4">
                     <div class="col-md-4">
                         <div class="stat-card total">
-                            <div class="stat-value" id="totalSales">$0</div>
+                            <div class="stat-value" id="totalSales">₱0.00</div>
                             <div class="stat-label">Total Sales</div>
                         </div>
                     </div>
@@ -118,39 +312,29 @@
                     </div>
                     <div class="col-md-4">
                         <div class="stat-card complete">
-                            <div class="stat-value" id="avgOrderValue">₱0</div>
+                            <div class="stat-value" id="avgOrderValue">₱0.00</div>
                             <div class="stat-label">Avg Order Value</div>
                         </div>
                     </div>
                 </div>
+                
                 <div class="row g-3 mb-4">
                     <div class="col-12">
                         <div class="form-card">
                             <div class="d-flex justify-content-between align-items-center">
-                                <h5 class="mb-0">Report Filters</h5>
+                                <h5 class="mb-0">Filter Reports</h5>
                             </div>
                             <div class="row mt-3">
-                                <div class="col-md-4">
+                                <div class="col-md-6">
                                     <label class="form-label">Period</label>
-                                    <select class="form-select" id="periodFilter" onchange="loadReports()">
-                                        <option value="daily">Daily</option>
-                                        <option value="weekly">Weekly</option>
+                                    <select class="form-select" id="periodFilter" onchange="toggleDateFilter()">
                                         <option value="monthly" selected>Monthly</option>
+                                        <option value="daily">Daily</option>
                                     </select>
                                 </div>
-                                <div class="col-md-4">
-                                    <label class="form-label">Date Range</label>
-                                    <input type="month" class="form-control" id="dateFilter" onchange="loadReports()">
-                                </div>
-                                <div class="col-md-4">
-                                    <label class="form-label">Season</label>
-                                    <select class="form-select" id="seasonFilter" onchange="loadReports()">
-                                        <option value="">All Seasons</option>
-                                        <option value="spring">Spring</option>
-                                        <option value="summer">Summer</option>
-                                        <option value="fall">Fall</option>
-                                        <option value="winter">Winter</option>
-                                    </select>
+                                <div class="col-md-6">
+                                    <label class="form-label" id="dateLabel">Month</label>
+                                    <input type="month" class="form-control" id="dateFilter" value="2026-02" onchange="loadReports()">
                                 </div>
                             </div>
                         </div>
@@ -167,10 +351,10 @@
                                 <table class="table custom-table">
                                     <thead>
                                         <tr>
-                                            <th>Item Name</th>
-                                            <th>Location</th>
-                                            <th>Units Sold</th>
-                                            <th>Revenue</th>
+                                            <th class="text-start">Item Name</th>
+                                            <th class="text-start">Location</th>
+                                            <th class="text-end">Units Sold</th>
+                                            <th class="text-end">Revenue</th>
                                         </tr>
                                     </thead>
                                     <tbody id="topItemsTable">
@@ -192,10 +376,10 @@
                                 <table class="table custom-table">
                                     <thead>
                                         <tr>
-                                            <th>Location</th>
-                                            <th>Total Orders</th>
-                                            <th>Total Revenue</th>
-                                            <th>Performance</th>
+                                            <th class="text-start">Location</th>
+                                            <th class="text-end">Orders</th>
+                                            <th class="text-end">Revenue</th>
+                                            <th class="text-end">Items</th>
                                         </tr>
                                     </thead>
                                     <tbody id="locationSalesTable">
@@ -213,23 +397,22 @@
                     <div class="col-12">
                         <div class="data-table">
                             <div class="table-header">
-                                <h5>Daily/Weekly/Monthly Breakdown</h5>
+                                <h5>Daily Sales Breakdown</h5>
                             </div>
                             <div class="table-responsive">
                                 <table class="table custom-table">
                                     <thead>
                                         <tr>
-                                            <th>Period</th>
-                                            <th>Location</th>
-                                            <th>Orders</th>
-                                            <th>Items Sold</th>
-                                            <th>Revenue</th>
-                                            <th>Trend</th>
+                                            <th class="text-start">Date</th>
+                                            <th class="text-start">Location</th>
+                                            <th class="text-end">Orders</th>
+                                            <th class="text-end">Items</th>
+                                            <th class="text-end">Revenue</th>
                                         </tr>
                                     </thead>
                                     <tbody id="periodBreakdownTable">
                                         <tr>
-                                            <td colspan="6" class="text-center py-4">Loading data...</td>
+                                            <td colspan="5" class="text-center py-4">Loading data...</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -240,57 +423,36 @@
             </div>
         </div>
     </div>
+    
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-    // ================= SIDEBAR FUNCTIONS =================
-    // Toggle sidebar collapse/expand
     function toggleSidebar() {
         const sidebar = document.getElementById('sidebar');
         const isMobile = window.innerWidth <= 992;
         
         if (isMobile) {
-            // On mobile, toggle active state
             sidebar.classList.toggle('active');
             
-            // Create overlay for mobile
             if (!document.querySelector('.sidebar-overlay')) {
                 const overlay = document.createElement('div');
                 overlay.className = 'sidebar-overlay';
                 document.body.appendChild(overlay);
-                
-                overlay.addEventListener('click', () => {
-                    closeMobileSidebar();
-                });
-                
-                setTimeout(() => {
-                    overlay.classList.add('active');
-                }, 10);
+                overlay.addEventListener('click', closeMobileSidebar);
+                setTimeout(() => overlay.classList.add('active'), 10);
             } else {
-                // If overlay exists, toggle its active state
                 const overlay = document.querySelector('.sidebar-overlay');
                 overlay.classList.toggle('active');
                 if (!sidebar.classList.contains('active')) {
-                    setTimeout(() => {
-                        if (overlay && overlay.parentNode) {
-                            overlay.remove();
-                        }
-                    }, 300);
+                    setTimeout(() => overlay?.remove(), 300);
                 }
             }
         } else {
-            // On desktop, toggle between expanded and collapsed
             sidebar.classList.toggle('collapsed');
-            
-            // Store preference in localStorage
             localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
-            
-            // Show/hide nav text
             document.querySelectorAll('.nav-text').forEach(text => {
                 text.style.display = sidebar.classList.contains('collapsed') ? 'none' : 'inline-block';
             });
-            
-            // Adjust main content margin
             const mainContent = document.querySelector('.main-content');
             if (mainContent) {
                 mainContent.style.marginLeft = sidebar.classList.contains('collapsed') ? '80px' : '250px';
@@ -298,317 +460,192 @@
         }
     }
 
-    // Close mobile sidebar
     function closeMobileSidebar() {
         const sidebar = document.getElementById('sidebar');
         const overlay = document.querySelector('.sidebar-overlay');
-        
         sidebar.classList.remove('active');
-        
         if (overlay) {
             overlay.classList.remove('active');
-            setTimeout(() => {
-                if (overlay.parentNode) {
-                    overlay.remove();
-                }
-            }, 300);
+            setTimeout(() => overlay.remove(), 300);
         }
     }
 
-    // Initialize sidebar when page loads
     function initializeSidebar() {
         const sidebar = document.getElementById('sidebar');
-        
-        // Load saved preference from localStorage for desktop
         if (window.innerWidth > 992) {
             const savedCollapsed = localStorage.getItem('sidebarCollapsed');
             if (savedCollapsed === 'true') {
                 sidebar.classList.add('collapsed');
-                document.querySelectorAll('.nav-text').forEach(text => {
-                    text.style.display = 'none';
-                });
-                
-                // Adjust main content margin
+                document.querySelectorAll('.nav-text').forEach(text => text.style.display = 'none');
                 const mainContent = document.querySelector('.main-content');
-                if (mainContent) {
-                    mainContent.style.marginLeft = '80px';
-                }
+                if (mainContent) mainContent.style.marginLeft = '80px';
             } else {
                 sidebar.classList.remove('collapsed');
-                document.querySelectorAll('.nav-text').forEach(text => {
-                    text.style.display = 'inline-block';
-                });
-                
-                // Adjust main content margin
+                document.querySelectorAll('.nav-text').forEach(text => text.style.display = 'inline-block');
                 const mainContent = document.querySelector('.main-content');
-                if (mainContent) {
-                    mainContent.style.marginLeft = '250px';
-                }
+                if (mainContent) mainContent.style.marginLeft = '250px';
             }
         } else {
-            // On mobile, always start with closed sidebar
-            sidebar.classList.remove('active');
-            sidebar.classList.remove('collapsed');
-            document.querySelectorAll('.nav-text').forEach(text => {
-                text.style.display = 'inline-block';
-            });
-            
-            // Adjust main content margin
+            sidebar.classList.remove('active', 'collapsed');
+            document.querySelectorAll('.nav-text').forEach(text => text.style.display = 'inline-block');
             const mainContent = document.querySelector('.main-content');
-            if (mainContent) {
-                mainContent.style.marginLeft = '0';
-            }
+            if (mainContent) mainContent.style.marginLeft = '0';
         }
     }
 
-    // Handle window resize for sidebar
     function handleSidebarResize() {
         const sidebar = document.getElementById('sidebar');
         const overlay = document.querySelector('.sidebar-overlay');
         
         if (window.innerWidth > 992) {
-            // Desktop mode - remove mobile overlay
-            if (overlay) {
-                overlay.remove();
-            }
+            overlay?.remove();
             sidebar.classList.remove('active');
-            
-            // Load saved preference
             const savedCollapsed = localStorage.getItem('sidebarCollapsed');
             if (savedCollapsed === 'true') {
                 sidebar.classList.add('collapsed');
-                document.querySelectorAll('.nav-text').forEach(text => {
-                    text.style.display = 'none';
-                });
-                
-                // Adjust main content margin
+                document.querySelectorAll('.nav-text').forEach(text => text.style.display = 'none');
                 const mainContent = document.querySelector('.main-content');
-                if (mainContent) {
-                    mainContent.style.marginLeft = '80px';
-                }
+                if (mainContent) mainContent.style.marginLeft = '80px';
             } else {
                 sidebar.classList.remove('collapsed');
-                document.querySelectorAll('.nav-text').forEach(text => {
-                    text.style.display = 'inline-block';
-                });
-                
-                // Adjust main content margin
+                document.querySelectorAll('.nav-text').forEach(text => text.style.display = 'inline-block');
                 const mainContent = document.querySelector('.main-content');
-                if (mainContent) {
-                    mainContent.style.marginLeft = '250px';
-                }
+                if (mainContent) mainContent.style.marginLeft = '250px';
             }
         } else {
-            // Mobile mode - always show expanded when visible
             sidebar.classList.remove('collapsed');
-            document.querySelectorAll('.nav-text').forEach(text => {
-                text.style.display = 'inline-block';
-            });
-            
-            // Adjust main content margin
+            document.querySelectorAll('.nav-text').forEach(text => text.style.display = 'inline-block');
             const mainContent = document.querySelector('.main-content');
-            if (mainContent) {
-                mainContent.style.marginLeft = '0';
-            }
+            if (mainContent) mainContent.style.marginLeft = '0';
         }
     }
-    // ================= END SIDEBAR FUNCTIONS =================
 
-    // Mobile menu toggle (legacy - for compatibility)
-    document.getElementById('mobileMenuBtn').addEventListener('click', function() {
-        toggleSidebar();
-    });
-
-    // Set current month as default
-    document.getElementById('dateFilter').valueAsDate = new Date();
-
-    // Logout function
     function logout() {
-        alert('Logging out...');
-        window.location.href = '../login.php';
+        window.location.href = '../logout.php';
     }
 
-    // Load sales reports
-    async function loadReports() {
-        try {
-            const period = document.getElementById('periodFilter').value;
-            const date = document.getElementById('dateFilter').value;
-            const season = document.getElementById('seasonFilter').value;
+    function toggleDateFilter() {
+        const period = document.getElementById('periodFilter').value;
+        const dateFilter = document.getElementById('dateFilter');
+        const dateLabel = document.getElementById('dateLabel');
+        
+        if (period === 'monthly') {
+            dateLabel.textContent = 'Month';
+            dateFilter.type = 'month';
+            dateFilter.value = '2026-02';
+        } else {
+            dateLabel.textContent = 'Date';
+            dateFilter.type = 'date';
+            dateFilter.value = '2026-02-13';
+        }
+        loadReports();
+    }
 
-            const response = await fetch('api/get_sales_reports.php?period=' + period + '&date=' + date + '&season=' + season);
+    async function loadReports() {
+        const period = document.getElementById('periodFilter').value;
+        const date = document.getElementById('dateFilter').value;
+
+        const params = new URLSearchParams({
+            ajax: 1,
+            period: period,
+            date: date
+        });
+
+        try {
+            const response = await fetch('sales_reports.php?' + params);
             const data = await response.json();
             
             if (data.success) {
-                displaySalesMetrics(data.metrics);
-                displayTopItems(data.topItems || []);
-                displayLocationSales(data.locationSales || []);
-                displayPeriodBreakdown(data.periodBreakdown || []);
-            } else {
-                console.log('No data found');
-                // Clear tables if no data
-                displayTopItems([]);
-                displayLocationSales([]);
-                displayPeriodBreakdown([]);
+                // Update metrics
+                document.getElementById('totalSales').textContent = '₱' + parseFloat(data.metrics.totalSales || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+                document.getElementById('itemsSold').textContent = parseInt(data.metrics.itemsSold || 0).toLocaleString();
+                document.getElementById('avgOrderValue').textContent = '₱' + parseFloat(data.metrics.avgOrderValue || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+                
+                // Update top items table
+                const topItems = document.getElementById('topItemsTable');
+                if (data.topItems.length > 0) {
+                    topItems.innerHTML = data.topItems.map(item => `
+                        <tr>
+                            <td class="text-start"><strong>${escapeHtml(item.item_name)}</strong><br><small class="text-muted">${escapeHtml(item.item_code)}</small></td>
+                            <td class="text-start">${escapeHtml(item.location)}</td>
+                            <td class="text-end">${item.units_sold.toLocaleString()}</td>
+                            <td class="text-end">₱${item.revenue.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</td>
+                        </tr>
+                    `).join('');
+                } else {
+                    topItems.innerHTML = '<tr><td colspan="4" class="text-center py-4">No sales data available for this period</td></tr>';
+                }
+                
+                // Update location sales table
+                const locationSales = document.getElementById('locationSalesTable');
+                if (data.locationSales.length > 0) {
+                    locationSales.innerHTML = data.locationSales.map(loc => `
+                        <tr>
+                            <td class="text-start"><strong>${escapeHtml(loc.location)}</strong></td>
+                            <td class="text-end">${loc.totalOrders.toLocaleString()}</td>
+                            <td class="text-end">₱${loc.totalRevenue.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</td>
+                            <td class="text-end">${loc.totalItems.toLocaleString()}</td>
+                        </tr>
+                    `).join('');
+                } else {
+                    locationSales.innerHTML = '<tr><td colspan="4" class="text-center py-4">No sales data available for this period</td></tr>';
+                }
+                
+                // Update period breakdown table
+                const periodBreakdown = document.getElementById('periodBreakdownTable');
+                if (data.periodBreakdown.length > 0) {
+                    periodBreakdown.innerHTML = data.periodBreakdown.map(period => `
+                        <tr>
+                            <td class="text-start">${escapeHtml(period.period)}</td>
+                            <td class="text-start">${escapeHtml(period.location)}</td>
+                            <td class="text-end">${period.orders.toLocaleString()}</td>
+                            <td class="text-end">${period.itemsSold.toLocaleString()}</td>
+                            <td class="text-end">₱${period.revenue.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</td>
+                        </tr>
+                    `).join('');
+                } else {
+                    periodBreakdown.innerHTML = '<tr><td colspan="5" class="text-center py-4">No transactions found for this period</td></tr>';
+                }
             }
         } catch (error) {
-            console.error('Error loading reports:', error);
-            // Clear tables on error
-            displayTopItems([]);
-            displayLocationSales([]);
-            displayPeriodBreakdown([]);
+            console.error('Error:', error);
         }
     }
 
-    function displaySalesMetrics(metrics) {
-        document.getElementById('totalSales').textContent = '$' + (metrics.totalSales || 0).toLocaleString();
-        document.getElementById('itemsSold').textContent = (metrics.itemsSold || 0).toLocaleString();
-        document.getElementById('avgOrderValue').textContent = '$' + (metrics.avgOrderValue || 0).toLocaleString();
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
     }
 
-    function displayTopItems(items) {
-        const tbody = document.getElementById('topItemsTable');
-        
-        if (items.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4" class="text-center py-4">No data available</td></tr>';
-            return;
-        }
-
-        tbody.innerHTML = items.map(item => `
-            <tr>
-                <td><strong>${item.item_name}</strong></td>
-                <td>${item.location}</td>
-                <td>${item.units_sold}</td>
-                <td>$${(item.revenue || 0).toLocaleString()}</td>
-            </tr>
-        `).join('');
-    }
-
-    function displayLocationSales(locations) {
-        const tbody = document.getElementById('locationSalesTable');
-        
-        if (locations.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="4" class="text-center py-4">No data available</td></tr>';
-            return;
-        }
-
-        tbody.innerHTML = locations.map(loc => `
-            <tr>
-                <td><strong>${loc.location}</strong></td>
-                <td>${loc.totalOrders}</td>
-                <td>$${(loc.totalRevenue || 0).toLocaleString()}</td>
-                <td>
-                    <span class="badge ${(loc.trend || 0) > 0 ? 'bg-success' : 'bg-danger'}">
-                        <i class="bi ${(loc.trend || 0) > 0 ? 'bi-arrow-up' : 'bi-arrow-down'}"></i> ${Math.abs(loc.trend || 0)}%
-                    </span>
-                </td>
-            </tr>
-        `).join('');
-    }
-
-    function displayPeriodBreakdown(periods) {
-        const tbody = document.getElementById('periodBreakdownTable');
-        
-        if (periods.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4">No data available</td></tr>';
-            return;
-        }
-
-        tbody.innerHTML = periods.map(period => `
-            <tr>
-                <td>${period.period}</td>
-                <td>${period.location}</td>
-                <td>${period.orders}</td>
-                <td>${period.itemsSold}</td>
-                <td>$${(period.revenue || 0).toLocaleString()}</td>
-                <td>
-                    <span class="badge ${(period.trend || 0) > 0 ? 'bg-success' : 'bg-danger'}">
-                        <i class="bi ${(period.trend || 0) > 0 ? 'bi-arrow-up' : 'bi-arrow-down'}"></i>
-                    </span>
-                </td>
-            </tr>
-        `).join('');
-    }
-
-    // Initialize when page loads
+    // Initialize
     document.addEventListener('DOMContentLoaded', function() {
-        console.log("Sales Reports page loaded!");
-        
-        // Initialize sidebar
         initializeSidebar();
         
-        // Setup mobile toggle button (if using new button)
-        const mobileToggleBtn = document.getElementById('mobileToggleBtn');
-        if (mobileToggleBtn) {
-            mobileToggleBtn.addEventListener('click', function(e) {
-                e.stopPropagation();
-                toggleSidebar();
-            });
-        }
+        document.getElementById('mobileToggleBtn')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleSidebar();
+        });
         
-        // Setup desktop toggle button
-        const desktopToggleBtn = document.getElementById('desktopToggleBtn');
-        if (desktopToggleBtn) {
-            desktopToggleBtn.addEventListener('click', function(e) {
-                e.stopPropagation();
-                toggleSidebar();
-            });
-        }
+        document.getElementById('desktopToggleBtn')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleSidebar();
+        });
         
-        // Add click listeners to sidebar links to close on mobile
         document.querySelectorAll('.sidebar .nav-link').forEach(link => {
             link.addEventListener('click', function() {
-                if (window.innerWidth <= 992) {
-                    closeMobileSidebar();
-                }
+                if (window.innerWidth <= 992) closeMobileSidebar();
             });
         });
         
-        // Close sidebar when clicking outside on mobile
-        document.addEventListener('click', function(event) {
-            const sidebar = document.getElementById('sidebar');
-            const mobileMenuBtn = document.getElementById('mobileMenuBtn');
-            const mobileToggleBtn = document.getElementById('mobileToggleBtn');
-            const overlay = document.querySelector('.sidebar-overlay');
-            const isMobile = window.innerWidth <= 992;
-            
-            if (isMobile && sidebar.classList.contains('active') && 
-                !sidebar.contains(event.target) && 
-                (!mobileMenuBtn || !mobileMenuBtn.contains(event.target)) &&
-                (!mobileToggleBtn || !mobileToggleBtn.contains(event.target)) &&
-                (!overlay || !overlay.contains(event.target))) {
-                closeMobileSidebar();
-            }
-        });
-
-        // Add resize event listener
         window.addEventListener('resize', handleSidebarResize);
-
-        // Load reports on page load
-        loadReports();
         
-        // Add event listeners to filters
-        document.getElementById('periodFilter').addEventListener('change', loadReports);
-        document.getElementById('dateFilter').addEventListener('change', loadReports);
-        document.getElementById('seasonFilter').addEventListener('change', loadReports);
+        // Set default to February 2026 and load data
+        document.getElementById('dateFilter').value = '2026-02';
+        loadReports();
     });
-
-    // Keyboard shortcuts
-    document.addEventListener('keydown', function(e) {
-        // Ctrl + B to toggle sidebar (desktop only)
-        if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
-            e.preventDefault();
-            toggleSidebar();
-        }
-        // Escape to close sidebar on mobile
-        else if (e.key === 'Escape' && window.innerWidth <= 992) {
-            closeMobileSidebar();
-        }
-        // Ctrl + R for refresh reports
-        else if (e.ctrlKey && e.key === 'r') {
-            e.preventDefault();
-            loadReports();
-        }
-    });
-</script>
+    </script>
 </body>
 </html>
+<?php $conn->close(); ?>
