@@ -2,14 +2,13 @@
 require_once '../config/database.php';
 require_once '../config/session_handler.php';
 
-
 requireLogin();
 requireRole(['warehouse']);
 
 // Get current user info and branch context
 $user_id = $_SESSION['user_id'];
-$user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Sales User';
-$user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'sales';
+$user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Warehouse User';
+$user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'warehouse';
 $branch_id = $_SESSION['branch_id'] ?? 0;
 $view_all_branches = $_SESSION['view_all_branches'] ?? false;
 
@@ -26,6 +25,205 @@ $check_items_column = $conn->query("SHOW COLUMNS FROM items LIKE 'branch_id'");
 if ($check_items_column && $check_items_column->num_rows > 0) {
     $items_branch_column_exists = true;
 }
+
+// Function to generate unique item code
+function generateUniqueItemCode($conn) {
+    // Try ITEM format first (ITEM001, ITEM002, etc.)
+    $prefix = 'ITEM';
+    $number = 1;
+    $max_attempts = 1000; // Prevent infinite loop
+    
+    for ($attempt = 0; $attempt < $max_attempts; $attempt++) {
+        $code = $prefix . str_pad($number, 3, '0', STR_PAD_LEFT);
+        
+        // Check if code exists
+        $check = $conn->prepare("SELECT item_id FROM items WHERE item_code = ?");
+        $check->bind_param("s", $code);
+        $check->execute();
+        $result = $check->get_result();
+        
+        if ($result->num_rows === 0) {
+            return $code; // Found unique code
+        }
+        $number++;
+    }
+    
+    // If ITEM format is exhausted, use timestamp-based code
+    return 'ITM' . date('YmdHis');
+}
+
+// Get next item code for display
+$next_item_code = generateUniqueItemCode($conn);
+
+// Handle form submissions
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $response = ['success' => false, 'message' => ''];
+    
+    // Add item
+    if (isset($_POST['add_item'])) {
+        try {
+            $conn->begin_transaction();
+            
+            // Generate unique item code (don't rely on user input)
+            $item_code = generateUniqueItemCode($conn);
+            
+            $item_name = trim($_POST['item_name']);
+            $description = !empty($_POST['description']) ? trim($_POST['description']) : null;
+            $category = !empty($_POST['category']) ? trim($_POST['category']) : null;
+            $stock = (int)$_POST['stock'];
+            $unit_type = $_POST['unit_type'] ?? 'piece';
+            $unit_price = 0.00; // Default for warehouse
+            $reorder_level = (int)$_POST['reorder_level'];
+            $status = 'active';
+            
+            // Validate
+            if (empty($item_name)) {
+                throw new Exception('Item name is required');
+            }
+            
+            if ($stock < 0) {
+                throw new Exception('Stock cannot be negative');
+            }
+            
+            if ($reorder_level < 0) {
+                throw new Exception('Reorder level cannot be negative');
+            }
+            
+            // Insert
+            $stmt = $conn->prepare("INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, reorder_level, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
+            $stmt->bind_param("ssssisdis", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status);
+            
+            if (!$stmt->execute()) {
+                throw new Exception('Failed to add item: ' . $stmt->error);
+            }
+            
+            $item_id = $conn->insert_id;
+            $conn->commit();
+            
+            $response['success'] = true;
+            $response['message'] = 'Item added successfully';
+            $response['item_code'] = $item_code;
+            
+        } catch (Exception $e) {
+            $conn->rollback();
+            $response['message'] = $e->getMessage();
+        }
+        
+        // Return JSON for AJAX
+        header('Content-Type: application/json');
+        echo json_encode($response);
+        exit;
+    }
+    
+    // Edit item
+    if (isset($_POST['edit_item'])) {
+        try {
+            $conn->begin_transaction();
+            
+            $item_id = (int)$_POST['item_id'];
+            $item_name = trim($_POST['item_name']);
+            $description = !empty($_POST['description']) ? trim($_POST['description']) : null;
+            $category = !empty($_POST['category']) ? trim($_POST['category']) : null;
+            $stock = (int)$_POST['stock'];
+            $unit_type = $_POST['unit_type'] ?? 'piece';
+            $reorder_level = (int)$_POST['reorder_level'];
+            $status = $_POST['status'] ?? 'active';
+            
+            // Validate
+            if (empty($item_name)) {
+                throw new Exception('Item name is required');
+            }
+            
+            if ($stock < 0) {
+                throw new Exception('Stock cannot be negative');
+            }
+            
+            if ($reorder_level < 0) {
+                throw new Exception('Reorder level cannot be negative');
+            }
+            
+            // Check if item exists
+            $check = $conn->prepare("SELECT item_id FROM items WHERE item_id = ?");
+            $check->bind_param("i", $item_id);
+            $check->execute();
+            if ($check->get_result()->num_rows === 0) {
+                throw new Exception('Item not found');
+            }
+            
+            // Update
+            $stmt = $conn->prepare("UPDATE items SET item_name = ?, description = ?, category = ?, stock = ?, unit_type = ?, reorder_level = ?, status = ?, updated_at = NOW() WHERE item_id = ?");
+            $stmt->bind_param("sssisisi", $item_name, $description, $category, $stock, $unit_type, $reorder_level, $status, $item_id);
+            
+            if (!$stmt->execute()) {
+                throw new Exception('Failed to update item: ' . $stmt->error);
+            }
+            
+            $conn->commit();
+            
+            $response['success'] = true;
+            $response['message'] = 'Item updated successfully';
+            
+        } catch (Exception $e) {
+            $conn->rollback();
+            $response['message'] = $e->getMessage();
+        }
+        
+        header('Content-Type: application/json');
+        echo json_encode($response);
+        exit;
+    }
+    
+    // Get item details
+    if (isset($_POST['get_item'])) {
+        $item_id = (int)$_POST['item_id'];
+        $stmt = $conn->prepare("SELECT * FROM items WHERE item_id = ?");
+        $stmt->bind_param("i", $item_id);
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $item = $result->fetch_assoc();
+        
+        if ($item) {
+            echo json_encode(['success' => true, 'item' => $item]);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Item not found']);
+        }
+        exit;
+    }
+}
+
+// Get inventory statistics
+$stats = [];
+
+// Total Items
+$total_items_query = "SELECT COUNT(*) as total_items FROM items WHERE status = 'active'";
+$result = $conn->query($total_items_query);
+$stats['total_items'] = $result->fetch_assoc()['total_items'] ?? 0;
+
+// Current Stock
+$current_stock_query = "SELECT SUM(stock) as current_stock FROM items WHERE status = 'active'";
+$result = $conn->query($current_stock_query);
+$stats['current_stock'] = $result->fetch_assoc()['current_stock'] ?? 0;
+
+// Low Stock Items
+$low_stock_query = "SELECT COUNT(*) as count FROM items 
+                   WHERE stock <= reorder_level AND status = 'active'";
+$result = $conn->query($low_stock_query);
+$stats['low_stock'] = $result->fetch_assoc()['count'] ?? 0;
+
+// Out of Stock Items
+$out_of_stock_query = "SELECT COUNT(*) as count FROM items 
+                      WHERE stock <= 0 AND status = 'active'";
+$result = $conn->query($out_of_stock_query);
+$stats['out_of_stock'] = $result->fetch_assoc()['count'] ?? 0;
+
+// Get inventory items
+$inventory_query = "SELECT i.item_id, i.item_code, i.item_name, i.category, i.stock, 
+                   i.reorder_level, i.status, i.unit_type, i.description
+                   FROM items i
+                   WHERE i.status = 'active'
+                   ORDER BY i.item_name";
+$items_result = $conn->query($inventory_query);
+$items = $items_result->fetch_all(MYSQLI_ASSOC);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -43,6 +241,8 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <!-- SweetAlert2 -->
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 <body>
     <!-- MAIN APPLICATION -->
@@ -109,7 +309,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
 
         <!-- Main Content Area -->
         <div class="main-content">
-            <!-- Header Section with User Info and Logout -->
+            <!-- Header Section -->
             <div class="navbar-top">
                 <button class="mobile-toggle-btn" id="mobileToggleBtn">
                     <i class="bi bi-list" id="toggleIcon"></i>
@@ -120,29 +320,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                 </div>
             </div>
 
-            <?php
-            
-            // Get inventory statistics
-            $stats = [];
-            
-            // Total Items - Count of distinct items from items table
-            $total_items_query = "SELECT COUNT(*) as total_items FROM items WHERE status = 'active'";
-            $result = $conn->query($total_items_query);
-            $stats['total_items'] = $result->fetch_assoc()['total_items'] ?? 0;
-            
-            // Current Stock - SUM of stock column from items table
-            $current_stock_query = "SELECT SUM(stock) as current_stock FROM items WHERE status = 'active'";
-            $result = $conn->query($current_stock_query);
-            $stats['current_stock'] = $result->fetch_assoc()['current_stock'] ?? 0;
-            
-            // Low Stock Items (based on items table stock)
-            $low_stock_query = "SELECT COUNT(*) as count FROM items 
-                               WHERE stock <= reorder_level AND status = 'active'";
-            $result = $conn->query($low_stock_query);
-            $stats['low_stock'] = $result->fetch_assoc()['count'] ?? 0;
-            ?>
-
-            <!-- Inventory Stats - UPDATED: Removed Inventory Value card -->
+            <!-- Inventory Stats -->
             <div class="row g-3 mb-4">
                 <!-- Total Items -->
                 <div class="col-md-4 mb-3">
@@ -193,7 +371,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                 <span class="input-group-text">
                                     <i class="bi bi-search"></i>
                                 </span>
-                                <input type="text" class="form-control" id="searchInput" placeholder="Search by item name or SKU...">
+                                <input type="text" class="form-control" id="searchInput" placeholder="Search by item name or code...">
                             </div>
                         </div>
                         <div class="col-md-4 col-12">
@@ -203,13 +381,13 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                 $categories_query = "SELECT DISTINCT category FROM items WHERE category IS NOT NULL AND category != ''";
                                 $result = $conn->query($categories_query);
                                 while($row = $result->fetch_assoc()) {
-                                    echo '<option value="' . $row['category'] . '">' . $row['category'] . '</option>';
+                                    echo '<option value="' . htmlspecialchars($row['category']) . '">' . htmlspecialchars($row['category']) . '</option>';
                                 }
                                 ?>
                             </select>
                         </div>
                         <div class="col-md-2 col-12">
-                            <button class="btn btn-outline-success w-100" data-bs-toggle="modal" data-bs-target="#addInventoryModal">
+                            <button class="btn btn-outline-success w-100" onclick="showAddItemModal()">
                                 <i class="bi bi-plus-lg"></i> Add Item
                             </button>
                         </div>
@@ -217,7 +395,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                 </div>
             </div>
 
-            <!-- Inventory Table - UPDATED: Removed Unit Price column -->
+            <!-- Inventory Table -->
             <div class="card">
                 <div class="table-responsive">
                     <table class="table table-hover mb-0">
@@ -227,6 +405,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                 <th>Item Name</th>
                                 <th>Category</th>
                                 <th>Total Stock</th>
+                                <th>Unit Type</th>
                                 <th>Reorder Level</th>
                                 <th>Status</th>
                                 <th>Actions</th>
@@ -234,15 +413,8 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                         </thead>
                         <tbody>
                             <?php
-                            $inventory_query = "SELECT i.item_code, i.item_name, i.category, i.stock, 
-                                               i.reorder_level, i.status, i.item_id
-                                               FROM items i
-                                               WHERE i.status = 'active'
-                                               ORDER BY i.item_name";
-                            $result = $conn->query($inventory_query);
-                            
-                            if ($result->num_rows > 0) {
-                                while($row = $result->fetch_assoc()) {
+                            if (count($items) > 0) {
+                                foreach($items as $row) {
                                     $status_badge = 'bg-success';
                                     $status_text = 'In Stock';
                                     
@@ -255,25 +427,30 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                     }
                                     ?>
                                     <tr>
-                                        <td><span class="badge bg-light text-dark"><?php echo $row['item_code']; ?></span></td>
-                                        <td><?php echo $row['item_name']; ?></td>
-                                        <td><?php echo $row['category'] ?? 'N/A'; ?></td>
-                                        <td><?php echo number_format($row['stock']); ?></td>
+                                        <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($row['item_code']); ?></span></td>
+                                        <td><?php echo htmlspecialchars($row['item_name']); ?></td>
+                                        <td><?php echo htmlspecialchars($row['category'] ?? 'N/A'); ?></td>
+                                        <td>
+                                            <span class="<?php echo $row['stock'] <= $row['reorder_level'] ? 'text-danger fw-bold' : ''; ?>">
+                                                <?php echo number_format($row['stock']); ?>
+                                            </span>
+                                        </td>
+                                        <td><?php echo ucfirst(str_replace('-', ' ', $row['unit_type'])); ?></td>
                                         <td><?php echo number_format($row['reorder_level']); ?></td>
                                         <td><span class="badge <?php echo $status_badge; ?>"><?php echo $status_text; ?></span></td>
                                         <td>
-                                            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#viewItemModal" onclick="loadItemDetails(<?php echo $row['item_id']; ?>)">
-                                                <i class="bi bi-eye"></i> View
+                                            <button class="btn btn-sm btn-outline-primary" onclick="viewItem(<?php echo $row['item_id']; ?>)" title="View">
+                                                <i class="bi bi-eye"></i>
                                             </button>
-                                            <button class="btn btn-sm btn-outline-warning" data-bs-toggle="modal" data-bs-target="#editInventoryModal" onclick="loadItemForEdit('<?php echo $row['item_code']; ?>')">
-                                                <i class="bi bi-pencil"></i> Edit
+                                            <button class="btn btn-sm btn-outline-warning" onclick="editItem(<?php echo $row['item_id']; ?>)" title="Edit">
+                                                <i class="bi bi-pencil"></i>
                                             </button>
                                         </td>
                                     </tr>
                                     <?php
                                 }
                             } else {
-                                echo '<tr><td colspan="7" class="text-center">No inventory items found</td></tr>';
+                                echo '<tr><td colspan="8" class="text-center py-4"><i class="bi bi-inbox fs-1 d-block text-muted mb-2"></i><p class="text-muted mb-0">No inventory items found</p><button class="btn btn-sm btn-primary mt-2" onclick="showAddItemModal()"><i class="bi bi-plus-circle"></i> Add Item</button></td></tr>';
                             }
                             ?>
                         </tbody>
@@ -283,7 +460,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
         </div>
     </div>
 
-    <!-- Add Inventory Modal - UPDATED: Removed Unit Price field -->
+    <!-- Add Inventory Modal -->
     <div class="modal fade" id="addInventoryModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
@@ -292,33 +469,34 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <form id="addInventoryForm" action="add_inventory.php" method="POST">
+                    <form id="addInventoryForm">
+                        <input type="hidden" name="add_item" value="1">
+                        
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i> Item code will be auto-generated and guaranteed unique.
+                        </div>
+                        
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Item Name <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" name="item_name" required placeholder="Item name">
+                                <input type="text" class="form-control" name="item_name" id="item_name" required placeholder="Enter item name">
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label class="form-label">Item Code <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" name="item_code" required placeholder="e.g., ITEM-001">
-                                <small class="text-muted">Must be unique</small>
+                                <label class="form-label">Category <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control" name="category" required placeholder="e.g., Electronics, Furniture">
                             </div>
                         </div>
                         <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Category <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" name="category" required placeholder="Category">
-                            </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Initial Stock <span class="text-danger">*</span></label>
                                 <input type="number" class="form-control" name="stock" required placeholder="0" min="0" value="0">
                             </div>
-                        </div>
-                        <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Reorder Level <span class="text-danger">*</span></label>
                                 <input type="number" class="form-control" name="reorder_level" required placeholder="0" min="0" value="50">
                             </div>
+                        </div>
+                        <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Unit Type <span class="text-danger">*</span></label>
                                 <select class="form-select" name="unit_type" required>
@@ -332,13 +510,13 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Description</label>
-                            <textarea class="form-control" name="description" placeholder="Item description" rows="3"></textarea>
+                            <textarea class="form-control" name="description" placeholder="Item description (optional)" rows="3"></textarea>
                         </div>
                     </form>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" form="addInventoryForm" class="btn btn-primary">Add Item</button>
+                    <button type="button" class="btn btn-primary" onclick="submitAddForm()">Add Item</button>
                 </div>
             </div>
         </div>
@@ -353,7 +531,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body" id="itemDetailsContent">
-                    <!-- Content will be loaded by JavaScript from get_item_details.php -->
+                    <!-- Content will be loaded by JavaScript -->
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -371,7 +549,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body" id="editInventoryFormContent">
-                    <!-- Content will be loaded by JavaScript from get_item_details.php -->
+                    <!-- Content will be loaded by JavaScript -->
                 </div>
             </div>
         </div>
@@ -379,18 +557,15 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
 
     <!-- JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-   <script>
+    <script>
         // ================= SIDEBAR FUNCTIONS =================
-        // Toggle sidebar collapse/expand
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
             const isMobile = window.innerWidth <= 992;
             
             if (isMobile) {
-                // On mobile, toggle active state
                 sidebar.classList.toggle('active');
                 
-                // Create overlay for mobile
                 if (!document.querySelector('.sidebar-overlay')) {
                     const overlay = document.createElement('div');
                     overlay.className = 'sidebar-overlay';
@@ -404,7 +579,6 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                         overlay.classList.add('active');
                     }, 10);
                 } else {
-                    // If overlay exists, toggle its active state
                     const overlay = document.querySelector('.sidebar-overlay');
                     overlay.classList.toggle('active');
                     if (!sidebar.classList.contains('active')) {
@@ -416,18 +590,13 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                     }
                 }
             } else {
-                // On desktop, toggle between expanded and collapsed
                 sidebar.classList.toggle('collapsed');
-                
-                // Store preference in localStorage
                 localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
                 
-                // Show/hide nav text
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = sidebar.classList.contains('collapsed') ? 'none' : 'inline-block';
                 });
                 
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = sidebar.classList.contains('collapsed') ? '80px' : '250px';
@@ -435,7 +604,6 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
             }
         }
 
-        // Close mobile sidebar
         function closeMobileSidebar() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.querySelector('.sidebar-overlay');
@@ -452,11 +620,9 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
             }
         }
 
-        // Initialize sidebar when page loads
         function initializeSidebar() {
             const sidebar = document.getElementById('sidebar');
             
-            // Load saved preference from localStorage for desktop
             if (window.innerWidth > 992) {
                 const savedCollapsed = localStorage.getItem('sidebarCollapsed');
                 if (savedCollapsed === 'true') {
@@ -465,7 +631,6 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                         text.style.display = 'none';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '80px';
@@ -476,21 +641,18 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                         text.style.display = 'inline-block';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '250px';
                     }
                 }
             } else {
-                // On mobile, always start with closed sidebar
                 sidebar.classList.remove('active');
                 sidebar.classList.remove('collapsed');
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = 'inline-block';
                 });
                 
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = '0';
@@ -498,67 +660,311 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
             }
         }
 
-        // Handle window resize for sidebar
-        function handleSidebarResize() {
-            const sidebar = document.getElementById('sidebar');
-            const overlay = document.querySelector('.sidebar-overlay');
+        // Show Add Item Modal
+        function showAddItemModal() {
+            document.getElementById('addInventoryForm').reset();
+            new bootstrap.Modal(document.getElementById('addInventoryModal')).show();
+        }
+
+        // Submit add form via AJAX
+        function submitAddForm() {
+            const form = document.getElementById('addInventoryForm');
+            const formData = new FormData(form);
             
-            if (window.innerWidth > 992) {
-                // Desktop mode - remove mobile overlay
-                if (overlay) {
-                    overlay.remove();
+            // Validate required fields
+            const itemName = document.getElementById('item_name').value.trim();
+            if (!itemName) {
+                Swal.fire('Warning', 'Item Name is required', 'warning');
+                return;
+            }
+            
+            Swal.fire({
+                title: 'Adding Item...',
+                text: 'Please wait',
+                allowOutsideClick: false,
+                didOpen: () => {
+                    Swal.showLoading();
                 }
-                sidebar.classList.remove('active');
+            });
+            
+            fetch(window.location.href, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                Swal.close();
                 
-                // Load saved preference
-                const savedCollapsed = localStorage.getItem('sidebarCollapsed');
-                if (savedCollapsed === 'true') {
-                    sidebar.classList.add('collapsed');
-                    document.querySelectorAll('.nav-text').forEach(text => {
-                        text.style.display = 'none';
+                if (data.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Success!',
+                        text: data.message + ' (Code: ' + data.item_code + ')',
+                        timer: 2000,
+                        showConfirmButton: false
+                    }).then(() => {
+                        location.reload();
                     });
+                } else {
+                    Swal.fire('Error', data.message, 'error');
+                }
+            })
+            .catch(error => {
+                Swal.close();
+                Swal.fire('Error', 'An error occurred while saving the item', 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        // View item details
+        function viewItem(itemId) {
+            Swal.fire({
+                title: 'Loading...',
+                text: 'Please wait',
+                allowOutsideClick: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+            
+            const formData = new FormData();
+            formData.append('get_item', '1');
+            formData.append('item_id', itemId);
+            
+            fetch(window.location.href, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                Swal.close();
+                
+                if (data.success) {
+                    const item = data.item;
                     
-                    // Adjust main content margin
-                    const mainContent = document.querySelector('.main-content');
-                    if (mainContent) {
-                        mainContent.style.marginLeft = '80px';
+                    const statusClass = item.status === 'active' ? 'success' : 
+                                       item.status === 'inactive' ? 'secondary' : 'danger';
+                    
+                    const content = `
+                        <div class="row">
+                            <div class="col-md-6">
+                                <table class="table table-sm table-borderless">
+                                    <tr>
+                                        <th width="40%">Item Code:</th>
+                                        <td><strong>${item.item_code}</strong></td>
+                                    </tr>
+                                    <tr>
+                                        <th>Item Name:</th>
+                                        <td>${item.item_name}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Category:</th>
+                                        <td>${item.category || 'N/A'}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Description:</th>
+                                        <td>${item.description || 'No description'}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Status:</th>
+                                        <td><span class="badge bg-${statusClass}">${item.status}</span></td>
+                                    </tr>
+                                </table>
+                            </div>
+                            <div class="col-md-6">
+                                <table class="table table-sm table-borderless">
+                                    <tr>
+                                        <th width="40%">Stock:</th>
+                                        <td>${Number(item.stock).toLocaleString()}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Unit Type:</th>
+                                        <td>${item.unit_type}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Reorder Level:</th>
+                                        <td>${item.reorder_level}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Created:</th>
+                                        <td>${new Date(item.created_at).toLocaleDateString()}</td>
+                                    </tr>
+                                    <tr>
+                                        <th>Last Updated:</th>
+                                        <td>${new Date(item.updated_at).toLocaleDateString()}</td>
+                                    </tr>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+                    
+                    document.getElementById('itemDetailsContent').innerHTML = content;
+                    new bootstrap.Modal(document.getElementById('viewItemModal')).show();
+                } else {
+                    Swal.fire('Error', 'Failed to load item details', 'error');
+                }
+            })
+            .catch(error => {
+                Swal.close();
+                Swal.fire('Error', 'An error occurred', 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        // Edit item
+        function editItem(itemId) {
+            Swal.fire({
+                title: 'Loading...',
+                text: 'Please wait',
+                allowOutsideClick: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+            
+            const formData = new FormData();
+            formData.append('get_item', '1');
+            formData.append('item_id', itemId);
+            
+            fetch(window.location.href, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                Swal.close();
+                
+                if (data.success) {
+                    const item = data.item;
+                    
+                    const content = `
+                        <form id="editForm">
+                            <input type="hidden" name="edit_item" value="1">
+                            <input type="hidden" name="item_id" value="${item.item_id}">
+                            
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Item Name <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" name="item_name" value="${item.item_name.replace(/"/g, '&quot;')}" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Item Code</label>
+                                    <input type="text" class="form-control" value="${item.item_code}" readonly disabled>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Category <span class="text-danger">*</span></label>
+                                    <input type="text" class="form-control" name="category" value="${item.category ? item.category.replace(/"/g, '&quot;') : ''}" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Current Stock <span class="text-danger">*</span></label>
+                                    <input type="number" class="form-control" name="stock" value="${item.stock}" min="0" required>
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Reorder Level <span class="text-danger">*</span></label>
+                                    <input type="number" class="form-control" name="reorder_level" value="${item.reorder_level}" min="0" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Unit Type <span class="text-danger">*</span></label>
+                                    <select class="form-select" name="unit_type" required>
+                                        <option value="piece" ${item.unit_type === 'piece' ? 'selected' : ''}>Piece</option>
+                                        <option value="case" ${item.unit_type === 'case' ? 'selected' : ''}>Case</option>
+                                        <option value="inner-pack" ${item.unit_type === 'inner-pack' ? 'selected' : ''}>Inner Pack</option>
+                                        <option value="box" ${item.unit_type === 'box' ? 'selected' : ''}>Box</option>
+                                        <option value="carton" ${item.unit_type === 'carton' ? 'selected' : ''}>Carton</option>
+                                    </select>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Description</label>
+                                <textarea class="form-control" name="description" rows="3">${item.description ? item.description.replace(/"/g, '&quot;') : ''}</textarea>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Status</label>
+                                <select class="form-select" name="status">
+                                    <option value="active" ${item.status === 'active' ? 'selected' : ''}>Active</option>
+                                    <option value="inactive" ${item.status === 'inactive' ? 'selected' : ''}>Inactive</option>
+                                    <option value="discontinued" ${item.status === 'discontinued' ? 'selected' : ''}>Discontinued</option>
+                                </select>
+                            </div>
+                        </form>
+                    `;
+                    
+                    document.getElementById('editInventoryFormContent').innerHTML = content;
+                    
+                    const modal = new bootstrap.Modal(document.getElementById('editInventoryModal'));
+                    modal.show();
+                    
+                    const modalFooter = document.querySelector('#editInventoryModal .modal-footer');
+                    if (modalFooter) {
+                        modalFooter.innerHTML = `
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="button" class="btn btn-primary" onclick="submitEditForm()">Update Item</button>
+                        `;
                     }
                 } else {
-                    sidebar.classList.remove('collapsed');
-                    document.querySelectorAll('.nav-text').forEach(text => {
-                        text.style.display = 'inline-block';
-                    });
-                    
-                    // Adjust main content margin
-                    const mainContent = document.querySelector('.main-content');
-                    if (mainContent) {
-                        mainContent.style.marginLeft = '250px';
-                    }
+                    Swal.fire('Error', 'Failed to load item details', 'error');
                 }
-            } else {
-                // Mobile mode - always show expanded when visible
-                sidebar.classList.remove('collapsed');
-                document.querySelectorAll('.nav-text').forEach(text => {
-                    text.style.display = 'inline-block';
-                });
-                
-                // Adjust main content margin
-                const mainContent = document.querySelector('.main-content');
-                if (mainContent) {
-                    mainContent.style.marginLeft = '0';
-                }
-            }
+            })
+            .catch(error => {
+                Swal.close();
+                Swal.fire('Error', 'An error occurred', 'error');
+                console.error('Error:', error);
+            });
         }
-        // ================= END SIDEBAR FUNCTIONS =================
+
+        // Submit edit form
+        function submitEditForm() {
+            const form = document.getElementById('editForm');
+            const formData = new FormData(form);
+            
+            Swal.fire({
+                title: 'Updating...',
+                text: 'Please wait',
+                allowOutsideClick: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+            
+            fetch(window.location.href, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                Swal.close();
+                
+                if (data.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Success!',
+                        text: data.message,
+                        timer: 1500,
+                        showConfirmButton: false
+                    }).then(() => {
+                        location.reload();
+                    });
+                } else {
+                    Swal.fire('Error', data.message, 'error');
+                }
+            })
+            .catch(error => {
+                Swal.close();
+                Swal.fire('Error', 'An error occurred', 'error');
+                console.error('Error:', error);
+            });
+        }
 
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
             console.log("Inventory Items page loaded!");
             
-            // Initialize sidebar
             initializeSidebar();
             
-            // Setup mobile toggle button - support multiple button IDs
             const mobileToggleBtn = document.getElementById('mobileToggleBtn');
             if (mobileToggleBtn) {
                 mobileToggleBtn.addEventListener('click', function(e) {
@@ -567,15 +973,6 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                 });
             }
             
-            const mobileMenuBtn = document.getElementById('mobileMenuBtn');
-            if (mobileMenuBtn) {
-                mobileMenuBtn.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    toggleSidebar();
-                });
-            }
-            
-            // Setup desktop toggle button
             const desktopToggleBtn = document.getElementById('desktopToggleBtn');
             if (desktopToggleBtn) {
                 desktopToggleBtn.addEventListener('click', function(e) {
@@ -584,7 +981,6 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                 });
             }
             
-            // Add click listeners to sidebar links to close on mobile
             document.querySelectorAll('.sidebar .nav-link').forEach(link => {
                 link.addEventListener('click', function() {
                     if (window.innerWidth <= 992) {
@@ -593,10 +989,9 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                 });
             });
             
-            // Close sidebar when clicking outside on mobile
             document.addEventListener('click', function(event) {
                 const sidebar = document.getElementById('sidebar');
-                const mobileBtn = document.getElementById('mobileToggleBtn') || document.getElementById('mobileMenuBtn');
+                const mobileBtn = document.getElementById('mobileToggleBtn');
                 const overlay = document.querySelector('.sidebar-overlay');
                 const isMobile = window.innerWidth <= 992;
                 
@@ -608,15 +1003,8 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                 }
             });
 
-            // Add resize event listener
             window.addEventListener('resize', handleSidebarResize);
 
-            // Setup event listeners
-            setupEventListeners();
-        });
-
-        // Setup event listeners
-        function setupEventListeners() {
             // Search functionality
             const searchInput = document.getElementById('searchInput');
             if (searchInput) {
@@ -646,81 +1034,80 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                     });
                 });
             }
-        }
+        });
 
-        // Load item details for viewing
-        function loadItemDetails(itemId) {
-            const itemDetailsContent = document.getElementById('itemDetailsContent');
-            if (itemDetailsContent) {
-                itemDetailsContent.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading item details...</p></div>';
-            }
+        function handleSidebarResize() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.querySelector('.sidebar-overlay');
             
-            fetch('get_item_details.php?action=view&item_id=' + itemId)
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('Network response was not ok');
+            if (window.innerWidth > 992) {
+                if (overlay) {
+                    overlay.remove();
+                }
+                sidebar.classList.remove('active');
+                
+                const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+                if (savedCollapsed === 'true') {
+                    sidebar.classList.add('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'none';
+                    });
+                    
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '80px';
                     }
-                    return response.text();
-                })
-                .then(data => {
-                    if (itemDetailsContent) {
-                        itemDetailsContent.innerHTML = data;
+                } else {
+                    sidebar.classList.remove('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'inline-block';
+                    });
+                    
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '250px';
                     }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    if (itemDetailsContent) {
-                        itemDetailsContent.innerHTML = '<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> Failed to load item details. Please try again.</div>';
-                    }
+                }
+            } else {
+                sidebar.classList.remove('collapsed');
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'inline-block';
                 });
-        }
-
-        // Load item data for editing
-        function loadItemForEdit(itemCode) {
-            const editInventoryFormContent = document.getElementById('editInventoryFormContent');
-            if (editInventoryFormContent) {
-                editInventoryFormContent.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading item data...</p></div>';
+                
+                const mainContent = document.querySelector('.main-content');
+                if (mainContent) {
+                    mainContent.style.marginLeft = '0';
+                }
             }
-            
-            fetch('get_item_details.php?action=edit&item_code=' + encodeURIComponent(itemCode))
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('Network response was not ok');
-                    }
-                    return response.text();
-                })
-                .then(data => {
-                    if (editInventoryFormContent) {
-                        editInventoryFormContent.innerHTML = data;
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    if (editInventoryFormContent) {
-                        editInventoryFormContent.innerHTML = '<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> Failed to load item details. Please try again.</div>';
-                    }
-                });
         }
 
         // Logout function
         function logout() {
-            if (confirm('Are you sure you want to logout?')) {
-                window.location.href = '../login.php';
-            }
+            Swal.fire({
+                title: 'Are you sure?',
+                text: 'You will be logged out of the system',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#0d6efd',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, logout'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    localStorage.removeItem('sidebarCollapsed');
+                    window.location.href = '../logout.php';
+                }
+            });
         }
 
         // Keyboard shortcuts
         document.addEventListener('keydown', function(e) {
-            // Ctrl + B to toggle sidebar (desktop only)
             if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
                 e.preventDefault();
                 toggleSidebar();
             }
-            // Escape to close sidebar on mobile
             else if (e.key === 'Escape' && window.innerWidth <= 992) {
                 closeMobileSidebar();
             }
-            // Ctrl + F to focus search
             else if (e.ctrlKey && e.key === 'f') {
                 e.preventDefault();
                 const searchInput = document.getElementById('searchInput');
@@ -728,13 +1115,9 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                     searchInput.focus();
                 }
             }
-            // Ctrl + N to add new item
             else if (e.ctrlKey && e.key === 'n') {
                 e.preventDefault();
-                const addButton = document.querySelector('[data-bs-target="#addInventoryModal"]');
-                if (addButton) {
-                    addButton.click();
-                }
+                showAddItemModal();
             }
         });
     </script>

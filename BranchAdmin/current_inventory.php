@@ -16,6 +16,32 @@ if ($check_column && $check_column->num_rows > 0) {
     $items_branch_column_exists = true;
 }
 
+// Function to generate unique item code
+function generateUniqueItemCode($conn) {
+    // Try ITEM format first (ITEM001, ITEM002, etc.)
+    $prefix = 'ITEM';
+    $number = 1;
+    $max_attempts = 1000; // Prevent infinite loop
+    
+    for ($attempt = 0; $attempt < $max_attempts; $attempt++) {
+        $code = $prefix . str_pad($number, 3, '0', STR_PAD_LEFT);
+        
+        // Check if code exists
+        $check = $conn->prepare("SELECT item_id FROM items WHERE item_code = ?");
+        $check->bind_param("s", $code);
+        $check->execute();
+        $result = $check->get_result();
+        
+        if ($result->num_rows === 0) {
+            return $code; // Found unique code
+        }
+        $number++;
+    }
+    
+    // If ITEM format is exhausted, use timestamp-based code
+    return 'ITM' . date('YmdHis');
+}
+
 // Determine branch filter condition
 $branch_condition = "";
 if ($items_branch_column_exists && !$view_all_branches) {
@@ -45,7 +71,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 throw new Exception('Reorder level is required');
             }
             
-            $item_code = $_POST['item_code'];
+            // Generate unique item code (don't rely on user input)
+            $item_code = generateUniqueItemCode($conn);
+            
             $item_name = trim($_POST['item_name']);
             $description = !empty($_POST['description']) ? trim($_POST['description']) : null;
             $category = !empty($_POST['category']) ? trim($_POST['category']) : null;
@@ -55,16 +83,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $reorder_level = (int)$_POST['reorder_level'];
             $status = $_POST['status'] ?? 'active';
             
-            // Check if item code already exists
-            $check_query = "SELECT item_id FROM items WHERE item_code = ?";
-            $check_stmt = $conn->prepare($check_query);
-            $check_stmt->bind_param("s", $item_code);
-            $check_stmt->execute();
-            $check_result = $check_stmt->get_result();
-            
-            if ($check_result->num_rows > 0) {
-                throw new Exception('Item code already exists');
-            }
+            // Validate numeric values
+            if ($stock < 0) throw new Exception('Stock cannot be negative');
+            if ($unit_price < 0) throw new Exception('Unit price cannot be negative');
+            if ($reorder_level < 0) throw new Exception('Reorder level cannot be negative');
             
             // Insert new item with branch_id
             if ($items_branch_column_exists) {
@@ -90,7 +112,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             echo json_encode([
                 'success' => true,
                 'message' => 'Item added successfully',
-                'item_id' => $item_id
+                'item_id' => $item_id,
+                'item_code' => $item_code
             ]);
             exit;
         }
@@ -123,6 +146,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $unit_price = (float)$_POST['unit_price'];
             $reorder_level = (int)$_POST['reorder_level'];
             $status = $_POST['status'] ?? 'active';
+            
+            // Validate numeric values
+            if ($stock < 0) throw new Exception('Stock cannot be negative');
+            if ($unit_price < 0) throw new Exception('Unit price cannot be negative');
+            if ($reorder_level < 0) throw new Exception('Reorder level cannot be negative');
             
             // Verify item belongs to user's branch (if branch column exists and not admin)
             if ($items_branch_column_exists && !$view_all_branches) {
@@ -189,6 +217,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 if (!$update_stmt->execute()) {
                     throw new Exception('Failed to soft delete item');
                 }
+                $message = 'Item has been discontinued (used in sales orders)';
             } else {
                 // Check if used in other tables
                 $check_picklist_query = "SELECT COUNT(*) as count FROM pick_list_items WHERE item_id = ?";
@@ -198,8 +227,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $picklist_result = $check_picklist_stmt->get_result();
                 $picklist_count = $picklist_result->fetch_assoc()['count'];
                 
-                if ($picklist_count > 0) {
-                    // Soft delete if used in pick lists
+                $check_rmr_query = "SELECT COUNT(*) as count FROM rmr_requests WHERE item_id = ?";
+                $check_rmr_stmt = $conn->prepare($check_rmr_query);
+                $check_rmr_stmt->bind_param("i", $item_id);
+                $check_rmr_stmt->execute();
+                $rmr_result = $check_rmr_stmt->get_result();
+                $rmr_count = $rmr_result->fetch_assoc()['count'];
+                
+                if ($picklist_count > 0 || $rmr_count > 0) {
+                    // Soft delete if used in other tables
                     $update_query = "UPDATE items SET status = 'discontinued', updated_at = NOW() WHERE item_id = ?";
                     $update_stmt = $conn->prepare($update_query);
                     $update_stmt->bind_param("i", $item_id);
@@ -207,6 +243,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     if (!$update_stmt->execute()) {
                         throw new Exception('Failed to soft delete item');
                     }
+                    $message = 'Item has been discontinued (used in transactions)';
                 } else {
                     // Hard delete if not used
                     $delete_query = "DELETE FROM items WHERE item_id = ?";
@@ -216,6 +253,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     if (!$delete_stmt->execute()) {
                         throw new Exception('Failed to delete item');
                     }
+                    $message = 'Item permanently deleted';
                 }
             }
             
@@ -223,7 +261,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             
             echo json_encode([
                 'success' => true,
-                'message' => 'Item deleted successfully'
+                'message' => $message
             ]);
             exit;
         }
@@ -293,21 +331,8 @@ $items_query = "
 $items_result = $conn->query($items_query);
 $items = $items_result->fetch_all(MYSQLI_ASSOC);
 
-// GET NEXT ITEM CODE FOR AUTO-GENERATION (branch-specific)
-$next_number = 1;
-if (!empty($items)) {
-    // Extract numbers from existing item codes (ITEM001, ITEM002, etc.)
-    $numbers = [];
-    foreach ($items as $item) {
-        if (preg_match('/ITEM(\d+)/', $item['item_code'], $matches)) {
-            $numbers[] = intval($matches[1]);
-        }
-    }
-    if (!empty($numbers)) {
-        $next_number = max($numbers) + 1;
-    }
-}
-$next_item_code = 'ITEM' . str_pad($next_number, 3, '0', STR_PAD_LEFT);
+// GET NEXT ITEM CODE FOR DISPLAY ONLY (not used for actual insertion)
+$next_item_code = generateUniqueItemCode($conn);
 
 // CALCULATE STATISTICS FROM REAL DATA (branch-specific)
 $total_items = count($items);
@@ -594,6 +619,7 @@ function getStockStatus($stock, $reorder_level) {
                             <option value="">All Categories</option>
                             <?php 
                             $unique_categories = array_unique(array_column($items, 'category'));
+                            sort($unique_categories);
                             foreach ($unique_categories as $cat): 
                                 if (!empty($cat)):
                             ?>
@@ -763,7 +789,7 @@ function getStockStatus($stock, $reorder_level) {
         </div>
     </div>
 
-    <!-- ADD ITEM MODAL - FIXED with proper name attributes -->
+    <!-- ADD ITEM MODAL - FIXED with auto-generated item code -->
     <div class="modal fade" id="itemModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
@@ -773,22 +799,23 @@ function getStockStatus($stock, $reorder_level) {
                 </div>
                 <div class="modal-body">
                     <form id="itemForm">
+                        <input type="hidden" name="action" value="add_item">
                         <input type="hidden" name="item_id" id="itemId">
                         
                         <div class="alert alert-info">
                             <i class="bi bi-info-circle"></i>
                             <?php if ($items_branch_column_exists && !$view_all_branches): ?>
-                                Adding item to Branch <?= $branch_id ?>
+                                Adding item to Branch <?= $branch_id ?> - Item code will be auto-generated and guaranteed unique.
                             <?php else: ?>
-                                Item code is auto-generated
+                                Item code will be auto-generated and guaranteed unique.
                             <?php endif; ?>
                         </div>
                         
                         <div class="row g-3">
                             <div class="col-md-6">
-                                <label for="itemCode" class="form-label">Item Code *</label>
-                                <input type="text" class="form-control" id="itemCode" name="item_code" value="<?= $next_item_code ?>" readonly required>
-                                <small class="text-muted">Auto-generated</small>
+                                <label for="itemCode" class="form-label">Item Code (Auto-generated)</label>
+                                <input type="text" class="form-control" id="itemCodeDisplay" value="<?= $next_item_code ?>" readonly disabled>
+                                <small class="text-muted">Code will be generated when saved</small>
                             </div>
                             <div class="col-md-6">
                                 <label for="itemName" class="form-label">Item Name *</label>
@@ -874,6 +901,7 @@ function getStockStatus($stock, $reorder_level) {
                 </div>
                 <div class="modal-body">
                     <form id="editItemForm">
+                        <input type="hidden" name="action" value="update_item">
                         <input type="hidden" name="item_id" id="editItemId">
                         
                         <div class="row g-3">
@@ -1087,7 +1115,7 @@ function getStockStatus($stock, $reorder_level) {
         document.getElementById('itemModalTitle').innerHTML = '<i class="bi bi-plus-circle me-2"></i>Add New Item';
         document.getElementById('itemForm').reset();
         document.getElementById('itemId').value = '';
-        document.getElementById('itemCode').value = '<?= $next_item_code ?>';
+        document.getElementById('itemCodeDisplay').value = '<?= $next_item_code ?>';
         document.getElementById('status').value = 'active';
         document.getElementById('stock').value = '0';
         document.getElementById('unitPrice').value = '0.00';
@@ -1280,11 +1308,6 @@ function getStockStatus($stock, $reorder_level) {
         const formData = new FormData(document.getElementById('itemForm'));
         formData.append('action', 'add_item');
         
-        // Debug: Log form data
-        for (let pair of formData.entries()) {
-            console.log(pair[0] + ': ' + pair[1]);
-        }
-        
         fetch(window.location.href, {
             method: 'POST',
             body: formData
@@ -1297,7 +1320,7 @@ function getStockStatus($stock, $reorder_level) {
                 Swal.fire({
                     icon: 'success',
                     title: 'Success!',
-                    text: data.message,
+                    text: data.message + ' (Code: ' + data.item_code + ')',
                     timer: 2000,
                     showConfirmButton: false
                 }).then(() => {
