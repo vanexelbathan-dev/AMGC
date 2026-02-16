@@ -1,14 +1,27 @@
 <?php
 // get_pick_item_details.php
+session_start();
 require_once '../config/database.php';
+
+// Check if user is logged in
+if (!isset($_SESSION['user_id'])) {
+    http_response_code(401);
+    echo '<div class="alert alert-danger">Unauthorized access. Please login again.</div>';
+    exit();
+}
+
+// Get user's branch context
+$user_branch_id = $_SESSION['branch_id'] ?? 0;
+$view_all_branches = $_SESSION['view_all_branches'] ?? false;
 
 if (isset($_GET['pick_item_id'])) {
     $pick_item_id = intval($_GET['pick_item_id']);
     
-    // Updated query to include order_status from sales_orders
+    // Updated query to include order_status from sales_orders with branch filtering
     $query = "SELECT pli.*, 
                      pl.pick_list_number, 
                      pl.pick_status as list_status,
+                     pl.branch_id,
                      pl.driver_id,
                      d.driver_name,
                      d.license_number,
@@ -33,12 +46,26 @@ if (isset($_GET['pick_item_id'])) {
               LEFT JOIN customers c ON so.customer_id = c.customer_id
               WHERE pli.pick_item_id = ?";
     
-    $stmt = $conn->prepare($query);
-    $stmt->bind_param("i", $pick_item_id);
+    // Add branch filter if user doesn't have view_all_branches permission
+    if (!$view_all_branches && $user_branch_id > 0) {
+        $query .= " AND pl.branch_id = ?";
+        $stmt = $conn->prepare($query);
+        $stmt->bind_param("ii", $pick_item_id, $user_branch_id);
+    } else {
+        $stmt = $conn->prepare($query);
+        $stmt->bind_param("i", $pick_item_id);
+    }
+    
     $stmt->execute();
     $result = $stmt->get_result();
     
     if ($row = $result->fetch_assoc()) {
+        // Check if user has access to this branch (additional security check)
+        if (!$view_all_branches && $row['branch_id'] != $user_branch_id) {
+            echo '<div class="alert alert-danger">You do not have permission to view this item. This item belongs to a different branch.</div>';
+            exit();
+        }
+        
         // Format status badge for pick status
         $status_badge = '';
         if ($row['quantity_picked'] >= $row['quantity_to_pick']) {
@@ -85,6 +112,12 @@ if (isset($_GET['pick_item_id'])) {
         // Calculate values
         $total_value = $row['quantity_to_pick'] * $row['unit_price'];
         $completion = number_format($row['completion_percentage'] ?? 0, 1);
+        
+        // Show branch indicator for admin users
+        $branch_indicator = '';
+        if ($view_all_branches) {
+            $branch_indicator = '<span class="badge bg-info ms-2">' . htmlspecialchars($row['branch_name']) . '</span>';
+        }
         ?>
         
         <div class="row">
@@ -127,7 +160,10 @@ if (isset($_GET['pick_item_id'])) {
                         <table class="table table-sm table-borderless mb-0">
                             <tr>
                                 <td width="40%"><strong>Pick List:</strong></td>
-                                <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($row['pick_list_number']); ?></span></td>
+                                <td>
+                                    <span class="badge bg-light text-dark"><?php echo htmlspecialchars($row['pick_list_number']); ?></span>
+                                    <?php echo $branch_indicator; ?>
+                                </td>
                             </tr>
                             <tr>
                                 <td><strong>Pick Status:</strong></td>
@@ -338,11 +374,6 @@ if (isset($_GET['pick_item_id'])) {
         <!-- Action Buttons -->
         <div class="row mt-2">
             <div class="col-12 text-end">
-                <?php if ($row['quantity_picked'] < $row['quantity_to_pick'] && $row['order_status'] != 'cancelled' && $row['order_status'] != 'delivered'): ?>
-                    <button type="button" class="btn btn-warning btn-sm" data-bs-dismiss="modal" onclick="setUpdatePickItem('<?php echo $row['pick_item_id']; ?>', '<?php echo $row['quantity_to_pick']; ?>', '<?php echo $row['quantity_picked']; ?>')">
-                        <i class="bi bi-pencil"></i> Update Picked Quantity
-                    </button>
-                <?php endif; ?>
                 <button type="button" class="btn btn-primary btn-sm" onclick="window.print()">
                     <i class="bi bi-printer"></i> Print Details
                 </button>
@@ -406,11 +437,13 @@ if (isset($_GET['pick_item_id'])) {
         
         <?php
     } else {
-        echo '<div class="alert alert-danger">Pick list item not found</div>';
+        echo '<div class="alert alert-danger">Pick list item not found or you do not have permission to view it</div>';
     }
     
     $stmt->close();
 } else {
     echo '<div class="alert alert-danger">No item ID specified</div>';
 }
+
+$conn->close();
 ?>

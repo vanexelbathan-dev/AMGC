@@ -12,8 +12,22 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 $user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Sales User';
 $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'sales';
-$branch_id = $_SESSION['branch_id'] ?? 0;
+$user_branch_id = $_SESSION['branch_id'] ?? 0;
 $view_all_branches = $_SESSION['view_all_branches'] ?? false;
+
+// Get user's branch name for display
+$branch_name = 'All Branches';
+if (!$view_all_branches && $user_branch_id > 0) {
+    $branch_query = "SELECT branch_name FROM branches WHERE branch_id = ?";
+    $branch_stmt = $conn->prepare($branch_query);
+    $branch_stmt->bind_param("i", $user_branch_id);
+    $branch_stmt->execute();
+    $branch_result = $branch_stmt->get_result();
+    if ($branch_row = $branch_result->fetch_assoc()) {
+        $branch_name = $branch_row['branch_name'];
+    }
+    $branch_stmt->close();
+}
 
 // Check if branch_id column exists in customers table
 $branch_column_exists = false;
@@ -37,47 +51,71 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $quantity_to_pick = $_POST['quantity_to_pick'];
     $location_bin = $_POST['location_bin'] ?: NULL;
     
-    // Check if item already exists in the pick list
-    $check_query = "SELECT * FROM pick_list_items WHERE pick_list_id = ? AND item_id = ?";
-    $stmt = $conn->prepare($check_query);
-    $stmt->bind_param("ii", $pick_list_id, $item_id);
-    $stmt->execute();
-    $result = $stmt->get_result();
+    // Verify that the pick list belongs to user's branch
+    $branch_check_query = "SELECT branch_id FROM pick_lists WHERE pick_list_id = ?";
+    $branch_check_stmt = $conn->prepare($branch_check_query);
+    $branch_check_stmt->bind_param("i", $pick_list_id);
+    $branch_check_stmt->execute();
+    $branch_check_result = $branch_check_stmt->get_result();
+    $pick_list_data = $branch_check_result->fetch_assoc();
     
-    if ($result->num_rows > 0) {
-        $error_message = "This item already exists in the selected pick list!";
-    } else {
-        // Insert into database
-        $insert_query = "INSERT INTO pick_list_items (pick_list_id, item_id, quantity_to_pick, location_bin) VALUES (?, ?, ?, ?)";
-        $stmt = $conn->prepare($insert_query);
-        $stmt->bind_param("iiis", $pick_list_id, $item_id, $quantity_to_pick, $location_bin);
+    if ($pick_list_data) {
+        $pick_list_branch_id = $pick_list_data['branch_id'];
         
-        if ($stmt->execute()) {
-            // Update inventory reserved quantity
-            $branch_query = "SELECT branch_id FROM pick_lists WHERE pick_list_id = ?";
-            $branch_stmt = $conn->prepare($branch_query);
-            $branch_stmt->bind_param("i", $pick_list_id);
-            $branch_stmt->execute();
-            $branch_result = $branch_stmt->get_result();
-            
-            if ($branch_row = $branch_result->fetch_assoc()) {
-                $branch_id = $branch_row['branch_id'];
-                
-                $update_inventory_query = "UPDATE inventory SET quantity_reserved = quantity_reserved + ? WHERE branch_id = ? AND item_id = ?";
-                $update_stmt = $conn->prepare($update_inventory_query);
-                $update_stmt->bind_param("iii", $quantity_to_pick, $branch_id, $item_id);
-                $update_stmt->execute();
-                $update_stmt->close();
-            }
-            
-            $branch_stmt->close();
-            
-            $success_message = "Pick list item added successfully!";
+        // Check if user has access to this branch
+        if (!$view_all_branches && $pick_list_branch_id != $user_branch_id) {
+            $error_message = "You don't have permission to add items to this pick list!";
         } else {
-            $error_message = "Error adding pick list item: " . $conn->error;
+            // Check if item already exists in the pick list
+            $check_query = "SELECT * FROM pick_list_items WHERE pick_list_id = ? AND item_id = ?";
+            $stmt = $conn->prepare($check_query);
+            $stmt->bind_param("ii", $pick_list_id, $item_id);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            
+            if ($result->num_rows > 0) {
+                $error_message = "This item already exists in the selected pick list!";
+            } else {
+                // Insert into database
+                $insert_query = "INSERT INTO pick_list_items (pick_list_id, item_id, quantity_to_pick, location_bin) VALUES (?, ?, ?, ?)";
+                $stmt = $conn->prepare($insert_query);
+                $stmt->bind_param("iiis", $pick_list_id, $item_id, $quantity_to_pick, $location_bin);
+                
+                if ($stmt->execute()) {
+                    // Update inventory reserved quantity
+                    $branch_query = "SELECT branch_id FROM pick_lists WHERE pick_list_id = ?";
+                    $branch_stmt = $conn->prepare($branch_query);
+                    $branch_stmt->bind_param("i", $pick_list_id);
+                    $branch_stmt->execute();
+                    $branch_result = $branch_stmt->get_result();
+                    
+                    if ($branch_row = $branch_result->fetch_assoc()) {
+                        $branch_id = $branch_row['branch_id'];
+                        
+                        // Check if inventory table has quantity_reserved column
+                        $check_reserved = $conn->query("SHOW COLUMNS FROM inventory LIKE 'quantity_reserved'");
+                        if ($check_reserved && $check_reserved->num_rows > 0) {
+                            $update_inventory_query = "UPDATE inventory SET quantity_reserved = quantity_reserved + ? WHERE branch_id = ? AND item_id = ?";
+                            $update_stmt = $conn->prepare($update_inventory_query);
+                            $update_stmt->bind_param("iii", $quantity_to_pick, $branch_id, $item_id);
+                            $update_stmt->execute();
+                            $update_stmt->close();
+                        }
+                    }
+                    
+                    $branch_stmt->close();
+                    
+                    $success_message = "Pick list item added successfully!";
+                } else {
+                    $error_message = "Error adding pick list item: " . $conn->error;
+                }
+            }
+            $stmt->close();
         }
+    } else {
+        $error_message = "Pick list not found!";
     }
-    $stmt->close();
+    $branch_check_stmt->close();
 }
 
 // Handle update pick quantity
@@ -98,23 +136,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $item = $result->fetch_assoc();
     
     if ($item) {
+        // Verify branch access
+        if (!$view_all_branches && $item['branch_id'] != $user_branch_id) {
+            header('Content-Type: application/json');
+            echo json_encode(['success' => false, 'message' => 'You don\'t have permission to update this item']);
+            exit;
+        }
+        
         $quantity_difference = $quantity_picked - $item['old_quantity'];
         
-        $update_query = "UPDATE pick_list_items SET quantity_picked = ?, notes = CONCAT(IFNULL(notes, ''), ?) WHERE pick_item_id = ?";
-        $notes_update = "\n[" . date('Y-m-d H:i:s') . "] Quantity updated from " . $item['old_quantity'] . " to " . $quantity_picked . ($pick_notes ? " - Notes: " . $pick_notes : "");
-        $update_stmt = $conn->prepare($update_query);
-        $update_stmt->bind_param("isi", $quantity_picked, $notes_update, $pick_item_id);
+        // Check if notes column exists
+        $check_notes = $conn->query("SHOW COLUMNS FROM pick_list_items LIKE 'notes'");
+        if ($check_notes && $check_notes->num_rows > 0) {
+            $update_query = "UPDATE pick_list_items SET quantity_picked = ?, notes = CONCAT(IFNULL(notes, ''), ?) WHERE pick_item_id = ?";
+            $notes_update = "\n[" . date('Y-m-d H:i:s') . "] Quantity updated from " . $item['old_quantity'] . " to " . $quantity_picked . ($pick_notes ? " - Notes: " . $pick_notes : "");
+            $update_stmt = $conn->prepare($update_query);
+            $update_stmt->bind_param("isi", $quantity_picked, $notes_update, $pick_item_id);
+        } else {
+            $update_query = "UPDATE pick_list_items SET quantity_picked = ? WHERE pick_item_id = ?";
+            $update_stmt = $conn->prepare($update_query);
+            $update_stmt->bind_param("ii", $quantity_picked, $pick_item_id);
+        }
         
         if ($update_stmt->execute()) {
-            // Update inventory reserved quantity based on the difference
+            // Update inventory based on the difference
             if ($quantity_difference != 0) {
+                // Check if inventory table has quantity_reserved column
+                $check_reserved = $conn->query("SHOW COLUMNS FROM inventory LIKE 'quantity_reserved'");
+                
                 if ($quantity_difference > 0) {
                     // More items picked, reduce reserved and stock
-                    $update_inventory_query = "UPDATE inventory SET quantity_reserved = quantity_reserved - ? WHERE branch_id = ? AND item_id = ?";
-                    $update_inventory_stmt = $conn->prepare($update_inventory_query);
-                    $update_inventory_stmt->bind_param("iii", $quantity_difference, $item['branch_id'], $item['item_id']);
-                    $update_inventory_stmt->execute();
-                    $update_inventory_stmt->close();
+                    if ($check_reserved && $check_reserved->num_rows > 0) {
+                        $update_inventory_query = "UPDATE inventory SET quantity_reserved = quantity_reserved - ? WHERE branch_id = ? AND item_id = ?";
+                        $update_inventory_stmt = $conn->prepare($update_inventory_query);
+                        $update_inventory_stmt->bind_param("iii", $quantity_difference, $item['branch_id'], $item['item_id']);
+                        $update_inventory_stmt->execute();
+                        $update_inventory_stmt->close();
+                    }
                     
                     $update_items_query = "UPDATE items SET stock = stock - ? WHERE item_id = ? AND stock >= ?";
                     $update_items_stmt = $conn->prepare($update_items_query);
@@ -124,11 +182,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 } else {
                     // Less items picked, increase reserved (return to reserved)
                     $quantity_difference_abs = abs($quantity_difference);
-                    $update_inventory_query = "UPDATE inventory SET quantity_reserved = quantity_reserved + ? WHERE branch_id = ? AND item_id = ?";
-                    $update_inventory_stmt = $conn->prepare($update_inventory_query);
-                    $update_inventory_stmt->bind_param("iii", $quantity_difference_abs, $item['branch_id'], $item['item_id']);
-                    $update_inventory_stmt->execute();
-                    $update_inventory_stmt->close();
+                    
+                    if ($check_reserved && $check_reserved->num_rows > 0) {
+                        $update_inventory_query = "UPDATE inventory SET quantity_reserved = quantity_reserved + ? WHERE branch_id = ? AND item_id = ?";
+                        $update_inventory_stmt = $conn->prepare($update_inventory_query);
+                        $update_inventory_stmt->bind_param("iii", $quantity_difference_abs, $item['branch_id'], $item['item_id']);
+                        $update_inventory_stmt->execute();
+                        $update_inventory_stmt->close();
+                    }
                     
                     $update_items_query = "UPDATE items SET stock = stock + ? WHERE item_id = ?";
                     $update_items_stmt = $conn->prepare($update_items_query);
@@ -166,9 +227,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 }
             }
             
+            header('Content-Type: application/json');
             echo json_encode(['success' => true]);
             exit;
         } else {
+            header('Content-Type: application/json');
             echo json_encode(['success' => false, 'message' => $conn->error]);
             exit;
         }
@@ -205,7 +268,7 @@ function getOrderStatusText($status) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pick List Items - Warehouse</title>
+    <title>Pick List Items - Warehouse <?php echo !$view_all_branches ? '- ' . htmlspecialchars($branch_name) : ''; ?></title>
     <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
     <link rel="shortcut icon" href="../Pictures/favicon.ico" />
@@ -285,6 +348,22 @@ function getOrderStatusText($status) {
                 margin-left: -6px;
                 margin-right: -6px;
             }
+        }
+        
+        /* Branch indicator */
+        .branch-indicator {
+            display: inline-block;
+            padding: 4px 12px;
+            background-color: #e7f5ff;
+            color: #0d6efd;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+            margin-left: 10px;
+        }
+        
+        .branch-indicator i {
+            margin-right: 5px;
         }
         
         /* Driver badge styling */
@@ -417,32 +496,87 @@ function getOrderStatusText($status) {
                     <i class="bi bi-list"></i>
                 </button>
                 <div class="page-title">
-                    <h2>Pick List Items</h2>
+                    <h2>
+                        Pick List Items
+                    </h2>
                     <p>Manage and track pick list items for shipments</p>
                 </div>
             </div>
 
             <?php
-            // Get pick list statistics
+            // Get pick list statistics - filtered by branch
             $stats = [];
+            $branch_filter = "";
+            $params = [];
+            $types = "";
             
-            $total_items_query = "SELECT COUNT(*) as count FROM pick_list_items";
-            $result = $conn->query($total_items_query);
+            if (!$view_all_branches && $user_branch_id > 0) {
+                $branch_filter = " WHERE pl.branch_id = ? ";
+                $params[] = $user_branch_id;
+                $types .= "i";
+            }
+            
+            // Total items query with branch filter
+            $total_items_query = "SELECT COUNT(*) as count 
+                                 FROM pick_list_items pli
+                                 JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id" . $branch_filter;
+            $stmt = $conn->prepare($total_items_query);
+            if (!empty($params)) {
+                $stmt->bind_param($types, ...$params);
+            }
+            $stmt->execute();
+            $result = $stmt->get_result();
             $stats['total_items'] = $result->fetch_assoc()['count'] ?? 0;
+            $stmt->close();
             
-            $picked_query = "SELECT COUNT(*) as count FROM pick_list_items WHERE quantity_picked >= quantity_to_pick";
-            $result = $conn->query($picked_query);
+            // Picked items query with branch filter
+            $picked_query = "SELECT COUNT(*) as count 
+                            FROM pick_list_items pli
+                            JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
+                            WHERE pli.quantity_picked >= pli.quantity_to_pick" . 
+                            ($branch_filter ? str_replace("WHERE", "AND", $branch_filter) : "");
+            $stmt = $conn->prepare($picked_query);
+            if (!empty($params)) {
+                $stmt->bind_param($types, ...$params);
+            }
+            $stmt->execute();
+            $result = $stmt->get_result();
             $stats['picked'] = $result->fetch_assoc()['count'] ?? 0;
+            $stmt->close();
             
-            $pending_query = "SELECT COUNT(*) as count FROM pick_list_items WHERE quantity_picked = 0";
-            $result = $conn->query($pending_query);
+            // Pending items query with branch filter
+            $pending_query = "SELECT COUNT(*) as count 
+                             FROM pick_list_items pli
+                             JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
+                             WHERE pli.quantity_picked = 0" . 
+                             ($branch_filter ? str_replace("WHERE", "AND", $branch_filter) : "");
+            $stmt = $conn->prepare($pending_query);
+            if (!empty($params)) {
+                $stmt->bind_param($types, ...$params);
+            }
+            $stmt->execute();
+            $result = $stmt->get_result();
             $stats['pending'] = $result->fetch_assoc()['count'] ?? 0;
+            $stmt->close();
             
-            $value_query = "SELECT SUM(pli.quantity_to_pick * i.unit_price) as total_value 
-                           FROM pick_list_items pli
-                           JOIN items i ON pli.item_id = i.item_id";
-            $result = $conn->query($value_query);
-            $total_value = $result->fetch_assoc()['total_value'] ?? 0;
+            // Total value query with branch filter
+            $check_price = $conn->query("SHOW COLUMNS FROM items LIKE 'unit_price'");
+            if ($check_price && $check_price->num_rows > 0) {
+                $value_query = "SELECT SUM(pli.quantity_to_pick * i.unit_price) as total_value 
+                               FROM pick_list_items pli
+                               JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
+                               JOIN items i ON pli.item_id = i.item_id" . $branch_filter;
+                $stmt = $conn->prepare($value_query);
+                if (!empty($params)) {
+                    $stmt->bind_param($types, ...$params);
+                }
+                $stmt->execute();
+                $result = $stmt->get_result();
+                $total_value = $result->fetch_assoc()['total_value'] ?? 0;
+                $stmt->close();
+            } else {
+                $total_value = 0;
+            }
             ?>
 
             <!-- Success/Error Messages -->
@@ -538,11 +672,20 @@ function getOrderStatusText($status) {
                             <select class="form-select" id="driverFilter">
                                 <option value="">All Drivers</option>
                                 <?php
-                                $drivers_filter_query = "SELECT driver_id, driver_name FROM drivers WHERE status = 'active' ORDER BY driver_name";
-                                $drivers_result = $conn->query($drivers_filter_query);
+                                $drivers_filter_query = "SELECT driver_id, driver_name FROM drivers WHERE status = 'active'";
+                                if (!$view_all_branches && $user_branch_id > 0) {
+                                    $drivers_filter_query .= " AND branch_id = ?";
+                                    $drivers_stmt = $conn->prepare($drivers_filter_query);
+                                    $drivers_stmt->bind_param("i", $user_branch_id);
+                                } else {
+                                    $drivers_stmt = $conn->prepare($drivers_filter_query);
+                                }
+                                $drivers_stmt->execute();
+                                $drivers_result = $drivers_stmt->get_result();
                                 while ($driver = $drivers_result->fetch_assoc()) {
                                     echo '<option value="' . $driver['driver_id'] . '">' . htmlspecialchars($driver['driver_name']) . '</option>';
                                 }
+                                $drivers_stmt->close();
                                 ?>
                             </select>
                         </div>
@@ -568,13 +711,19 @@ function getOrderStatusText($status) {
                                 <th>Location</th>
                                 <th>Assigned Driver</th>
                                 <th>Order Status</th>
+                                <?php if ($view_all_branches): ?>
+                                    <th>Branch</th>
+                                <?php endif; ?>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php
+                            // Build query with branch filter
                             $pick_list_items_query = "SELECT pli.*, 
                                                              pl.pick_list_number, 
+                                                             pl.branch_id,
+                                                             b.branch_name,
                                                              i.item_name, 
                                                              i.item_code,
                                                              d.driver_id,
@@ -584,17 +733,28 @@ function getOrderStatusText($status) {
                                                              so.so_number
                                                      FROM pick_list_items pli
                                                      JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
+                                                     JOIN branches b ON pl.branch_id = b.branch_id
                                                      JOIN items i ON pli.item_id = i.item_id
                                                      LEFT JOIN drivers d ON pl.driver_id = d.driver_id
-                                                     LEFT JOIN sales_orders so ON pl.so_id = so.so_id
-                                                     ORDER BY pli.pick_item_id DESC";
-                            $result = $conn->query($pick_list_items_query);
+                                                     LEFT JOIN sales_orders so ON pl.so_id = so.so_id";
+                            
+                            if (!$view_all_branches && $user_branch_id > 0) {
+                                $pick_list_items_query .= " WHERE pl.branch_id = ?";
+                                $stmt = $conn->prepare($pick_list_items_query . " ORDER BY pli.pick_item_id DESC");
+                                $stmt->bind_param("i", $user_branch_id);
+                            } else {
+                                $stmt = $conn->prepare($pick_list_items_query . " ORDER BY pli.pick_item_id DESC");
+                            }
+                            
+                            $stmt->execute();
+                            $result = $stmt->get_result();
                             
                             if ($result && $result->num_rows > 0) {
                                 while($row = $result->fetch_assoc()) {
                                     ?>
                                     <tr data-driver-id="<?php echo $row['driver_id'] ?? ''; ?>" 
-                                        data-order-status="<?php echo $row['order_status'] ?? ''; ?>">
+                                        data-order-status="<?php echo $row['order_status'] ?? ''; ?>"
+                                        data-branch-id="<?php echo $row['branch_id']; ?>">
                                         <td>
                                             <span class="badge bg-light text-dark fs-6 p-2"><?php echo htmlspecialchars($row['pick_list_number']); ?></span>
                                         </td>
@@ -626,15 +786,26 @@ function getOrderStatusText($status) {
                                                 <span class="text-muted">—</span>
                                             <?php endif; ?>
                                         </td>
+                                        <?php if ($view_all_branches): ?>
+                                            <td>
+                                                <span class="badge bg-info text-dark"><?php echo htmlspecialchars($row['branch_name']); ?></span>
+                                            </td>
+                                        <?php endif; ?>
                                         <td>
                                             <div class="btn-group" role="group">
                                                 <button class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#viewItemModal" 
-                                                        onclick="loadPickItemDetails('<?php echo $row['pick_item_id']; ?>')">
+                                                        onclick="loadPickItemDetails(<?php echo $row['pick_item_id']; ?>)">
                                                     <i class="bi bi-eye"></i>
                                                 </button>
-                                                <?php if ($row['order_status'] != 'delivered' && $row['order_status'] != 'cancelled'): ?>
+                                                <?php if (!isset($row['order_status']) || ($row['order_status'] != 'delivered' && $row['order_status'] != 'cancelled')): ?>
                                                 <button class="btn btn-sm btn-warning" data-bs-toggle="modal" data-bs-target="#updatePickModal"
-                                                        onclick="setUpdatePickItem('<?php echo $row['pick_item_id']; ?>', '<?php echo $row['quantity_to_pick']; ?>', '<?php echo $row['quantity_picked']; ?>', '<?php echo addslashes($row['item_name']); ?>', '<?php echo $row['item_code']; ?>')">
+                                                        onclick="setUpdatePickItem(
+                                                            <?php echo $row['pick_item_id']; ?>, 
+                                                            <?php echo $row['quantity_to_pick']; ?>, 
+                                                            <?php echo $row['quantity_picked']; ?>, 
+                                                            '<?php echo addslashes($row['item_name']); ?>', 
+                                                            '<?php echo addslashes($row['item_code']); ?>'
+                                                        )">
                                                     <i class="bi bi-pencil"></i>
                                                 </button>
                                                 <?php endif; ?>
@@ -644,8 +815,10 @@ function getOrderStatusText($status) {
                                     <?php
                                 }
                             } else {
-                                echo '<tr><td colspan="8" class="text-center py-4">No pick list items found</td></tr>';
+                                $colspan = $view_all_branches ? 9 : 8;
+                                echo '<tr><td colspan="' . $colspan . '" class="text-center py-4">No pick list items found for this branch</td></tr>';
                             }
+                            $stmt->close();
                             ?>
                         </tbody>
                     </table>
@@ -676,9 +849,19 @@ function getOrderStatusText($status) {
                                                         FROM pick_lists pl
                                                         JOIN branches b ON pl.branch_id = b.branch_id
                                                         LEFT JOIN drivers d ON pl.driver_id = d.driver_id
-                                                        WHERE pl.pick_status IN ('open', 'in-progress')
-                                                        ORDER BY pl.created_at DESC";
-                                    $result = $conn->query($pick_lists_query);
+                                                        WHERE pl.pick_status IN ('open', 'in-progress')";
+                                    
+                                    if (!$view_all_branches && $user_branch_id > 0) {
+                                        $pick_lists_query .= " AND pl.branch_id = ?";
+                                        $pl_stmt = $conn->prepare($pick_lists_query . " ORDER BY pl.created_at DESC");
+                                        $pl_stmt->bind_param("i", $user_branch_id);
+                                    } else {
+                                        $pl_stmt = $conn->prepare($pick_lists_query . " ORDER BY pl.created_at DESC");
+                                    }
+                                    
+                                    $pl_stmt->execute();
+                                    $result = $pl_stmt->get_result();
+                                    
                                     if ($result->num_rows > 0) {
                                         while($pick_list = $result->fetch_assoc()) {
                                             $driver_info = $pick_list['driver_name'] ? ' - Driver: ' . $pick_list['driver_name'] : '';
@@ -687,8 +870,9 @@ function getOrderStatusText($status) {
                                                  $driver_info . '</option>';
                                         }
                                     } else {
-                                        echo '<option value="">No active pick lists available</option>';
+                                        echo '<option value="">No active pick lists available for your branch</option>';
                                     }
+                                    $pl_stmt->close();
                                     ?>
                                 </select>
                             </div>
@@ -697,12 +881,25 @@ function getOrderStatusText($status) {
                                 <select class="form-select" name="item_id" required>
                                     <option value="">Select Item</option>
                                     <?php
-                                    $items_query = "SELECT item_id, item_name, item_code FROM items WHERE status = 'active' ORDER BY item_name";
-                                    $result = $conn->query($items_query);
+                                    $items_query = "SELECT item_id, item_name, item_code FROM items WHERE status = 'active'";
+                                    
+                                    // Filter items by branch if items table has branch_id column
+                                    if (!$view_all_branches && $user_branch_id > 0 && $items_branch_column_exists) {
+                                        $items_query .= " AND branch_id = ?";
+                                        $item_stmt = $conn->prepare($items_query . " ORDER BY item_name");
+                                        $item_stmt->bind_param("i", $user_branch_id);
+                                    } else {
+                                        $item_stmt = $conn->prepare($items_query . " ORDER BY item_name");
+                                    }
+                                    
+                                    $item_stmt->execute();
+                                    $result = $item_stmt->get_result();
+                                    
                                     while($item = $result->fetch_assoc()) {
                                         echo '<option value="' . $item['item_id'] . '">' . 
                                              $item['item_code'] . ' - ' . $item['item_name'] . '</option>';
                                     }
+                                    $item_stmt->close();
                                     ?>
                                 </select>
                             </div>
@@ -743,31 +940,61 @@ function getOrderStatusText($status) {
                                 <select class="form-select" name="so_id" required>
                                     <option value="">Select Sales Order</option>
                                     <?php
-                                    $sales_orders_query = "SELECT so.so_id, so.so_number, c.customer_name
+                                    $sales_orders_query = "SELECT so.so_id, so.so_number, c.customer_name, so.branch_id
                                                           FROM sales_orders so
                                                           JOIN customers c ON so.customer_id = c.customer_id
-                                                          WHERE so.order_status IN ('confirmed', 'processing')
-                                                          ORDER BY so.order_date DESC";
-                                    $result = $conn->query($sales_orders_query);
-                                    while($so = $result->fetch_assoc()) {
-                                        echo '<option value="' . $so['so_id'] . '">' . 
-                                             $so['so_number'] . ' - ' . $so['customer_name'] . '</option>';
+                                                          WHERE so.order_status IN ('confirmed', 'processing')";
+                                    
+                                    if (!$view_all_branches && $user_branch_id > 0) {
+                                        $sales_orders_query .= " AND so.branch_id = ?";
+                                        $so_stmt = $conn->prepare($sales_orders_query . " ORDER BY so.order_date DESC");
+                                        $so_stmt->bind_param("i", $user_branch_id);
+                                    } else {
+                                        $so_stmt = $conn->prepare($sales_orders_query . " ORDER BY so.order_date DESC");
                                     }
+                                    
+                                    $so_stmt->execute();
+                                    $result = $so_stmt->get_result();
+                                    
+                                    while($so = $result->fetch_assoc()) {
+                                        $branch_info = $view_all_branches ? ' [' . $so['branch_id'] . ']' : '';
+                                        echo '<option value="' . $so['so_id'] . '">' . 
+                                             $so['so_number'] . ' - ' . $so['customer_name'] . $branch_info . '</option>';
+                                    }
+                                    $so_stmt->close();
                                     ?>
                                 </select>
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Branch</label>
-                                <select class="form-select" name="branch_id" required>
+                                <select class="form-select" name="branch_id" required <?php echo !$view_all_branches ? 'disabled' : ''; ?>>
                                     <option value="">Select Branch</option>
                                     <?php
                                     $branches_query = "SELECT branch_id, branch_name FROM branches WHERE status = 'active'";
-                                    $result = $conn->query($branches_query);
+                                    
+                                    if (!$view_all_branches && $user_branch_id > 0) {
+                                        $branches_query .= " AND branch_id = ?";
+                                        $branch_stmt = $conn->prepare($branches_query);
+                                        $branch_stmt->bind_param("i", $user_branch_id);
+                                        $branch_stmt->execute();
+                                        $result = $branch_stmt->get_result();
+                                    } else {
+                                        $result = $conn->query($branches_query);
+                                    }
+                                    
                                     while($branch = $result->fetch_assoc()) {
-                                        echo '<option value="' . $branch['branch_id'] . '">' . $branch['branch_name'] . '</option>';
+                                        $selected = (!$view_all_branches && $branch['branch_id'] == $user_branch_id) ? 'selected' : '';
+                                        echo '<option value="' . $branch['branch_id'] . '" ' . $selected . '>' . $branch['branch_name'] . '</option>';
+                                    }
+                                    
+                                    if (!$view_all_branches && $user_branch_id > 0) {
+                                        $branch_stmt->close();
                                     }
                                     ?>
                                 </select>
+                                <?php if (!$view_all_branches): ?>
+                                    <input type="hidden" name="branch_id" value="<?php echo $user_branch_id; ?>">
+                                <?php endif; ?>
                             </div>
                         </div>
                         <div class="row">
@@ -777,14 +1004,25 @@ function getOrderStatusText($status) {
                                     <option value="">Select Driver (Optional)</option>
                                     <?php
                                     $drivers_query = "SELECT driver_id, driver_name, vehicle_plate_number 
-                                                      FROM drivers WHERE status = 'active' 
-                                                      ORDER BY driver_name";
-                                    $drivers_result = $conn->query($drivers_query);
+                                                      FROM drivers WHERE status = 'active'";
+                                    
+                                    if (!$view_all_branches && $user_branch_id > 0) {
+                                        $drivers_query .= " AND branch_id = ?";
+                                        $driver_stmt = $conn->prepare($drivers_query . " ORDER BY driver_name");
+                                        $driver_stmt->bind_param("i", $user_branch_id);
+                                    } else {
+                                        $driver_stmt = $conn->prepare($drivers_query . " ORDER BY driver_name");
+                                    }
+                                    
+                                    $driver_stmt->execute();
+                                    $drivers_result = $driver_stmt->get_result();
+                                    
                                     while($driver = $drivers_result->fetch_assoc()) {
                                         echo '<option value="' . $driver['driver_id'] . '">' . 
                                              htmlspecialchars($driver['driver_name']) . ' - ' . 
                                              htmlspecialchars($driver['vehicle_plate_number'] ?? 'No plate') . '</option>';
                                     }
+                                    $driver_stmt->close();
                                     ?>
                                 </select>
                             </div>
@@ -1101,6 +1339,12 @@ function getOrderStatusText($status) {
         function setUpdatePickItem(pickItemId, quantityToPick, quantityPicked, itemName, itemCode) {
             console.log('Setting update for pick item:', pickItemId, quantityToPick, quantityPicked);
             
+            // Check if elements exist
+            if (!document.getElementById('update_pick_item_id')) {
+                console.error('Update modal elements not found');
+                return;
+            }
+            
             // Set basic values
             document.getElementById('update_pick_item_id').value = pickItemId;
             document.getElementById('update_quantity_to_pick').textContent = quantityToPick;
@@ -1108,28 +1352,43 @@ function getOrderStatusText($status) {
             document.getElementById('original_quantity_picked').value = quantityPicked;
             
             // Set item summary
-            document.getElementById('summaryItemName').textContent = itemName || 'Item Name';
-            document.getElementById('summaryItemCode').textContent = itemCode || '';
+            if (document.getElementById('summaryItemName')) {
+                document.getElementById('summaryItemName').textContent = itemName || 'Item Name';
+            }
+            if (document.getElementById('summaryItemCode')) {
+                document.getElementById('summaryItemCode').textContent = itemCode || '';
+            }
             
             const quantityInput = document.getElementById('update_quantity_picked');
-            quantityInput.value = quantityPicked;
-            quantityInput.max = quantityToPick;
-            quantityInput.min = 0;
-            quantityInput.setAttribute('data-max', quantityToPick);
-            quantityInput.setAttribute('data-current', quantityPicked);
+            if (quantityInput) {
+                quantityInput.value = quantityPicked;
+                quantityInput.max = quantityToPick;
+                quantityInput.min = 0;
+                quantityInput.setAttribute('data-max', quantityToPick);
+                quantityInput.setAttribute('data-current', quantityPicked);
+            }
             
             // Reset warning message
-            document.getElementById('quantityWarning').style.display = 'none';
+            const warningDiv = document.getElementById('quantityWarning');
+            if (warningDiv) {
+                warningDiv.style.display = 'none';
+            }
             
             // Update help text with remaining quantity
             const remainingToPick = quantityToPick - quantityPicked;
-            document.getElementById('quantityHelpText').innerHTML = `Remaining to pick: <strong>${remainingToPick}</strong> of ${quantityToPick}`;
+            const helpText = document.getElementById('quantityHelpText');
+            if (helpText) {
+                helpText.innerHTML = `Remaining to pick: <strong>${remainingToPick}</strong> of ${quantityToPick}`;
+            }
             
             // Update progress bar
             updateProgressBar(quantityPicked, quantityToPick);
             
             // Clear notes field
-            document.getElementById('pick_notes').value = '';
+            const notesField = document.getElementById('pick_notes');
+            if (notesField) {
+                notesField.value = '';
+            }
         }
 
         // Update progress bar
@@ -1137,7 +1396,7 @@ function getOrderStatusText($status) {
             const progressContainer = document.getElementById('progressContainer');
             const progressBar = document.getElementById('pickProgress');
             
-            if (total > 0) {
+            if (progressContainer && progressBar && total > 0) {
                 const percentage = Math.round((current / total) * 100);
                 progressBar.style.width = percentage + '%';
                 progressBar.textContent = percentage + '%';
@@ -1188,7 +1447,10 @@ function getOrderStatusText($status) {
                 
                 // Update help text
                 const remainingToPick = quantityToPick - value;
-                document.getElementById('quantityHelpText').innerHTML = `Remaining to pick: <strong>${remainingToPick}</strong> of ${quantityToPick}`;
+                const helpText = document.getElementById('quantityHelpText');
+                if (helpText) {
+                    helpText.innerHTML = `Remaining to pick: <strong>${remainingToPick}</strong> of ${quantityToPick}`;
+                }
                 
                 // Update progress bar
                 updateProgressBar(value, quantityToPick);
@@ -1257,9 +1519,14 @@ function getOrderStatusText($status) {
 
         // Clear all filters
         function clearFilters() {
-            document.getElementById('searchInput').value = '';
-            document.getElementById('statusFilter').value = '';
-            document.getElementById('driverFilter').value = '';
+            const searchInput = document.getElementById('searchInput');
+            const statusFilter = document.getElementById('statusFilter');
+            const driverFilter = document.getElementById('driverFilter');
+            
+            if (searchInput) searchInput.value = '';
+            if (statusFilter) statusFilter.value = '';
+            if (driverFilter) driverFilter.value = '';
+            
             filterTable();
         }
 
@@ -1369,7 +1636,7 @@ function getOrderStatusText($status) {
                     
                     const formData = new FormData(this);
                     
-                    fetch('pick_list_items.php', {
+                    fetch(window.location.href, {
                         method: 'POST',
                         body: formData
                     })
@@ -1379,7 +1646,7 @@ function getOrderStatusText($status) {
                             alert('Pick quantity updated successfully!');
                             window.location.reload();
                         } else {
-                            alert('Error: ' + data.message);
+                            alert('Error: ' + (data.message || 'Unknown error occurred'));
                         }
                     })
                     .catch(error => {
@@ -1393,17 +1660,26 @@ function getOrderStatusText($status) {
             const updatePickModal = document.getElementById('updatePickModal');
             if (updatePickModal) {
                 updatePickModal.addEventListener('hidden.bs.modal', function() {
-                    document.getElementById('quantityWarning').style.display = 'none';
-                    document.getElementById('update_quantity_picked').classList.remove('is-invalid');
-                    document.getElementById('submitUpdateBtn').disabled = false;
-                    document.getElementById('progressContainer').style.display = 'none';
+                    const warningDiv = document.getElementById('quantityWarning');
+                    const quantityInput = document.getElementById('update_quantity_picked');
+                    const submitBtn = document.getElementById('submitUpdateBtn');
+                    const progressContainer = document.getElementById('progressContainer');
+                    
+                    if (warningDiv) warningDiv.style.display = 'none';
+                    if (quantityInput) quantityInput.classList.remove('is-invalid');
+                    if (submitBtn) submitBtn.disabled = false;
+                    if (progressContainer) progressContainer.style.display = 'none';
                 });
             }
 
             // Filter table event listeners
-            document.getElementById('searchInput').addEventListener('keyup', filterTable);
-            document.getElementById('statusFilter').addEventListener('change', filterTable);
-            document.getElementById('driverFilter').addEventListener('change', filterTable);
+            const searchInput = document.getElementById('searchInput');
+            const statusFilter = document.getElementById('statusFilter');
+            const driverFilter = document.getElementById('driverFilter');
+            
+            if (searchInput) searchInput.addEventListener('keyup', filterTable);
+            if (statusFilter) statusFilter.addEventListener('change', filterTable);
+            if (driverFilter) driverFilter.addEventListener('change', filterTable);
 
             // Keyboard shortcuts
             document.addEventListener('keydown', function(e) {
@@ -1419,7 +1695,8 @@ function getOrderStatusText($status) {
                 // Ctrl + F to focus search
                 else if (e.ctrlKey && e.key === 'f') {
                     e.preventDefault();
-                    document.getElementById('searchInput').focus();
+                    const searchInput = document.getElementById('searchInput');
+                    if (searchInput) searchInput.focus();
                 }
                 // Ctrl + C to clear filters
                 else if (e.ctrlKey && e.key === 'c') {

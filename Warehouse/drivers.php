@@ -2,7 +2,6 @@
 require_once '../config/database.php';
 require_once '../config/session_handler.php';
 
-
 requireLogin();
 requireRole(['warehouse']);
 
@@ -10,14 +9,28 @@ requireRole(['warehouse']);
 $user_id = $_SESSION['user_id'];
 $user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Sales User';
 $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'sales';
-$branch_id = $_SESSION['branch_id'] ?? 0;
+$user_branch_id = $_SESSION['branch_id'] ?? 0;
 $view_all_branches = $_SESSION['view_all_branches'] ?? false;
 
-// Check if branch_id column exists in customers table
-$branch_column_exists = false;
-$check_column = $conn->query("SHOW COLUMNS FROM customers LIKE 'branch_id'");
-if ($check_column && $check_column->num_rows > 0) {
-    $branch_column_exists = true;
+// Get user's branch name for display
+$branch_name = 'All Branches';
+if (!$view_all_branches && $user_branch_id > 0) {
+    $branch_query = "SELECT branch_name FROM branches WHERE branch_id = ?";
+    $branch_stmt = $conn->prepare($branch_query);
+    $branch_stmt->bind_param("i", $user_branch_id);
+    $branch_stmt->execute();
+    $branch_result = $branch_stmt->get_result();
+    if ($branch_row = $branch_result->fetch_assoc()) {
+        $branch_name = $branch_row['branch_name'];
+    }
+    $branch_stmt->close();
+}
+
+// Check if branch_id column exists in drivers table
+$drivers_branch_column_exists = false;
+$check_drivers_column = $conn->query("SHOW COLUMNS FROM drivers LIKE 'branch_id'");
+if ($check_drivers_column && $check_drivers_column->num_rows > 0) {
+    $drivers_branch_column_exists = true;
 }
 
 // Check if branch_id column exists in items table
@@ -32,7 +45,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Drivers - Warehouse</title>
+    <title>Drivers - Warehouse <?php echo !$view_all_branches ? '- ' . htmlspecialchars($branch_name) : ''; ?></title>
     <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
     <link rel="shortcut icon" href="../Pictures/favicon.ico" />
@@ -43,6 +56,114 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <style>
+        /* Branch indicator */
+        .branch-indicator {
+            display: inline-block;
+            padding: 4px 12px;
+            background-color: #e7f5ff;
+            color: #0d6efd;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+            margin-left: 10px;
+        }
+        
+        .branch-indicator i {
+            margin-right: 5px;
+        }
+        
+        /* User branch in sidebar */
+        .user-branch-sidebar {
+            font-size: 11px;
+            color: #aaa;
+            display: block;
+            margin-top: 2px;
+        }
+        
+        /* Stat cards */
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            display: flex;
+            align-items: center;
+            transition: transform 0.2s;
+            border-left: 4px solid;
+        }
+        
+        
+        .stat-icon {
+            font-size: 2.5rem;
+            margin-right: 15px;
+            color: #6c757d;
+        }
+        
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: 600;
+            line-height: 1.2;
+        }
+        
+        .stat-label {
+            font-size: 0.9rem;
+            color: #6c757d;
+        }
+        
+        /* Mobile responsive */
+        @media (max-width: 768px) {
+            .stat-card {
+                padding: 12px;
+                min-height: 85px;
+                margin-bottom: 8px;
+            }
+            
+            .stat-icon {
+                font-size: 2rem;
+                margin-right: 12px;
+            }
+            
+            .stat-value {
+                font-size: 1.5rem;
+            }
+            
+            .stat-label {
+                font-size: 0.8rem;
+            }
+            
+            .col-md-3 {
+                width: 50%;
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+            
+            .row.g-3 {
+                margin-left: -8px;
+                margin-right: -8px;
+            }
+        }
+        
+        @media (max-width: 576px) {
+            .stat-card {
+                min-height: 80px;
+                padding: 10px;
+            }
+            
+            .stat-icon {
+                font-size: 1.8rem;
+                margin-right: 10px;
+            }
+            
+            .stat-value {
+                font-size: 1.3rem;
+            }
+            
+            .stat-label {
+                font-size: 0.75rem;
+            }
+        }
+    </style>
 </head>
 <body>
     <!-- MAIN APPLICATION -->
@@ -110,7 +231,9 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                     <i class="bi bi-list"></i>
                 </button>
                 <div class="page-title">
-                    <h2></i>Driver Management</h2>
+                    <h2>
+                        <i></i>Driver Management
+                    </h2>
                     <p>Manage driver information and track delivery performance</p>
                 </div>
             </div>
@@ -118,18 +241,38 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
             <?php
             require_once '../config/database.php';
             
-            // Get driver statistics
+            // Get driver statistics with branch filtering
             $stats = [];
             
             // Total Drivers
             $total_drivers_query = "SELECT COUNT(*) as count FROM drivers";
-            $result = $conn->query($total_drivers_query);
-            $stats['total_drivers'] = $result->fetch_assoc()['count'] ?? 0;
+            if (!$view_all_branches && $user_branch_id > 0 && $drivers_branch_column_exists) {
+                $total_drivers_query .= " WHERE branch_id = ?";
+                $stmt = $conn->prepare($total_drivers_query);
+                $stmt->bind_param("i", $user_branch_id);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                $stats['total_drivers'] = $result->fetch_assoc()['count'] ?? 0;
+                $stmt->close();
+            } else {
+                $result = $conn->query($total_drivers_query);
+                $stats['total_drivers'] = $result->fetch_assoc()['count'] ?? 0;
+            }
             
             // Active Drivers
             $active_drivers_query = "SELECT COUNT(*) as count FROM drivers WHERE status = 'active'";
-            $result = $conn->query($active_drivers_query);
-            $stats['active_drivers'] = $result->fetch_assoc()['count'] ?? 0;
+            if (!$view_all_branches && $user_branch_id > 0 && $drivers_branch_column_exists) {
+                $active_drivers_query .= " AND branch_id = ?";
+                $stmt = $conn->prepare($active_drivers_query);
+                $stmt->bind_param("i", $user_branch_id);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                $stats['active_drivers'] = $result->fetch_assoc()['count'] ?? 0;
+                $stmt->close();
+            } else {
+                $result = $conn->query($active_drivers_query);
+                $stats['active_drivers'] = $result->fetch_assoc()['count'] ?? 0;
+            }
             
             // Trips Completed
             $trips_completed_query = "SELECT COUNT(*) as count FROM trip_tickets WHERE trip_status = 'completed'";
@@ -196,7 +339,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
             <div class="card mb-4">
                 <div class="card-body">
                     <div class="row g-3">
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                             <div class="input-group">
                                 <span class="input-group-text">
                                     <i class="bi bi-search"></i>
@@ -213,8 +356,13 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                             </select>
                         </div>
                         <div class="col-md-3">
-                            <button class="btn btn-outline-success w-100" data-bs-toggle="modal" data-bs-target="#addDriverModal" >
-                                <i class="bi bi-plus-lg"></i> Add Driver
+                            <div class="input-group">
+                                <input type="text" class="form-control" id="vehicleTypeFilter" placeholder="Filter by vehicle type...">
+                            </div>
+                        </div>
+                        <div class="col-md-2">
+                            <button class="btn btn-outline-secondary w-100" onclick="clearFilters()">
+                                <i class="bi bi-x-circle"></i> Clear
                             </button>
                         </div>
                     </div>
@@ -241,9 +389,19 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                             <?php
                             $drivers_query = "SELECT d.*, b.branch_name 
                                              FROM drivers d
-                                             LEFT JOIN branches b ON d.branch_id = b.branch_id
-                                             ORDER BY d.driver_name";
-                            $result = $conn->query($drivers_query);
+                                             LEFT JOIN branches b ON d.branch_id = b.branch_id";
+                            
+                            // Add branch filter if user doesn't have view_all_branches permission
+                            if (!$view_all_branches && $user_branch_id > 0 && $drivers_branch_column_exists) {
+                                $drivers_query .= " WHERE d.branch_id = ?";
+                                $stmt = $conn->prepare($drivers_query . " ORDER BY d.driver_name");
+                                $stmt->bind_param("i", $user_branch_id);
+                            } else {
+                                $stmt = $conn->prepare($drivers_query . " ORDER BY d.driver_name");
+                            }
+                            
+                            $stmt->execute();
+                            $result = $stmt->get_result();
                             
                             if ($result->num_rows > 0) {
                                 while($row = $result->fetch_assoc()) {
@@ -255,7 +413,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                         default: $status_badge = 'bg-light text-dark';
                                     }
                                     ?>
-                                    <tr>
+                                    <tr data-vehicle-type="<?php echo strtolower($row['vehicle_type'] ?? ''); ?>">
                                         <td><?php echo $row['driver_name']; ?></td>
                                         <td><?php echo $row['license_number']; ?></td>
                                         <td><?php echo $row['contact_number'] ?? 'N/A'; ?></td>
@@ -273,84 +431,13 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                     <?php
                                 }
                             } else {
-                                echo '<tr><td colspan="8" class="text-center">No drivers found</td></tr>';
+                                $colspan = 8;
+                                echo '<tr><td colspan="' . $colspan . '" class="text-center">No drivers found for this branch</td></tr>';
                             }
+                            $stmt->close();
                             ?>
                         </tbody>
                     </table>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Add Driver Modal -->
-    <div class="modal fade" id="addDriverModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Add New Driver</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="addDriverForm" action="add_driver.php" method="POST">
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Driver Name</label>
-                                <input type="text" class="form-control" name="driver_name" required placeholder="Full name">
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">License Number</label>
-                                <input type="text" class="form-control" name="license_number" required placeholder="e.g., DL-123456">
-                            </div>
-                        </div>
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Contact Number</label>
-                                <input type="tel" class="form-control" name="contact_number" placeholder="Phone number">
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">License Expiry Date</label>
-                                <input type="date" class="form-control" name="license_expiry">
-                            </div>
-                        </div>
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Vehicle Type</label>
-                                <input type="text" class="form-control" name="vehicle_type" placeholder="e.g., Van, Truck">
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Vehicle Plate Number</label>
-                                <input type="text" class="form-control" name="vehicle_plate_number" placeholder="e.g., ABC-1234">
-                            </div>
-                        </div>
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Branch</label>
-                                <select class="form-select" name="branch_id">
-                                    <option value="">Select Branch</option>
-                                    <?php
-                                    $branches_query = "SELECT branch_id, branch_name FROM branches WHERE status = 'active'";
-                                    $result = $conn->query($branches_query);
-                                    while($branch = $result->fetch_assoc()) {
-                                        echo '<option value="' . $branch['branch_id'] . '">' . $branch['branch_name'] . '</option>';
-                                    }
-                                    ?>
-                                </select>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Status</label>
-                                <select class="form-select" name="status" required>
-                                    <option value="active" selected>Active</option>
-                                    <option value="inactive">Inactive</option>
-                                    <option value="on-leave">On Leave</option>
-                                </select>
-                            </div>
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" form="addDriverForm" class="btn btn-primary">Add Driver</button>
                 </div>
             </div>
         </div>
@@ -617,32 +704,70 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
             // Search functionality
             const searchInput = document.getElementById('searchInput');
             if (searchInput) {
-                searchInput.addEventListener('keyup', function() {
-                    const filter = this.value.toLowerCase();
-                    const rows = document.querySelectorAll('tbody tr');
-                    
-                    rows.forEach(row => {
-                        const text = row.textContent.toLowerCase();
-                        row.style.display = text.includes(filter) ? '' : 'none';
-                    });
-                });
+                searchInput.addEventListener('keyup', filterTable);
             }
 
             // Status filter
             const statusFilter = document.getElementById('statusFilter');
             if (statusFilter) {
-                statusFilter.addEventListener('change', function() {
-                    const filter = this.value.toLowerCase();
-                    const rows = document.querySelectorAll('tbody tr');
-                    
-                    rows.forEach(row => {
-                        if (row.cells.length > 6) {
-                            const status = row.cells[6]?.textContent.toLowerCase() || '';
-                            row.style.display = (filter === '' || status.includes(filter)) ? '' : 'none';
-                        }
-                    });
-                });
+                statusFilter.addEventListener('change', filterTable);
             }
+            
+            // Vehicle type filter
+            const vehicleTypeFilter = document.getElementById('vehicleTypeFilter');
+            if (vehicleTypeFilter) {
+                vehicleTypeFilter.addEventListener('keyup', filterTable);
+            }
+        }
+        
+        // Filter table function
+        function filterTable() {
+            const searchInput = document.getElementById('searchInput');
+            const statusFilter = document.getElementById('statusFilter');
+            const vehicleTypeFilter = document.getElementById('vehicleTypeFilter');
+            const rows = document.querySelectorAll('tbody tr');
+            
+            const searchText = searchInput ? searchInput.value.toLowerCase() : '';
+            const statusValue = statusFilter ? statusFilter.value.toLowerCase() : '';
+            const vehicleTypeText = vehicleTypeFilter ? vehicleTypeFilter.value.toLowerCase() : '';
+            
+            rows.forEach(row => {
+                let showRow = true;
+                
+                // Search filter (name, license, contact)
+                if (searchText) {
+                    const text = row.textContent.toLowerCase();
+                    showRow = text.includes(searchText);
+                }
+                
+                // Status filter
+                if (showRow && statusValue) {
+                    const statusCell = row.cells[6]; // Status is in column 6
+                    const status = statusCell ? statusCell.textContent.toLowerCase() : '';
+                    showRow = status.includes(statusValue);
+                }
+                
+                // Vehicle type filter
+                if (showRow && vehicleTypeText) {
+                    const vehicleType = row.dataset.vehicleType || '';
+                    showRow = vehicleType.includes(vehicleTypeText);
+                }
+                
+                row.style.display = showRow ? '' : 'none';
+            });
+        }
+        
+        // Clear all filters
+        function clearFilters() {
+            const searchInput = document.getElementById('searchInput');
+            const statusFilter = document.getElementById('statusFilter');
+            const vehicleTypeFilter = document.getElementById('vehicleTypeFilter');
+            
+            if (searchInput) searchInput.value = '';
+            if (statusFilter) statusFilter.value = '';
+            if (vehicleTypeFilter) vehicleTypeFilter.value = '';
+            
+            filterTable();
         }
 
         // Load driver details via AJAX
@@ -675,7 +800,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
         // Logout function
         function logout() {
             if (confirm('Are you sure you want to logout?')) {
-                window.location.href = '../login.php';
+                window.location.href = '../logout.php';
             }
         }
 
@@ -698,13 +823,10 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                     searchInput.focus();
                 }
             }
-            // Ctrl + N to add new driver
-            else if (e.ctrlKey && e.key === 'n') {
+            // Ctrl + C to clear filters
+            else if (e.ctrlKey && e.key === 'c') {
                 e.preventDefault();
-                const addButton = document.querySelector('[data-bs-target="#addDriverModal"]');
-                if (addButton) {
-                    addButton.click();
-                }
+                clearFilters();
             }
         });
     </script>

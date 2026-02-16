@@ -16,32 +16,6 @@ if ($check_column && $check_column->num_rows > 0) {
     $items_branch_column_exists = true;
 }
 
-// Function to generate unique item code
-function generateUniqueItemCode($conn) {
-    // Try ITEM format first (ITEM001, ITEM002, etc.)
-    $prefix = 'ITEM';
-    $number = 1;
-    $max_attempts = 1000; // Prevent infinite loop
-    
-    for ($attempt = 0; $attempt < $max_attempts; $attempt++) {
-        $code = $prefix . str_pad($number, 3, '0', STR_PAD_LEFT);
-        
-        // Check if code exists
-        $check = $conn->prepare("SELECT item_id FROM items WHERE item_code = ?");
-        $check->bind_param("s", $code);
-        $check->execute();
-        $result = $check->get_result();
-        
-        if ($result->num_rows === 0) {
-            return $code; // Found unique code
-        }
-        $number++;
-    }
-    
-    // If ITEM format is exhausted, use timestamp-based code
-    return 'ITM' . date('YmdHis');
-}
-
 // Determine branch filter condition
 $branch_condition = "";
 if ($items_branch_column_exists && !$view_all_branches) {
@@ -57,36 +31,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         
         // ADD ITEM
         if ($_POST['action'] === 'add_item') {
-            // Validate required fields
-            if (empty($_POST['item_name'])) {
-                throw new Exception('Item name is required');
-            }
-            if (!isset($_POST['stock']) || $_POST['stock'] === '') {
-                throw new Exception('Stock quantity is required');
-            }
-            if (!isset($_POST['unit_price']) || $_POST['unit_price'] === '') {
-                throw new Exception('Unit price is required');
-            }
-            if (!isset($_POST['reorder_level']) || $_POST['reorder_level'] === '') {
-                throw new Exception('Reorder level is required');
-            }
-            
-            // Generate unique item code (don't rely on user input)
-            $item_code = generateUniqueItemCode($conn);
-            
-            $item_name = trim($_POST['item_name']);
-            $description = !empty($_POST['description']) ? trim($_POST['description']) : null;
-            $category = !empty($_POST['category']) ? trim($_POST['category']) : null;
+            $item_code = $_POST['item_code'];
+            $item_name = $_POST['item_name'];
+            $description = $_POST['description'] ?? null;
+            $category = $_POST['category'] ?? null;
             $stock = (int)$_POST['stock'];
-            $unit_type = $_POST['unit_type'] ?? 'piece';
+            $unit_type = $_POST['unit_type'];
             $unit_price = (float)$_POST['unit_price'];
             $reorder_level = (int)$_POST['reorder_level'];
             $status = $_POST['status'] ?? 'active';
             
-            // Validate numeric values
-            if ($stock < 0) throw new Exception('Stock cannot be negative');
-            if ($unit_price < 0) throw new Exception('Unit price cannot be negative');
-            if ($reorder_level < 0) throw new Exception('Reorder level cannot be negative');
+            // Check if item code already exists
+            $check_query = "SELECT item_id FROM items WHERE item_code = ?";
+            $check_stmt = $conn->prepare($check_query);
+            $check_stmt->bind_param("s", $item_code);
+            $check_stmt->execute();
+            $check_result = $check_stmt->get_result();
+            
+            if ($check_result->num_rows > 0) {
+                throw new Exception('Item code already exists');
+            }
             
             // Insert new item with branch_id
             if ($items_branch_column_exists) {
@@ -112,45 +76,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             echo json_encode([
                 'success' => true,
                 'message' => 'Item added successfully',
-                'item_id' => $item_id,
-                'item_code' => $item_code
+                'item_id' => $item_id
             ]);
             exit;
         }
         
         // UPDATE ITEM
         elseif ($_POST['action'] === 'update_item') {
-            // Validate required fields
-            if (empty($_POST['item_id'])) {
-                throw new Exception('Item ID is required');
-            }
-            if (empty($_POST['item_name'])) {
-                throw new Exception('Item name is required');
-            }
-            if (!isset($_POST['stock']) || $_POST['stock'] === '') {
-                throw new Exception('Stock quantity is required');
-            }
-            if (!isset($_POST['unit_price']) || $_POST['unit_price'] === '') {
-                throw new Exception('Unit price is required');
-            }
-            if (!isset($_POST['reorder_level']) || $_POST['reorder_level'] === '') {
-                throw new Exception('Reorder level is required');
-            }
-            
             $item_id = (int)$_POST['item_id'];
-            $item_name = trim($_POST['item_name']);
-            $description = !empty($_POST['description']) ? trim($_POST['description']) : null;
-            $category = !empty($_POST['category']) ? trim($_POST['category']) : null;
+            $item_name = $_POST['item_name'];
+            $description = $_POST['description'] ?? null;
+            $category = $_POST['category'] ?? null;
             $stock = (int)$_POST['stock'];
-            $unit_type = $_POST['unit_type'] ?? 'piece';
+            $unit_type = $_POST['unit_type'];
             $unit_price = (float)$_POST['unit_price'];
             $reorder_level = (int)$_POST['reorder_level'];
             $status = $_POST['status'] ?? 'active';
-            
-            // Validate numeric values
-            if ($stock < 0) throw new Exception('Stock cannot be negative');
-            if ($unit_price < 0) throw new Exception('Unit price cannot be negative');
-            if ($reorder_level < 0) throw new Exception('Reorder level cannot be negative');
             
             // Verify item belongs to user's branch (if branch column exists and not admin)
             if ($items_branch_column_exists && !$view_all_branches) {
@@ -213,55 +154,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $update_query = "UPDATE items SET status = 'discontinued', updated_at = NOW() WHERE item_id = ?";
                 $update_stmt = $conn->prepare($update_query);
                 $update_stmt->bind_param("i", $item_id);
-                
-                if (!$update_stmt->execute()) {
-                    throw new Exception('Failed to soft delete item');
-                }
-                $message = 'Item has been discontinued (used in sales orders)';
+                $update_stmt->execute();
             } else {
-                // Check if used in other tables
-                $check_picklist_query = "SELECT COUNT(*) as count FROM pick_list_items WHERE item_id = ?";
-                $check_picklist_stmt = $conn->prepare($check_picklist_query);
-                $check_picklist_stmt->bind_param("i", $item_id);
-                $check_picklist_stmt->execute();
-                $picklist_result = $check_picklist_stmt->get_result();
-                $picklist_count = $picklist_result->fetch_assoc()['count'];
-                
-                $check_rmr_query = "SELECT COUNT(*) as count FROM rmr_requests WHERE item_id = ?";
-                $check_rmr_stmt = $conn->prepare($check_rmr_query);
-                $check_rmr_stmt->bind_param("i", $item_id);
-                $check_rmr_stmt->execute();
-                $rmr_result = $check_rmr_stmt->get_result();
-                $rmr_count = $rmr_result->fetch_assoc()['count'];
-                
-                if ($picklist_count > 0 || $rmr_count > 0) {
-                    // Soft delete if used in other tables
-                    $update_query = "UPDATE items SET status = 'discontinued', updated_at = NOW() WHERE item_id = ?";
-                    $update_stmt = $conn->prepare($update_query);
-                    $update_stmt->bind_param("i", $item_id);
-                    
-                    if (!$update_stmt->execute()) {
-                        throw new Exception('Failed to soft delete item');
-                    }
-                    $message = 'Item has been discontinued (used in transactions)';
-                } else {
-                    // Hard delete if not used
-                    $delete_query = "DELETE FROM items WHERE item_id = ?";
-                    $delete_stmt = $conn->prepare($delete_query);
-                    $delete_stmt->bind_param("i", $item_id);
-                    
-                    if (!$delete_stmt->execute()) {
-                        throw new Exception('Failed to delete item');
-                    }
-                    $message = 'Item permanently deleted';
-                }
+                // Hard delete if not used
+                $delete_query = "DELETE FROM items WHERE item_id = ?";
+                $delete_stmt = $conn->prepare($delete_query);
+                $delete_stmt->bind_param("i", $item_id);
+                $delete_stmt->execute();
             }
             
             $conn->commit();
             
             echo json_encode([
                 'success' => true,
-                'message' => $message
+                'message' => 'Item deleted successfully'
             ]);
             exit;
         }
@@ -271,12 +177,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $item_id = (int)$_POST['item_id'];
             
             // Add branch filter if needed
+            $query = "SELECT * FROM items WHERE item_id = ?";
             if ($items_branch_column_exists && !$view_all_branches) {
-                $query = "SELECT * FROM items WHERE item_id = ? AND branch_id = ?";
+                $query .= " AND branch_id = ?";
                 $stmt = $conn->prepare($query);
                 $stmt->bind_param("ii", $item_id, $branch_id);
             } else {
-                $query = "SELECT * FROM items WHERE item_id = ?";
                 $stmt = $conn->prepare($query);
                 $stmt->bind_param("i", $item_id);
             }
@@ -331,8 +237,21 @@ $items_query = "
 $items_result = $conn->query($items_query);
 $items = $items_result->fetch_all(MYSQLI_ASSOC);
 
-// GET NEXT ITEM CODE FOR DISPLAY ONLY (not used for actual insertion)
-$next_item_code = generateUniqueItemCode($conn);
+// GET NEXT ITEM CODE FOR AUTO-GENERATION (branch-specific)
+$next_number = 1;
+if (!empty($items)) {
+    // Extract numbers from existing item codes (ITEM001, ITEM002, etc.)
+    $numbers = [];
+    foreach ($items as $item) {
+        if (preg_match('/ITEM(\d+)/', $item['item_code'], $matches)) {
+            $numbers[] = intval($matches[1]);
+        }
+    }
+    if (!empty($numbers)) {
+        $next_number = max($numbers) + 1;
+    }
+}
+$next_item_code = 'ITEM' . str_pad($next_number, 3, '0', STR_PAD_LEFT);
 
 // CALCULATE STATISTICS FROM REAL DATA (branch-specific)
 $total_items = count($items);
@@ -619,7 +538,6 @@ function getStockStatus($stock, $reorder_level) {
                             <option value="">All Categories</option>
                             <?php 
                             $unique_categories = array_unique(array_column($items, 'category'));
-                            sort($unique_categories);
                             foreach ($unique_categories as $cat): 
                                 if (!empty($cat)):
                             ?>
@@ -789,7 +707,7 @@ function getStockStatus($stock, $reorder_level) {
         </div>
     </div>
 
-    <!-- ADD ITEM MODAL - FIXED with auto-generated item code -->
+    <!-- ADD ITEM MODAL -->
     <div class="modal fade" id="itemModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
@@ -799,43 +717,45 @@ function getStockStatus($stock, $reorder_level) {
                 </div>
                 <div class="modal-body">
                     <form id="itemForm">
-                        <input type="hidden" name="action" value="add_item">
-                        <input type="hidden" name="item_id" id="itemId">
+                        <input type="hidden" id="itemId">
+                        <?php if ($items_branch_column_exists && !$view_all_branches): ?>
+                            <input type="hidden" name="branch_id" value="<?= $branch_id ?>">
+                        <?php endif; ?>
                         
                         <div class="alert alert-info">
                             <i class="bi bi-info-circle"></i>
                             <?php if ($items_branch_column_exists && !$view_all_branches): ?>
-                                Adding item to Branch <?= $branch_id ?> - Item code will be auto-generated and guaranteed unique.
+                                Adding item to Branch <?= $branch_id ?>
                             <?php else: ?>
-                                Item code will be auto-generated and guaranteed unique.
+                                Item code is auto-generated
                             <?php endif; ?>
                         </div>
                         
                         <div class="row g-3">
                             <div class="col-md-6">
-                                <label for="itemCode" class="form-label">Item Code (Auto-generated)</label>
-                                <input type="text" class="form-control" id="itemCodeDisplay" value="<?= $next_item_code ?>" readonly disabled>
-                                <small class="text-muted">Code will be generated when saved</small>
+                                <label for="itemCode" class="form-label">Item Code *</label>
+                                <input type="text" class="form-control" id="itemCode" value="<?= $next_item_code ?>" readonly required>
+                                <small class="text-muted">Auto-generated</small>
                             </div>
                             <div class="col-md-6">
                                 <label for="itemName" class="form-label">Item Name *</label>
-                                <input type="text" class="form-control" id="itemName" name="item_name" required>
+                                <input type="text" class="form-control" id="itemName" required>
                             </div>
                             <div class="col-12">
                                 <label for="description" class="form-label">Description</label>
-                                <textarea class="form-control" id="description" name="description" rows="2"></textarea>
+                                <textarea class="form-control" id="description" rows="2"></textarea>
                             </div>
                             <div class="col-md-4">
                                 <label for="category" class="form-label">Category</label>
-                                <input type="text" class="form-control" id="category" name="category">
+                                <input type="text" class="form-control" id="category">
                             </div>
                             <div class="col-md-4">
                                 <label for="stock" class="form-label">Current Stock *</label>
-                                <input type="number" class="form-control" id="stock" name="stock" min="0" value="0" required>
+                                <input type="number" class="form-control" id="stock" min="0" required>
                             </div>
                             <div class="col-md-4">
                                 <label for="unitType" class="form-label">Unit Type *</label>
-                                <select class="form-select" id="unitType" name="unit_type" required>
+                                <select class="form-select" id="unitType" required>
                                     <option value="piece">Piece</option>
                                     <option value="case">Case</option>
                                     <option value="box">Box</option>
@@ -845,15 +765,15 @@ function getStockStatus($stock, $reorder_level) {
                             </div>
                             <div class="col-md-4">
                                 <label for="unitPrice" class="form-label">Unit Price (₱) *</label>
-                                <input type="number" class="form-control" id="unitPrice" name="unit_price" min="0" step="0.01" value="0.00" required>
+                                <input type="number" class="form-control" id="unitPrice" min="0" step="0.01" required>
                             </div>
                             <div class="col-md-4">
                                 <label for="reorderLevel" class="form-label">Reorder Level *</label>
-                                <input type="number" class="form-control" id="reorderLevel" name="reorder_level" min="0" value="0" required>
+                                <input type="number" class="form-control" id="reorderLevel" min="0" required>
                             </div>
                             <div class="col-md-4">
                                 <label for="status" class="form-label">Status</label>
-                                <select class="form-select" id="status" name="status">
+                                <select class="form-select" id="status">
                                     <option value="active">Active</option>
                                     <option value="inactive">Inactive</option>
                                     <option value="discontinued">Discontinued</option>
@@ -891,9 +811,9 @@ function getStockStatus($stock, $reorder_level) {
         </div>
     </div>
 
-    <!-- EDIT ITEM MODAL - FIXED with proper name attributes -->
+    <!-- EDIT ITEM MODAL -->
     <div class="modal fade" id="editItemModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
+        <div class="dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header bg-warning text-dark">
                     <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Edit Item</h5>
@@ -901,33 +821,32 @@ function getStockStatus($stock, $reorder_level) {
                 </div>
                 <div class="modal-body">
                     <form id="editItemForm">
-                        <input type="hidden" name="action" value="update_item">
-                        <input type="hidden" name="item_id" id="editItemId">
+                        <input type="hidden" id="editItemId">
                         
                         <div class="row g-3">
                             <div class="col-md-6">
                                 <label for="editItemCode" class="form-label">Item Code</label>
-                                <input type="text" class="form-control" id="editItemCode" name="item_code" readonly>
+                                <input type="text" class="form-control" id="editItemCode" readonly>
                             </div>
                             <div class="col-md-6">
                                 <label for="editItemName" class="form-label">Item Name *</label>
-                                <input type="text" class="form-control" id="editItemName" name="item_name" required>
+                                <input type="text" class="form-control" id="editItemName" required>
                             </div>
                             <div class="col-12">
                                 <label for="editDescription" class="form-label">Description</label>
-                                <textarea class="form-control" id="editDescription" name="description" rows="2"></textarea>
+                                <textarea class="form-control" id="editDescription" rows="2"></textarea>
                             </div>
                             <div class="col-md-4">
                                 <label for="editCategory" class="form-label">Category</label>
-                                <input type="text" class="form-control" id="editCategory" name="category">
+                                <input type="text" class="form-control" id="editCategory">
                             </div>
                             <div class="col-md-4">
                                 <label for="editStock" class="form-label">Current Stock *</label>
-                                <input type="number" class="form-control" id="editStock" name="stock" min="0" required>
+                                <input type="number" class="form-control" id="editStock" min="0" required>
                             </div>
                             <div class="col-md-4">
                                 <label for="editUnitType" class="form-label">Unit Type *</label>
-                                <select class="form-select" id="editUnitType" name="unit_type" required>
+                                <select class="form-select" id="editUnitType" required>
                                     <option value="piece">Piece</option>
                                     <option value="case">Case</option>
                                     <option value="box">Box</option>
@@ -937,15 +856,15 @@ function getStockStatus($stock, $reorder_level) {
                             </div>
                             <div class="col-md-4">
                                 <label for="editUnitPrice" class="form-label">Unit Price (₱) *</label>
-                                <input type="number" class="form-control" id="editUnitPrice" name="unit_price" min="0" step="0.01" required>
+                                <input type="number" class="form-control" id="editUnitPrice" min="0" step="0.01" required>
                             </div>
                             <div class="col-md-4">
                                 <label for="editReorderLevel" class="form-label">Reorder Level *</label>
-                                <input type="number" class="form-control" id="editReorderLevel" name="reorder_level" min="0" required>
+                                <input type="number" class="form-control" id="editReorderLevel" min="0" required>
                             </div>
                             <div class="col-md-4">
                                 <label for="editStatus" class="form-label">Status</label>
-                                <select class="form-select" id="editStatus" name="status">
+                                <select class="form-select" id="editStatus">
                                     <option value="active">Active</option>
                                     <option value="inactive">Inactive</option>
                                     <option value="discontinued">Discontinued</option>
@@ -1115,11 +1034,8 @@ function getStockStatus($stock, $reorder_level) {
         document.getElementById('itemModalTitle').innerHTML = '<i class="bi bi-plus-circle me-2"></i>Add New Item';
         document.getElementById('itemForm').reset();
         document.getElementById('itemId').value = '';
-        document.getElementById('itemCodeDisplay').value = '<?= $next_item_code ?>';
+        document.getElementById('itemCode').value = '<?= $next_item_code ?>';
         document.getElementById('status').value = 'active';
-        document.getElementById('stock').value = '0';
-        document.getElementById('unitPrice').value = '0.00';
-        document.getElementById('reorderLevel').value = '0';
         new bootstrap.Modal(document.getElementById('itemModal')).show();
     }
 
@@ -1132,7 +1048,7 @@ function getStockStatus($stock, $reorder_level) {
         formData.append('action', 'get_item');
         formData.append('item_id', id);
         
-        fetch(window.location.href, {
+        fetch('current_inventory.php', {
             method: 'POST',
             body: formData
         })
@@ -1240,7 +1156,7 @@ function getStockStatus($stock, $reorder_level) {
         formData.append('action', 'get_item');
         formData.append('item_id', id);
         
-        fetch(window.location.href, {
+        fetch('current_inventory.php', {
             method: 'POST',
             body: formData
         })
@@ -1277,7 +1193,7 @@ function getStockStatus($stock, $reorder_level) {
     // Save Item (Add)
     function saveItem() {
         // Validate required fields
-        const itemName = document.getElementById('itemName').value.trim();
+        const itemName = document.getElementById('itemName').value;
         const stock = document.getElementById('stock').value;
         const unitPrice = document.getElementById('unitPrice').value;
         const reorderLevel = document.getElementById('reorderLevel').value;
@@ -1287,17 +1203,17 @@ function getStockStatus($stock, $reorder_level) {
             return;
         }
         
-        if (stock === '' || isNaN(stock) || parseInt(stock) < 0) {
+        if (!stock || stock < 0) {
             Swal.fire('Warning', 'Valid Stock quantity is required', 'warning');
             return;
         }
         
-        if (unitPrice === '' || isNaN(unitPrice) || parseFloat(unitPrice) < 0) {
+        if (!unitPrice || unitPrice < 0) {
             Swal.fire('Warning', 'Valid Unit Price is required', 'warning');
             return;
         }
         
-        if (reorderLevel === '' || isNaN(reorderLevel) || parseInt(reorderLevel) < 0) {
+        if (!reorderLevel || reorderLevel < 0) {
             Swal.fire('Warning', 'Valid Reorder Level is required', 'warning');
             return;
         }
@@ -1308,7 +1224,7 @@ function getStockStatus($stock, $reorder_level) {
         const formData = new FormData(document.getElementById('itemForm'));
         formData.append('action', 'add_item');
         
-        fetch(window.location.href, {
+        fetch('current_inventory.php', {
             method: 'POST',
             body: formData
         })
@@ -1320,7 +1236,7 @@ function getStockStatus($stock, $reorder_level) {
                 Swal.fire({
                     icon: 'success',
                     title: 'Success!',
-                    text: data.message + ' (Code: ' + data.item_code + ')',
+                    text: data.message,
                     timer: 2000,
                     showConfirmButton: false
                 }).then(() => {
@@ -1334,14 +1250,13 @@ function getStockStatus($stock, $reorder_level) {
         .catch(error => {
             Swal.close();
             Swal.fire('Error', 'An error occurred while saving the item', 'error');
-            console.error('Error:', error);
         });
     }
 
     // Update Item
     function updateItem() {
         // Validate required fields
-        const itemName = document.getElementById('editItemName').value.trim();
+        const itemName = document.getElementById('editItemName').value;
         const stock = document.getElementById('editStock').value;
         const unitPrice = document.getElementById('editUnitPrice').value;
         const reorderLevel = document.getElementById('editReorderLevel').value;
@@ -1351,17 +1266,17 @@ function getStockStatus($stock, $reorder_level) {
             return;
         }
         
-        if (stock === '' || isNaN(stock) || parseInt(stock) < 0) {
+        if (!stock || stock < 0) {
             Swal.fire('Warning', 'Valid Stock quantity is required', 'warning');
             return;
         }
         
-        if (unitPrice === '' || isNaN(unitPrice) || parseFloat(unitPrice) < 0) {
+        if (!unitPrice || unitPrice < 0) {
             Swal.fire('Warning', 'Valid Unit Price is required', 'warning');
             return;
         }
         
-        if (reorderLevel === '' || isNaN(reorderLevel) || parseInt(reorderLevel) < 0) {
+        if (!reorderLevel || reorderLevel < 0) {
             Swal.fire('Warning', 'Valid Reorder Level is required', 'warning');
             return;
         }
@@ -1371,8 +1286,9 @@ function getStockStatus($stock, $reorder_level) {
         // Prepare form data
         const formData = new FormData(document.getElementById('editItemForm'));
         formData.append('action', 'update_item');
+        formData.append('item_id', document.getElementById('editItemId').value);
         
-        fetch(window.location.href, {
+        fetch('current_inventory.php', {
             method: 'POST',
             body: formData
         })
@@ -1398,7 +1314,6 @@ function getStockStatus($stock, $reorder_level) {
         .catch(error => {
             Swal.close();
             Swal.fire('Error', 'An error occurred while updating the item', 'error');
-            console.error('Error:', error);
         });
     }
 
@@ -1420,7 +1335,7 @@ function getStockStatus($stock, $reorder_level) {
         formData.append('action', 'delete_item');
         formData.append('item_id', currentItemId);
         
-        fetch(window.location.href, {
+        fetch('current_inventory.php', {
             method: 'POST',
             body: formData
         })
@@ -1446,7 +1361,6 @@ function getStockStatus($stock, $reorder_level) {
         .catch(error => {
             Swal.close();
             Swal.fire('Error', 'An error occurred while deleting the item', 'error');
-            console.error('Error:', error);
         });
     }
 

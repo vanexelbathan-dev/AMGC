@@ -2,16 +2,40 @@
 require_once '../config/database.php';
 require_once '../config/session_handler.php';
 
-// Protect page - only Sales role can access
+// Protect page - only Warehouse role can access
 requireLogin();
 requireRole(['warehouse']);
 
 // Get current user info and branch context
 $user_id = $_SESSION['user_id'];
-$user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Sales User';
-$user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'sales';
-$branch_id = $_SESSION['branch_id'] ?? 0;
+$user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Warehouse User';
+$user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'warehouse';
+$user_branch_id = $_SESSION['branch_id'] ?? 0;
 $view_all_branches = $_SESSION['view_all_branches'] ?? false;
+
+// Get user's branch name for display
+$branch_name = 'All Branches';
+$branch_filter = "";
+$params = [];
+$types = "";
+
+if (!$view_all_branches && $user_branch_id > 0) {
+    $branch_filter = " AND (branch_id = ? OR ? = 0)";
+    $params[] = $user_branch_id;
+    $params[] = $user_branch_id;
+    $types .= "ii";
+    
+    // Get branch name
+    $branch_query = "SELECT branch_name FROM branches WHERE branch_id = ?";
+    $branch_stmt = $conn->prepare($branch_query);
+    $branch_stmt->bind_param("i", $user_branch_id);
+    $branch_stmt->execute();
+    $branch_result = $branch_stmt->get_result();
+    if ($branch_row = $branch_result->fetch_assoc()) {
+        $branch_name = $branch_row['branch_name'];
+    }
+    $branch_stmt->close();
+}
 
 // Check if branch_id column exists in customers table
 $branch_column_exists = false;
@@ -32,7 +56,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Warehouse Manager</title>
+    <title>Warehouse Manager <?php echo !$view_all_branches ? '- ' . htmlspecialchars($branch_name) : ''; ?></title>
     <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
     <link rel="shortcut icon" href="../Pictures/favicon.ico" />
@@ -43,12 +67,162 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
-    <!-- Bootstrap 5 CSS -->
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-<!-- Bootstrap Icons -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <style>
-  
+        /* Branch indicator */
+        .branch-indicator {
+            display: inline-block;
+            padding: 4px 12px;
+            background-color: #e7f5ff;
+            color: #0d6efd;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+            margin-left: 10px;
+        }
+        
+        .branch-indicator i {
+            margin-right: 5px;
+        }
+        
+        /* User branch in sidebar */
+        .user-branch-sidebar {
+            font-size: 11px;
+            color: #aaa;
+            display: block;
+            margin-top: 2px;
+        }
+        
+        /* Stat cards */
+        .stat-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            display: flex;
+            align-items: center;
+            transition: transform 0.2s;
+            border-left: 4px solid;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        .stat-card.inventory { border-left-color: #0d6efd; }
+        .stat-card.stock { border-left-color: #198754; }
+        .stat-card.delivery { border-left-color: #fd7e14; }
+        .stat-card.pending { border-left-color: #ffc107; }
+        
+        .stat-icon {
+            font-size: 2.5rem;
+            margin-right: 15px;
+            color: #6c757d;
+        }
+        
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: 600;
+            line-height: 1.2;
+        }
+        
+        .stat-label {
+            font-size: 0.9rem;
+            color: #6c757d;
+        }
+        
+        /* Mobile responsive */
+        @media (max-width: 768px) {
+            .stat-card {
+                padding: 12px;
+                min-height: 85px;
+                margin-bottom: 8px;
+            }
+            
+            .stat-icon {
+                font-size: 2rem;
+                margin-right: 12px;
+            }
+            
+            .stat-value {
+                font-size: 1.5rem;
+            }
+            
+            .stat-label {
+                font-size: 0.8rem;
+            }
+            
+            .col-6 {
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+            
+            .row.g-3 {
+                margin-left: -8px;
+                margin-right: -8px;
+            }
+        }
+        
+        @media (max-width: 576px) {
+            .stat-card {
+                min-height: 80px;
+                padding: 10px;
+            }
+            
+            .stat-icon {
+                font-size: 1.8rem;
+                margin-right: 10px;
+            }
+            
+            .stat-value {
+                font-size: 1.3rem;
+            }
+            
+            .stat-label {
+                font-size: 0.75rem;
+            }
+        }
+        
+        /* Card headers */
+        .card-header {
+            background-color: #f8f9fa;
+            font-weight: 600;
+            padding: 12px 16px;
+        }
+        
+        .card-header i {
+            color: #0d6efd;
+        }
+        
+        /* Table styles */
+        .table th {
+            font-weight: 600;
+            color: #495057;
+            font-size: 0.85rem;
+        }
+        
+        .table td {
+            vertical-align: middle;
+        }
+        
+        /* Badge styles */
+        .badge {
+            font-weight: 500;
+            padding: 6px 10px;
+        }
+        
+        /* Alert styles */
+        .alert-warning {
+            background-color: #fff3cd;
+            border-color: #ffecb5;
+            color: #856404;
+        }
+        
+        .alert-success {
+            background-color: #d1e7dd;
+            border-color: #badbcc;
+            color: #0a3622;
+        }
     </style>
 </head>
 <body>
@@ -117,39 +291,111 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                     <i class="bi bi-list"></i>
                 </button>
                 <div class="page-title">
-                    <h2></i>Warehouse Dashboard</h2>
+                    <h2>
+                        <i></i>Warehouse Dashboard
+                    </h2>
                     <p>Monitor inventory, shipments, and delivery operations</p>
                 </div>
             </div>
 
             <?php
-            require_once '../config/database.php';
+            // Get warehouse statistics from database with branch filtering
             
-            // Get warehouse statistics from database
+            // Prepare base queries with branch filter - REMOVED CANCELLED STATUS
+            $total_items_query = "SELECT COUNT(*) as total_items FROM items WHERE status = 'active'";
+            $current_stock_query = "SELECT SUM(stock) as current_stock FROM items WHERE status = 'active'";
+            $pending_deliveries_query = "SELECT COUNT(*) as count FROM trip_tickets WHERE trip_status IN ('planned', 'in-progress')";
+            $active_drivers_query = "SELECT COUNT(*) as count FROM drivers WHERE status = 'active'";
+            
+            // Add branch filters if items table has branch_id column
+            if (!$view_all_branches && $user_branch_id > 0) {
+                if ($items_branch_column_exists) {
+                    $total_items_query .= " AND branch_id = ?";
+                    $current_stock_query .= " AND branch_id = ?";
+                }
+                
+                // Check if trip_tickets has branch_id column
+                $check_tt_branch = $conn->query("SHOW COLUMNS FROM trip_tickets LIKE 'branch_id'");
+                if ($check_tt_branch && $check_tt_branch->num_rows > 0) {
+                    $pending_deliveries_query .= " AND branch_id = ?";
+                }
+                
+                // Check if drivers has branch_id column
+                $check_drivers_branch = $conn->query("SHOW COLUMNS FROM drivers LIKE 'branch_id'");
+                if ($check_drivers_branch && $check_drivers_branch->num_rows > 0) {
+                    $active_drivers_query .= " AND branch_id = ?";
+                }
+            }
+            
+            // Execute queries with proper error handling
             $stats = [];
             
-            // Total Items - Count of distinct items from items table
-            $total_items_query = "SELECT COUNT(*) as total_items FROM items WHERE status = 'active'";
-            $result = $conn->query($total_items_query);
-            $stats['total_items'] = $result->fetch_assoc()['total_items'] ?? 0;
+            // Total Items
+            if (!$view_all_branches && $user_branch_id > 0 && $items_branch_column_exists) {
+                $stmt = $conn->prepare($total_items_query);
+                $stmt->bind_param("i", $user_branch_id);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                $stats['total_items'] = $result->fetch_assoc()['total_items'] ?? 0;
+                $stmt->close();
+            } else {
+                $result = $conn->query($total_items_query);
+                $stats['total_items'] = $result->fetch_assoc()['total_items'] ?? 0;
+            }
             
-            // Current Stock - SUM of stock column from items table
-            $current_stock_query = "SELECT SUM(stock) as current_stock FROM items WHERE status = 'active'";
-            $result = $conn->query($current_stock_query);
-            $stats['current_stock'] = $result->fetch_assoc()['current_stock'] ?? 0;
+            // Current Stock
+            if (!$view_all_branches && $user_branch_id > 0 && $items_branch_column_exists) {
+                $stmt = $conn->prepare($current_stock_query);
+                $stmt->bind_param("i", $user_branch_id);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                $stats['current_stock'] = $result->fetch_assoc()['current_stock'] ?? 0;
+                $stmt->close();
+            } else {
+                $result = $conn->query($current_stock_query);
+                $stats['current_stock'] = $result->fetch_assoc()['current_stock'] ?? 0;
+            }
             
-            // Pending Deliveries (trip tickets with pending or planned status)
-            $pending_deliveries_query = "SELECT COUNT(*) as count FROM trip_tickets WHERE trip_status IN ('planned', 'in-progress')";
-            $result = $conn->query($pending_deliveries_query);
-            $stats['pending_deliveries'] = $result->fetch_assoc()['count'] ?? 0;
+            // Pending Deliveries - EXCLUDING CANCELLED
+            if (!$view_all_branches && $user_branch_id > 0) {
+                $check_tt_branch = $conn->query("SHOW COLUMNS FROM trip_tickets LIKE 'branch_id'");
+                if ($check_tt_branch && $check_tt_branch->num_rows > 0) {
+                    $stmt = $conn->prepare($pending_deliveries_query);
+                    $stmt->bind_param("i", $user_branch_id);
+                    $stmt->execute();
+                    $result = $stmt->get_result();
+                    $stats['pending_deliveries'] = $result->fetch_assoc()['count'] ?? 0;
+                    $stmt->close();
+                } else {
+                    $result = $conn->query($pending_deliveries_query);
+                    $stats['pending_deliveries'] = $result->fetch_assoc()['count'] ?? 0;
+                }
+            } else {
+                $result = $conn->query($pending_deliveries_query);
+                $stats['pending_deliveries'] = $result->fetch_assoc()['count'] ?? 0;
+            }
             
             // Active Drivers
-            $active_drivers_query = "SELECT COUNT(*) as count FROM drivers WHERE status = 'active'";
-            $result = $conn->query($active_drivers_query);
-            $stats['active_drivers'] = $result->fetch_assoc()['count'] ?? 0;
+            if (!$view_all_branches && $user_branch_id > 0) {
+                $check_drivers_branch = $conn->query("SHOW COLUMNS FROM drivers LIKE 'branch_id'");
+                if ($check_drivers_branch && $check_drivers_branch->num_rows > 0) {
+                    $stmt = $conn->prepare($active_drivers_query);
+                    $stmt->bind_param("i", $user_branch_id);
+                    $stmt->execute();
+                    $result = $stmt->get_result();
+                    $stats['active_drivers'] = $result->fetch_assoc()['count'] ?? 0;
+                    $stmt->close();
+                } else {
+                    $result = $conn->query($active_drivers_query);
+                    $stats['active_drivers'] = $result->fetch_assoc()['count'] ?? 0;
+                }
+            } else {
+                $result = $conn->query($active_drivers_query);
+                $stats['active_drivers'] = $result->fetch_assoc()['count'] ?? 0;
+            }
             ?>
 
-            <!-- Warehouse Stats - UPDATED FOR MOBILE -->
+            <!-- Warehouse Stats -->
             <div class="row g-3 mb-4">
                 <!-- Total Items -->
                 <div class="col-6 col-md-3 mb-3">
@@ -206,7 +452,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
 
             <!-- Recent Activities -->
             <div class="row">
-                <!-- Recent Pick List Items -->
+                <!-- Recent Pick List Items - REMOVED CANCELLED STATUS -->
                 <div class="col-lg-6 mb-4">
                     <div class="card">
                         <div class="card-header">
@@ -217,6 +463,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                 <thead class="table-light">
                                     <tr>
                                         <th>Pick List #</th>
+                                        <?php if ($view_all_branches): ?><th>Branch</th><?php endif; ?>
                                         <th>Status</th>
                                         <th>Date</th>
                                         <th>Items</th>
@@ -228,8 +475,18 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                                         (SELECT COUNT(*) FROM pick_list_items WHERE pick_list_id = pl.pick_list_id) as item_count
                                                         FROM pick_lists pl
                                                         LEFT JOIN branches b ON pl.branch_id = b.branch_id
-                                                        ORDER BY pl.created_at DESC LIMIT 5";
-                                    $result = $conn->query($pick_lists_query);
+                                                        WHERE pl.pick_status != 'cancelled'"; // EXCLUDE CANCELLED
+                                    
+                                    if (!$view_all_branches && $user_branch_id > 0) {
+                                        $pick_lists_query .= " AND pl.branch_id = ?";
+                                        $stmt = $conn->prepare($pick_lists_query . " ORDER BY pl.created_at DESC LIMIT 5");
+                                        $stmt->bind_param("i", $user_branch_id);
+                                    } else {
+                                        $stmt = $conn->prepare($pick_lists_query . " ORDER BY pl.created_at DESC LIMIT 5");
+                                    }
+                                    
+                                    $stmt->execute();
+                                    $result = $stmt->get_result();
                                     
                                     if ($result->num_rows > 0) {
                                         while($row = $result->fetch_assoc()) {
@@ -237,12 +494,14 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                             switch($row['pick_status']) {
                                                 case 'completed': $status_badge = 'bg-success'; break;
                                                 case 'in-progress': $status_badge = 'bg-info'; break;
-                                                case 'cancelled': $status_badge = 'bg-danger'; break;
                                                 default: $status_badge = 'bg-warning';
                                             }
                                             ?>
                                             <tr>
                                                 <td><span class="badge bg-light text-dark"><?php echo $row['pick_list_number']; ?></span></td>
+                                                <?php if ($view_all_branches): ?>
+                                                    <td><span class="badge bg-info"><?php echo htmlspecialchars($row['branch_name']); ?></span></td>
+                                                <?php endif; ?>
                                                 <td><span class="badge <?php echo $status_badge; ?>"><?php echo ucfirst($row['pick_status']); ?></span></td>
                                                 <td><?php echo date('Y-m-d', strtotime($row['pick_date'])); ?></td>
                                                 <td><?php echo $row['item_count']; ?></td>
@@ -250,8 +509,10 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                             <?php
                                         }
                                     } else {
-                                        echo '<tr><td colspan="4" class="text-center">No pick lists found</td></tr>';
+                                        $colspan = $view_all_branches ? 5 : 4;
+                                        echo '<tr><td colspan="' . $colspan . '" class="text-center">No pick lists found for this branch</td></tr>';
                                     }
+                                    $stmt->close();
                                     ?>
                                 </tbody>
                             </table>
@@ -259,7 +520,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                     </div>
                 </div>
 
-                <!-- Recent Trip Tickets -->
+                <!-- Recent Trip Tickets - REMOVED CANCELLED STATUS -->
                 <div class="col-lg-6 mb-4">
                     <div class="card">
                         <div class="card-header">
@@ -270,6 +531,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                 <thead class="table-light">
                                     <tr>
                                         <th>Ticket ID</th>
+                                        <?php if ($view_all_branches): ?><th>Branch</th><?php endif; ?>
                                         <th>Driver</th>
                                         <th>Status</th>
                                         <th>Date</th>
@@ -277,11 +539,24 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                 </thead>
                                 <tbody>
                                     <?php
-                                    $trip_tickets_query = "SELECT tt.*, d.driver_name 
+                                    $trip_tickets_query = "SELECT tt.*, d.driver_name, b.branch_name 
                                                           FROM trip_tickets tt
                                                           LEFT JOIN drivers d ON tt.driver_id = d.driver_id
-                                                          ORDER BY tt.trip_date DESC LIMIT 5";
-                                    $result = $conn->query($trip_tickets_query);
+                                                          LEFT JOIN branches b ON tt.branch_id = b.branch_id
+                                                          WHERE tt.trip_status != 'cancelled'"; // EXCLUDE CANCELLED
+                                    
+                                    // Check if trip_tickets has branch_id column
+                                    $check_tt_branch = $conn->query("SHOW COLUMNS FROM trip_tickets LIKE 'branch_id'");
+                                    if (!$view_all_branches && $user_branch_id > 0 && $check_tt_branch && $check_tt_branch->num_rows > 0) {
+                                        $trip_tickets_query .= " AND tt.branch_id = ?";
+                                        $stmt = $conn->prepare($trip_tickets_query . " ORDER BY tt.trip_date DESC LIMIT 5");
+                                        $stmt->bind_param("i", $user_branch_id);
+                                    } else {
+                                        $stmt = $conn->prepare($trip_tickets_query . " ORDER BY tt.trip_date DESC LIMIT 5");
+                                    }
+                                    
+                                    $stmt->execute();
+                                    $result = $stmt->get_result();
                                     
                                     if ($result->num_rows > 0) {
                                         while($row = $result->fetch_assoc()) {
@@ -289,12 +564,14 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                             switch($row['trip_status']) {
                                                 case 'completed': $status_badge = 'bg-success'; break;
                                                 case 'in-progress': $status_badge = 'bg-warning'; break;
-                                                case 'cancelled': $status_badge = 'bg-danger'; break;
                                                 default: $status_badge = 'bg-info';
                                             }
                                             ?>
                                             <tr>
                                                 <td><span class="badge bg-light text-dark"><?php echo $row['trip_number']; ?></span></td>
+                                                <?php if ($view_all_branches): ?>
+                                                    <td><span class="badge bg-info"><?php echo htmlspecialchars($row['branch_name'] ?? 'N/A'); ?></span></td>
+                                                <?php endif; ?>
                                                 <td><?php echo $row['driver_name'] ?? 'N/A'; ?></td>
                                                 <td><span class="badge <?php echo $status_badge; ?>"><?php echo ucfirst(str_replace('-', ' ', $row['trip_status'])); ?></span></td>
                                                 <td><?php echo date('Y-m-d', strtotime($row['trip_date'])); ?></td>
@@ -302,8 +579,10 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                             <?php
                                         }
                                     } else {
-                                        echo '<tr><td colspan="4" class="text-center">No trip tickets found</td></tr>';
+                                        $colspan = $view_all_branches ? 5 : 4;
+                                        echo '<tr><td colspan="' . $colspan . '" class="text-center">No trip tickets found for this branch</td></tr>';
                                     }
+                                    $stmt->close();
                                     ?>
                                 </tbody>
                             </table>
@@ -319,21 +598,38 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                 </div>
                 <div class="card-body">
                     <?php
-                    $low_stock_query = "SELECT i.item_name, i.stock, i.reorder_level 
+                    $low_stock_query = "SELECT i.item_name, i.stock, i.reorder_level, b.branch_name 
                                        FROM items i
-                                       WHERE i.stock <= i.reorder_level AND i.status = 'active'
-                                       LIMIT 5";
-                    $result = $conn->query($low_stock_query);
+                                       LEFT JOIN branches b ON i.branch_id = b.branch_id
+                                       WHERE i.stock <= i.reorder_level AND i.status = 'active'";
+                    
+                    if (!$view_all_branches && $user_branch_id > 0 && $items_branch_column_exists) {
+                        $low_stock_query .= " AND i.branch_id = ?";
+                        $stmt = $conn->prepare($low_stock_query . " LIMIT 5");
+                        $stmt->bind_param("i", $user_branch_id);
+                    } else {
+                        $stmt = $conn->prepare($low_stock_query . " LIMIT 5");
+                    }
+                    
+                    $stmt->execute();
+                    $result = $stmt->get_result();
                     
                     if ($result->num_rows > 0) {
                         while($row = $result->fetch_assoc()) {
+                            $branch_info = $view_all_branches ? ' [' . $row['branch_name'] . ']' : '';
                             echo '<div class="alert alert-warning mb-2">';
-                            echo '<strong>' . $row['item_name'] . ':</strong> Stock level at ' . $row['stock'] . ' units (Below threshold of ' . $row['reorder_level'] . ')';
+                            echo '<i class="bi bi-exclamation-triangle me-2"></i>';
+                            echo '<strong>' . htmlspecialchars($row['item_name'] . $branch_info) . ':</strong> ';
+                            echo 'Stock level at ' . $row['stock'] . ' units (Below threshold of ' . $row['reorder_level'] . ')';
                             echo '</div>';
                         }
                     } else {
-                        echo '<div class="alert alert-success">All items are adequately stocked</div>';
+                        echo '<div class="alert alert-success mb-0">';
+                        echo '<i class="bi bi-check-circle me-2"></i>';
+                        echo 'All items are adequately stocked';
+                        echo '</div>';
                     }
+                    $stmt->close();
                     ?>
                 </div>
             </div>
@@ -517,29 +813,21 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
         // Logout function
         function logout() {
             if (confirm('Are you sure you want to logout?')) {
-                window.location.href = '../login.php';
+                window.location.href = '../logout.php';
             }
         }
 
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', function() {
-            console.log("Page loaded!");
+            console.log("Warehouse Dashboard loaded!");
             
             // Initialize sidebar
             initializeSidebar();
             
-            // Setup mobile toggle button - support multiple button IDs
+            // Setup mobile toggle button
             const mobileToggleBtn = document.getElementById('mobileToggleBtn');
             if (mobileToggleBtn) {
                 mobileToggleBtn.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    toggleSidebar();
-                });
-            }
-            
-            const mobileMenuBtn = document.getElementById('mobileMenuBtn');
-            if (mobileMenuBtn) {
-                mobileMenuBtn.addEventListener('click', function(e) {
                     e.stopPropagation();
                     toggleSidebar();
                 });
@@ -566,7 +854,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
             // Close sidebar when clicking outside on mobile
             document.addEventListener('click', function(event) {
                 const sidebar = document.getElementById('sidebar');
-                const mobileBtn = document.getElementById('mobileToggleBtn') || document.getElementById('mobileMenuBtn');
+                const mobileBtn = document.getElementById('mobileToggleBtn');
                 const overlay = document.querySelector('.sidebar-overlay');
                 const isMobile = window.innerWidth <= 992;
                 
