@@ -371,8 +371,8 @@ if (isset($_GET['ajax']) && isset($_GET['id'])) {
                                                 </span>
                                             </td>
                                             <td>
-                                                <button class="btn btn-sm btn-info" onclick="viewItem(<?php echo $item['id']; ?>)">
-                                                    <i class="bi bi-eye"></i> View
+                                                <button class="btn-action btn-view" onclick="viewItem(<?php echo $item['id']; ?>)">
+                                                    <i class="bi bi-eye"></i>
                                                 </button>
                                             </td>
                                         </tr>

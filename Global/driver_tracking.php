@@ -570,15 +570,60 @@ if (empty($user_initials)) {
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css" />
     <style>
-        /* Hide ID column */
-        .id-column, th:nth-child(1), td:nth-child(1) {
-            display: none;
+          /* Mobile responsive adjustments ONLY */
+        @media (max-width: 768px) {
+            .stat-card {
+                padding: 12px;
+                min-height: 85px;
+                margin-bottom: 8px;
+            }
+            .stat-icon {
+                font-size: 2rem;
+                margin-right: 12px;
+            }
+            .stat-value {
+                font-size: 1.5rem;
+            }
+            .stat-label {
+                font-size: 0.8rem;
+            }
+            .col-md-3 {
+                width: 50%;
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+            .row.g-3 {
+                margin-left: -8px;
+                margin-right: -8px;
+            }
+            .mb-3 {
+                margin-bottom: 8px !important;
+            }
         }
-        .table td, .table th {
-            vertical-align: middle;
-        }
-        .btn-sm {
-            margin: 0 2px;
+        @media (max-width: 576px) {
+            .stat-card {
+                min-height: 80px;
+                padding: 10px;
+            }
+            .stat-icon {
+                font-size: 1.8rem;
+                margin-right: 10px;
+            }
+            .stat-value {
+                font-size: 1.3rem;
+            }
+            .stat-label {
+                font-size: 0.75rem;
+            }
+            .col-md-3 {
+                width: 50%;
+                padding-left: 6px;
+                padding-right: 6px;
+            }
+            .row.g-3 {
+                margin-left: -6px;
+                margin-right: -6px;
+            }
         }
     </style>
 </head>
@@ -1174,8 +1219,8 @@ if (empty($user_initials)) {
                 html += '<td><span class="badge ' + statusBadge + '">' + escapeHtml(statusText) + '</span></td>';
                 html += '<td>' + (driver.last_update ? new Date(driver.last_update).toLocaleTimeString() : 'N/A') + '</td>';
                 html += '<td>';
-                html += '<button class="btn btn-sm btn-warning" onclick="focusOnDriver(' + driver.id + ')" title="View on Map"><i class="bi bi-geo-alt-fill"></i></button> ';
-                html += '<button class="btn btn-sm btn-info" onclick="viewDriver(' + driver.id + ')"><i class="bi bi-eye"></i></button>';
+                html += '<button class="btn-action btn-map" onclick="focusOnDriver(' + driver.id + ')" title="View on Map"><i class="bi bi-geo-alt-fill"></i></button> ';
+                html += '<button class="btn-action btn-view" onclick="viewDriver(' + driver.id + ')"><i class="bi bi-eye"></i></button>';
                 html += '</td>';
                 html += '</tr>';
             }
