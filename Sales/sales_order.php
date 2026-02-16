@@ -625,11 +625,11 @@ $stats = $stats_result->fetch_assoc();
                                                 </span>
                                             </td>
                                             <td class="no-print">
-                                                <div class="btn-group" role="group">
-                                                    <button class="btn btn-sm btn-outline-primary" onclick="viewOrderDetails(<?php echo $order['so_id']; ?>)" title="View Details">
+                                                <div class="action-btn" role="group">
+                                                    <button class="btn-action btn-view" onclick="viewOrderDetails(<?php echo $order['so_id']; ?>)" title="View Details">
                                                         <i class="bi bi-eye"></i>
                                                     </button>
-                                                    <button class="btn btn-sm btn-outline-secondary" onclick="printSingleOrder(<?php echo $order['so_id']; ?>)" title="Print Order">
+                                                    <button  class="btn-action btn-print" onclick="printSingleOrder(<?php echo $order['so_id']; ?>)" title="Print Order">
                                                         <i class="bi bi-printer"></i>
                                                     </button>
                                                 </div>
@@ -1158,7 +1158,7 @@ $stats = $stats_result->fetch_assoc();
             const printBtn = event ? event.target.closest('button') : null;
             if (printBtn) {
                 const originalHTML = printBtn.innerHTML;
-                printBtn.innerHTML = '<i class="bi bi-printer"></i> Printing...';
+                printBtn.innerHTML = '<i class="bi bi-printer"></i>';
                 printBtn.disabled = true;
                 
                 // Restore button after timeout

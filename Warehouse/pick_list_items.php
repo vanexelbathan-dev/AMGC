@@ -1,133 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pick List Items - Warehouse</title>
-    <link rel="stylesheet" href="../css/style.css">
-    <!-- Bootstrap 5 CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
-    <style>
-    /* Mobile responsive adjustments ONLY - same as warehouse.php */
-        @media (max-width: 768px) {
-            .stat-card {
-                padding: 12px;
-                min-height: 85px;
-                margin-bottom: 8px;
-            }
-            
-            .stat-icon {
-                font-size: 2rem;
-                margin-right: 12px;
-            }
-            
-            .stat-value {
-                font-size: 1.5rem;
-            }
-            
-            .stat-label {
-                font-size: 0.8rem;
-            }
-            
-            /* Make cards 2 columns on mobile */
-            .col-md-3 {
-                width: 50%;
-                padding-left: 8px;
-                padding-right: 8px;
-            }
-            
-            .row.g-3 {
-                margin-left: -8px;
-                margin-right: -8px;
-            }
-            
-            .mb-3 {
-                margin-bottom: 8px !important;
-            }
-        }
-        
-        /* Extra small devices (phones, less than 576px) */
-        @media (max-width: 576px) {
-            .stat-card {
-                min-height: 80px;
-                padding: 10px;
-            }
-            
-            .stat-icon {
-                font-size: 1.8rem;
-                margin-right: 10px;
-            }
-            
-            .stat-value {
-                font-size: 1.3rem;
-            }
-            
-            .stat-label {
-                font-size: 0.75rem;
-            }
-            
-            .col-md-3 {
-                width: 50%;
-                padding-left: 6px;
-                padding-right: 6px;
-            }
-            
-            .row.g-3 {
-                margin-left: -6px;
-                margin-right: -6px;
-            }
-        }
-        
-        /* Driver badge styling */
-        .driver-badge {
-            display: inline-block;
-            padding: 4px 10px;
-            background-color: #e8f4fd;
-            color: #084298;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
-            border-left: 3px solid #0d6efd;
-        }
-        
-        .driver-badge i {
-            margin-right: 4px;
-            color: #0d6efd;
-        }
-        
-        .table td {
-            vertical-align: middle;
-        }
-        
-        /* Order status badges */
-        .order-status-badge {
-            display: inline-block;
-            padding: 5px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
-            min-width: 100px;
-            text-align: center;
-        }
-        
-        .status-pending { background-color: #fff3cd; color: #856404; }
-        .status-confirmed { background-color: #cce5ff; color: #004085; }
-        .status-processing { background-color: #b8daff; color: #004085; }
-        .status-ready { background-color: #d4edda; color: #155724; }
-        .status-delivered { background-color: #d1e7dd; color: #0a3622; }
-        .status-cancelled { background-color: #f8d7da; color: #721c24; }
-        
-        /* Quantity display */
-        .quantity-display {
-            font-size: 14px;
-            font-weight: 600;
-        }
-    </style>
-</head>
-<body>
-    <?php
+ <?php
     session_start();
     require_once '../config/database.php';
     
@@ -136,7 +7,27 @@
         header("Location: ../login.php");
         exit();
     }
-    
+
+// Get current user info and branch context
+$user_id = $_SESSION['user_id'];
+$user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Sales User';
+$user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'sales';
+$branch_id = $_SESSION['branch_id'] ?? 0;
+$view_all_branches = $_SESSION['view_all_branches'] ?? false;
+
+// Check if branch_id column exists in customers table
+$branch_column_exists = false;
+$check_column = $conn->query("SHOW COLUMNS FROM customers LIKE 'branch_id'");
+if ($check_column && $check_column->num_rows > 0) {
+    $branch_column_exists = true;
+}
+
+// Check if branch_id column exists in items table
+$items_branch_column_exists = false;
+$check_items_column = $conn->query("SHOW COLUMNS FROM items LIKE 'branch_id'");
+if ($check_items_column && $check_items_column->num_rows > 0) {
+    $items_branch_column_exists = true;
+}
     // Handle form submission
     if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_pick_item') {
         // Get form data
@@ -284,18 +175,152 @@
         }
     }
     ?>
-    
-    <!-- MOBILE MENU BUTTON -->
-    <button class="mobile-menu-btn" id="mobileMenuBtn">
-        <i class="bi bi-list"></i>
-    </button>
-
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pick List Items - Warehouse</title>
+    <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
+    <link rel="shortcut icon" href="../Pictures/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="../Pictures/apple-touch-icon.png" />
+    <link rel="manifest" href="../Pictures/site.webmanifest" />
+    <link rel="stylesheet" href="../css/warehouse.css">
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <style>
+    /* Mobile responsive adjustments ONLY - same as warehouse.php */
+        @media (max-width: 768px) {
+            .stat-card {
+                padding: 12px;
+                min-height: 85px;
+                margin-bottom: 8px;
+            }
+            
+            .stat-icon {
+                font-size: 2rem;
+                margin-right: 12px;
+            }
+            
+            .stat-value {
+                font-size: 1.5rem;
+            }
+            
+            .stat-label {
+                font-size: 0.8rem;
+            }
+            
+            /* Make cards 2 columns on mobile */
+            .col-md-3 {
+                width: 50%;
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+            
+            .row.g-3 {
+                margin-left: -8px;
+                margin-right: -8px;
+            }
+            
+            .mb-3 {
+                margin-bottom: 8px !important;
+            }
+        }
+        
+        /* Extra small devices (phones, less than 576px) */
+        @media (max-width: 576px) {
+            .stat-card {
+                min-height: 80px;
+                padding: 10px;
+            }
+            
+            .stat-icon {
+                font-size: 1.8rem;
+                margin-right: 10px;
+            }
+            
+            .stat-value {
+                font-size: 1.3rem;
+            }
+            
+            .stat-label {
+                font-size: 0.75rem;
+            }
+            
+            .col-md-3 {
+                width: 50%;
+                padding-left: 6px;
+                padding-right: 6px;
+            }
+            
+            .row.g-3 {
+                margin-left: -6px;
+                margin-right: -6px;
+            }
+        }
+        
+        /* Driver badge styling */
+        .driver-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            background-color: #e8f4fd;
+            color: #084298;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            border-left: 3px solid #0d6efd;
+        }
+        
+        .driver-badge i {
+            margin-right: 4px;
+            color: #0d6efd;
+        }
+        
+        .table td {
+            vertical-align: middle;
+        }
+        
+        /* Order status badges */
+        .order-status-badge {
+            display: inline-block;
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            min-width: 100px;
+            text-align: center;
+        }
+        
+        .status-pending { background-color: #fff3cd; color: #856404; }
+        .status-confirmed { background-color: #cce5ff; color: #004085; }
+        .status-processing { background-color: #b8daff; color: #004085; }
+        .status-ready { background-color: #d4edda; color: #155724; }
+        .status-delivered { background-color: #d1e7dd; color: #0a3622; }
+        .status-cancelled { background-color: #f8d7da; color: #721c24; }
+        
+        /* Quantity display */
+        .quantity-display {
+            font-size: 14px;
+            font-weight: 600;
+        }
+    </style>
+</head>
+<body>
     <!-- MAIN APPLICATION -->
     <div id="appPage">
         <!-- Sidebar -->
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
-                <h3><i class="bi bi-building logo-icon"></i> <span class="nav-text">Warehouse</span></h3>
+                <h3>
+                    <button class="desktop-toggle-btn" id="desktopToggleBtn">
+                        <i class="bi bi-list" id="toggleIcon"></i>
+                    </button>
+                    <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
+                    <span class="nav-text">Warehouse</span>
+                </h3>
             </div>
             
             <div class="sidebar-menu">
@@ -326,29 +351,36 @@
                     </li>
                 </ul>
             </div>
+             <!-- User Profile Section at the bottom of sidebar -->
+            <div class="sidebar-footer">
+                <div class="user-profile-sidebar">
+                    <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
+                    <div class="user-details-sidebar">
+                        <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
+                        <span class="user-role-sidebar">
+                            <?php echo htmlspecialchars(ucfirst($user_role)); ?>
+                            <?php if ($items_branch_column_exists || $branch_column_exists): ?>
+                            <?php endif; ?>
+                        </span>
+                    </div>
+                </div>
+                <button class="logout-btn-sidebar" onclick="logout()">
+                    <i class="bi bi-box-arrow-right"></i>
+                    <span class="logout-text">Logout</span>
+                </button>
+            </div>
         </div>
 
         <!-- Main Content Area -->
         <div class="main-content">
             <!-- Header Section -->
             <div class="navbar-top">
+                <button class="mobile-toggle-btn" id="mobileToggleBtn">
+                    <i class="bi bi-list"></i>
+                </button>
                 <div class="page-title">
-                    <h2><i class="bi bi-clipboard-check me-2"></i>Pick List Items</h2>
+                    <h2>Pick List Items</h2>
                     <p>Manage and track pick list items for shipments</p>
-                </div>
-                
-                <div class="user-info-top">
-                    <div class="user-profile-top">
-                        <div class="user-avatar-top" id="userAvatar">WM</div>
-                        <div class="user-details-top">
-                            <span class="user-name-top" id="userName"><?php echo isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Warehouse Manager'; ?></span>
-                            <span class="user-role-top" id="userRole"><?php echo isset($_SESSION['role']) ? ucfirst($_SESSION['role']) : 'Warehouse'; ?></span>
-                        </div>
-                    </div>
-                    
-                    <button class="logout-btn-top" onclick="logout()">
-                        <i class="bi bi-box-arrow-right"></i> Logout
-                    </button>
                 </div>
             </div>
 
@@ -785,71 +817,376 @@
     <!-- JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Initialize tooltips
+        // ================= SIDEBAR FUNCTIONS =================
+        // Toggle sidebar collapse/expand
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const isMobile = window.innerWidth <= 992;
+            
+            if (isMobile) {
+                // On mobile, toggle active state
+                sidebar.classList.toggle('active');
+                
+                // Create overlay for mobile
+                if (!document.querySelector('.sidebar-overlay')) {
+                    const overlay = document.createElement('div');
+                    overlay.className = 'sidebar-overlay';
+                    document.body.appendChild(overlay);
+                    
+                    overlay.addEventListener('click', () => {
+                        closeMobileSidebar();
+                    });
+                    
+                    setTimeout(() => {
+                        overlay.classList.add('active');
+                    }, 10);
+                } else {
+                    // If overlay exists, toggle its active state
+                    const overlay = document.querySelector('.sidebar-overlay');
+                    overlay.classList.toggle('active');
+                    if (!sidebar.classList.contains('active')) {
+                        setTimeout(() => {
+                            if (overlay && overlay.parentNode) {
+                                overlay.remove();
+                            }
+                        }, 300);
+                    }
+                }
+            } else {
+                // On desktop, toggle between expanded and collapsed
+                sidebar.classList.toggle('collapsed');
+                
+                // Store preference in localStorage
+                localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+                
+                // Show/hide nav text
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = sidebar.classList.contains('collapsed') ? 'none' : 'inline-block';
+                });
+                
+                // Adjust main content margin
+                const mainContent = document.querySelector('.main-content');
+                if (mainContent) {
+                    mainContent.style.marginLeft = sidebar.classList.contains('collapsed') ? '80px' : '250px';
+                }
+            }
+        }
+
+        // Close mobile sidebar
+        function closeMobileSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.querySelector('.sidebar-overlay');
+            
+            sidebar.classList.remove('active');
+            
+            if (overlay) {
+                overlay.classList.remove('active');
+                setTimeout(() => {
+                    if (overlay.parentNode) {
+                        overlay.remove();
+                    }
+                }, 300);
+            }
+        }
+
+        // Initialize sidebar when page loads
+        function initializeSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            
+            // Load saved preference from localStorage for desktop
+            if (window.innerWidth > 992) {
+                const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+                if (savedCollapsed === 'true') {
+                    sidebar.classList.add('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'none';
+                    });
+                    
+                    // Adjust main content margin
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '80px';
+                    }
+                } else {
+                    sidebar.classList.remove('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'inline-block';
+                    });
+                    
+                    // Adjust main content margin
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '250px';
+                    }
+                }
+            } else {
+                // On mobile, always start with closed sidebar
+                sidebar.classList.remove('active');
+                sidebar.classList.remove('collapsed');
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'inline-block';
+                });
+                
+                // Adjust main content margin
+                const mainContent = document.querySelector('.main-content');
+                if (mainContent) {
+                    mainContent.style.marginLeft = '0';
+                }
+            }
+        }
+
+        // Handle window resize for sidebar
+        function handleSidebarResize() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.querySelector('.sidebar-overlay');
+            
+            if (window.innerWidth > 992) {
+                // Desktop mode - remove mobile overlay
+                if (overlay) {
+                    overlay.remove();
+                }
+                sidebar.classList.remove('active');
+                
+                // Load saved preference
+                const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+                if (savedCollapsed === 'true') {
+                    sidebar.classList.add('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'none';
+                    });
+                    
+                    // Adjust main content margin
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '80px';
+                    }
+                } else {
+                    sidebar.classList.remove('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'inline-block';
+                    });
+                    
+                    // Adjust main content margin
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '250px';
+                    }
+                }
+            } else {
+                // Mobile mode - always show expanded when visible
+                sidebar.classList.remove('collapsed');
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'inline-block';
+                });
+                
+                // Adjust main content margin
+                const mainContent = document.querySelector('.main-content');
+                if (mainContent) {
+                    mainContent.style.marginLeft = '0';
+                }
+            }
+        }
+        // ================= END SIDEBAR FUNCTIONS =================
+
+        // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
+            console.log("Pick List Management page loaded!");
+            
+            // Initialize sidebar
+            initializeSidebar();
+            
+            // Setup mobile toggle button - support multiple button IDs
+            const mobileToggleBtn = document.getElementById('mobileToggleBtn');
+            if (mobileToggleBtn) {
+                mobileToggleBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleSidebar();
+                });
+            }
+            
+            const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+            if (mobileMenuBtn) {
+                mobileMenuBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleSidebar();
+                });
+            }
+            
+            // Setup desktop toggle button
+            const desktopToggleBtn = document.getElementById('desktopToggleBtn');
+            if (desktopToggleBtn) {
+                desktopToggleBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleSidebar();
+                });
+            }
+            
+            // Add click listeners to sidebar links to close on mobile
+            document.querySelectorAll('.sidebar .nav-link').forEach(link => {
+                link.addEventListener('click', function() {
+                    if (window.innerWidth <= 992) {
+                        closeMobileSidebar();
+                    }
+                });
+            });
+            
+            // Close sidebar when clicking outside on mobile
+            document.addEventListener('click', function(event) {
+                const sidebar = document.getElementById('sidebar');
+                const mobileBtn = document.getElementById('mobileToggleBtn') || document.getElementById('mobileMenuBtn');
+                const overlay = document.querySelector('.sidebar-overlay');
+                const isMobile = window.innerWidth <= 992;
+                
+                if (isMobile && sidebar && sidebar.classList.contains('active') && 
+                    !sidebar.contains(event.target) && 
+                    (!mobileBtn || !mobileBtn.contains(event.target)) &&
+                    (!overlay || !overlay.contains(event.target))) {
+                    closeMobileSidebar();
+                }
+            });
+
+            // Add resize event listener
+            window.addEventListener('resize', handleSidebarResize);
+
+            // Initialize tooltips
             var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-            var tooltipList = tooltipTriggerList.map(function(tooltipTriggerEl) {
+            tooltipTriggerList.map(function(tooltipTriggerEl) {
                 return new bootstrap.Tooltip(tooltipTriggerEl);
             });
+
+            // Setup event listeners
+            setupEventListeners();
         });
 
-        // Mobile menu toggle
-        document.getElementById('mobileMenuBtn').addEventListener('click', function() {
-            document.getElementById('sidebar').classList.toggle('show');
-        });
+        // Setup event listeners
+        function setupEventListeners() {
+            // Handle update pick form submission
+            const updatePickForm = document.getElementById('updatePickForm');
+            if (updatePickForm) {
+                updatePickForm.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    
+                    const formData = new FormData(this);
+                    
+                    fetch('pick_list_items.php', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            alert('Pick quantity updated successfully!');
+                            window.location.reload();
+                        } else {
+                            alert('Error: ' + data.message);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Failed to update pick quantity');
+                    });
+                });
+            }
+
+            // Filter table event listeners
+            const searchInput = document.getElementById('searchInput');
+            const statusFilter = document.getElementById('statusFilter');
+            const driverFilter = document.getElementById('driverFilter');
+            
+            if (searchInput) searchInput.addEventListener('keyup', filterTable);
+            if (statusFilter) statusFilter.addEventListener('change', filterTable);
+            if (driverFilter) driverFilter.addEventListener('change', filterTable);
+
+            // Form validation for add pick list
+            const addPickListForm = document.getElementById('addPickListForm');
+            if (addPickListForm) {
+                addPickListForm.addEventListener('submit', function(e) {
+                    const pickListSelect = this.querySelector('select[name="pick_list_id"]');
+                    const itemSelect = this.querySelector('select[name="item_id"]');
+                    const quantityInput = this.querySelector('input[name="quantity_to_pick"]');
+                    
+                    if (!pickListSelect || !pickListSelect.value) {
+                        e.preventDefault();
+                        alert('Please select a pick list');
+                        if (pickListSelect) pickListSelect.focus();
+                        return false;
+                    }
+                    
+                    if (!itemSelect || !itemSelect.value) {
+                        e.preventDefault();
+                        alert('Please select an item');
+                        if (itemSelect) itemSelect.focus();
+                        return false;
+                    }
+                    
+                    if (!quantityInput || !quantityInput.value || parseInt(quantityInput.value) <= 0) {
+                        e.preventDefault();
+                        alert('Please enter a valid quantity (minimum 1)');
+                        if (quantityInput) quantityInput.focus();
+                        return false;
+                    }
+                    
+                    if (!confirm('Are you sure you want to add this item to the pick list?')) {
+                        e.preventDefault();
+                        return false;
+                    }
+                    
+                    return true;
+                });
+            }
+        }
 
         // Load pick item details via AJAX
         function loadPickItemDetails(pickItemId) {
+            const pickItemDetailsContent = document.getElementById('pickItemDetailsContent');
+            if (pickItemDetailsContent) {
+                pickItemDetailsContent.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading item details...</p></div>';
+            }
+            
             fetch('get_pick_item_details.php?pick_item_id=' + pickItemId)
-                .then(response => response.text())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.text();
+                })
                 .then(data => {
-                    document.getElementById('pickItemDetailsContent').innerHTML = data;
+                    if (pickItemDetailsContent) {
+                        pickItemDetailsContent.innerHTML = data;
+                    }
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    document.getElementById('pickItemDetailsContent').innerHTML = '<div class="alert alert-danger">Failed to load item details</div>';
+                    if (pickItemDetailsContent) {
+                        pickItemDetailsContent.innerHTML = '<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> Failed to load item details. Please try again.</div>';
+                    }
                 });
         }
 
         // Set values for update pick modal
         function setUpdatePickItem(pickItemId, quantityToPick, quantityPicked) {
-            document.getElementById('update_pick_item_id').value = pickItemId;
-            document.getElementById('update_quantity_to_pick').value = quantityToPick;
-            document.getElementById('update_quantity_picked').value = quantityPicked;
-            document.getElementById('update_quantity_picked').max = quantityToPick;
+            const updatePickItemId = document.getElementById('update_pick_item_id');
+            const updateQuantityToPick = document.getElementById('update_quantity_to_pick');
+            const updateQuantityPicked = document.getElementById('update_quantity_picked');
+            
+            if (updatePickItemId) updatePickItemId.value = pickItemId;
+            if (updateQuantityToPick) updateQuantityToPick.value = quantityToPick;
+            if (updateQuantityPicked) {
+                updateQuantityPicked.value = quantityPicked;
+                updateQuantityPicked.max = quantityToPick;
+            }
         }
-
-        // Handle update pick form submission
-        document.getElementById('updatePickForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            const formData = new FormData(this);
-            
-            fetch('pick_list_items.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    alert('Pick quantity updated successfully!');
-                    window.location.reload();
-                } else {
-                    alert('Error: ' + data.message);
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('Failed to update pick quantity');
-            });
-        });
 
         // Filter table function
         function filterTable() {
-            const searchText = document.getElementById('searchInput').value.toLowerCase();
-            const statusFilter = document.getElementById('statusFilter').value;
-            const driverFilter = document.getElementById('driverFilter').value;
+            const searchInput = document.getElementById('searchInput');
+            const statusFilter = document.getElementById('statusFilter');
+            const driverFilter = document.getElementById('driverFilter');
             const rows = document.querySelectorAll('tbody tr');
+            
+            const searchText = searchInput ? searchInput.value.toLowerCase() : '';
+            const statusValue = statusFilter ? statusFilter.value : '';
+            const driverValue = driverFilter ? driverFilter.value : '';
             
             rows.forEach(row => {
                 let showRow = true;
@@ -859,30 +1196,30 @@
                     showRow = text.includes(searchText);
                 }
                 
-                if (showRow && statusFilter) {
+                if (showRow && statusValue) {
                     const orderStatus = row.dataset.orderStatus;
-                    showRow = orderStatus === statusFilter;
+                    showRow = orderStatus === statusValue;
                 }
                 
-                if (showRow && driverFilter) {
+                if (showRow && driverValue) {
                     const driverId = row.dataset.driverId;
-                    showRow = driverId === driverFilter;
+                    showRow = driverId === driverValue;
                 }
                 
                 row.style.display = showRow ? '' : 'none';
             });
         }
 
-        // Event listeners for filters
-        document.getElementById('searchInput').addEventListener('keyup', filterTable);
-        document.getElementById('statusFilter').addEventListener('change', filterTable);
-        document.getElementById('driverFilter').addEventListener('change', filterTable);
-
         // Clear all filters
         function clearFilters() {
-            document.getElementById('searchInput').value = '';
-            document.getElementById('statusFilter').value = '';
-            document.getElementById('driverFilter').value = '';
+            const searchInput = document.getElementById('searchInput');
+            const statusFilter = document.getElementById('statusFilter');
+            const driverFilter = document.getElementById('driverFilter');
+            
+            if (searchInput) searchInput.value = '';
+            if (statusFilter) statusFilter.value = '';
+            if (driverFilter) driverFilter.value = '';
+            
             filterTable();
         }
 
@@ -893,34 +1230,38 @@
             }
         }
 
-        // Form validation
-        document.getElementById('addPickListForm').addEventListener('submit', function(e) {
-            const pickListSelect = this.querySelector('select[name="pick_list_id"]');
-            const itemSelect = this.querySelector('select[name="item_id"]');
-            const quantityInput = this.querySelector('input[name="quantity_to_pick"]');
-            
-            if (!pickListSelect.value) {
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Ctrl + B to toggle sidebar (desktop only)
+            if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
                 e.preventDefault();
-                alert('Please select a pick list');
-                pickListSelect.focus();
-                return false;
+                toggleSidebar();
             }
-            
-            if (!itemSelect.value) {
+            // Escape to close sidebar on mobile
+            else if (e.key === 'Escape' && window.innerWidth <= 992) {
+                closeMobileSidebar();
+            }
+            // Ctrl + F to focus search
+            else if (e.ctrlKey && e.key === 'f') {
                 e.preventDefault();
-                alert('Please select an item');
-                itemSelect.focus();
-                return false;
+                const searchInput = document.getElementById('searchInput');
+                if (searchInput) {
+                    searchInput.focus();
+                }
             }
-            
-            if (!quantityInput.value || quantityInput.value <= 0) {
+            // Ctrl + N to add new pick list
+            else if (e.ctrlKey && e.key === 'n') {
                 e.preventDefault();
-                alert('Please enter a valid quantity (minimum 1)');
-                quantityInput.focus();
-                return false;
+                const addButton = document.querySelector('[data-bs-target="#addPickListModal"]');
+                if (addButton) {
+                    addButton.click();
+                }
             }
-            
-            return confirm('Are you sure you want to add this item to the pick list?');
+            // Ctrl + C to clear filters
+            else if (e.ctrlKey && e.key === 'c') {
+                e.preventDefault();
+                clearFilters();
+            }
         });
     </script>
 </body>

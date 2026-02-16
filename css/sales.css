@@ -999,7 +999,7 @@ a:hover {
 /* Buttons */
 .btn-primary {
     background: linear-gradient(135deg, var(--primary-green), var(--secondary-green));
-    border: none;
+    border: none !important;
     border-radius: 8px;
     padding: 0.75rem 1.5rem;
     font-weight: 600;
@@ -1905,4 +1905,602 @@ a:hover {
             background-color: #f8d7da !important;
             color: #721c24 !important;
         }
+          .action-buttons {
+            display: flex;
+            gap: 5px;
+        }
         
+        .btn-action {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+        }
+        
+        .btn-view {
+            background-color: #e3f2fd;
+            color: #1976d2;
+            border-color: #bbdefb;
+        }
+        
+        .btn-view:hover {
+            background-color: #bbdefb;
+            transform: translateY(-2px);
+        }
+        
+        .btn-edit {
+            background-color: #f3e5f5;
+            color: #7b1fa2;
+            border-color: #e1bee7;
+        }
+        
+        .btn-edit:hover {
+            background-color: #e1bee7;
+            transform: translateY(-2px);
+        }
+        
+         .btn-print {
+            background-color: #f5eee5;
+            color:  rgba(211, 120, 46, 0.871);
+            border-color: rgba(212, 167, 130, 0.871);
+        }
+        
+        .btn-print:hover {
+            background-color: #dfc6a1;
+            transform: translateY(-2px);
+        }
+        
+        .btn-location {
+            background-color: #e8f5e9;
+            color: #388e3c;
+            border-color: #c8e6c9;
+        }
+        
+        .btn-location:hover {
+            background-color: #c8e6c9;
+            transform: translateY(-2px);
+        }
+        
+        /* Map Modal */
+        .map-modal .modal-dialog {
+            max-width: 800px;
+        }
+        
+        #viewLocationMap {
+            height: 400px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        
+        /* Location Coordinates Input */
+        .coordinates-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .coordinates-container .form-group {
+            flex: 1;
+        }
+        
+        .location-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .location-info {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+        }
+        
+        /* Auto-generated code styling */
+        .code-preview {
+            background-color: #e9ecef;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            padding: 10px 15px;
+            font-family: monospace;
+            font-size: 1.1em;
+            color: #0d6efd;
+            font-weight: bold;
+        }
+        
+        .code-label {
+            font-size: 0.85em;
+            color: #6c757d;
+            margin-bottom: 5px;
+        }
+        
+        .refresh-code {
+            cursor: pointer;
+            color: #0d6efd;
+            margin-left: 10px;
+        }
+        
+        .refresh-code:hover {
+            color: #0a58ca;
+        }
+        
+        /* Branch badge */
+        .branch-badge {
+            background-color: #e7f1ff;
+            color: #0d6efd;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 5px;
+        }
+        
+        /* Alert for missing branch column */
+        .alert-info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        
+        .alert-info code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 4px;
+            color: #c7254e;
+        }
+/* Card Header - Green Gradient */
+.card {
+    border: none !important; /* Remove card outline */
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+}
+
+.card-header {
+    background: #048964 !important;
+    color: white !important;
+    border-bottom: none !important;
+    padding: 1rem 1.25rem !important;
+    border-radius: 12px 12px 0 0 !important;
+    border: none !important;
+}
+
+.card-header h5 {
+    color: white !important;
+    font-weight: 600 !important;
+    margin: 0 !important;
+    display: flex;
+    align-items: center;
+}
+
+.card-header i {
+    color: white !important;
+    margin-right: 8px;
+}
+
+/* Table Container */
+.table-responsive {
+    border-radius: 0 0 12px 12px !important;
+    overflow-x: auto !important;
+    border: none !important;
+}
+
+/* Bootstrap Table Override */
+.table {
+    margin-bottom: 0 !important;
+    width: 100% !important;
+    border-collapse: collapse !important;
+    border: none !important;
+}
+
+/* Table Header - Green Gradient */
+.table thead,
+.table-light thead,
+.table thead tr,
+.table thead th {
+    background: var(--dark-green) !important;
+    color: white !important;
+    border: none !important;
+    border-bottom: none !important;
+    font-weight: 600 !important;
+    padding: 0.85rem 1.25rem !important;
+    text-transform: uppercase !important;
+    font-size: 0.8rem !important;
+    letter-spacing: 0.5px !important;
+}
+
+/* Override Bootstrap's table-light */
+.table-light {
+    --bs-table-bg: transparent !important;
+    --bs-table-color: transparent !important;
+}
+
+.table-light th {
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green)) !important;
+    color: white !important;
+    border: none !important;
+}
+
+/* Table Rows */
+.table tbody tr {
+    border-bottom: 1px solid var(--light-green) !important;
+    transition: all 0.2s ease !important;
+}
+
+.table tbody tr:hover {
+    background-color: var(--light-green) !important;
+}
+
+/* Alternate row colors */
+.table tbody tr:nth-child(even) {
+    background-color: rgba(209, 250, 229, 0.4) !important;
+}
+
+.table tbody tr:nth-child(odd) {
+    background-color: white !important;
+}
+
+.table tbody tr:nth-child(even):hover {
+    background-color: var(--light-green) !important;
+}
+
+/* Table Cells */
+.table tbody td {
+    padding: 0.85rem 1.25rem !important;
+    color: var(--dark-color) !important;
+    vertical-align: middle !important;
+    border-bottom: 1px solid var(--light-green) !important;
+    font-size: 0.95rem;
+    border-top: none !important;
+    border-left: none !important;
+    border-right: none !important;
+}
+
+/* Last row border fix */
+.table tbody tr:last-child td {
+    border-bottom: none !important;
+}
+
+/* Badge Styles - Override Bootstrap */
+.badge {
+    padding: 0.4rem 1rem !important;
+    border-radius: 50px !important;
+    font-weight: 600 !important;
+    font-size: 0.75rem !important;
+    display: inline-block !important;
+    text-align: center !important;
+    border: 1px solid transparent !important;
+    white-space: nowrap;
+}
+
+/* Status Badge Colors */
+.badge.bg-warning,
+.badge.bg-warning.text-dark {
+    background: rgba(245, 158, 11, 0.15) !important;
+    color: #f59e0b !important;
+    border-color: rgba(245, 158, 11, 0.3) !important;
+}
+
+.badge.bg-success {
+    background: rgba(16, 185, 129, 0.15) !important;
+    color: var(--primary-green) !important;
+    border-color: rgba(16, 185, 129, 0.3) !important;
+}
+
+.badge.bg-danger {
+    background: rgba(239, 68, 68, 0.15) !important;
+    color: #ef4444 !important;
+    border-color: rgba(239, 68, 68, 0.3) !important;
+}
+
+.badge.bg-info {
+    background: rgba(34, 211, 238, 0.15) !important;
+    color: #22d3ee !important;
+    border-color: rgba(34, 211, 238, 0.3) !important;
+}
+
+.badge.bg-primary {
+    background: rgba(16, 185, 129, 0.15) !important;
+    color: var(--primary-green) !important;
+    border-color: rgba(16, 185, 129, 0.3) !important;
+}
+
+.badge.bg-light {
+    background: rgba(156, 163, 175, 0.15) !important;
+    color: #6b7280 !important;
+    border-color: rgba(156, 163, 175, 0.3) !important;
+}
+
+/* Pick List # and Ticket ID badge */
+.badge.bg-light.text-dark {
+    background: var(--light-green) !important;
+    color: var(--dark-green) !important;
+    border: 1px solid var(--primary-green) !important;
+    font-family: monospace !important;
+    font-weight: 600 !important;
+}
+
+/* Empty State */
+.text-center {
+    color: #6b7280 !important;
+    padding: 2rem !important;
+}
+
+/* Card Body */
+.card-body {
+    padding: 1.25rem !important;
+    border: none !important;
+}
+
+/* Alert Styles */
+.alert {
+    border-radius: 8px !important;
+    border: none !important;
+}
+
+.alert-warning {
+    background: rgba(245, 158, 11, 0.15) !important;
+    color: #f59e0b !important;
+    border-left: 4px solid #f59e0b !important;
+}
+
+.alert-success {
+    background: rgba(16, 185, 129, 0.15) !important;
+    color: var(--primary-green) !important;
+    border-left: 4px solid var(--primary-green) !important;
+}
+
+/* ===== CUSTOM TABLE STYLES ===== */
+.custom-table {
+    margin: 0;
+    width: 100%;
+    border-collapse: collapse;
+    border: none !important;
+}
+
+.custom-table thead {
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green)) !important;
+    color: white;
+}
+
+.custom-table thead th {
+    background: transparent !important;
+    color: white !important;
+    border: none !important;
+    padding: 1rem 1.25rem;
+    font-weight: 600;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.custom-table tbody tr {
+    border-bottom: 1px solid var(--light-green);
+    transition: all 0.2s ease;
+}
+
+.custom-table tbody tr:hover {
+    background-color: var(--light-green) !important;
+}
+
+.custom-table tbody tr:nth-child(even) {
+    background-color: rgba(209, 250, 229, 0.4) !important;
+}
+
+.custom-table tbody td {
+    padding: 1rem 1.25rem;
+    color: var(--dark-color);
+    vertical-align: middle;
+    border-bottom: 1px solid var(--light-green);
+    font-size: 0.95rem;
+    border-top: none !important;
+    border-left: none !important;
+    border-right: none !important;
+}
+
+.custom-table tbody tr:last-child td {
+    border-bottom: none !important;
+}
+
+/* ===== COMPACT TABLE STYLES ===== */
+.compact-table {
+    margin: 0;
+    width: 100%;
+    border-collapse: collapse;
+    border: none !important;
+}
+
+.compact-table thead {
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green)) !important;
+}
+
+.compact-table thead th {
+    color: white !important;
+    font-weight: 600;
+    padding: 0.75rem 1rem;
+    border: none !important;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.compact-table tbody tr {
+    border-bottom: 1px solid var(--light-green);
+}
+
+.compact-table tbody tr:hover {
+    background-color: var(--light-green) !important;
+}
+
+.compact-table tbody tr:nth-child(even) {
+    background-color: rgba(209, 250, 229, 0.4) !important;
+}
+
+.compact-table tbody td {
+    padding: 0.75rem 1rem;
+    color: var(--dark-color);
+    border-bottom: 1px solid var(--light-green);
+    font-size: 0.9rem;
+    border-top: none !important;
+    border-left: none !important;
+    border-right: none !important;
+}
+
+.compact-table tbody tr:last-child td {
+    border-bottom: none !important;
+}
+
+/* ===== TABLE FOOTER & PAGINATION ===== */
+.table-footer {
+    background: #f9fafb;
+    border-top: 1px solid var(--light-green);
+    padding: 1rem 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.pagination {
+    margin: 0;
+    gap: 0.25rem;
+}
+
+.pagination .page-link {
+    color: var(--dark-green) !important;
+    border: 1px solid var(--light-green) !important;
+    margin: 0 2px;
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    transition: all 0.2s ease;
+}
+
+.pagination .page-link:hover {
+    background-color: rgba(16, 185, 129, 0.1) !important;
+    color: var(--primary-green) !important;
+    border-color: var(--primary-green) !important;
+}
+
+.pagination .page-item.active .page-link {
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green)) !important;
+    border-color: var(--primary-green) !important;
+    color: white !important;
+}
+
+/* ===== MOBILE RESPONSIVE ===== */
+@media (max-width: 992px) {
+    .table thead th,
+    .table tbody td,
+    .custom-table thead th,
+    .custom-table tbody td,
+    .compact-table thead th,
+    .compact-table tbody td {
+        padding: 0.7rem 0.9rem !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .table-responsive {
+        font-size: 0.85rem;
+    }
+    
+    .table thead th,
+    .table tbody td,
+    .custom-table thead th,
+    .custom-table tbody td,
+    .compact-table thead th,
+    .compact-table tbody td {
+        padding: 0.6rem 0.75rem !important;
+        font-size: 0.8rem !important;
+    }
+    
+    .badge {
+        padding: 0.25rem 0.75rem !important;
+        font-size: 0.7rem !important;
+    }
+    
+    .table-footer {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .pagination {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+@media (max-width: 576px) {
+    .table thead th,
+    .table tbody td,
+    .custom-table thead th,
+    .custom-table tbody td,
+    .compact-table thead th,
+    .compact-table tbody td {
+        padding: 0.5rem 0.6rem !important;
+        font-size: 0.75rem !important;
+    }
+    
+    .badge {
+        padding: 0.2rem 0.6rem !important;
+        font-size: 0.65rem !important;
+    }
+}
+
+/* ===== REMOVE ALL OUTLINES AND BORDERS FROM TABLE ===== */
+.table,
+.table thead,
+.table thead tr,
+.table thead th,
+.table tbody,
+.table tbody tr,
+.table tbody td,
+.custom-table,
+.custom-table thead,
+.custom-table thead tr,
+.custom-table thead th,
+.custom-table tbody,
+.custom-table tbody tr,
+.custom-table tbody td,
+.compact-table,
+.compact-table thead,
+.compact-table thead tr,
+.compact-table thead th,
+.compact-table tbody,
+.compact-table tbody tr,
+.compact-table tbody td {
+    outline: none !important;
+    border-top: none !important;
+    border-left: none !important;
+    border-right: none !important;
+}
+
+/* Remove border from card and table container */
+.card,
+.card-header,
+.card-body,
+.table-responsive {
+    outline: none !important;
+    border: none !important;
+}
+
+/* Only show bottom border for row separation */
+.table tbody tr td,
+.custom-table tbody tr td,
+.compact-table tbody tr td {
+    border-bottom: 1px solid var(--light-green) !important;
+    border-top: none !important;
+    border-left: none !important;
+    border-right: none !important;
+}
+
+/* Remove bottom border from last row */
+.table tbody tr:last-child td,
+.custom-table tbody tr:last-child td,
+.compact-table tbody tr:last-child td {
+    border-bottom: none !important;
+}

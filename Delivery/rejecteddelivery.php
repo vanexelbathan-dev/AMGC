@@ -528,10 +528,10 @@
                         </div>
 
                         <div class="d-flex gap-2">
-                            <button type="submit" class="btn btn-primary">
+                            <button type="submit" class="btn btn-success">
                                 <i class="bi bi-check-lg me-2"></i>Submit Rejection Report
                             </button>
-                            <button type="reset" class="btn btn-secondary" onclick="resetForm()">
+                            <button type="reset" class="btn btn-danger" onclick="resetForm()">
                                 <i class="bi bi-arrow-counterclockwise me-2"></i>Clear Form
                             </button>
                         </div>

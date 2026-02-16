@@ -858,7 +858,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 <div class="col-lg-8">
                     <!-- Available Products -->
                     <div class="card mb-4">
-                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                        <div class="card-header d-flex justify-content-between align-items-center">
                             <h5 class="mb-0">Available Products</h5>
                             <?php if ($items_branch_column_exists && !$view_all_branches): ?>
                             <?php elseif ($view_all_branches): ?>
@@ -879,7 +879,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
                     <!-- Customer Information -->
                     <div class="card">
-                        <div class="card-header bg-light d-flex justify-content-between align-items-center">
+                        <div class="card-header d-flex justify-content-between align-items-center">
                             <h5 class="mb-0">Customer Information</h5>
                             <?php if ($branch_column_exists && !$view_all_branches): ?>
                             <?php elseif ($view_all_branches): ?>

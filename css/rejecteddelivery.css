@@ -138,30 +138,30 @@ h6 i {
     font-size: 0.95rem;
 }
 
-.btn-primary {
+.btn-success {
     background: var(--secondary-gradient);
-    border: none;
+    border: none !important;
     box-shadow: 0 4px 15px rgba(102,126,234,0.4);
     color: white;
 }
 
-.btn-primary:hover {
+.btn-success:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 25px rgba(102,126,234,0.5);
     color: white;
 }
 
-.btn-primary:active {
+.btn-success:active {
     transform: translateY(0);
 }
 
-.btn-secondary {
+.btn-danger {
     background: linear-gradient(90deg, rgb(255, 1, 18) 0%, rgb(238, 64, 11) 100%);
     border: none;
     color: white;
 }
 
-.btn-secondary:hover {
+.btn-danger:hover {
     background: linear-gradient(90deg, rgba(255, 1, 18, 0.541) 0%, rgba(238, 64, 11, 0.481) 100%);
     transform: translateY(-2px);
     box-shadow: 0 8px 25px rgba(74,85,104,0.4);
@@ -267,7 +267,7 @@ h6 i {
     line-height: 1;
 }
 
-.badge.bg-danger {
+.badge.bg-primary {
     background: var(--secondary-gradient) !important;
 }
 
@@ -302,30 +302,49 @@ input[type="file"]::file-selector-button:hover {
     box-shadow: 0 4px 12px rgba(102,126,234,0.3);
 }
 
-/* 8. Animated Checkbox */
+/* 8. Animated Checkbox - FIXED for Mobile */
 .form-check {
-    padding-left: 1.8rem;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
     margin: 20px 0;
+    padding: 0;
+    width: 100%;
+    position: relative;
 }
 
 .form-check-input {
     width: 20px;
     height: 20px;
-    margin-right: 10px;
+    flex-shrink: 0;
+    flex-grow: 0;
+    margin: 3px 0 0 0 !important; /* I-align sa first line ng text */
     cursor: pointer;
     border: 2px solid #cbd5e0;
     transition: all 0.2s ease;
     border-radius: 6px;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+    background: white;
+    position: relative;
+    display: inline-block;
+    vertical-align: top;
 }
 
 .form-check-input:checked {
     background: var(--primary-gradient);
     border-color: transparent;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z'/%3E%3C/svg%3E");
+    background-size: 14px;
+    background-position: center;
+    background-repeat: no-repeat;
 }
 
 .form-check-input:focus {
     box-shadow: 0 0 0 4px rgba(102,126,234,0.1);
     border-color: var(--primary-color);
+    outline: none;
 }
 
 .form-check-label {
@@ -333,8 +352,127 @@ input[type="file"]::file-selector-button:hover {
     font-weight: 500;
     font-size: 0.95rem;
     cursor: pointer;
+    line-height: 1.5;
+    word-wrap: break-word;
+    word-break: break-word;
+    flex: 1;
+    display: block;
+    padding: 0;
 }
 
+/* MOBILE FIX - Eto ang pinaka-importante */
+@media screen and (max-width: 768px) {
+    .form-check {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: flex-start !important;
+        gap: 15px !important;
+        padding: 8px 0 !important;
+        margin: 15px 0 !important;
+        width: 100% !important;
+    }
+    
+    .form-check-input {
+        width: 24px !important;
+        height: 24px !important;
+        min-width: 24px !important;
+        min-height: 24px !important;
+        max-width: 24px !important;
+        max-height: 24px !important;
+        margin: 2px 0 0 0 !important;
+        padding: 0 !important;
+        flex: 0 0 24px !important;
+        position: relative !important;
+        top: 0 !important;
+        left: 0 !important;
+        float: none !important;
+        display: block !important;
+    }
+    
+    .form-check-label {
+        font-size: 1rem !important;
+        line-height: 1.5 !important;
+        flex: 1 !important;
+        width: auto !important;
+        max-width: calc(100% - 39px) !important;
+        padding-right: 5px !important;
+        display: block !important;
+        word-break: break-word !important;
+        white-space: normal !important;
+    }
+}
+
+/* Small mobile */
+@media screen and (max-width: 480px) {
+    .form-check {
+        gap: 12px !important;
+        padding: 6px 0 !important;
+    }
+    
+    .form-check-input {
+        width: 22px !important;
+        height: 22px !important;
+        min-width: 22px !important;
+        min-height: 22px !important;
+        flex: 0 0 22px !important;
+    }
+    
+    .form-check-label {
+        font-size: 0.95rem !important;
+        max-width: calc(100% - 34px) !important;
+    }
+}
+
+/* I-OVERRIDE LAHAT NG BOOTSTRAP */
+.form-check,
+.card .form-check,
+.card-body .form-check,
+form .form-check,
+div.form-check,
+section .form-check,
+main .form-check,
+.content .form-check {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: flex-start !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    min-height: auto !important;
+}
+
+.form-check-input,
+.card .form-check-input,
+.card-body .form-check-input,
+form .form-check-input {
+    float: none !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    position: relative !important;
+}
+
+.form-check-label,
+.card .form-check-label,
+.card-body .form-check-label,
+form .form-check-label {
+    margin-left: 0 !important;
+    padding-left: 0 !important;
+}
+
+/* Bootstrap overrides - ultra specific */
+.form-check .form-check-input {
+    margin-left: 0 !important;
+}
+
+/* Para sa Bootstrap 5 na nag-a-add ng margin */
+.form-check .form-check-input {
+    margin-top: 0.25em !important;
+}
+
+@media (max-width: 768px) {
+    .form-check .form-check-input {
+        margin-top: 0.15em !important;
+    }
+}
 /* 9. Alert Boxes */
 .alert {
     border: none;
