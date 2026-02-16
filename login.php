@@ -501,7 +501,7 @@ function getDashboardByRole($role) {
             <form method="POST" id="login-form" onsubmit="handleSubmit(event)">
                 <!-- Email Field -->
                 <div class="form-group">
-                    <label for="email">Username</label>
+                    <label for="email">Email</label>
                     <div class="input-wrapper">
                         <i class="fas fa-envelope"></i>
                         <input 
@@ -509,7 +509,7 @@ function getDashboardByRole($role) {
                             id="email" 
                             name="email" 
                             class="form-control" 
-                            placeholder="Username"
+                            placeholder="Email"
                             required
                             value="<?php echo isset($_POST['email']) ? htmlspecialchars($_POST['email']) : ''; ?>"
                         >
@@ -552,11 +552,6 @@ function getDashboardByRole($role) {
                     <span id="btn-text">Login</span>
                 </button>
             </form>
-
-            <!-- Footer Text -->
-            <p class="footer-text">
-                Join the millions of smart investors who trust us to manage their finances. Log in to access your personalized dashboard, track your portfolio performance, and make informed investment decisions.
-            </p>
         </div>
 
         <!-- Right Column - Image -->

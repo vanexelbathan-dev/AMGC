@@ -328,6 +328,124 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             ]);
             exit;
         }
+        elseif ($_POST['action'] === 'update_pick_item') {
+            // Validate required fields
+            $pick_item_id = $_POST['pick_item_id'];
+            $quantity_to_pick = $_POST['quantity_to_pick'];
+            $location_bin = $_POST['location_bin'];
+            $driver_id = !empty($_POST['driver_id']) ? $_POST['driver_id'] : null;
+            
+            if (empty($pick_item_id) || empty($quantity_to_pick) || empty($location_bin)) {
+                throw new Exception('All fields are required');
+            }
+            
+            // Get pick list item details with branch verification
+            $get_item_query = "
+                SELECT pli.*, pl.branch_id, pl.so_id, i.item_id, i.stock as current_stock, pl.driver_id as current_driver_id
+                FROM pick_list_items pli 
+                JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id 
+                JOIN items i ON pli.item_id = i.item_id 
+                WHERE pli.pick_item_id = ?
+            ";
+            
+            if ($pick_lists_branch_column_exists && !$view_all_branches) {
+                $get_item_query .= " AND pl.branch_id = ?";
+                $get_item_stmt = $conn->prepare($get_item_query);
+                $get_item_stmt->bind_param("ii", $pick_item_id, $branch_id);
+            } else {
+                $get_item_stmt = $conn->prepare($get_item_query);
+                $get_item_stmt->bind_param("i", $pick_item_id);
+            }
+            
+            $get_item_stmt->execute();
+            $item = $get_item_stmt->get_result()->fetch_assoc();
+            
+            if (!$item) {
+                throw new Exception('Pick list item not found or access denied');
+            }
+            
+            // Verify branch permission
+            if ($pick_lists_branch_column_exists && !$view_all_branches && $item['branch_id'] != $branch_id) {
+                throw new Exception('You can only update items from your assigned branch');
+            }
+            
+            // Check if quantity changed
+            $quantity_difference = $quantity_to_pick - $item['quantity_to_pick'];
+            
+            if ($quantity_difference != 0) {
+                // Update stock in items table
+                if ($quantity_difference > 0) {
+                    // Increasing quantity - check if enough stock
+                    if ($item['current_stock'] < $quantity_difference) {
+                        throw new Exception('Insufficient stock for additional quantity. Current stock: ' . $item['current_stock']);
+                    }
+                    
+                    // Decrease stock
+                    $update_stock_query = "UPDATE items SET stock = stock - ? WHERE item_id = ?";
+                    if ($items_branch_column_exists && !$view_all_branches) {
+                        $update_stock_query .= " AND branch_id = ?";
+                        $update_stock_stmt = $conn->prepare($update_stock_query);
+                        $update_stock_stmt->bind_param("iii", $quantity_difference, $item['item_id'], $branch_id);
+                    } else {
+                        $update_stock_stmt = $conn->prepare($update_stock_query);
+                        $update_stock_stmt->bind_param("ii", $quantity_difference, $item['item_id']);
+                    }
+                } else {
+                    // Decreasing quantity - return stock
+                    $update_stock_query = "UPDATE items SET stock = stock + ? WHERE item_id = ?";
+                    if ($items_branch_column_exists && !$view_all_branches) {
+                        $update_stock_query .= " AND branch_id = ?";
+                        $update_stock_stmt = $conn->prepare($update_stock_query);
+                        $update_stock_stmt->bind_param("iii", abs($quantity_difference), $item['item_id'], $branch_id);
+                    } else {
+                        $update_stock_stmt = $conn->prepare($update_stock_query);
+                        $update_stock_stmt->bind_param("ii", abs($quantity_difference), $item['item_id']);
+                    }
+                }
+                
+                if (!$update_stock_stmt->execute()) {
+                    throw new Exception('Failed to update item stock');
+                }
+            }
+            
+            // Update driver assignment if changed
+            if ($driver_id != $item['current_driver_id']) {
+                $update_driver_query = "UPDATE pick_lists SET driver_id = ? WHERE pick_list_id = ?";
+                
+                if ($pick_lists_branch_column_exists && !$view_all_branches) {
+                    $update_driver_query .= " AND branch_id = ?";
+                    $update_driver_stmt = $conn->prepare($update_driver_query);
+                    $update_driver_stmt->bind_param("iii", $driver_id, $item['pick_list_id'], $branch_id);
+                } else {
+                    $update_driver_stmt = $conn->prepare($update_driver_query);
+                    $update_driver_stmt->bind_param("ii", $driver_id, $item['pick_list_id']);
+                }
+                
+                if (!$update_driver_stmt->execute()) {
+                    throw new Exception('Failed to update driver assignment');
+                }
+            }
+            
+            // Update the pick list item
+            $update_query = "UPDATE pick_list_items 
+                           SET quantity_to_pick = ?, location_bin = ? 
+                           WHERE pick_item_id = ?";
+            $update_stmt = $conn->prepare($update_query);
+            $update_stmt->bind_param("isi", $quantity_to_pick, $location_bin, $pick_item_id);
+            
+            if (!$update_stmt->execute()) {
+                throw new Exception('Failed to update pick list item');
+            }
+            
+            $conn->commit();
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Item updated successfully',
+                'pick_item_id' => $pick_item_id
+            ]);
+            exit;
+        }
         elseif ($_POST['action'] === 'delete_pick_item') {
             $pick_item_id = $_POST['pick_item_id'];
             
@@ -434,6 +552,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             exit;
         }
         
+        // GET PICK ITEM DETAILS FOR EDIT
+        elseif ($_POST['action'] === 'get_pick_item') {
+            $pick_item_id = (int)$_POST['pick_item_id'];
+            
+            $query = "
+                SELECT 
+                    pli.pick_item_id,
+                    pli.pick_list_id,
+                    pli.item_id,
+                    pli.quantity_to_pick,
+                    pli.location_bin,
+                    pl.driver_id,
+                    pl.branch_id,
+                    pl.so_id,
+                    i.item_code,
+                    i.item_name,
+                    i.unit_type,
+                    i.stock as current_stock,
+                    d.driver_name
+                FROM pick_list_items pli
+                JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
+                JOIN items i ON pli.item_id = i.item_id
+                LEFT JOIN drivers d ON pl.driver_id = d.driver_id
+                WHERE pli.pick_item_id = ?
+            ";
+            
+            if ($pick_lists_branch_column_exists && !$view_all_branches) {
+                $query .= " AND pl.branch_id = ?";
+                $stmt = $conn->prepare($query);
+                $stmt->bind_param("ii", $pick_item_id, $branch_id);
+            } else {
+                $stmt = $conn->prepare($query);
+                $stmt->bind_param("i", $pick_item_id);
+            }
+            
+            $stmt->execute();
+            $result = $stmt->get_result();
+            $item = $result->fetch_assoc();
+            
+            if ($item) {
+                echo json_encode([
+                    'success' => true,
+                    'item' => $item
+                ]);
+            } else {
+                throw new Exception('Item not found or access denied');
+            }
+            exit;
+        }
+        
     } catch (Exception $e) {
         $conn->rollback();
         echo json_encode([
@@ -472,7 +640,9 @@ $picklist_query = "
         so.so_number,
         so.order_status,
         so.branch_id as so_branch_id,
-        CONCAT(u.first_name, ' ', u.last_name) as encoded_by_name
+        CONCAT(u.first_name, ' ', u.last_name) as encoded_by_name,
+        u.email as encoded_by_email,
+        pl.created_at as encoded_at
     FROM pick_lists pl
     LEFT JOIN branches b ON pl.branch_id = b.branch_id
     LEFT JOIN pick_list_items pli ON pl.pick_list_id = pli.pick_list_id
@@ -521,7 +691,6 @@ $so_query .= " ORDER BY so.order_date DESC";
 $so_result = $conn->query($so_query);
 $sales_orders = $so_result->fetch_all(MYSQLI_ASSOC);
 
-// ========== FETCH SALES ORDER ITEMS WITH BRANCH FILTERING ==========
 // ========== FETCH SALES ORDER ITEMS WITH BRANCH FILTERING ==========
 $so_items_query = "
     SELECT 
@@ -827,18 +996,20 @@ function getBranchBadge($branch_id, $branch_name) {
         }
         
         /* Column widths */
-        .col-so { width: 12%; }
+        .col-so { width: 10%; }
         <?php if ($view_all_branches && $pick_lists_branch_column_exists): ?>
-        .col-branch { width: 10%; }
+        .col-branch { width: 8%; }
         <?php endif; ?>
-        .col-item-code { width: 10%; }
-        .col-item-name { width: 18%; }
-        .col-to-pick { width: 8%; text-align: center; }
-        .col-picked { width: 8%; text-align: center; }
-        .col-location { width: 10%; }
-        .col-status { width: 12%; }
-        .col-encoded { width: 12%; }
-        .col-actions { width: 10%; text-align: center; }
+        .col-item-code { width: 8%; }
+        .col-item-name { width: 12%; }
+        .col-to-pick { width: 6%; text-align: center; }
+        .col-picked { width: 6%; text-align: center; }
+        .col-location { width: 8%; }
+        .col-status { width: 8%; }
+        .col-encoded { width: 8%; }
+        .col-encoded-by { width: 10%; }
+        .col-encoded-at { width: 12%; }
+        .col-actions { width: 12%; text-align: center; }
         
         .empty-state-table {
             text-align: center;
@@ -921,6 +1092,38 @@ function getBranchBadge($branch_id, $branch_name) {
             color: #495057;
             margin-bottom: 4px;
             display: block;
+        }
+
+        /* Search Box Styling */
+        .search-box {
+            position: relative;
+            min-width: 250px;
+        }
+        
+        .search-box i {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #6c757d;
+            font-size: 14px;
+            z-index: 10;
+            pointer-events: none;
+        }
+        
+        .search-box input {
+            width: 100%;
+            padding: 8px 12px 8px 38px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            height: 40px;
+            font-size: 14px;
+        }
+        
+        .search-box input:focus {
+            border-color: #0d6efd;
+            box-shadow: 0 0 0 0.2rem rgba(13,110,253,0.25);
+            outline: none;
         }
 
         /* New Item Card */
@@ -1123,6 +1326,72 @@ function getBranchBadge($branch_id, $branch_name) {
             color: #6c757d;
             margin-top: 4px;
         }
+        
+        /* Items Selection Table */
+        .items-selection-table {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+        }
+        
+        .items-selection-table thead th {
+            position: sticky;
+            top: 0;
+            background: #f8f9fa;
+            z-index: 10;
+        }
+        
+        .item-row:hover {
+            background-color: #f1f8ff;
+        }
+        
+        .item-qty-input, .item-location-input {
+            min-width: 90px;
+        }
+        
+        /* Encoded By and At styling */
+        .col-encoded-by .badge {
+            font-size: 11px;
+            padding: 4px 8px;
+        }
+        
+        .col-encoded-at .text-muted {
+            font-size: 11px;
+        }
+        
+        .col-encoded-at i {
+            margin-right: 3px;
+        }
+        
+        /* Action buttons styling */
+        .action-buttons {
+            display: flex;
+            gap: 5px;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .table-btn {
+            background: none;
+            border: none;
+            padding: 6px;
+            border-radius: 4px;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .table-btn:hover {
+            background-color: #e9ecef;
+        }
+        
+        .btn-view { color: #0d6efd; }
+        .btn-edit { color: #ffc107; }
+        .btn-delete { color: #dc3545; }
     </style>
 </head>
 <body>
@@ -1142,7 +1411,7 @@ function getBranchBadge($branch_id, $branch_name) {
                     </button>    
                     <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
                     <span class="nav-text">
-                        <?php echo $view_all_branches ? 'Administrator' : 'Branch Admin'; ?>
+                        <?php echo $view_all_branches ? 'Administrator' : ucfirst(str_replace('_', ' ', $user_role)); ?>
                     </span>
                 </h3>
             </div>
@@ -1231,9 +1500,9 @@ function getBranchBadge($branch_id, $branch_name) {
                         <p>
                             <?php 
                             if ($view_all_branches) {
-                                echo 'Managing pick list items ';
+                                echo 'Managing pick list items for all branches';
                             } else {
-                                echo 'Manage pick list items ';
+                                echo 'Manage pick list items for ' . htmlspecialchars($branch_name);
                             }
                             ?>
                         </p>
@@ -1248,7 +1517,7 @@ function getBranchBadge($branch_id, $branch_name) {
                                 $all_branches_result = $conn->query($all_branches_query);
                                 while ($branch = $all_branches_result->fetch_assoc()):
                                 ?>
-                                <option value="<?php echo $branch['branch_id']; ?>">
+                                <option value="<?php echo $branch['branch_id']; ?>" <?php echo ($branch_id == $branch['branch_id']) ? 'selected' : ''; ?>>
                                     <?php echo htmlspecialchars($branch['branch_name']); ?>
                                 </option>
                                 <?php endwhile; ?>
@@ -1348,13 +1617,12 @@ function getBranchBadge($branch_id, $branch_name) {
                     </div>
                 </div>
 
-                <!-- FILTER SECTION -->
+                <!-- FILTER SECTION - UPDATED WITH SEARCH -->
                 <div class="filter-section">
                     <div class="filter-controls">
                         <div class="filter-dropdowns">
                             <!-- Date Filter Dropdown -->
                             <div class="filter-dropdown">
-                                <span class="filter-label">Date</span>
                                 <select class="form-select" id="dateFilter" onchange="applyFilters()">
                                     <option value="all">All Dates</option>
                                     <option value="today">Today</option>
@@ -1372,7 +1640,6 @@ function getBranchBadge($branch_id, $branch_name) {
                             
                             <!-- Status Filter Dropdown -->
                             <div class="filter-dropdown">
-                                <span class="filter-label">Status</span>
                                 <select class="form-select" id="statusFilter" onchange="applyFilters()">
                                     <option value="all">All Status</option>
                                     <option value="open">Pending</option>
@@ -1401,23 +1668,8 @@ function getBranchBadge($branch_id, $branch_name) {
                             </div>
                             <?php endif; ?>
                             
-                            <!-- Driver Filter Dropdown -->
-                            <div class="filter-dropdown">
-                                <span class="filter-label">Driver</span>
-                                <select class="form-select" id="driverFilter" onchange="applyFilters()">
-                                    <option value="all">All Drivers</option>
-                                    <option value="unassigned">Unassigned</option>
-                                    <?php foreach ($drivers_list as $driver): ?>
-                                        <option value="<?= $driver['driver_id'] ?>">
-                                            <?= htmlspecialchars($driver['driver_name']) ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                            
                             <!-- Quantity Filter Dropdown -->
                             <div class="filter-dropdown">
-                                <span class="filter-label">Quantity to Pick</span>
                                 <select class="form-select" id="quantityFilter" onchange="applyFilters()">
                                     <option value="all">All Quantities</option>
                                     <option value="lt10">Less than 10</option>
@@ -1431,13 +1683,18 @@ function getBranchBadge($branch_id, $branch_name) {
                     </div>
                     
                     <div class="filter-actions">
+                        <!-- Global Search Box -->
+                        <div class="search-box">
+                            <i class="bi bi-search"></i>
+                            <input type="text" id="globalSearch" placeholder="Search SO number, item, driver, encoder..." onkeyup="applyFilters()">
+                        </div>
                         <button class="btn btn-outline-primary" onclick="printPickList()">
                             <i class="bi bi-printer me-1"></i> Print
                         </button>
                         <button class="btn btn-outline-success" onclick="exportToExcel()">
                             <i class="bi bi-file-earmark-excel me-1"></i> Export to Excel
                         </button>
-                        <button class="btn btn-primary" onclick="showAddItemModal()">
+                        <button class="btn btn-primary" id="addItemButton" onclick="showAddItemModal()">
                             <i class="bi bi-plus-circle me-1"></i> Add Item
                         </button>
                     </div>
@@ -1459,6 +1716,8 @@ function getBranchBadge($branch_id, $branch_name) {
                                 <th class="col-location">LOCATION</th>
                                 <th class="col-status">STATUS</th>
                                 <th class="col-encoded">ASSIGNED DRIVER</th>
+                                <th class="col-encoded-by">ENCODED BY</th>
+                                <th class="col-encoded-at">ENCODED AT</th>
                                 <th class="col-actions">ACTIONS</th>
                             </tr>
                         </thead>
@@ -1485,12 +1744,15 @@ function getBranchBadge($branch_id, $branch_name) {
                                 data-so-id="<?= htmlspecialchars($item['so_number'] ?? '') ?>"
                                 data-status="<?= $item['pick_status'] ?>"
                                 data-item-code="<?= htmlspecialchars($item['item_code'] ?? '') ?>"
+                                data-item-name="<?= htmlspecialchars($item['item_name'] ?? '') ?>"
                                 data-quantity="<?= $item['quantity_to_pick'] ?? 0 ?>"
                                 data-created-date="<?= $item['created_at'] ?? '' ?>"
                                 data-driver-id="<?= $item['driver_id'] ?? '' ?>"
                                 data-driver-name="<?= htmlspecialchars($item['assigned_driver'] ?? 'Unassigned') ?>"
                                 data-branch-id="<?= $item['branch_id'] ?? '' ?>"
-                                data-branch-name="<?= htmlspecialchars($item['branch_name'] ?? '') ?>">
+                                data-branch-name="<?= htmlspecialchars($item['branch_name'] ?? '') ?>"
+                                data-encoded-by="<?= htmlspecialchars($item['encoded_by_name'] ?? 'System') ?>"
+                                data-encoded-at="<?= htmlspecialchars($item['encoded_at'] ?? '') ?>">
                                 <td class="col-so">
                                     <strong><?= htmlspecialchars($item['so_number'] ?? 'N/A') ?></strong>
                                 </td>
@@ -1529,12 +1791,26 @@ function getBranchBadge($branch_id, $branch_name) {
                                         <span class="text-muted fst-italic">Unassigned</span>
                                     <?php endif; ?>
                                 </td>
+                                <td class="col-encoded-by">
+                                    <span class="badge bg-secondary">
+                                        <i class="bi bi-person"></i> <?= htmlspecialchars($item['encoded_by_name'] ?? 'System') ?>
+                                    </span>
+                                </td>
+                                <td class="col-encoded-at">
+                                    <span class="text-muted">
+                                        <i class="bi bi-clock"></i> 
+                                        <?= $item['encoded_at'] ? date('M d, Y H:i', strtotime($item['encoded_at'])) : 'N/A' ?>
+                                    </span>
+                                </td>
                                 <td class="col-actions">
                                     <div class="action-buttons">
                                         <button class="table-btn btn-view" onclick="viewItem(<?= $item['pick_item_id'] ?>)" title="View">
                                             <i class="bi bi-eye"></i>
                                         </button>
                                         <?php if ($item['pick_status'] === 'open' && ($view_all_branches || ($pick_lists_branch_column_exists && $item['branch_id'] == $branch_id))): ?>
+                                        <button class="table-btn btn-edit" onclick="editItem(<?= $item['pick_item_id'] ?>)" title="Edit">
+                                            <i class="bi bi-pencil"></i>
+                                        </button>
                                         <button class="table-btn btn-delete" onclick="deleteItem(<?= $item['pick_item_id'] ?>)" title="Delete">
                                             <i class="bi bi-trash"></i>
                                         </button>
@@ -1547,7 +1823,7 @@ function getBranchBadge($branch_id, $branch_name) {
                             else: 
                             ?>
                             <tr>
-                                <td colspan="<?= ($view_all_branches && $pick_lists_branch_column_exists) ? '10' : '9' ?>" class="empty-state-table">
+                                <td colspan="<?= ($view_all_branches && $pick_lists_branch_column_exists) ? '12' : '11' ?>" class="empty-state-table">
                                     <i class="bi bi-clipboard"></i>
                                     <h5>No Pick List Items Found</h5>
                                     <p class="text-muted">
@@ -1565,7 +1841,7 @@ function getBranchBadge($branch_id, $branch_name) {
                 </div>
                 
                 <!-- Add Item Card -->
-                <div class="new-item-card mt-4" onclick="showAddItemModal()">
+                <div class="new-item-card mt-4" id="addItemCard" onclick="showAddItemModal()">
                     <div class="add-icon">
                         <i class="bi bi-plus-lg"></i>
                     </div>
@@ -1576,9 +1852,9 @@ function getBranchBadge($branch_id, $branch_name) {
         </div>
     </div>
 
-    <!-- Add/Edit Item Modal -->
-    <div class="modal fade" id="itemModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
+    <!-- Add/Edit Item Modal - UPDATED WITH MULTI-SELECT TABLE -->
+    <div class="modal fade" id="itemModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-xl">
             <div class="modal-content">
                 <div class="modal-header bg-primary text-white">
                     <h5 class="modal-title" id="modalTitle"><i class="bi bi-plus-circle me-2"></i>Add Pick List Item</h5>
@@ -1618,7 +1894,7 @@ function getBranchBadge($branch_id, $branch_name) {
                         <div class="row g-3">
                             <!-- SO ID Dropdown -->
                             <div class="col-md-6">
-                                <label for="soIdSelect" class="form-label">Sales Order *</label>
+                                <label for="soIdSelect" class="form-label">Sales Order</label>
                                 <select class="form-select select2-so" id="soIdSelect" style="width: 100%;" onchange="onSOSelected()" required>
                                     <option value="">Select Sales Order</option>
                                     <?php foreach ($sales_orders as $so): ?>
@@ -1635,7 +1911,7 @@ function getBranchBadge($branch_id, $branch_name) {
                                                 [<?= htmlspecialchars($so['branch_name']) ?>]
                                             <?php endif; ?>
                                         </option>
-                                        <?php endif; ?>
+                                    <?php endif; ?>
                                     <?php endforeach; ?>
                                 </select>
                                 <input type="hidden" id="soId" name="so_id">
@@ -1656,71 +1932,48 @@ function getBranchBadge($branch_id, $branch_name) {
                                 </div>
                             </div>
                             
-                            <!-- Item Code Dropdown (will be populated based on SO) -->
-                            <div class="col-md-6">
-                                <label for="itemCodeSelect" class="form-label">Item *</label>
-                                <select class="form-select select2-item" id="itemCodeSelect" style="width: 100%;" onchange="onItemSelected()" required>
-                                    <option value="">Select Item</option>
-                                </select>
-                                <input type="hidden" id="itemCode" name="item_code">
-                                <input type="hidden" id="itemId" name="item_id">
-                                <?php if ($items_branch_column_exists && !$view_all_branches): ?>
-                                    <small class="text-muted">Your branch items only</small>
-                                <?php endif; ?>
-                            </div>
-                            
-                            <!-- Auto-filled Item Details -->
+                            <!-- Item Selection - NEW MULTI-SELECT TABLE -->
                             <div class="col-12">
-                                <div class="item-preview" id="itemPreview" style="display: none;">
-                                    <div class="row">
-                                        <div class="col-md-4">
-                                            <div class="item-preview-label">Item Name</div>
-                                            <div class="item-preview-value" id="previewItemName">-</div>
-                                        </div>
-                                        <div class="col-md-4">
-                                            <div class="item-preview-label">Unit Type</div>
-                                            <div class="item-preview-value" id="previewUnitType">-</div>
-                                        </div>
-                                        <div class="col-md-4">
-                                            <div class="item-preview-label">Available Stock</div>
-                                            <div class="item-preview-value" id="previewStock">-</div>
-                                        </div>
-                                    </div>
+                                <label class="form-label fw-bold mb-2">Select Items to Pick</label>
+                                <div class="alert alert-info mb-2">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    Check the items you want to add to the pick list. You can select multiple items.
                                 </div>
-                            </div>
-                            
-                            <!-- Quantity Fields -->
-                            <div class="col-md-4">
-                                <label for="caseQty" class="form-label">Case Quantity</label>
-                                <input type="number" class="form-control" id="caseQty" name="case_qty" min="0" value="0" readonly>
-                                <small class="text-muted">1 Case = 12 pcs</small>
-                            </div>
-                            <div class="col-md-4">
-                                <label for="innerPackQty" class="form-label">Inner Pack Quantity</label>
-                                <input type="number" class="form-control" id="innerPackQty" name="inner_pack_qty" min="0" value="0" readonly>
-                                <small class="text-muted">1 Inner Pack = 6 pcs</small>
-                            </div>
-                            <div class="col-md-4">
-                                <label for="pieceQty" class="form-label">Piece Quantity</label>
-                                <input type="number" class="form-control" id="pieceQty" name="piece_qty" min="0" value="0" readonly>
-                                <small class="text-muted">Per piece</small>
-                            </div>
-                            
-                            <!-- Total Quantity -->
-                            <div class="col-md-6">
-                                <label for="totalQuantity" class="form-label">Total Quantity to Pick</label>
-                                <input type="number" class="form-control bg-light" id="totalQuantity" name="quantity_to_pick" readonly>
-                            </div>
-                            
-                            <!-- Location Bin -->
-                            <div class="col-md-6">
-                                <label for="locationBin" class="form-label">Location/Bin *</label>
-                                <input type="text" class="form-control" id="locationBin" name="location_bin" required placeholder="e.g., A-01-01">
+                                
+                                <!-- Items Table for Multi-Select -->
+                                <div class="table-responsive items-selection-table">
+                                    <table class="table table-sm table-hover mb-0" id="itemsSelectionTable">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th width="50">
+                                                    <input type="checkbox" class="form-check-input" id="selectAllItems" onclick="toggleAllItems()">
+                                                </th>
+                                                <th>Item Code</th>
+                                                <th>Item Name</th>
+                                                <th>Unit</th>
+                                                <th>Ordered</th>
+                                                <th>Stock</th>
+                                                <th>Available</th>
+                                                <th width="100">Qty to Pick</th>
+                                                <th width="120">Location/Bin</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="itemsSelectionBody">
+                                            <tr id="noItemsMessage">
+                                                <td colspan="9" class="text-center py-4 text-muted">
+                                                    <i class="bi bi-inbox fs-4 d-block mb-2"></i>
+                                                    Select a Sales Order to see available items
+                                                </td>
+                                            </tr>
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <small class="text-muted mt-1 d-block">Check items and specify quantities to pick. Maximum pick quantity cannot exceed available stock.</small>
                             </div>
                             
                             <!-- Driver Assignment -->
                             <div class="col-md-6">
-                                <label for="driverSelect" class="form-label">Assign Driver *</label>
+                                <label for="driverSelect" class="form-label">Assign Driver</label>
                                 <select class="form-select select2-driver" id="driverSelect" style="width: 100%;" required>
                                     <option value="">Select Driver</option>
                                     <?php foreach ($drivers_list as $driver): ?>
@@ -1749,11 +2002,12 @@ function getBranchBadge($branch_id, $branch_name) {
                             
                             <!-- Encoded By and At -->
                             <div class="col-md-6">
-                                <label for="encodedBy" class="form-label">Encoded By *</label>
+                                <label for="encodedBy" class="form-label">Encoded By</label>
                                 <input type="text" class="form-control" id="encodedBy" name="encoded_by" value="<?= $user_id ?>" required readonly>
+                                <small class="text-muted">User ID: <?= $user_id ?></small>
                             </div>
                             <div class="col-md-6">
-                                <label for="encodedAt" class="form-label">Encoded At *</label>
+                                <label for="encodedAt" class="form-label">Encoded At</label>
                                 <input type="datetime-local" class="form-control" id="encodedAt" name="encoded_at" required readonly>
                             </div>
                         </div>
@@ -1772,7 +2026,89 @@ function getBranchBadge($branch_id, $branch_name) {
                         <i class="bi bi-x-circle me-1"></i> Cancel
                     </button>
                     <button type="button" class="btn btn-primary" onclick="saveItem()">
-                        <i class="bi bi-check-circle me-1"></i> Save Item
+                        <i class="bi bi-check-circle me-1"></i> Save Items
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Item Modal -->
+    <div class="modal fade" id="editItemModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Edit Pick List Item</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="editItemForm" onsubmit="return false;">
+                        <input type="hidden" id="editPickItemId">
+                        <input type="hidden" id="editItemId">
+                        <input type="hidden" id="editPickListId">
+                        
+                        <?php if (!$view_all_branches && $branch_id > 0): ?>
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle"></i>
+                            Editing item for <strong><?php echo htmlspecialchars($branch_name); ?></strong>
+                        </div>
+                        <?php endif; ?>
+                        
+                        <div class="row g-3">
+                            <!-- Item Information (Read-only) -->
+                            <div class="col-md-6">
+                                <label class="form-label">Item Code</label>
+                                <input type="text" class="form-control" id="editItemCode" readonly>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label">Item Name</label>
+                                <input type="text" class="form-control" id="editItemName" readonly>
+                            </div>
+                            
+                            <!-- Quantity to Pick -->
+                            <div class="col-md-4">
+                                <label for="editQuantity" class="form-label">Quantity to Pick</label>
+                                <input type="number" class="form-control" id="editQuantity" min="1" required>
+                                <small class="text-muted" id="editStockInfo"></small>
+                            </div>
+                            
+                            <!-- Location/Bin -->
+                            <div class="col-md-4">
+                                <label for="editLocationBin" class="form-label">Location/Bin</label>
+                                <input type="text" class="form-control" id="editLocationBin" required>
+                            </div>
+                            
+                            <!-- Driver Assignment -->
+                            <div class="col-md-4">
+                                <label for="editDriverSelect" class="form-label">Assign Driver</label>
+                                <select class="form-select select2-driver-edit" id="editDriverSelect" style="width: 100%;">
+                                    <option value="">Select Driver</option>
+                                    <?php foreach ($drivers_list as $driver): ?>
+                                        <option value="<?= $driver['driver_id'] ?>">
+                                            <?= htmlspecialchars($driver['driver_name'] . ' - ' . ($driver['vehicle_plate_number'] ?? 'No vehicle')) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <input type="hidden" id="editDriverId">
+                            </div>
+                            
+                            <!-- Current Stock Info -->
+                            <div class="col-12">
+                                <div class="alert alert-info" id="editStockAlert">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    Current stock: <span id="editCurrentStock">0</span> | 
+                                    Current pick quantity: <span id="editCurrentQuantity">0</span>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                        <i class="bi bi-x-circle me-1"></i> Cancel
+                    </button>
+                    <button type="button" class="btn btn-primary" onclick="updateItem()">
+                        <i class="bi bi-check-circle me-1"></i> Update Item
                     </button>
                 </div>
             </div>
@@ -1796,11 +2132,9 @@ function getBranchBadge($branch_id, $branch_name) {
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
                         <i class="bi bi-x-circle me-1"></i> Close
                     </button>
-                    <?php if ($view_all_branches): ?>
-                    <button type="button" class="btn btn-warning" onclick="editCurrentItem()" id="editFromViewBtn">
+                    <button type="button" class="btn btn-warning" onclick="editFromView()" id="editFromViewBtn" style="display: none;">
                         <i class="bi bi-pencil me-1"></i> Edit
                     </button>
-                    <?php endif; ?>
                 </div>
             </div>
         </div>
@@ -1860,7 +2194,8 @@ function getBranchBadge($branch_id, $branch_name) {
     let soItemsData = <?= json_encode($so_items_by_so) ?>;
     let driversData = <?= json_encode($drivers_list) ?>;
     let currentUserId = <?= $user_id ?: 1 ?>;
-    
+    let availableItems = [];
+
     // ========== LOADING FUNCTIONS ==========
     function showLoading() {
         document.getElementById('loadingOverlay').style.display = 'flex';
@@ -1948,13 +2283,13 @@ function getBranchBadge($branch_id, $branch_name) {
         });
     }
 
-    // ========== FILTER FUNCTIONS ==========
+    // ========== FILTER FUNCTIONS - UPDATED WITH SEARCH ==========
     function applyFilters() {
         const dateFilter = document.getElementById('dateFilter').value;
         const statusFilter = document.getElementById('statusFilter').value;
-        const driverFilter = document.getElementById('driverFilter').value;
         const quantityFilter = document.getElementById('quantityFilter').value;
         const branchFilter = document.getElementById('branchFilter')?.value || 'all';
+        const searchTerm = document.getElementById('globalSearch').value.toLowerCase();
         
         const rows = document.querySelectorAll('.pick-list-row');
         let visibleCount = 0;
@@ -1962,25 +2297,19 @@ function getBranchBadge($branch_id, $branch_name) {
         rows.forEach(row => {
             let showRow = true;
             
+            // Status filter
             if (statusFilter !== 'all') {
                 const rowStatus = row.dataset.status;
                 if (rowStatus !== statusFilter) showRow = false;
             }
             
-            if (showRow && driverFilter !== 'all') {
-                const rowDriverId = row.dataset.driverId || '';
-                if (driverFilter === 'unassigned') {
-                    if (rowDriverId) showRow = false;
-                } else {
-                    if (rowDriverId !== driverFilter) showRow = false;
-                }
-            }
-            
+            // Branch filter
             if (showRow && branchFilter !== 'all' && viewAllBranches) {
                 const rowBranchId = row.dataset.branchId || '';
                 if (rowBranchId != branchFilter) showRow = false;
             }
             
+            // Quantity filter
             if (showRow && quantityFilter !== 'all') {
                 const rowQuantity = parseFloat(row.dataset.quantity);
                 switch(quantityFilter) {
@@ -2002,6 +2331,23 @@ function getBranchBadge($branch_id, $branch_name) {
                 }
             }
             
+            // Global search filter
+            if (showRow && searchTerm !== '') {
+                const soNumber = row.dataset.soId?.toLowerCase() || '';
+                const itemCode = row.dataset.itemCode?.toLowerCase() || '';
+                const itemName = row.dataset.itemName?.toLowerCase() || '';
+                const driverName = row.dataset.driverName?.toLowerCase() || '';
+                const encodedBy = row.dataset.encodedBy?.toLowerCase() || '';
+                const location = row.querySelector('.col-location')?.innerText.toLowerCase() || '';
+                
+                const searchableText = soNumber + ' ' + itemCode + ' ' + itemName + ' ' + driverName + ' ' + encodedBy + ' ' + location;
+                
+                if (!searchableText.includes(searchTerm)) {
+                    showRow = false;
+                }
+            }
+            
+            // Date filter
             if (showRow && dateFilter !== 'all') {
                 const rowDate = new Date(row.dataset.createdDate);
                 const today = new Date();
@@ -2052,7 +2398,7 @@ function getBranchBadge($branch_id, $branch_name) {
                 if (emptyStateParent) {
                     emptyStateParent.style.display = '';
                     emptyStateRow.innerHTML = `
-                        <td colspan="${viewAllBranches && pickListsBranchColumnExists ? '10' : '9'}" class="empty-state-table">
+                        <td colspan="${viewAllBranches && pickListsBranchColumnExists ? '12' : '11'}" class="empty-state-table">
                             <i class="bi bi-funnel"></i>
                             <h5>No matching pick list items</h5>
                             <p class="text-muted">No items match your filter criteria.</p>
@@ -2071,16 +2417,18 @@ function getBranchBadge($branch_id, $branch_name) {
     function clearAllFilters() {
         document.getElementById('dateFilter').value = 'all';
         document.getElementById('statusFilter').value = 'all';
-        document.getElementById('driverFilter').value = 'all';
         if (document.getElementById('branchFilter')) {
             document.getElementById('branchFilter').value = 'all';
         }
         document.getElementById('quantityFilter').value = 'all';
+        document.getElementById('globalSearch').value = '';
         applyFilters();
     }
 
     // ========== MODAL FUNCTIONS ==========
     function showAddItemModal() {
+        console.log("showAddItemModal called"); // For debugging
+        
         <?php if (empty($sales_orders) && !$view_all_branches): ?>
         Swal.fire({
             icon: 'warning',
@@ -2101,42 +2449,65 @@ function getBranchBadge($branch_id, $branch_name) {
         return;
         <?php endif; ?>
         
+        // Reset form
         document.getElementById('modalTitle').textContent = 'Add Pick List Item';
         document.getElementById('itemForm').reset();
         document.getElementById('itemId').value = '';
         document.getElementById('soId').value = '';
         document.getElementById('soNumber').value = '';
-        document.getElementById('itemCode').value = '';
-        document.getElementById('itemId').value = '';
         document.getElementById('driverId').value = '';
-        document.getElementById('itemPreview').style.display = 'none';
+        
+        // Hide preview sections
         document.getElementById('soDetailsPreview').style.display = 'none';
         document.getElementById('driverInfoPreview').style.display = 'none';
-        document.getElementById('locationBin').value = '';
-        document.getElementById('locationBin').readOnly = false;
         
         // Reset Select2 dropdowns
         $('#soIdSelect').val('').trigger('change');
         $('#driverSelect').val('').trigger('change');
         
-        // Clear item dropdown
-        const itemSelect = $('#itemCodeSelect');
-        itemSelect.empty();
-        itemSelect.append('<option value="">Select Item</option>');
-        itemSelect.trigger('change');
+        // Clear items table
+        const tableBody = document.getElementById('itemsSelectionBody');
+        if (tableBody) {
+            tableBody.innerHTML = `
+                <tr id="noItemsMessage">
+                    <td colspan="9" class="text-center py-4 text-muted">
+                        <i class="bi bi-inbox fs-4 d-block mb-2"></i>
+                        Select a Sales Order to see available items
+                    </td>
+                </tr>
+            `;
+        }
+        
+        // Reset select all checkbox
+        const selectAll = document.getElementById('selectAllItems');
+        if (selectAll) {
+            selectAll.checked = false;
+        }
         
         // Set current date/time
         const now = new Date();
         const formattedDateTime = now.toISOString().slice(0, 16);
-        document.getElementById('encodedAt').value = formattedDateTime;
-        document.getElementById('encodedBy').value = currentUserId;
+        const encodedAt = document.getElementById('encodedAt');
+        if (encodedAt) {
+            encodedAt.value = formattedDateTime;
+        }
+        
+        const encodedBy = document.getElementById('encodedBy');
+        if (encodedBy) {
+            encodedBy.value = currentUserId;
+        }
         
         // Set branch info
         <?php if ($view_all_branches): ?>
-        document.getElementById('selectedBranchName').textContent = 'your selected branch';
+        const selectedBranchName = document.getElementById('selectedBranchName');
+        if (selectedBranchName) {
+            selectedBranchName.textContent = 'your selected branch';
+        }
         <?php endif; ?>
         
-        new bootstrap.Modal(document.getElementById('itemModal')).show();
+        // Show modal
+        const modal = new bootstrap.Modal(document.getElementById('itemModal'));
+        modal.show();
     }
 
     function onSOSelected() {
@@ -2167,203 +2538,215 @@ function getBranchBadge($branch_id, $branch_name) {
             document.getElementById('selectedBranchName').textContent = branchName || 'Branch ' + branchId;
             <?php endif; ?>
             
-            // Populate item dropdown based on selected SO
+            // Populate items table for this SO
             populateItemsForSO(soId);
-            
-            // Clear item preview
-            document.getElementById('itemPreview').style.display = 'none';
-            document.getElementById('itemCode').value = '';
-            document.getElementById('itemId').value = '';
-            document.getElementById('caseQty').value = 0;
-            document.getElementById('innerPackQty').value = 0;
-            document.getElementById('pieceQty').value = 0;
-            document.getElementById('totalQuantity').value = 0;
-            document.getElementById('locationBin').value = '';
             
         } else {
             document.getElementById('soId').value = '';
             document.getElementById('soNumber').value = '';
             document.getElementById('soDetailsPreview').style.display = 'none';
             
-            // Clear item dropdown
-            const itemSelect = $('#itemCodeSelect');
-            itemSelect.empty();
-            itemSelect.append('<option value="">Select Item</option>');
-            itemSelect.trigger('change');
+            // Clear items table
+            const tableBody = document.getElementById('itemsSelectionBody');
+            tableBody.innerHTML = `
+                <tr id="noItemsMessage">
+                    <td colspan="9" class="text-center py-4 text-muted">
+                        <i class="bi bi-inbox fs-4 d-block mb-2"></i>
+                        Select a Sales Order to see available items
+                    </td>
+                </tr>
+            `;
+            
+            // Reset select all checkbox
+            const selectAll = document.getElementById('selectAllItems');
+            if (selectAll) {
+                selectAll.checked = false;
+            }
         }
     }
 
     function populateItemsForSO(soId) {
         const items = soItemsData[soId] || [];
-        const itemSelect = $('#itemCodeSelect');
+        availableItems = items;
+        const tableBody = document.getElementById('itemsSelectionBody');
         
-        // Clear and add default option
-        itemSelect.empty();
-        itemSelect.append('<option value="">Select Item</option>');
+        if (items.length === 0) {
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="9" class="text-center py-4 text-muted">
+                        <i class="bi bi-inbox fs-4 d-block mb-2"></i>
+                        No items found for this sales order
+                    </td>
+                </tr>
+            `;
+            return;
+        }
         
-        // Add items from the selected SO
-        items.forEach(item => {
-            // Check if item belongs to user's branch
-            <?php if (!$view_all_branches && $items_branch_column_exists): ?>
-            if (item.item_branch_id && item.item_branch_id != userBranchId) {
-                return; // Skip items not in user's branch
-            }
-            <?php endif; ?>
-            
+        let html = '';
+        items.forEach((item) => {
             // Calculate available quantity to pick
-            const alreadyPicked = 0; // You can calculate this from existing pick list items
-            const availableToPick = Math.min(
-                item.quantity_ordered - (item.quantity_delivered || 0) - alreadyPicked,
-                item.current_stock || 0
-            );
+            const orderedQty = item.quantity_ordered || 0;
+            const stockQty = item.current_stock || 0;
+            const availableToPick = Math.min(orderedQty, stockQty);
             
-            if (availableToPick > 0) {
-                const option = new Option(
-                    item.item_code + ' - ' + item.item_name + 
-                    ' (Ordered: ' + item.quantity_ordered + 
-                    ', Stock: ' + item.current_stock + 
-                    ', Available: ' + availableToPick + ')',
-                    item.item_code,
-                    false,
-                    false
-                );
-                
-                // Add data attributes
-                $(option).attr('data-item-id', item.item_id);
-                $(option).attr('data-item-name', item.item_name);
-                $(option).attr('data-unit-price', item.unit_price);
-                $(option).attr('data-unit-type', item.unit_type);
-                $(option).attr('data-current-stock', item.current_stock || 0);
-                $(option).attr('data-quantity-ordered', availableToPick);
-                
-                itemSelect.append(option);
-            }
+            // Skip if no quantity available
+            if (availableToPick <= 0) return;
+            
+            // Sanitize item name for HTML attribute
+            const safeItemName = item.item_name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+            
+            html += `
+                <tr class="item-row" data-item-id="${item.item_id}" data-item-code="${item.item_code}">
+                    <td>
+                        <input type="checkbox" class="form-check-input item-select-checkbox" 
+                               id="item_${item.item_id}" value="${item.item_id}"
+                               data-item-id="${item.item_id}"
+                               data-item-code="${item.item_code}"
+                               data-item-name="${safeItemName}"
+                               data-unit-type="${item.unit_type}"
+                               data-max-qty="${availableToPick}"
+                               onchange="toggleItemSelection(this)">
+                    </td>
+                    <td><strong>${item.item_code}</strong></td>
+                    <td>${item.item_name}</td>
+                    <td>${item.unit_type.toUpperCase()}</td>
+                    <td class="text-center">${orderedQty}</td>
+                    <td class="text-center">${stockQty}</td>
+                    <td class="text-center">
+                        <span class="badge ${availableToPick > 0 ? 'bg-success' : 'bg-danger'}">
+                            ${availableToPick}
+                        </span>
+                    </td>
+                    <td>
+                        <input type="number" class="form-control form-control-sm item-qty-input" 
+                               min="1" max="${availableToPick}" value="${Math.min(1, availableToPick)}" 
+                               disabled data-item-id="${item.item_id}" onchange="updateItemQuantity(this)">
+                    </td>
+                    <td>
+                        <input type="text" class="form-control form-control-sm item-location-input" 
+                               placeholder="e.g., A-01-01" value="A-01-01" 
+                               disabled data-item-id="${item.item_id}">
+                    </td>
+                </tr>
+            `;
         });
         
-        itemSelect.trigger('change');
-    }
-
-    function onItemSelected() {
-        const select = document.getElementById('itemCodeSelect');
-        const selectedOption = select.options[select.selectedIndex];
-        
-        if (selectedOption && selectedOption.value) {
-            const itemCode = selectedOption.value;
-            const itemName = selectedOption.dataset.itemName;
-            const unitType = selectedOption.dataset.unitType;
-            const currentStock = parseInt(selectedOption.dataset.currentStock) || 0;
-            const itemId = selectedOption.dataset.itemId;
-            const quantityOrdered = parseInt(selectedOption.dataset.quantityOrdered) || 0;
-            
-            // Check if enough stock
-            if (currentStock < quantityOrdered) {
-                Swal.fire({
-                    icon: 'warning',
-                    title: 'Insufficient Stock',
-                    text: `Only ${currentStock} ${unitType} available. Cannot pick ${quantityOrdered}.`,
-                    confirmButtonColor: '#0d6efd'
-                });
-                return;
-            }
-            
-            // Fill hidden fields
-            document.getElementById('itemCode').value = itemCode;
-            document.getElementById('itemId').value = itemId;
-            
-            // Show and update preview
-            document.getElementById('previewItemName').textContent = itemName;
-            document.getElementById('previewUnitType').textContent = unitType.toUpperCase();
-            
-            let stockStatus = currentStock + ' ' + unitType.toUpperCase() + ' available';
-            if (currentStock <= 10) {
-                stockStatus += ' ⚠️ Low Stock!';
-            }
-            document.getElementById('previewStock').textContent = stockStatus;
-            document.getElementById('itemPreview').style.display = 'block';
-            
-            // Auto-fill quantities
-            let remainingQty = Math.min(quantityOrdered, currentStock);
-            const cases = Math.floor(remainingQty / 12);
-            remainingQty = remainingQty % 12;
-            const innerPacks = Math.floor(remainingQty / 6);
-            const pieces = remainingQty % 6;
-            
-            document.getElementById('caseQty').value = cases;
-            document.getElementById('innerPackQty').value = innerPacks;
-            document.getElementById('pieceQty').value = pieces;
-            
-            // Calculate and set total quantity
-            const totalPieces = (cases * 12) + (innerPacks * 6) + pieces;
-            document.getElementById('totalQuantity').value = totalPieces;
-            
-            // Auto-fill location bin with default
-            document.getElementById('locationBin').value = 'A-01-01';
-            
+        if (html === '') {
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="9" class="text-center py-4 text-warning">
+                        <i class="bi bi-exclamation-triangle fs-4 d-block mb-2"></i>
+                        No items available to pick (all out of stock or already picked)
+                    </td>
+                </tr>
+            `;
         } else {
-            document.getElementById('itemCode').value = '';
-            document.getElementById('itemId').value = '';
-            document.getElementById('itemPreview').style.display = 'none';
-            document.getElementById('caseQty').value = 0;
-            document.getElementById('innerPackQty').value = 0;
-            document.getElementById('pieceQty').value = 0;
-            document.getElementById('totalQuantity').value = 0;
-            document.getElementById('locationBin').value = '';
+            tableBody.innerHTML = html;
+        }
+        
+        // Reset select all checkbox
+        const selectAll = document.getElementById('selectAllItems');
+        if (selectAll) {
+            selectAll.checked = false;
         }
     }
 
-    // Driver selection handler
-    $(document).ready(function() {
-        // Initialize Select2
-        $('.select2-so').select2({
-            placeholder: 'Search Sales Order...',
-            allowClear: true,
-            dropdownParent: $('#itemModal')
-        });
+    // Toggle all items in the selection table
+    function toggleAllItems() {
+        const selectAll = document.getElementById('selectAllItems');
+        const checkboxes = document.querySelectorAll('.item-select-checkbox');
         
-        $('.select2-item').select2({
-            placeholder: 'Select Item...',
-            allowClear: true,
-            dropdownParent: $('#itemModal')
-        });
-        
-        $('.select2-driver').select2({
-            placeholder: 'Search Driver...',
-            allowClear: true,
-            dropdownParent: $('#itemModal')
-        });
-
-        // Driver change event
-        $('#driverSelect').on('change', function() {
-            const select = document.getElementById('driverSelect');
-            const selectedOption = select.options[select.selectedIndex];
-            
-            if (selectedOption && selectedOption.value) {
-                const driverId = selectedOption.value;
-                const driverName = selectedOption.text.split(' - ')[0];
-                const vehiclePlate = selectedOption.dataset.plate || 'N/A';
-                const vehicleType = selectedOption.dataset.vehicle || 'N/A';
-                
-                document.getElementById('driverId').value = driverId;
-                
-                // Show driver info preview
-                document.getElementById('previewDriverName').textContent = 'Driver: ' + driverName;
-                document.getElementById('previewDriverVehicle').textContent = 'Vehicle: ' + vehicleType + ' - ' + vehiclePlate;
-                document.getElementById('driverInfoPreview').style.display = 'block';
-            } else {
-                document.getElementById('driverId').value = '';
-                document.getElementById('driverInfoPreview').style.display = 'none';
+        checkboxes.forEach(checkbox => {
+            checkbox.checked = selectAll.checked;
+            // Enable/disable quantity and location inputs based on checkbox
+            const row = checkbox.closest('tr');
+            const qtyInput = row.querySelector('.item-qty-input');
+            const locationInput = row.querySelector('.item-location-input');
+            if (qtyInput && locationInput) {
+                qtyInput.disabled = !selectAll.checked;
+                locationInput.disabled = !selectAll.checked;
+                if (!selectAll.checked) {
+                    qtyInput.value = 0;
+                } else {
+                    // Set default quantity to 1 when selecting
+                    const maxQty = parseInt(checkbox.dataset.maxQty) || 1;
+                    qtyInput.value = Math.min(1, maxQty);
+                }
             }
         });
-    });
+    }
+
+    // Toggle individual item selection
+    function toggleItemSelection(checkbox) {
+        const row = checkbox.closest('tr');
+        const qtyInput = row.querySelector('.item-qty-input');
+        const locationInput = row.querySelector('.item-location-input');
+        
+        qtyInput.disabled = !checkbox.checked;
+        locationInput.disabled = !checkbox.checked;
+        
+        if (!checkbox.checked) {
+            qtyInput.value = 0;
+        } else {
+            // Set default quantity to 1 or max available
+            const maxQty = parseInt(checkbox.dataset.maxQty) || 1;
+            qtyInput.value = Math.min(1, maxQty);
+        }
+        
+        // Update select all checkbox state
+        updateSelectAllState();
+    }
+
+    // Update select all checkbox state
+    function updateSelectAllState() {
+        const checkboxes = document.querySelectorAll('.item-select-checkbox');
+        const selectAll = document.getElementById('selectAllItems');
+        
+        if (checkboxes.length === 0) {
+            selectAll.checked = false;
+            selectAll.indeterminate = false;
+            return;
+        }
+        
+        const checkedCount = Array.from(checkboxes).filter(cb => cb.checked).length;
+        
+        if (checkedCount === 0) {
+            selectAll.checked = false;
+            selectAll.indeterminate = false;
+        } else if (checkedCount === checkboxes.length) {
+            selectAll.checked = true;
+            selectAll.indeterminate = false;
+        } else {
+            selectAll.checked = false;
+            selectAll.indeterminate = true;
+        }
+    }
+
+    // Update item quantity (ensure it doesn't exceed max)
+    function updateItemQuantity(input) {
+        const max = parseInt(input.max);
+        let value = parseInt(input.value);
+        
+        if (isNaN(value) || value < 1) {
+            input.value = 1;
+        } else if (value > max) {
+            input.value = max;
+            Swal.fire({
+                icon: 'warning',
+                title: 'Maximum Quantity',
+                text: `Cannot pick more than ${max} pieces (available stock)`,
+                timer: 2000,
+                showConfirmButton: false
+            });
+        }
+    }
 
     // ========== SAVE FUNCTIONS ==========
     function saveItem() {
+        console.log("saveItem called"); // For debugging
+        
         // Validate required fields
         const soId = document.getElementById('soId').value;
-        const itemId = document.getElementById('itemId').value;
-        const totalQuantity = document.getElementById('totalQuantity').value;
-        const locationBin = document.getElementById('locationBin').value;
-        const encodedBy = document.getElementById('encodedBy').value;
         const driverId = document.getElementById('driverId').value;
         
         if (!soId) {
@@ -2371,36 +2754,6 @@ function getBranchBadge($branch_id, $branch_name) {
                 icon: 'warning',
                 title: 'Missing Field',
                 text: 'Please select a Sales Order',
-                confirmButtonColor: '#0d6efd'
-            });
-            return;
-        }
-        
-        if (!itemId) {
-            Swal.fire({
-                icon: 'warning',
-                title: 'Missing Field',
-                text: 'Please select an Item',
-                confirmButtonColor: '#0d6efd'
-            });
-            return;
-        }
-        
-        if (totalQuantity <= 0) {
-            Swal.fire({
-                icon: 'warning',
-                title: 'Invalid Quantity',
-                text: 'The selected item has no available quantity to pick',
-                confirmButtonColor: '#0d6efd'
-            });
-            return;
-        }
-        
-        if (!locationBin) {
-            Swal.fire({
-                icon: 'warning',
-                title: 'Missing Field',
-                text: 'Location/Bin is required',
                 confirmButtonColor: '#0d6efd'
             });
             return;
@@ -2416,20 +2769,249 @@ function getBranchBadge($branch_id, $branch_name) {
             return;
         }
         
+        // Get selected items
+        const selectedItems = [];
+        const checkboxes = document.querySelectorAll('.item-select-checkbox:checked');
+        
+        if (checkboxes.length === 0) {
+            Swal.fire({
+                icon: 'warning',
+                title: 'No Items Selected',
+                text: 'Please select at least one item to pick',
+                confirmButtonColor: '#0d6efd'
+            });
+            return;
+        }
+        
+        let hasError = false;
+        checkboxes.forEach(checkbox => {
+            const row = checkbox.closest('tr');
+            const qtyInput = row.querySelector('.item-qty-input');
+            const locationInput = row.querySelector('.item-location-input');
+            const maxQty = parseInt(checkbox.dataset.maxQty) || 0;
+            const quantity = parseInt(qtyInput.value) || 0;
+            
+            if (quantity <= 0) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Invalid Quantity',
+                    text: `Please enter a valid quantity for item ${checkbox.dataset.itemCode}`,
+                    confirmButtonColor: '#0d6efd'
+                });
+                hasError = true;
+                return;
+            }
+            
+            if (quantity > maxQty) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Quantity Exceeds Stock',
+                    text: `Cannot pick ${quantity} of ${checkbox.dataset.itemCode}. Max available: ${maxQty}`,
+                    confirmButtonColor: '#0d6efd'
+                });
+                hasError = true;
+                return;
+            }
+            
+            if (!locationInput.value.trim()) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Missing Location',
+                    text: `Please enter a location/bin for item ${checkbox.dataset.itemCode}`,
+                    confirmButtonColor: '#0d6efd'
+                });
+                hasError = true;
+                return;
+            }
+            
+            selectedItems.push({
+                item_id: checkbox.value,
+                item_code: checkbox.dataset.itemCode,
+                quantity: quantity,
+                location_bin: locationInput.value.trim()
+            });
+        });
+        
+        if (hasError) return;
+        
         // Show loading
         showLoading();
         
-        // Prepare form data
+        // Save items sequentially
+        const savePromises = selectedItems.map(item => {
+            const formData = new FormData();
+            formData.append('action', 'save_pick_item');
+            formData.append('so_id', soId);
+            formData.append('item_id', item.item_id);
+            formData.append('quantity_to_pick', item.quantity);
+            formData.append('location_bin', item.location_bin);
+            formData.append('encoded_by', currentUserId);
+            formData.append('driver_id', driverId);
+            
+            return fetch('pick_list_items.php', {
+                method: 'POST',
+                body: formData
+            }).then(response => response.json());
+        });
+        
+        Promise.all(savePromises)
+            .then(results => {
+                hideLoading();
+                
+                // Check if all succeeded
+                const allSuccess = results.every(r => r.success);
+                const failedCount = results.filter(r => !r.success).length;
+                
+                if (allSuccess) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Success!',
+                        text: `Added ${selectedItems.length} item(s) to pick list successfully.`,
+                        confirmButtonColor: '#0d6efd',
+                        timer: 2000
+                    }).then(() => {
+                        const modal = bootstrap.Modal.getInstance(document.getElementById('itemModal'));
+                        if (modal) {
+                            modal.hide();
+                            // Remove modal backdrop manually if it persists
+                            const backdrop = document.querySelector('.modal-backdrop');
+                            if (backdrop) {
+                                backdrop.remove();
+                            }
+                            document.body.classList.remove('modal-open');
+                        }
+                        location.reload();
+                    });
+                } else {
+                    // Some failed
+                    const successCount = selectedItems.length - failedCount;
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'Partial Success',
+                        html: `
+                            <p>${successCount} of ${selectedItems.length} items were added successfully.</p>
+                            <p class="text-danger">${failedCount} item(s) failed.</p>
+                            <p class="small text-muted">Please check the logs for details.</p>
+                        `,
+                        confirmButtonColor: '#0d6efd'
+                    }).then(() => {
+                        location.reload();
+                    });
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                console.error('Error:', error);
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: 'An error occurred while saving the items',
+                    confirmButtonColor: '#0d6efd'
+                });
+            });
+    }
+
+    // ========== EDIT FUNCTIONS ==========
+    function editItem(id) {
+        // Clear any selected item from view
+        selectedPickItemId = null;
+        
+        showLoading();
+        
         const formData = new FormData();
-        formData.append('action', 'save_pick_item');
-        formData.append('so_id', soId);
-        formData.append('item_id', itemId);
-        formData.append('quantity_to_pick', totalQuantity);
+        formData.append('action', 'get_pick_item');
+        formData.append('pick_item_id', id);
+        
+        fetch('pick_list_items.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            hideLoading();
+            
+            if (data.success) {
+                const item = data.item;
+                
+                document.getElementById('editPickItemId').value = item.pick_item_id;
+                document.getElementById('editItemId').value = item.item_id;
+                document.getElementById('editPickListId').value = item.pick_list_id;
+                document.getElementById('editItemCode').value = item.item_code;
+                document.getElementById('editItemName').value = item.item_name;
+                document.getElementById('editQuantity').value = item.quantity_to_pick;
+                document.getElementById('editLocationBin').value = item.location_bin;
+                document.getElementById('editCurrentStock').textContent = item.current_stock;
+                document.getElementById('editCurrentQuantity').textContent = item.quantity_to_pick;
+                
+                // Set max attribute for quantity input
+                const maxQty = parseInt(item.current_stock) + parseInt(item.quantity_to_pick);
+                document.getElementById('editQuantity').max = maxQty;
+                document.getElementById('editStockInfo').textContent = `Max available: ${maxQty}`;
+                
+                // Set driver selection
+                $('#editDriverSelect').val(item.driver_id || '').trigger('change');
+                document.getElementById('editDriverId').value = item.driver_id || '';
+                
+                // Show alert based on stock
+                const stockAlert = document.getElementById('editStockAlert');
+                if (parseInt(item.current_stock) < parseInt(item.quantity_to_pick)) {
+                    stockAlert.className = 'alert alert-warning';
+                    stockAlert.innerHTML = `
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        Warning: Current stock (${item.current_stock}) is less than pick quantity (${item.quantity_to_pick}). 
+                        You may need to adjust the quantity.
+                    `;
+                } else {
+                    stockAlert.className = 'alert alert-info';
+                    stockAlert.innerHTML = `
+                        <i class="bi bi-info-circle me-2"></i>
+                        Current stock: ${item.current_stock} | Current pick quantity: ${item.quantity_to_pick}
+                    `;
+                }
+                
+                new bootstrap.Modal(document.getElementById('editItemModal')).show();
+            } else {
+                Swal.fire('Error', data.message, 'error');
+            }
+        })
+        .catch(error => {
+            hideLoading();
+            console.error('Error:', error);
+            Swal.fire('Error', 'An error occurred while fetching item details', 'error');
+        });
+    }
+
+    function updateItem() {
+        const pickItemId = document.getElementById('editPickItemId').value;
+        const quantity = document.getElementById('editQuantity').value;
+        const locationBin = document.getElementById('editLocationBin').value;
+        const driverId = document.getElementById('editDriverId').value;
+        
+        if (!quantity || quantity < 1) {
+            Swal.fire('Warning', 'Please enter a valid quantity', 'warning');
+            return;
+        }
+        
+        if (!locationBin.trim()) {
+            Swal.fire('Warning', 'Location/Bin is required', 'warning');
+            return;
+        }
+        
+        const maxQty = parseInt(document.getElementById('editQuantity').max);
+        if (parseInt(quantity) > maxQty) {
+            Swal.fire('Warning', `Quantity cannot exceed ${maxQty}`, 'warning');
+            return;
+        }
+        
+        showLoading();
+        
+        const formData = new FormData();
+        formData.append('action', 'update_pick_item');
+        formData.append('pick_item_id', pickItemId);
+        formData.append('quantity_to_pick', quantity);
         formData.append('location_bin', locationBin);
-        formData.append('encoded_by', encodedBy);
         formData.append('driver_id', driverId);
         
-        // Send AJAX request
         fetch('pick_list_items.php', {
             method: 'POST',
             body: formData
@@ -2443,32 +3025,28 @@ function getBranchBadge($branch_id, $branch_name) {
                     icon: 'success',
                     title: 'Success!',
                     text: data.message,
-                    confirmButtonColor: '#0d6efd',
-                    timer: 2000
+                    timer: 2000,
+                    showConfirmButton: false
                 }).then(() => {
-                    // Close modal
-                    bootstrap.Modal.getInstance(document.getElementById('itemModal')).hide();
-                    // Reload page to show updated data
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('editItemModal'));
+                    if (modal) {
+                        modal.hide();
+                        const backdrop = document.querySelector('.modal-backdrop');
+                        if (backdrop) {
+                            backdrop.remove();
+                        }
+                        document.body.classList.remove('modal-open');
+                    }
                     location.reload();
                 });
             } else {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error',
-                    text: data.message,
-                    confirmButtonColor: '#0d6efd'
-                });
+                Swal.fire('Error', data.message, 'error');
             }
         })
         .catch(error => {
             hideLoading();
             console.error('Error:', error);
-            Swal.fire({
-                icon: 'error',
-                title: 'Error',
-                text: 'An error occurred while saving the item',
-                confirmButtonColor: '#0d6efd'
-            });
+            Swal.fire('Error', 'An error occurred while updating the item', 'error');
         });
     }
 
@@ -2488,6 +3066,8 @@ function getBranchBadge($branch_id, $branch_name) {
         const driverName = row.dataset.driverName || 'Unassigned';
         const stockText = row.querySelector('.stock-indicator')?.innerText || 'Stock: 0';
         const branchName = row.dataset.branchName || `Branch ${row.dataset.branchId}`;
+        const encodedBy = row.dataset.encodedBy || 'System';
+        const encodedAt = row.dataset.encodedAt ? new Date(row.dataset.encodedAt).toLocaleString() : 'N/A';
         
         let detailsHtml = `
             <div class="col-md-6">
@@ -2506,6 +3086,22 @@ function getBranchBadge($branch_id, $branch_name) {
                 <div class="detail-card">
                     <div class="detail-label">Quantity to Pick</div>
                     <div class="detail-value">${quantity}</div>
+                </div>
+                <div class="detail-card">
+                    <div class="detail-label">Encoded By</div>
+                    <div class="detail-value">
+                        <span class="badge bg-info">
+                            <i class="bi bi-person"></i> ${encodedBy}
+                        </span>
+                    </div>
+                </div>
+                <div class="detail-card">
+                    <div class="detail-label">Encoded At</div>
+                    <div class="detail-value">
+                        <span class="text-muted">
+                            <i class="bi bi-calendar"></i> ${encodedAt}
+                        </span>
+                    </div>
                 </div>
             </div>
             <div class="col-md-6">
@@ -2548,27 +3144,27 @@ function getBranchBadge($branch_id, $branch_name) {
         
         document.getElementById('viewItemDetails').innerHTML = detailsHtml;
         
-        // Show/hide edit button based on permissions
+        // Show/hide edit button based on status and permissions
         const editBtn = document.getElementById('editFromViewBtn');
         if (editBtn) {
-            <?php if ($view_all_branches): ?>
-            editBtn.style.display = 'inline-block';
-            <?php else: ?>
-            editBtn.style.display = 'none';
-            <?php endif; ?>
+            if (status === 'open' && (viewAllBranches || (pickListsBranchColumnExists && row.dataset.branchId == userBranchId))) {
+                editBtn.style.display = 'inline-block';
+                editBtn.onclick = function() { editFromView(); };
+            } else {
+                editBtn.style.display = 'none';
+            }
         }
         
         new bootstrap.Modal(document.getElementById('viewItemModal')).show();
     }
 
-    function editCurrentItem() {
+    function editFromView() {
         bootstrap.Modal.getInstance(document.getElementById('viewItemModal')).hide();
-        Swal.fire({
-            icon: 'info',
-            title: 'Edit Item',
-            text: 'Edit functionality for pick list items will be available soon',
-            confirmButtonColor: '#0d6efd'
-        });
+        setTimeout(() => {
+            if (selectedPickItemId) {
+                editItem(selectedPickItemId);
+            }
+        }, 300);
     }
 
     // ========== DELETE FUNCTIONS ==========
@@ -2616,7 +3212,16 @@ function getBranchBadge($branch_id, $branch_name) {
                     timer: 2000
                 }).then(() => {
                     // Close modal
-                    bootstrap.Modal.getInstance(document.getElementById('deleteModal')).hide();
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('deleteModal'));
+                    if (modal) {
+                        modal.hide();
+                        // Remove modal backdrop manually if it persists
+                        const backdrop = document.querySelector('.modal-backdrop');
+                        if (backdrop) {
+                            backdrop.remove();
+                        }
+                        document.body.classList.remove('modal-open');
+                    }
                     // Reload page to show updated data
                     location.reload();
                 });
@@ -2640,6 +3245,76 @@ function getBranchBadge($branch_id, $branch_name) {
             });
         });
     }
+
+    // ========== DRIVER SELECTION HANDLER ==========
+    $(document).ready(function() {
+        console.log("Document ready - initializing Select2");
+        
+        // Initialize Select2
+        $('.select2-so').select2({
+            placeholder: 'Search Sales Order...',
+            allowClear: true,
+            dropdownParent: $('#itemModal')
+        });
+        
+        $('.select2-driver').select2({
+            placeholder: 'Search Driver...',
+            allowClear: true,
+            dropdownParent: $('#itemModal')
+        });
+        
+        $('.select2-driver-edit').select2({
+            placeholder: 'Select Driver...',
+            allowClear: true,
+            dropdownParent: $('#editItemModal')
+        });
+
+        // Driver change event for add modal
+        $('#driverSelect').on('change', function() {
+            const select = document.getElementById('driverSelect');
+            const selectedOption = select.options[select.selectedIndex];
+            
+            if (selectedOption && selectedOption.value) {
+                const driverId = selectedOption.value;
+                const driverName = selectedOption.text.split(' - ')[0];
+                const vehiclePlate = selectedOption.dataset.plate || 'N/A';
+                const vehicleType = selectedOption.dataset.vehicle || 'N/A';
+                
+                document.getElementById('driverId').value = driverId;
+                
+                // Show driver info preview
+                document.getElementById('previewDriverName').textContent = 'Driver: ' + driverName;
+                document.getElementById('previewDriverVehicle').textContent = 'Vehicle: ' + vehicleType + ' - ' + vehiclePlate;
+                document.getElementById('driverInfoPreview').style.display = 'block';
+            } else {
+                document.getElementById('driverId').value = '';
+                document.getElementById('driverInfoPreview').style.display = 'none';
+            }
+        });
+        
+        // Driver change event for edit modal
+        $('#editDriverSelect').on('change', function() {
+            const select = document.getElementById('editDriverSelect');
+            const selectedOption = select.options[select.selectedIndex];
+            
+            if (selectedOption && selectedOption.value) {
+                document.getElementById('editDriverId').value = selectedOption.value;
+            } else {
+                document.getElementById('editDriverId').value = '';
+            }
+        });
+        
+        // Fix for modal backdrop issue when clicking cancel
+        $('#itemModal, #editItemModal, #deleteModal, #viewItemModal').on('hidden.bs.modal', function () {
+            // Remove any lingering backdrops
+            const backdrop = document.querySelector('.modal-backdrop');
+            if (backdrop) {
+                backdrop.remove();
+            }
+            document.body.classList.remove('modal-open');
+            document.body.style.removeProperty('padding-right');
+        });
+    });
 
     // ========== HELPER FUNCTIONS ==========
     function getPickStatusBadge(status) {
@@ -2689,6 +3364,8 @@ function getBranchBadge($branch_id, $branch_name) {
             'Location/Bin',
             'Status',
             'Assigned Driver',
+            'Encoded By',
+            'Encoded At',
             'Current Stock'
         ];
         excelData.push(headers);
@@ -2713,6 +3390,8 @@ function getBranchBadge($branch_id, $branch_name) {
                 const location = cells[cellIndex++]?.innerText || '';
                 const status = cells[cellIndex++]?.innerText || '';
                 const driver = cells[cellIndex++]?.innerText || '';
+                const encodedBy = cells[cellIndex++]?.innerText || '';
+                const encodedAt = cells[cellIndex++]?.innerText || '';
                 
                 // Extract stock from the stock indicator
                 let stock = 0;
@@ -2733,6 +3412,8 @@ function getBranchBadge($branch_id, $branch_name) {
                     location,
                     status,
                     driver,
+                    encodedBy,
+                    encodedAt,
                     stock
                 ];
                 
@@ -2754,7 +3435,9 @@ function getBranchBadge($branch_id, $branch_name) {
             { wch: 15 }, // Quantity Picked
             { wch: 15 }, // Location/Bin
             { wch: 15 }, // Status
-            { wch: 25 }, // Assigned Driver
+            { wch: 20 }, // Assigned Driver
+            { wch: 20 }, // Encoded By
+            { wch: 20 }, // Encoded At
             { wch: 15 }  // Current Stock
         ];
         ws['!cols'] = colWidths;
@@ -2808,40 +3491,28 @@ function getBranchBadge($branch_id, $branch_name) {
 
     // ========== DOCUMENT READY ==========
     document.addEventListener('DOMContentLoaded', function() {
-        console.log("Pick List Items - Branch Filtering Mode");
+        console.log("DOM fully loaded - Pick List Items Multi-Select Mode");
         console.log("User Branch:", userBranchId);
         console.log("View All Branches:", viewAllBranches);
         console.log("User Role:", userRole);
         console.log("Branch Name:", branchName);
-        console.log("Pick Lists Branch Column Exists:", pickListsBranchColumnExists);
-        console.log("Sales Orders Branch Column Exists:", salesOrdersBranchColumnExists);
-        console.log("Items Branch Column Exists:", itemsBranchColumnExists);
-        console.log("Drivers Branch Column Exists:", driversBranchColumnExists);
         
         initializeSidebar();
         
         // Mobile menu toggle
-        document.getElementById('mobileMenuBtn').addEventListener('click', function() {
-            const sidebar = document.getElementById('sidebar');
-            const isMobile = window.innerWidth <= 992;
-            
-            if (isMobile) {
-                sidebar.classList.toggle('active');
-                if (!document.querySelector('.sidebar-overlay')) {
-                    const overlay = document.createElement('div');
-                    overlay.className = 'sidebar-overlay';
-                    document.body.appendChild(overlay);
-                    overlay.addEventListener('click', closeMobileSidebar);
-                    setTimeout(() => overlay.classList.add('active'), 10);
-                }
-            } else {
+        const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+        if (mobileMenuBtn) {
+            mobileMenuBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
                 toggleSidebar();
-            }
-        });
+            });
+        }
         
         const desktopToggleBtn = document.getElementById('desktopToggleBtn');
         if (desktopToggleBtn) {
             desktopToggleBtn.addEventListener('click', function(e) {
+                e.preventDefault();
                 e.stopPropagation();
                 toggleSidebar();
             });
@@ -2866,6 +3537,24 @@ function getBranchBadge($branch_id, $branch_name) {
                 closeMobileSidebar();
             }
         });
+        
+        // Fix for modal backdrop issue when clicking cancel
+        const modals = ['itemModal', 'editItemModal', 'deleteModal', 'viewItemModal'];
+        modals.forEach(modalId => {
+            const modal = document.getElementById(modalId);
+            if (modal) {
+                modal.addEventListener('hidden.bs.modal', function () {
+                    // Remove any lingering backdrops
+                    const backdrop = document.querySelector('.modal-backdrop');
+                    if (backdrop) {
+                        backdrop.remove();
+                    }
+                    document.body.classList.remove('modal-open');
+                    document.body.style.removeProperty('padding-right');
+                    document.body.style.removeProperty('overflow');
+                });
+            }
+        });
     });
 
     // ========== KEYBOARD SHORTCUTS ==========
@@ -2875,7 +3564,7 @@ function getBranchBadge($branch_id, $branch_name) {
             toggleSidebar();
         } else if (e.ctrlKey && e.key === 'f') {
             e.preventDefault();
-            const searchInput = document.getElementById('searchInput');
+            const searchInput = document.getElementById('globalSearch');
             if (searchInput) searchInput.focus();
         } else if (e.ctrlKey && e.key === 'n') {
             e.preventDefault();
