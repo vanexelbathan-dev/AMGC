@@ -43,7 +43,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
     $items_branch_column_exists = true;
 }
 
-// Check if deliveries table exists and has necessary columns
+// Check if deliveries table exists
 $deliveries_table_exists = false;
 $check_deliveries = $conn->query("SHOW TABLES LIKE 'deliveries'");
 if ($check_deliveries && $check_deliveries->num_rows > 0) {
@@ -98,20 +98,20 @@ function createDeliveriesForPickList($conn, $pick_list_id, $branch_id, $user_id)
         }
         $check_tt_stmt->close();
         
-        // Check if delivery already exists for this customer/pick list
-        $check_delivery_query = "SELECT delivery_id FROM deliveries WHERE pick_list_id = ? AND customer_id = ?";
+        // Check if delivery already exists for this trip/so
+        $check_delivery_query = "SELECT delivery_id FROM deliveries WHERE trip_id = ? AND so_id = ?";
         $check_delivery_stmt = $conn->prepare($check_delivery_query);
-        $check_delivery_stmt->bind_param("ii", $pick_list_id, $pick_list['customer_id']);
+        $check_delivery_stmt->bind_param("ii", $trip_id, $pick_list['so_id']);
         $check_delivery_stmt->execute();
         $check_delivery_result = $check_delivery_stmt->get_result();
         
         if ($check_delivery_result->num_rows == 0) {
             // Create delivery record
             $insert_delivery_query = "INSERT INTO deliveries 
-                                      (trip_id, so_id, customer_id, pick_list_id, driver_id, branch_id, stop_sequence, delivery_status, created_at, created_by) 
-                                      VALUES (?, ?, ?, ?, ?, ?, 1, 'pending', NOW(), ?)";
+                                      (trip_id, so_id, customer_id, driver_id, branch_id, stop_sequence, delivery_status, created_at, created_by) 
+                                      VALUES (?, ?, ?, ?, ?, 1, 'pending', NOW(), ?)";
             $insert_delivery_stmt = $conn->prepare($insert_delivery_query);
-            $insert_delivery_stmt->bind_param("iiiiiii", $trip_id, $pick_list['so_id'], $pick_list['customer_id'], $pick_list_id, $pick_list['driver_id'], $branch_id, $user_id);
+            $insert_delivery_stmt->bind_param("iiiiii", $trip_id, $pick_list['so_id'], $pick_list['customer_id'], $pick_list['driver_id'], $branch_id, $user_id);
             $insert_delivery_stmt->execute();
             $insert_delivery_stmt->close();
             
@@ -951,63 +951,60 @@ function formatLocation($row) {
                         </thead>
                         <tbody>
                             <?php
-                            // Find this query around line 950-1000 and replace it with this corrected version:
-// Build query with branch filter and customer location - ORDER BY pick_status to prioritize pending
-$pick_list_items_query = "SELECT 
-    pli.pick_item_id,
-    pli.pick_list_id,
-    pli.item_id,
-    pli.quantity_to_pick,
-    pli.quantity_picked,
-    pli.location_bin,
-    pl.pick_list_number, 
-    pl.pick_status as pick_list_status,
-    pl.branch_id,
-    b.branch_name,
-    i.item_name, 
-    i.item_code,
-    d.driver_id,
-    d.driver_name,
-    d.vehicle_plate_number,
-    so.order_status,
-    so.so_number,
-    c.latitude as customer_latitude,
-    c.longitude as customer_longitude,
-    c.full_address as customer_address,
-    c.delivery_instructions,
-    -- Check if delivery exists for this pick list
-    (SELECT COUNT(*) FROM deliveries d WHERE d.pick_list_id = pl.pick_list_id) as has_delivery
-FROM pick_list_items pli
-INNER JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
-INNER JOIN branches b ON pl.branch_id = b.branch_id
-INNER JOIN items i ON pli.item_id = i.item_id
-LEFT JOIN drivers d ON pl.driver_id = d.driver_id
-LEFT JOIN sales_orders so ON pl.so_id = so.so_id
-LEFT JOIN customers c ON so.customer_id = c.customer_id";
+                            // FIXED: Removed the subquery that was causing the error
+                            $pick_list_items_query = "SELECT 
+                                pli.pick_item_id,
+                                pli.pick_list_id,
+                                pli.item_id,
+                                pli.quantity_to_pick,
+                                pli.quantity_picked,
+                                pli.location_bin,
+                                pl.pick_list_number, 
+                                pl.pick_status as pick_list_status,
+                                pl.branch_id,
+                                b.branch_name,
+                                i.item_name, 
+                                i.item_code,
+                                d.driver_id,
+                                d.driver_name,
+                                d.vehicle_plate_number,
+                                so.order_status,
+                                so.so_number,
+                                c.latitude as customer_latitude,
+                                c.longitude as customer_longitude,
+                                c.full_address as customer_address,
+                                c.delivery_instructions
+                            FROM pick_list_items pli
+                            INNER JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
+                            INNER JOIN branches b ON pl.branch_id = b.branch_id
+                            INNER JOIN items i ON pli.item_id = i.item_id
+                            LEFT JOIN drivers d ON pl.driver_id = d.driver_id
+                            LEFT JOIN sales_orders so ON pl.so_id = so.so_id
+                            LEFT JOIN customers c ON so.customer_id = c.customer_id";
 
-if (!$view_all_branches && $user_branch_id > 0) {
-    $pick_list_items_query .= " WHERE pl.branch_id = ?";
-    $pick_list_items_query .= " ORDER BY 
-        CASE 
-            WHEN pl.pick_status IN ('open', 'in-progress') THEN 1
-            WHEN pl.pick_status = 'completed' THEN 2
-            ELSE 3
-        END,
-        pli.pick_item_id DESC";
-    
-    $stmt = $conn->prepare($pick_list_items_query);
-    $stmt->bind_param("i", $user_branch_id);
-} else {
-    $pick_list_items_query .= " ORDER BY 
-        CASE 
-            WHEN pl.pick_status IN ('open', 'in-progress') THEN 1
-            WHEN pl.pick_status = 'completed' THEN 2
-            ELSE 3
-        END,
-        pli.pick_item_id DESC";
-    
-    $stmt = $conn->prepare($pick_list_items_query);
-}
+                            if (!$view_all_branches && $user_branch_id > 0) {
+                                $pick_list_items_query .= " WHERE pl.branch_id = ?";
+                                $pick_list_items_query .= " ORDER BY 
+                                    CASE 
+                                        WHEN pl.pick_status IN ('open', 'in-progress') THEN 1
+                                        WHEN pl.pick_status = 'completed' THEN 2
+                                        ELSE 3
+                                    END,
+                                    pli.pick_item_id DESC";
+                                
+                                $stmt = $conn->prepare($pick_list_items_query);
+                                $stmt->bind_param("i", $user_branch_id);
+                            } else {
+                                $pick_list_items_query .= " ORDER BY 
+                                    CASE 
+                                        WHEN pl.pick_status IN ('open', 'in-progress') THEN 1
+                                        WHEN pl.pick_status = 'completed' THEN 2
+                                        ELSE 3
+                                    END,
+                                    pli.pick_item_id DESC";
+                                
+                                $stmt = $conn->prepare($pick_list_items_query);
+                            }
                             
                             $stmt->execute();
                             $result = $stmt->get_result();
@@ -1025,6 +1022,15 @@ if (!$view_all_branches && $user_branch_id > 0) {
                                     } elseif ($row['pick_list_status'] == 'completed') {
                                         $status_group = 'completed';
                                     }
+                                    
+                                    if ($status_group != $current_status_group) {
+                                        $current_status_group = $status_group;
+                                        if ($status_group == 'pending') {
+                                            echo '<tr class="status-group-header pending"><td colspan="' . ($view_all_branches ? 9 : 8) . '"><i class="bi bi-hourglass-split"></i> PENDING ITEMS</td></tr>';
+                                        } elseif ($status_group == 'completed') {
+                                            echo '<tr class="status-group-header completed"><td colspan="' . ($view_all_branches ? 9 : 8) . '"><i class="bi bi-check-circle"></i> COMPLETED ITEMS</td></tr>';
+                                        }
+                                    }
                                     ?>
                                     <tr data-order-status="<?php echo $row['order_status'] ?? ''; ?>"
                                         data-driver-id="<?php echo $row['driver_id'] ?? ''; ?>"
@@ -1040,11 +1046,6 @@ if (!$view_all_branches && $user_branch_id > 0) {
                                                     <?php echo getPickStatusText($row['pick_list_status']); ?>
                                                 </small>
                                             <?php endif; ?>
-                                            <?php if ($row['has_delivery'] > 0 && $row['pick_list_status'] == 'completed'): ?>
-                                                <br><span class="delivery-status-badge delivery-created">
-                                                    <i class="bi bi-truck"></i> Delivery Ready
-                                                </span>
-                                            <?php endif; ?>
                                         </td>
                                         <td>
                                             <div class="fw-semibold"><?php echo htmlspecialchars($row['item_name']); ?></div>
@@ -1054,6 +1055,8 @@ if (!$view_all_branches && $user_branch_id > 0) {
                                         <td class="text-center"><?php echo number_format($row['quantity_picked']); ?></td>
                                         <td>
                                             <?php if (!empty($row['driver_name'])): ?>
+                                                <span class="driver-badge">
+                                                    <i class="bi bi-truck"></i>
                                                     <?php echo htmlspecialchars($row['driver_name']); ?>
                                                 </span>
                                             <?php else: ?>

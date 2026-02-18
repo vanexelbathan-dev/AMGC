@@ -70,9 +70,9 @@ if ($user_role == 'delivery' && $driver_id > 0 && $delivery_driver_column_exists
 
 // AUTO-CREATE DELIVERIES FROM WAREHOUSE READY ORDERS
 try {
-    // First, get the driver's trip tickets to know which orders they're assigned to
+    // For delivery role, filter by driver
     if ($user_role == 'delivery' && $driver_id > 0) {
-        // Get all trip tickets assigned to this driver
+        // Get trip tickets assigned to this driver
         $trip_ids_query = "SELECT trip_id FROM trip_tickets WHERE driver_id = ?";
         $trip_stmt = $conn->prepare($trip_ids_query);
         $trip_stmt->bind_param("i", $driver_id);
@@ -85,58 +85,31 @@ try {
         }
         $trip_stmt->close();
         
-        // If driver has trip tickets, create deliveries for them if not exist
+        // Create deliveries for trips without deliveries yet
         if (!empty($trip_ids)) {
             $trip_ids_str = implode(',', $trip_ids);
             
-            // Find sales orders that are 'ready' but don't have a delivery record yet
             $create_deliveries_query = "
-                INSERT INTO deliveries (trip_id, so_id, customer_id, stop_sequence, delivery_status, branch_id, driver_id, created_at, updated_at)
-                SELECT 
+                INSERT INTO deliveries (trip_id, so_id, customer_id, stop_sequence, delivery_status, branch_id, driver_id, created_at)
+                SELECT DISTINCT
                     tt.trip_id,
                     tt.so_id,
                     so.customer_id,
-                    NULL as stop_sequence,
+                    1 as stop_sequence,
                     'pending' as delivery_status,
-                    so.branch_id,
-                    ? as driver_id,
-                    NOW() as created_at,
-                    NOW() as updated_at
+                    tt.branch_id,
+                    tt.driver_id,
+                    NOW()
                 FROM trip_tickets tt
                 INNER JOIN sales_orders so ON tt.so_id = so.so_id
-                LEFT JOIN deliveries d ON tt.so_id = d.so_id
+                LEFT JOIN deliveries d ON tt.trip_id = d.trip_id AND tt.so_id = d.so_id
                 WHERE tt.trip_id IN ($trip_ids_str)
-                AND so.order_status IN ('ready', 'processing')
+                AND tt.trip_status IN ('planned', 'pending', 'in-progress')
                 AND d.delivery_id IS NULL
             ";
-            $create_stmt = $conn->prepare($create_deliveries_query);
-            $create_stmt->bind_param("i", $driver_id);
-            $create_stmt->execute();
-            $create_stmt->close();
+            $conn->query($create_deliveries_query);
         }
-    } else {
-        // For non-delivery roles, create deliveries as before
-        $create_deliveries_query = "
-            INSERT INTO deliveries (trip_id, so_id, customer_id, stop_sequence, delivery_status, branch_id, created_at, updated_at)
-            SELECT 
-                COALESCE(t.trip_id, 0) as trip_id,
-                so.so_id,
-                so.customer_id,
-                NULL as stop_sequence,
-                'pending' as delivery_status,
-                so.branch_id,
-                NOW() as created_at,
-                NOW() as updated_at
-            FROM sales_orders so
-            LEFT JOIN deliveries d ON so.so_id = d.so_id
-            LEFT JOIN trip_tickets t ON so.so_id = t.so_id
-            WHERE so.order_status IN ('ready', 'processing')
-            AND d.delivery_id IS NULL
-            AND so.branch_id = $branch_id
-        ";
-        $conn->query($create_deliveries_query);
     }
-    
 } catch (Exception $e) {
     error_log("Error auto-creating deliveries: " . $e->getMessage());
 }
