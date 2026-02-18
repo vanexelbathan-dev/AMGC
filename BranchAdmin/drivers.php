@@ -1050,13 +1050,8 @@ function formatDateTime($dateStr) {
                                     <?php endif; ?>
                                     <td class="col-user">
                                         <?php if ($driver['user_id']): ?>
-                                            <span class="user-badge">
-                                                <i class="bi bi-person-check"></i> 
+                                            <span class="user-badge"> 
                                                 <?= htmlspecialchars($driver['email']) ?>
-                                                <br>
-                                                <small class="text-muted"><?= htmlspecialchars($driver['first_name'] . ' ' . $driver['last_name']) ?></small>
-                                                <br>
-                                                <span class="badge <?= getUserStatusClass($driver['user_status']) ?>"><?= $driver['user_status'] ?></span>
                                             </span>
                                         <?php else: ?>
                                             <span class="text-muted fst-italic">No account</span>
