@@ -274,6 +274,9 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                     <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
                     <div class="user-details-sidebar">
                         <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
+                        <?php if (!$view_all_branches): ?>
+                            <span class="user-branch-sidebar"><i class="bi bi-building"></i> <?php echo htmlspecialchars($branch_name); ?></span>
+                        <?php endif; ?>
                     </div>
                 </div>
                 <button class="logout-btn-sidebar" onclick="logout()">
@@ -293,6 +296,11 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                 <div class="page-title">
                     <h2>
                         <i></i>Warehouse Dashboard
+                        <?php if (!$view_all_branches && $user_branch_id > 0): ?>
+                            <span class="branch-indicator">
+                                <i class="bi bi-building"></i> <?php echo htmlspecialchars($branch_name); ?>
+                            </span>
+                        <?php endif; ?>
                     </h2>
                     <p>Monitor inventory, shipments, and delivery operations</p>
                 </div>
@@ -444,7 +452,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                         </div>
                         <div>
                             <div class="stat-value"><?php echo $stats['pending_deliveries']; ?></div>
-                            <div class="stat-label">Pending Deliveries</div>
+                            <div class="stat-label">Pending Pickup</div>
                         </div>
                     </div>
                 </div>
@@ -520,7 +528,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                     </div>
                 </div>
 
-                <!-- Recent Trip Tickets - REMOVED CANCELLED STATUS -->
+                <!-- Recent Trip Tickets - UPDATED: Driver from Pick List (Plain Text Only) -->
                 <div class="col-lg-6 mb-4">
                     <div class="card">
                         <div class="card-header">
@@ -539,11 +547,28 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                 </thead>
                                 <tbody>
                                     <?php
-                                    $trip_tickets_query = "SELECT tt.*, d.driver_name, b.branch_name 
-                                                          FROM trip_tickets tt
-                                                          LEFT JOIN drivers d ON tt.driver_id = d.driver_id
-                                                          LEFT JOIN branches b ON tt.branch_id = b.branch_id
-                                                          WHERE tt.trip_status != 'cancelled'"; // EXCLUDE CANCELLED
+                                    // UPDATED QUERY: Get driver from pick list through picklist_id
+                                    $trip_tickets_query = "SELECT 
+                                        tt.trip_id,
+                                        tt.trip_number, 
+                                        tt.trip_date,
+                                        tt.trip_status,
+                                        tt.branch_id,
+                                        b.branch_name,
+                                        tt.picklist_id,
+                                        -- Get driver from pick list (priority) or fallback to trip ticket driver
+                                        COALESCE(pl.driver_name, d.driver_name) as driver_name
+                                    FROM trip_tickets tt
+                                    LEFT JOIN drivers d ON tt.driver_id = d.driver_id
+                                    LEFT JOIN branches b ON tt.branch_id = b.branch_id
+                                    LEFT JOIN (
+                                        SELECT 
+                                            pl.pick_list_id,
+                                            d.driver_name
+                                        FROM pick_lists pl
+                                        LEFT JOIN drivers d ON pl.driver_id = d.driver_id
+                                    ) pl ON tt.picklist_id = pl.pick_list_id
+                                    WHERE tt.trip_status != 'cancelled'"; // EXCLUDE CANCELLED
                                     
                                     // Check if trip_tickets has branch_id column
                                     $check_tt_branch = $conn->query("SHOW COLUMNS FROM trip_tickets LIKE 'branch_id'");
@@ -566,13 +591,16 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                                 case 'in-progress': $status_badge = 'bg-warning'; break;
                                                 default: $status_badge = 'bg-info';
                                             }
+                                            
+                                            // Determine driver display (plain text only)
+                                            $driver_display = !empty($row['driver_name']) ? $row['driver_name'] : 'N/A';
                                             ?>
                                             <tr>
                                                 <td><span class="badge bg-light text-dark"><?php echo $row['trip_number']; ?></span></td>
                                                 <?php if ($view_all_branches): ?>
                                                     <td><span class="badge bg-info"><?php echo htmlspecialchars($row['branch_name'] ?? 'N/A'); ?></span></td>
                                                 <?php endif; ?>
-                                                <td><?php echo $row['driver_name'] ?? 'N/A'; ?></td>
+                                                <td><?php echo htmlspecialchars($driver_display); ?></td>
                                                 <td><span class="badge <?php echo $status_badge; ?>"><?php echo ucfirst(str_replace('-', ' ', $row['trip_status'])); ?></span></td>
                                                 <td><?php echo date('Y-m-d', strtotime($row['trip_date'])); ?></td>
                                             </tr>

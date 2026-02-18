@@ -1,116 +1,4 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Trip Tickets - Delivery Management</title>
-    <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
-    <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
-    <link rel="shortcut icon" href="../Pictures/favicon.ico" />
-    <link rel="apple-touch-icon" sizes="180x180" href="../Pictures/apple-touch-icon.png" />
-    <link rel="manifest" href="../Pictures/site.webmanifest" />
-    <link rel="stylesheet" href="../css/delivery.css">
-    <!-- Bootstrap 5 CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
-    <style>
-        /* Branch badge styling */
-        .branch-badge {
-            background-color: #e7f1ff;
-            color: #0d6efd;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            margin-left: 5px;
-        }
-        
-        /* Alert for missing branch column */
-        .alert-info {
-            background-color: #d1ecf1;
-            border-color: #bee5eb;
-            color: #0c5460;
-        }
-        
-        .alert-info code {
-            background-color: #f8f9fa;
-            padding: 2px 4px;
-            border-radius: 4px;
-            color: #c7254e;
-        }
-        
-        /* Mobile responsive adjustments */
-        @media (max-width: 768px) {
-            .stat-card {
-                padding: 12px;
-                min-height: 85px;
-                margin-bottom: 8px;
-            }
-            
-            .stat-icon {
-                font-size: 2rem;
-                margin-right: 12px;
-            }
-            
-            .stat-value {
-                font-size: 1.5rem;
-            }
-            
-            .stat-label {
-                font-size: 0.8rem;
-            }
-            
-            .col-md-3 {
-                width: 50%;
-                padding-left: 8px;
-                padding-right: 8px;
-            }
-            
-            .row.g-3 {
-                margin-left: -8px;
-                margin-right: -8px;
-            }
-            
-            .mb-3 {
-                margin-bottom: 8px !important;
-            }
-        }
-        
-        @media (max-width: 576px) {
-            .stat-card {
-                min-height: 80px;
-                padding: 10px;
-            }
-            
-            .stat-icon {
-                font-size: 1.8rem;
-                margin-right: 10px;
-            }
-            
-            .stat-value {
-                font-size: 1.3rem;
-            }
-            
-            .stat-label {
-                font-size: 0.75rem;
-            }
-            
-            .col-md-3 {
-                width: 50%;
-                padding-left: 6px;
-                padding-right: 6px;
-            }
-            
-            .row.g-3 {
-                margin-left: -6px;
-                margin-right: -6px;
-            }
-        }
-    </style>
-</head>
-<body>
-    <?php
+<?php
 require_once '../config/database.php';
 require_once '../config/session_handler.php';
 
@@ -262,12 +150,27 @@ $branches_result = $conn->query($branches_query);
 $branches = $branches_result ? $branches_result->fetch_all(MYSQLI_ASSOC) : [];
 
 
-// ================= TRIP LIST =================
+// ================= TRIP LIST - UPDATED QUERY TO GET DRIVER FROM PICK LIST =================
 $trip_tickets_query = "
-    SELECT tt.*, d.driver_name, b.branch_name
+    SELECT 
+        tt.*, 
+        -- Get driver from pick list (priority) or fallback to trip ticket driver
+        COALESCE(pl.driver_name, d.driver_name) as driver_name,
+        b.branch_name,
+        pl.pick_list_id,
+        pl.pick_list_number
     FROM trip_tickets tt
     LEFT JOIN drivers d ON tt.driver_id = d.driver_id
     LEFT JOIN branches b ON tt.branch_id = b.branch_id
+    LEFT JOIN (
+        SELECT 
+            pl.pick_list_id,
+            pl.pick_list_number,
+            d.driver_name,
+            d.driver_id
+        FROM pick_lists pl
+        LEFT JOIN drivers d ON pl.driver_id = d.driver_id
+    ) pl ON tt.picklist_id = pl.pick_list_id
     WHERE 1=1
 ";
 
@@ -281,7 +184,152 @@ $result = $conn->query($trip_tickets_query);
 $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
 
 ?>
-
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trip Tickets - Delivery Management</title>
+    <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
+    <link rel="shortcut icon" href="../Pictures/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="../Pictures/apple-touch-icon.png" />
+    <link rel="manifest" href="../Pictures/site.webmanifest" />
+    <link rel="stylesheet" href="../css/delivery.css">
+    <!-- Bootstrap 5 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <style>
+        /* Branch badge styling */
+        .branch-badge {
+            background-color: #e7f1ff;
+            color: #0d6efd;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 5px;
+        }
+        
+        /* Alert for missing branch column */
+        .alert-info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        
+        .alert-info code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 4px;
+            color: #c7254e;
+        }
+        
+        /* Mobile responsive adjustments */
+        @media (max-width: 768px) {
+            .stat-card {
+                padding: 12px;
+                min-height: 85px;
+                margin-bottom: 8px;
+            }
+            
+            .stat-icon {
+                font-size: 2rem;
+                margin-right: 12px;
+            }
+            
+            .stat-value {
+                font-size: 1.5rem;
+            }
+            
+            .stat-label {
+                font-size: 0.8rem;
+            }
+            
+            .col-md-3 {
+                width: 50%;
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+            
+            .row.g-3 {
+                margin-left: -8px;
+                margin-right: -8px;
+            }
+            
+            .mb-3 {
+                margin-bottom: 8px !important;
+            }
+        }
+        
+        @media (max-width: 576px) {
+            .stat-card {
+                min-height: 80px;
+                padding: 10px;
+            }
+            
+            .stat-icon {
+                font-size: 1.8rem;
+                margin-right: 10px;
+            }
+            
+            .stat-value {
+                font-size: 1.3rem;
+            }
+            
+            .stat-label {
+                font-size: 0.75rem;
+            }
+            
+            .col-md-3 {
+                width: 50%;
+                padding-left: 6px;
+                padding-right: 6px;
+            }
+            
+            .row.g-3 {
+                margin-left: -6px;
+                margin-right: -6px;
+            }
+        }
+        
+        /* Driver badge styling */
+        .driver-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            background-color: #e8f4fd;
+            color: #084298;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            border-left: 3px solid #0d6efd;
+        }
+        
+        .driver-badge i {
+            margin-right: 4px;
+            color: #0d6efd;
+        }
+        
+        .picklist-indicator {
+            font-size: 10px;
+            color: #6c757d;
+            display: block;
+        }
+        
+        /* Status badges */
+        .status-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            min-width: 90px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
     <!-- MAIN APPLICATION -->
     <div id="appPage">
         <!-- Sidebar -->
@@ -344,6 +392,11 @@ $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
                 <div class="page-title">
                     <h2><i class="bi bi-ticket me-2"></i>Trip Tickets</h2>
                     <p>Track and manage delivery trip tickets</p>
+                </div>
+                <div class="ms-auto me-3">
+                    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTicketModal">
+                        <i class="bi bi-plus-circle me-1"></i> New Trip Ticket
+                    </button>
                 </div>
             </div>
 
@@ -462,7 +515,7 @@ $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
                                 <span class="input-group-text">
                                     <i class="bi bi-search"></i>
                                 </span>
-                                <input type="text" class="form-control" id="searchInput" placeholder="Search by ticket ID, driver, or destination...">
+                                <input type="text" class="form-control" id="searchInput" placeholder="Search by ticket ID, driver, or pick list...">
                             </div>
                         </div>
                         <div class="col-md-6">
@@ -492,18 +545,17 @@ $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
                 </div>
             <?php else: ?>
 
-            <!-- Trip Tickets Table -->
+            <!-- Trip Tickets Table - UPDATED: Total Stops Removed, Driver from Pick List -->
             <div class="card">
                 <div class="table-responsive">
                     <table class="table table-hover mb-0">
                         <thead class="table-light">
                             <tr>
                                 <th>Ticket Number</th>
-                                <th>Driver Name</th>
+                                <th>Driver</th>
                                 <th>Branch</th>
                                 <th>Trip Date</th>
                                 <th>Status</th>
-                                <th>Total Stops</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -513,26 +565,43 @@ $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
                                 $status_badge = '';
                                 switch($row['trip_status']) {
                                     case 'completed': $status_badge = 'bg-success'; break;
-                                    case 'in-progress': $status_badge = 'bg-warning'; break;
+                                    case 'in-progress': $status_badge = 'bg-warning text-dark'; break;
                                     case 'cancelled': $status_badge = 'bg-danger'; break;
                                     case 'delayed': $status_badge = 'bg-info'; break;
+                                    case 'planned':
                                     default: $status_badge = 'bg-secondary';
                                 }
+                                
+                                // Determine driver source
+                                $driver_display = !empty($row['driver_name']) ? $row['driver_name'] : 'N/A';
+                                $has_picklist_driver = !empty($row['pick_list_id']) && !empty($row['driver_name']);
                                 ?>
                                 <tr>
-                                    <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($row['trip_number']); ?></span></td>
-                                    <td><?php echo htmlspecialchars($row['driver_name'] ?? 'N/A'); ?></td>
+                                    <td>
+                                        <span class="badge bg-light text-dark fs-6 p-2"><?php echo htmlspecialchars($row['trip_number']); ?></span>
+                                    </td>
+                                    <td>
+                                        <?php if ($driver_display != 'N/A'): ?>
+                                                <?php echo htmlspecialchars($driver_display); ?>
+                                            </span>
+                                        <?php else: ?>
+                                            <span class="text-muted">—</span>
+                                        <?php endif; ?>
+                                    </td>
                                     <td>
                                         <?php echo htmlspecialchars($row['branch_name'] ?? 'N/A'); ?>
                                         <?php if ($tt_branch_column_exists && $view_all_branches): ?>
-                                            <small class="text-muted d-block">ID: <?php echo $row['branch_id']; ?></small>
+                                            <br><small class="text-muted">ID: <?php echo $row['branch_id']; ?></small>
                                         <?php endif; ?>
                                     </td>
                                     <td><?php echo date('Y-m-d', strtotime($row['trip_date'])); ?></td>
-                                    <td><span class="badge <?php echo $status_badge; ?>"><?php echo ucfirst(str_replace('-', ' ', $row['trip_status'])); ?></span></td>
-                                    <td><?php echo $row['total_stops'] ?? 0; ?></td>
                                     <td>
-                                        <button class="btn btn-sm btn-info" data-bs-toggle="modal" data-bs-target="#viewDetailsModal" 
+                                        <span class="badge <?php echo $status_badge; ?>" style="padding: 6px 12px;">
+                                            <?php echo ucfirst(str_replace('-', ' ', $row['trip_status'])); ?>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#viewDetailsModal" 
                                                 onclick="loadTripDetails('<?php echo $row['trip_id']; ?>')">
                                             <i class="bi bi-eye"></i> View
                                         </button>
@@ -852,7 +921,7 @@ $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
                 const rows = document.querySelectorAll('tbody tr');
                 
                 rows.forEach(row => {
-                    const statusCell = row.cells[4];
+                    const statusCell = row.cells[5];
                     if (statusCell) {
                         const status = statusCell.textContent.toLowerCase();
                         const statusValue = status.replace('in transit', 'in-progress').trim();
@@ -918,7 +987,7 @@ $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
 
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', function() {
-            console.log("Trip Tickets page loaded!");
+            console.log("Trip Tickets page loaded - Driver from Pick List");
             console.log("Branch ID:", branchId);
             console.log("View All Branches:", viewAllBranches);
             console.log("TT Branch Column Exists:", ttBranchColumnExists);
