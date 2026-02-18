@@ -87,7 +87,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $so_id = $_POST['so_id'];
             $item_id = $_POST['item_id'];
             $quantity_to_pick = $_POST['quantity_to_pick'];
-            $location_bin = $_POST['location_bin'];
+            $location_bin = $_POST['location_bin']; // This will now be the customer location
             $encoded_by = $_POST['encoded_by'];
             $driver_id = !empty($_POST['driver_id']) ? $_POST['driver_id'] : null;
             
@@ -612,7 +612,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 
-// ========== FETCH PICK LISTS WITH BRANCH FILTERING ==========
+// ========== FETCH PICK LISTS WITH BRANCH FILTERING AND CUSTOMER LOCATION ==========
 $picklist_query = "
     SELECT 
         pl.pick_list_id,
@@ -640,6 +640,12 @@ $picklist_query = "
         so.so_number,
         so.order_status,
         so.branch_id as so_branch_id,
+        so.customer_id,
+        c.customer_name,
+        c.latitude,
+        c.longitude,
+        c.full_address,
+        c.delivery_instructions,
         CONCAT(u.first_name, ' ', u.last_name) as encoded_by_name,
         u.email as encoded_by_email,
         pl.created_at as encoded_at
@@ -648,6 +654,7 @@ $picklist_query = "
     LEFT JOIN pick_list_items pli ON pl.pick_list_id = pli.pick_list_id
     LEFT JOIN items i ON pli.item_id = i.item_id
     LEFT JOIN sales_orders so ON pl.so_id = so.so_id
+    LEFT JOIN customers c ON so.customer_id = c.customer_id
     LEFT JOIN users u ON pl.picked_by = u.user_id
     LEFT JOIN drivers d ON pl.driver_id = d.driver_id
     WHERE 1=1
@@ -663,7 +670,7 @@ $picklist_query .= " ORDER BY pl.created_at DESC, pl.pick_list_id DESC";
 $picklist_result = $conn->query($picklist_query);
 $picklist_items = $picklist_result->fetch_all(MYSQLI_ASSOC);
 
-// ========== FETCH SALES ORDERS WITH BRANCH FILTERING ==========
+// ========== FETCH SALES ORDERS WITH BRANCH FILTERING AND CUSTOMER LOCATION ==========
 $so_query = "
     SELECT 
         so.so_id,
@@ -674,6 +681,10 @@ $so_query = "
         so.order_status,
         so.branch_id,
         c.customer_name,
+        c.latitude,
+        c.longitude,
+        c.full_address,
+        c.delivery_instructions,
         b.branch_name
     FROM sales_orders so
     LEFT JOIN customers c ON so.customer_id = c.customer_id
@@ -691,7 +702,7 @@ $so_query .= " ORDER BY so.order_date DESC";
 $so_result = $conn->query($so_query);
 $sales_orders = $so_result->fetch_all(MYSQLI_ASSOC);
 
-// ========== FETCH SALES ORDER ITEMS WITH BRANCH FILTERING ==========
+// ========== FETCH SALES ORDER ITEMS WITH BRANCH FILTERING AND CUSTOMER LOCATION ==========
 $so_items_query = "
     SELECT 
         soi.so_id,
@@ -704,9 +715,15 @@ $so_items_query = "
         i.unit_type,
         i.stock as current_stock,
         i.reorder_level,
-        i.branch_id as item_branch_id
+        i.branch_id as item_branch_id,
+        c.latitude,
+        c.longitude,
+        c.full_address,
+        c.delivery_instructions
     FROM sales_order_items soi
     JOIN items i ON soi.item_id = i.item_id
+    JOIN sales_orders so ON soi.so_id = so.so_id
+    LEFT JOIN customers c ON so.customer_id = c.customer_id
     WHERE soi.so_id IN (
         SELECT so_id FROM sales_orders 
         WHERE order_status IN ('pending', 'confirmed', 'processing')
@@ -897,6 +914,17 @@ function getBranchBadge($branch_id, $branch_name) {
     }
     return '<span class="badge bg-secondary">No Branch</span>';
 }
+
+// Format location for display
+function formatLocation($item) {
+    if (!empty($item['latitude']) && !empty($item['longitude'])) {
+        return $item['latitude'] . ', ' . $item['longitude'];
+    } elseif (!empty($item['full_address'])) {
+        return $item['full_address'];
+    } else {
+        return 'No location data';
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -915,6 +943,8 @@ function getBranchBadge($branch_id, $branch_name) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <!-- Leaflet CSS for maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <!-- Select2 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
     <!-- SweetAlert2 -->
@@ -1004,12 +1034,42 @@ function getBranchBadge($branch_id, $branch_name) {
         .col-item-name { width: 12%; }
         .col-to-pick { width: 6%; text-align: center; }
         .col-picked { width: 6%; text-align: center; }
-        .col-location { width: 8%; }
+        .col-location { width: 15%; }
         .col-status { width: 8%; }
         .col-encoded { width: 8%; }
         .col-encoded-by { width: 10%; }
         .col-encoded-at { width: 12%; }
         .col-actions { width: 12%; text-align: center; }
+        
+        .location-cell {
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        .location-cell:hover {
+            white-space: normal;
+            word-wrap: break-word;
+            background-color: #f8f9fa;
+            position: relative;
+            z-index: 10;
+        }
+        
+        .location-badge {
+            background-color: #e9ecef;
+            color: #495057;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 11px;
+            display: inline-block;
+            margin: 2px;
+        }
+        
+        .location-badge i {
+            margin-right: 3px;
+            color: #0d6efd;
+        }
         
         .empty-state-table {
             text-align: center;
@@ -1329,7 +1389,7 @@ function getBranchBadge($branch_id, $branch_name) {
         
         /* Items Selection Table */
         .items-selection-table {
-            max-height: 300px;
+            max-height: 400px;
             overflow-y: auto;
             border: 1px solid #dee2e6;
             border-radius: 6px;
@@ -1346,8 +1406,38 @@ function getBranchBadge($branch_id, $branch_name) {
             background-color: #f1f8ff;
         }
         
-        .item-qty-input, .item-location-input {
-            min-width: 90px;
+        .item-qty-input {
+            min-width: 80px;
+        }
+        
+        .location-preview {
+            font-size: 12px;
+            background-color: #e9ecef;
+            padding: 6px 10px;
+            border-radius: 4px;
+            margin-top: 4px;
+        }
+        
+        .location-preview i {
+            color: #0d6efd;
+            margin-right: 5px;
+        }
+        
+        .location-preview small {
+            color: #6c757d;
+        }
+        
+        .customer-location-badge {
+            background-color: #e7f1ff;
+            color: #0d6efd;
+            padding: 2px 8px;
+            border-radius: 20px;
+            font-size: 11px;
+            display: inline-block;
+        }
+        
+        .customer-location-badge i {
+            margin-right: 3px;
         }
         
         /* Encoded By and At styling */
@@ -1392,6 +1482,34 @@ function getBranchBadge($branch_id, $branch_name) {
         .btn-view { color: #0d6efd; }
         .btn-edit { color: #ffc107; }
         .btn-delete { color: #dc3545; }
+        
+        /* Map container */
+        .map-container {
+            height: 200px;
+            width: 100%;
+            border-radius: 8px;
+            margin-top: 10px;
+            border: 1px solid #dee2e6;
+        }
+        
+        .map-link {
+            color: #0d6efd;
+            text-decoration: none;
+            font-size: 12px;
+        }
+        
+        .map-link:hover {
+            text-decoration: underline;
+        }
+        
+        .coordinate-badge {
+            background-color: #6c757d;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 20px;
+            font-size: 11px;
+            margin-right: 5px;
+        }
     </style>
 </head>
 <body>
@@ -1686,7 +1804,7 @@ function getBranchBadge($branch_id, $branch_name) {
                         <!-- Global Search Box -->
                         <div class="search-box">
                             <i class="bi bi-search"></i>
-                            <input type="text" id="globalSearch" placeholder="Search SO number, item, driver, encoder..." onkeyup="applyFilters()">
+                            <input type="text" id="globalSearch" placeholder="Search SO number, item, driver, encoder, location..." onkeyup="applyFilters()">
                         </div>
                         <button class="btn btn-outline-primary" onclick="printPickList()">
                             <i class="bi bi-printer me-1"></i> Print
@@ -1713,7 +1831,7 @@ function getBranchBadge($branch_id, $branch_name) {
                                 <th class="col-item-name">ITEM NAME</th>
                                 <th class="col-to-pick">TO PICK</th>
                                 <th class="col-picked">PICKED</th>
-                                <th class="col-location">LOCATION</th>
+                                <th class="col-location">DELIVERY LOCATION</th>
                                 <th class="col-status">STATUS</th>
                                 <th class="col-encoded">ASSIGNED DRIVER</th>
                                 <th class="col-encoded-by">ENCODED BY</th>
@@ -1737,6 +1855,25 @@ function getBranchBadge($branch_id, $branch_name) {
                             if ($has_displayable_items): 
                                 foreach ($picklist_items as $item): 
                                     if ($item['item_id'] === null) continue;
+                                    
+                                    // Format location for display
+                                    $location_display = '';
+                                    if (!empty($item['latitude']) && !empty($item['longitude'])) {
+                                        $location_display = '<span class="customer-location-badge"><i class="bi bi-geo-alt-fill"></i> ' . 
+                                                           number_format($item['latitude'], 6) . ', ' . 
+                                                           number_format($item['longitude'], 6) . '</span>';
+                                        if (!empty($item['full_address'])) {
+                                            $location_display .= '<br><small class="text-muted">' . 
+                                                                htmlspecialchars(substr($item['full_address'], 0, 50)) . 
+                                                                (strlen($item['full_address']) > 50 ? '...' : '') . '</small>';
+                                        }
+                                    } elseif (!empty($item['full_address'])) {
+                                        $location_display = '<span class="location-badge"><i class="bi bi-pin-map-fill"></i> ' . 
+                                                           htmlspecialchars(substr($item['full_address'], 0, 50)) . 
+                                                           (strlen($item['full_address']) > 50 ? '...' : '') . '</span>';
+                                    } else {
+                                        $location_display = '<span class="text-muted fst-italic">No location data</span>';
+                                    }
                             ?>
                             <tr class="pick-list-row" 
                                 data-id="<?= $item['pick_item_id'] ?>"
@@ -1752,9 +1889,16 @@ function getBranchBadge($branch_id, $branch_name) {
                                 data-branch-id="<?= $item['branch_id'] ?? '' ?>"
                                 data-branch-name="<?= htmlspecialchars($item['branch_name'] ?? '') ?>"
                                 data-encoded-by="<?= htmlspecialchars($item['encoded_by_name'] ?? 'System') ?>"
-                                data-encoded-at="<?= htmlspecialchars($item['encoded_at'] ?? '') ?>">
+                                data-encoded-at="<?= htmlspecialchars($item['encoded_at'] ?? '') ?>"
+                                data-latitude="<?= $item['latitude'] ?? '' ?>"
+                                data-longitude="<?= $item['longitude'] ?? '' ?>"
+                                data-address="<?= htmlspecialchars($item['full_address'] ?? '') ?>"
+                                data-customer-name="<?= htmlspecialchars($item['customer_name'] ?? '') ?>">
                                 <td class="col-so">
                                     <strong><?= htmlspecialchars($item['so_number'] ?? 'N/A') ?></strong>
+                                    <?php if (!empty($item['customer_name'])): ?>
+                                    <br><small class="text-muted"><?= htmlspecialchars($item['customer_name']) ?></small>
+                                    <?php endif; ?>
                                 </td>
                                 <?php if ($view_all_branches && $pick_lists_branch_column_exists): ?>
                                 <td class="col-branch">
@@ -1772,9 +1916,16 @@ function getBranchBadge($branch_id, $branch_name) {
                                     </span>
                                     <?php endif; ?>
                                 </td>
-                                <td class="col-to-pick"><?= $item['quantity_to_pick'] ?? 0 ?></td>
-                                <td class="col-picked"><?= $item['quantity_picked'] ?? 0 ?></td>
-                                <td class="col-location"><?= htmlspecialchars($item['location_bin'] ?? '—') ?></td>
+                                <td class="col-to-pick text-center"><?= $item['quantity_to_pick'] ?? 0 ?></td>
+                                <td class="col-picked text-center"><?= $item['quantity_picked'] ?? 0 ?></td>
+                                <td class="col-location location-cell">
+                                    <?= $location_display ?>
+                                    <?php if (!empty($item['delivery_instructions'])): ?>
+                                    <br><small class="text-info" title="Delivery Instructions">
+                                        <i class="bi bi-info-circle"></i> <?= htmlspecialchars(substr($item['delivery_instructions'], 0, 30)) . (strlen($item['delivery_instructions']) > 30 ? '...' : '') ?>
+                                    </small>
+                                    <?php endif; ?>
+                                </td>
                                 <td class="col-status">
                                     <span class="badge <?= getPickStatusBadge($item['pick_status']) ?>">
                                         <?= getPickStatusText($item['pick_status']) ?>
@@ -1852,7 +2003,7 @@ function getBranchBadge($branch_id, $branch_name) {
         </div>
     </div>
 
-    <!-- Add/Edit Item Modal - UPDATED WITH MULTI-SELECT TABLE -->
+    <!-- Add Item Modal - UPDATED WITH CUSTOMER LOCATION DISPLAY -->
     <div class="modal fade" id="itemModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-xl">
             <div class="modal-content">
@@ -1905,7 +2056,11 @@ function getBranchBadge($branch_id, $branch_name) {
                                                 data-order-date="<?= $so['order_date'] ?>"
                                                 data-total-amount="<?= $so['total_amount'] ?>"
                                                 data-branch-id="<?= $so['branch_id'] ?? '' ?>"
-                                                data-branch-name="<?= htmlspecialchars($so['branch_name'] ?? '') ?>">
+                                                data-branch-name="<?= htmlspecialchars($so['branch_name'] ?? '') ?>"
+                                                data-latitude="<?= $so['latitude'] ?? '' ?>"
+                                                data-longitude="<?= $so['longitude'] ?? '' ?>"
+                                                data-address="<?= htmlspecialchars($so['full_address'] ?? '') ?>"
+                                                data-delivery-instructions="<?= htmlspecialchars($so['delivery_instructions'] ?? '') ?>">
                                             <?= htmlspecialchars($so['so_number'] . ' - ' . ($so['customer_name'] ?? 'Unknown') . ' - ' . date('M d, Y', strtotime($so['order_date']))) ?>
                                             <?php if ($view_all_branches && !empty($so['branch_name'])): ?>
                                                 [<?= htmlspecialchars($so['branch_name']) ?>]
@@ -1921,7 +2076,7 @@ function getBranchBadge($branch_id, $branch_name) {
                                 <?php endif; ?>
                             </div>
                             
-                            <!-- SO Details Preview -->
+                            <!-- SO Details Preview with Location -->
                             <div class="col-md-6">
                                 <div id="soDetailsPreview" style="display: none;" class="so-details">
                                     <div class="so-details-label">Sales Order Details</div>
@@ -1929,15 +2084,20 @@ function getBranchBadge($branch_id, $branch_name) {
                                     <div class="so-details-value" id="previewCustomer">-</div>
                                     <div class="so-details-value" id="previewOrderDate">-</div>
                                     <div class="so-details-value" id="previewSoBranch">-</div>
+                                    <div class="mt-2 p-2 bg-white rounded" id="previewLocation">
+                                        <i class="bi bi-geo-alt-fill text-primary"></i>
+                                        <span id="previewAddress" class="small">No location data</span>
+                                    </div>
+                                    <div id="previewMap" class="map-container" style="display: none;"></div>
                                 </div>
                             </div>
                             
-                            <!-- Item Selection - NEW MULTI-SELECT TABLE -->
+                            <!-- Item Selection - Multi-Select Table with Location Info -->
                             <div class="col-12">
                                 <label class="form-label fw-bold mb-2">Select Items to Pick</label>
                                 <div class="alert alert-info mb-2">
                                     <i class="bi bi-info-circle me-2"></i>
-                                    Check the items you want to add to the pick list. You can select multiple items.
+                                    Check the items you want to add to the pick list. The delivery location will be automatically set from the customer's address.
                                 </div>
                                 
                                 <!-- Items Table for Multi-Select -->
@@ -1955,7 +2115,7 @@ function getBranchBadge($branch_id, $branch_name) {
                                                 <th>Stock</th>
                                                 <th>Available</th>
                                                 <th width="100">Qty to Pick</th>
-                                                <th width="120">Location/Bin</th>
+                                                <th>Delivery Location</th>
                                             </tr>
                                         </thead>
                                         <tbody id="itemsSelectionBody">
@@ -1968,7 +2128,10 @@ function getBranchBadge($branch_id, $branch_name) {
                                         </tbody>
                                     </table>
                                 </div>
-                                <small class="text-muted mt-1 d-block">Check items and specify quantities to pick. Maximum pick quantity cannot exceed available stock.</small>
+                                <small class="text-muted mt-1 d-block">
+                                    <i class="bi bi-info-circle"></i> 
+                                    The delivery location is automatically set from the customer's address. No manual entry needed.
+                                </small>
                             </div>
                             
                             <!-- Driver Assignment -->
@@ -2018,6 +2181,7 @@ function getBranchBadge($branch_id, $branch_name) {
                             <?php if (!$view_all_branches): ?>
                                 <br>This pick list will be created for <strong><?php echo htmlspecialchars($branch_name); ?></strong>.
                             <?php endif; ?>
+                            <br><strong>Delivery Location:</strong> The location is automatically set from the customer's address/coordinates.
                         </div>
                     </form>
                 </div>
@@ -2033,7 +2197,7 @@ function getBranchBadge($branch_id, $branch_name) {
         </div>
     </div>
 
-    <!-- Edit Item Modal -->
+    <!-- Edit Item Modal - UPDATED WITH LOCATION DISPLAY -->
     <div class="modal fade" id="editItemModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
@@ -2046,6 +2210,7 @@ function getBranchBadge($branch_id, $branch_name) {
                         <input type="hidden" id="editPickItemId">
                         <input type="hidden" id="editItemId">
                         <input type="hidden" id="editPickListId">
+                        <input type="hidden" id="editLocationBin"> <!-- This will store the location -->
                         
                         <?php if (!$view_all_branches && $branch_id > 0): ?>
                         <div class="alert alert-info">
@@ -2065,17 +2230,26 @@ function getBranchBadge($branch_id, $branch_name) {
                                 <input type="text" class="form-control" id="editItemName" readonly>
                             </div>
                             
+                            <!-- Customer Information (Read-only) -->
+                            <div class="col-md-6">
+                                <label class="form-label">Customer</label>
+                                <input type="text" class="form-control" id="editCustomerName" readonly>
+                            </div>
+                            
+                            <!-- Delivery Location Display -->
+                            <div class="col-md-6">
+                                <label class="form-label">Delivery Location</label>
+                                <div class="form-control bg-light" id="editLocationDisplay" readonly style="min-height: 38px;">
+                                    <span id="editLocationText" class="text-muted">Loading...</span>
+                                </div>
+                                <small class="text-muted">Location from customer address</small>
+                            </div>
+                            
                             <!-- Quantity to Pick -->
                             <div class="col-md-4">
                                 <label for="editQuantity" class="form-label">Quantity to Pick</label>
                                 <input type="number" class="form-control" id="editQuantity" min="1" required>
                                 <small class="text-muted" id="editStockInfo"></small>
-                            </div>
-                            
-                            <!-- Location/Bin -->
-                            <div class="col-md-4">
-                                <label for="editLocationBin" class="form-label">Location/Bin</label>
-                                <input type="text" class="form-control" id="editLocationBin" required>
                             </div>
                             
                             <!-- Driver Assignment -->
@@ -2092,6 +2266,10 @@ function getBranchBadge($branch_id, $branch_name) {
                                 <input type="hidden" id="editDriverId">
                             </div>
                             
+                            <div class="col-md-4">
+                                <!-- Empty column for spacing -->
+                            </div>
+                            
                             <!-- Current Stock Info -->
                             <div class="col-12">
                                 <div class="alert alert-info" id="editStockAlert">
@@ -2099,6 +2277,12 @@ function getBranchBadge($branch_id, $branch_name) {
                                     Current stock: <span id="editCurrentStock">0</span> | 
                                     Current pick quantity: <span id="editCurrentQuantity">0</span>
                                 </div>
+                            </div>
+                            
+                            <!-- Map Preview -->
+                            <div class="col-12">
+                                <div id="editMapContainer" class="map-container" style="display: none;"></div>
+                                <a href="#" id="editMapLink" class="map-link" target="_blank" style="display: none;">View on Google Maps</a>
                             </div>
                         </div>
                     </form>
@@ -2115,7 +2299,7 @@ function getBranchBadge($branch_id, $branch_name) {
         </div>
     </div>
 
-    <!-- View Item Modal -->
+    <!-- View Item Modal - UPDATED WITH MAP -->
     <div class="modal fade" id="viewItemModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
@@ -2175,6 +2359,8 @@ function getBranchBadge($branch_id, $branch_name) {
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- Leaflet JS for maps -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <!-- SweetAlert2 -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     
@@ -2195,6 +2381,8 @@ function getBranchBadge($branch_id, $branch_name) {
     let driversData = <?= json_encode($drivers_list) ?>;
     let currentUserId = <?= $user_id ?: 1 ?>;
     let availableItems = [];
+    let currentSOData = null; // Store current SO data including location
+    let maps = {}; // Store map instances
 
     // ========== LOADING FUNCTIONS ==========
     function showLoading() {
@@ -2283,7 +2471,7 @@ function getBranchBadge($branch_id, $branch_name) {
         });
     }
 
-    // ========== FILTER FUNCTIONS - UPDATED WITH SEARCH ==========
+    // ========== FILTER FUNCTIONS ==========
     function applyFilters() {
         const dateFilter = document.getElementById('dateFilter').value;
         const statusFilter = document.getElementById('statusFilter').value;
@@ -2338,9 +2526,11 @@ function getBranchBadge($branch_id, $branch_name) {
                 const itemName = row.dataset.itemName?.toLowerCase() || '';
                 const driverName = row.dataset.driverName?.toLowerCase() || '';
                 const encodedBy = row.dataset.encodedBy?.toLowerCase() || '';
+                const address = row.dataset.address?.toLowerCase() || '';
+                const customerName = row.dataset.customerName?.toLowerCase() || '';
                 const location = row.querySelector('.col-location')?.innerText.toLowerCase() || '';
                 
-                const searchableText = soNumber + ' ' + itemCode + ' ' + itemName + ' ' + driverName + ' ' + encodedBy + ' ' + location;
+                const searchableText = soNumber + ' ' + itemCode + ' ' + itemName + ' ' + driverName + ' ' + encodedBy + ' ' + location + ' ' + address + ' ' + customerName;
                 
                 if (!searchableText.includes(searchTerm)) {
                     showRow = false;
@@ -2427,7 +2617,7 @@ function getBranchBadge($branch_id, $branch_name) {
 
     // ========== MODAL FUNCTIONS ==========
     function showAddItemModal() {
-        console.log("showAddItemModal called"); // For debugging
+        console.log("showAddItemModal called");
         
         <?php if (empty($sales_orders) && !$view_all_branches): ?>
         Swal.fire({
@@ -2505,6 +2695,9 @@ function getBranchBadge($branch_id, $branch_name) {
         }
         <?php endif; ?>
         
+        // Clear current SO data
+        currentSOData = null;
+        
         // Show modal
         const modal = new bootstrap.Modal(document.getElementById('itemModal'));
         modal.show();
@@ -2521,17 +2714,55 @@ function getBranchBadge($branch_id, $branch_name) {
             const orderDate = selectedOption.dataset.orderDate;
             const branchId = selectedOption.dataset.branchId;
             const branchName = selectedOption.dataset.branchName;
+            const latitude = selectedOption.dataset.latitude;
+            const longitude = selectedOption.dataset.longitude;
+            const address = selectedOption.dataset.address;
+            const deliveryInstructions = selectedOption.dataset.deliveryInstructions;
+            
+            // Store current SO data
+            currentSOData = {
+                soId: soId,
+                soNumber: soNumber,
+                customerName: customerName,
+                orderDate: orderDate,
+                branchId: branchId,
+                branchName: branchName,
+                latitude: latitude,
+                longitude: longitude,
+                address: address,
+                deliveryInstructions: deliveryInstructions
+            };
             
             // Fill hidden fields
             document.getElementById('soId').value = soId;
             document.getElementById('soNumber').value = soNumber;
             document.getElementById('branchId').value = branchId || userBranchId;
             
-            // Show SO details
+            // Show SO details with location
             document.getElementById('previewSoNumber').textContent = 'SO #: ' + soNumber;
             document.getElementById('previewCustomer').textContent = 'Customer: ' + customerName;
             document.getElementById('previewOrderDate').textContent = 'Order Date: ' + new Date(orderDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
             document.getElementById('previewSoBranch').textContent = 'Branch: ' + (branchName || 'Branch ' + branchId);
+            
+            // Show location info
+            let locationText = '';
+            if (latitude && longitude) {
+                locationText = `Coordinates: ${parseFloat(latitude).toFixed(6)}, ${parseFloat(longitude).toFixed(6)}`;
+                if (address) {
+                    locationText += `<br>Address: ${address}`;
+                }
+                document.getElementById('previewAddress').innerHTML = locationText;
+                
+                // Show map link
+                const mapLink = `https://www.google.com/maps?q=${latitude},${longitude}`;
+                document.getElementById('previewLocation').innerHTML += `<br><a href="${mapLink}" target="_blank" class="map-link"><i class="bi bi-box-arrow-up-right"></i> View on Google Maps</a>`;
+            } else if (address) {
+                locationText = `Address: ${address}`;
+                document.getElementById('previewAddress').innerHTML = locationText;
+            } else {
+                document.getElementById('previewAddress').innerHTML = 'No location data available';
+            }
+            
             document.getElementById('soDetailsPreview').style.display = 'block';
             
             <?php if ($view_all_branches): ?>
@@ -2539,12 +2770,13 @@ function getBranchBadge($branch_id, $branch_name) {
             <?php endif; ?>
             
             // Populate items table for this SO
-            populateItemsForSO(soId);
+            populateItemsForSO(soId, latitude, longitude, address);
             
         } else {
             document.getElementById('soId').value = '';
             document.getElementById('soNumber').value = '';
             document.getElementById('soDetailsPreview').style.display = 'none';
+            currentSOData = null;
             
             // Clear items table
             const tableBody = document.getElementById('itemsSelectionBody');
@@ -2565,7 +2797,7 @@ function getBranchBadge($branch_id, $branch_name) {
         }
     }
 
-    function populateItemsForSO(soId) {
+    function populateItemsForSO(soId, latitude, longitude, address) {
         const items = soItemsData[soId] || [];
         availableItems = items;
         const tableBody = document.getElementById('itemsSelectionBody');
@@ -2580,6 +2812,19 @@ function getBranchBadge($branch_id, $branch_name) {
                 </tr>
             `;
             return;
+        }
+        
+        // Format location string for display
+        let locationDisplay = '';
+        if (latitude && longitude) {
+            locationDisplay = `${parseFloat(latitude).toFixed(6)}, ${parseFloat(longitude).toFixed(6)}`;
+            if (address) {
+                locationDisplay += `<br><small>${address.substring(0, 50)}${address.length > 50 ? '...' : ''}</small>`;
+            }
+        } else if (address) {
+            locationDisplay = address.substring(0, 70) + (address.length > 70 ? '...' : '');
+        } else {
+            locationDisplay = '<span class="text-warning">No location data</span>';
         }
         
         let html = '';
@@ -2623,9 +2868,11 @@ function getBranchBadge($branch_id, $branch_name) {
                                disabled data-item-id="${item.item_id}" onchange="updateItemQuantity(this)">
                     </td>
                     <td>
-                        <input type="text" class="form-control form-control-sm item-location-input" 
-                               placeholder="e.g., A-01-01" value="A-01-01" 
-                               disabled data-item-id="${item.item_id}">
+                        <div class="location-preview" data-item-id="${item.item_id}">
+                            <i class="bi bi-geo-alt-fill text-primary"></i>
+                            <small>${locationDisplay}</small>
+                            <input type="hidden" class="item-location-hidden" value="${latitude && longitude ? latitude + ',' + longitude : (address || 'No location')}">
+                        </div>
                     </td>
                 </tr>
             `;
@@ -2658,13 +2905,11 @@ function getBranchBadge($branch_id, $branch_name) {
         
         checkboxes.forEach(checkbox => {
             checkbox.checked = selectAll.checked;
-            // Enable/disable quantity and location inputs based on checkbox
+            // Enable/disable quantity input based on checkbox
             const row = checkbox.closest('tr');
             const qtyInput = row.querySelector('.item-qty-input');
-            const locationInput = row.querySelector('.item-location-input');
-            if (qtyInput && locationInput) {
+            if (qtyInput) {
                 qtyInput.disabled = !selectAll.checked;
-                locationInput.disabled = !selectAll.checked;
                 if (!selectAll.checked) {
                     qtyInput.value = 0;
                 } else {
@@ -2674,16 +2919,16 @@ function getBranchBadge($branch_id, $branch_name) {
                 }
             }
         });
+        
+        updateSelectAllState();
     }
 
     // Toggle individual item selection
     function toggleItemSelection(checkbox) {
         const row = checkbox.closest('tr');
         const qtyInput = row.querySelector('.item-qty-input');
-        const locationInput = row.querySelector('.item-location-input');
         
         qtyInput.disabled = !checkbox.checked;
-        locationInput.disabled = !checkbox.checked;
         
         if (!checkbox.checked) {
             qtyInput.value = 0;
@@ -2741,9 +2986,26 @@ function getBranchBadge($branch_id, $branch_name) {
         }
     }
 
+    // Get location string from row
+    function getLocationFromRow(row) {
+        const locationDiv = row.querySelector('.location-preview');
+        if (locationDiv) {
+            const hiddenInput = locationDiv.querySelector('.item-location-hidden');
+            if (hiddenInput) {
+                return hiddenInput.value;
+            }
+            // Fallback to text content
+            const text = locationDiv.innerText.trim();
+            if (text && text !== 'No location data') {
+                return text;
+            }
+        }
+        return 'No location data';
+    }
+
     // ========== SAVE FUNCTIONS ==========
     function saveItem() {
-        console.log("saveItem called"); // For debugging
+        console.log("saveItem called");
         
         // Validate required fields
         const soId = document.getElementById('soId').value;
@@ -2787,7 +3049,6 @@ function getBranchBadge($branch_id, $branch_name) {
         checkboxes.forEach(checkbox => {
             const row = checkbox.closest('tr');
             const qtyInput = row.querySelector('.item-qty-input');
-            const locationInput = row.querySelector('.item-location-input');
             const maxQty = parseInt(checkbox.dataset.maxQty) || 0;
             const quantity = parseInt(qtyInput.value) || 0;
             
@@ -2813,22 +3074,14 @@ function getBranchBadge($branch_id, $branch_name) {
                 return;
             }
             
-            if (!locationInput.value.trim()) {
-                Swal.fire({
-                    icon: 'warning',
-                    title: 'Missing Location',
-                    text: `Please enter a location/bin for item ${checkbox.dataset.itemCode}`,
-                    confirmButtonColor: '#0d6efd'
-                });
-                hasError = true;
-                return;
-            }
+            // Get location from the row (this comes from customer data)
+            const location = getLocationFromRow(row);
             
             selectedItems.push({
                 item_id: checkbox.value,
                 item_code: checkbox.dataset.itemCode,
                 quantity: quantity,
-                location_bin: locationInput.value.trim()
+                location_bin: location // This is now the customer location
             });
         });
         
@@ -2933,15 +3186,49 @@ function getBranchBadge($branch_id, $branch_name) {
             if (data.success) {
                 const item = data.item;
                 
+                // Get additional data from the row
+                const row = document.querySelector(`.pick-list-row[data-id="${id}"]`);
+                const customerName = row ? row.dataset.customerName : 'Unknown';
+                const latitude = row ? row.dataset.latitude : null;
+                const longitude = row ? row.dataset.longitude : null;
+                const address = row ? row.dataset.address : null;
+                
                 document.getElementById('editPickItemId').value = item.pick_item_id;
                 document.getElementById('editItemId').value = item.item_id;
                 document.getElementById('editPickListId').value = item.pick_list_id;
                 document.getElementById('editItemCode').value = item.item_code;
                 document.getElementById('editItemName').value = item.item_name;
+                document.getElementById('editCustomerName').value = customerName;
                 document.getElementById('editQuantity').value = item.quantity_to_pick;
-                document.getElementById('editLocationBin').value = item.location_bin;
-                document.getElementById('editCurrentStock').textContent = item.current_stock;
-                document.getElementById('editCurrentQuantity').textContent = item.quantity_to_pick;
+                document.getElementById('editLocationBin').value = item.location_bin || 'No location data';
+                
+                // Set location display
+                let locationText = '';
+                if (latitude && longitude) {
+                    locationText = `📍 ${parseFloat(latitude).toFixed(6)}, ${parseFloat(longitude).toFixed(6)}`;
+                    if (address) {
+                        locationText += `<br><small>${address}</small>`;
+                    }
+                    
+                    // Show map link
+                    const mapLink = `https://www.google.com/maps?q=${latitude},${longitude}`;
+                    document.getElementById('editLocationDisplay').innerHTML = locationText;
+                    document.getElementById('editMapLink').href = mapLink;
+                    document.getElementById('editMapLink').style.display = 'inline-block';
+                    
+                    // Initialize map
+                    initEditMap(latitude, longitude, address);
+                } else if (address) {
+                    locationText = `📌 ${address}`;
+                    document.getElementById('editLocationDisplay').innerHTML = locationText;
+                    document.getElementById('editMapLink').style.display = 'none';
+                    document.getElementById('editMapContainer').style.display = 'none';
+                } else {
+                    locationText = item.location_bin || 'No location data';
+                    document.getElementById('editLocationDisplay').innerHTML = locationText;
+                    document.getElementById('editMapLink').style.display = 'none';
+                    document.getElementById('editMapContainer').style.display = 'none';
+                }
                 
                 // Set max attribute for quantity input
                 const maxQty = parseInt(item.current_stock) + parseInt(item.quantity_to_pick);
@@ -2981,6 +3268,34 @@ function getBranchBadge($branch_id, $branch_name) {
         });
     }
 
+    function initEditMap(lat, lng, address) {
+        const mapContainer = document.getElementById('editMapContainer');
+        mapContainer.style.display = 'block';
+        
+        // Clear previous map
+        mapContainer.innerHTML = '';
+        
+        // Initialize map
+        const map = L.map('editMapContainer').setView([lat, lng], 15);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+        
+        // Add marker
+        const marker = L.marker([lat, lng]).addTo(map);
+        if (address) {
+            marker.bindPopup(address).openPopup();
+        }
+        
+        // Store map instance
+        maps.editMap = map;
+        
+        // Resize map after modal is shown
+        setTimeout(() => {
+            map.invalidateSize();
+        }, 300);
+    }
+
     function updateItem() {
         const pickItemId = document.getElementById('editPickItemId').value;
         const quantity = document.getElementById('editQuantity').value;
@@ -2989,11 +3304,6 @@ function getBranchBadge($branch_id, $branch_name) {
         
         if (!quantity || quantity < 1) {
             Swal.fire('Warning', 'Please enter a valid quantity', 'warning');
-            return;
-        }
-        
-        if (!locationBin.trim()) {
-            Swal.fire('Warning', 'Location/Bin is required', 'warning');
             return;
         }
         
@@ -3061,19 +3371,27 @@ function getBranchBadge($branch_id, $branch_name) {
         const itemCode = row.dataset.itemCode || 'N/A';
         const itemName = row.querySelector('.col-item-name')?.innerText.split('\n')[0] || 'N/A';
         const quantity = row.dataset.quantity || '0';
-        const location = row.querySelector('.col-location')?.innerText || '—';
+        const location = row.querySelector('.col-location')?.innerHTML || '—';
         const status = row.dataset.status || '';
         const driverName = row.dataset.driverName || 'Unassigned';
         const stockText = row.querySelector('.stock-indicator')?.innerText || 'Stock: 0';
         const branchName = row.dataset.branchName || `Branch ${row.dataset.branchId}`;
         const encodedBy = row.dataset.encodedBy || 'System';
         const encodedAt = row.dataset.encodedAt ? new Date(row.dataset.encodedAt).toLocaleString() : 'N/A';
+        const customerName = row.dataset.customerName || 'N/A';
+        const latitude = row.dataset.latitude;
+        const longitude = row.dataset.longitude;
+        const address = row.dataset.address;
         
         let detailsHtml = `
             <div class="col-md-6">
                 <div class="detail-card">
                     <div class="detail-label">SO Number</div>
                     <div class="detail-value">${soNumber}</div>
+                </div>
+                <div class="detail-card">
+                    <div class="detail-label">Customer</div>
+                    <div class="detail-value">${customerName}</div>
                 </div>
                 <div class="detail-card">
                     <div class="detail-label">Item Code</div>
@@ -3120,7 +3438,7 @@ function getBranchBadge($branch_id, $branch_name) {
         
         detailsHtml += `
                 <div class="detail-card">
-                    <div class="detail-label">Location/Bin</div>
+                    <div class="detail-label">Delivery Location</div>
                     <div class="detail-value">${location}</div>
                 </div>
                 <div class="detail-card">
@@ -3142,7 +3460,43 @@ function getBranchBadge($branch_id, $branch_name) {
             </div>
         `;
         
+        // Add map if coordinates available
+        if (latitude && longitude) {
+            detailsHtml += `
+                <div class="col-12 mt-3">
+                    <div class="detail-card">
+                        <div class="detail-label">Location Map</div>
+                        <div id="viewMapContainer" class="map-container"></div>
+                        <a href="https://www.google.com/maps?q=${latitude},${longitude}" target="_blank" class="map-link mt-2 d-block">
+                            <i class="bi bi-box-arrow-up-right"></i> View on Google Maps
+                        </a>
+                    </div>
+                </div>
+            `;
+        }
+        
         document.getElementById('viewItemDetails').innerHTML = detailsHtml;
+        
+        // Initialize map if coordinates available
+        if (latitude && longitude) {
+            setTimeout(() => {
+                const mapContainer = document.getElementById('viewMapContainer');
+                if (mapContainer) {
+                    const map = L.map('viewMapContainer').setView([latitude, longitude], 15);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '© OpenStreetMap contributors'
+                    }).addTo(map);
+                    
+                    const marker = L.marker([latitude, longitude]).addTo(map);
+                    if (address) {
+                        marker.bindPopup(address).openPopup();
+                    }
+                    
+                    // Store map instance
+                    maps.viewMap = map;
+                }
+            }, 300);
+        }
         
         // Show/hide edit button based on status and permissions
         const editBtn = document.getElementById('editFromViewBtn');
@@ -3313,6 +3667,33 @@ function getBranchBadge($branch_id, $branch_name) {
             }
             document.body.classList.remove('modal-open');
             document.body.style.removeProperty('padding-right');
+            
+            // Clean up maps
+            if (maps.viewMap) {
+                maps.viewMap.remove();
+                maps.viewMap = null;
+            }
+            if (maps.editMap) {
+                maps.editMap.remove();
+                maps.editMap = null;
+            }
+        });
+        
+        // Resize maps when modal is shown
+        $('#viewItemModal').on('shown.bs.modal', function() {
+            if (maps.viewMap) {
+                setTimeout(() => {
+                    maps.viewMap.invalidateSize();
+                }, 100);
+            }
+        });
+        
+        $('#editItemModal').on('shown.bs.modal', function() {
+            if (maps.editMap) {
+                setTimeout(() => {
+                    maps.editMap.invalidateSize();
+                }, 100);
+            }
         });
     });
 
@@ -3356,12 +3737,14 @@ function getBranchBadge($branch_id, $branch_name) {
         // Add headers
         const headers = [
             'SO Number',
+            'Customer Name',
             ...(viewAllBranches && pickListsBranchColumnExists ? ['Branch'] : []),
             'Item Code',
             'Item Name',
             'Quantity to Pick',
             'Quantity Picked',
-            'Location/Bin',
+            'Delivery Location',
+            'Coordinates',
             'Status',
             'Assigned Driver',
             'Encoded By',
@@ -3376,9 +3759,11 @@ function getBranchBadge($branch_id, $branch_name) {
                 const cells = row.querySelectorAll('td');
                 let cellIndex = 0;
                 
-                const soNumber = cells[cellIndex++]?.innerText.replace(/\n/g, ' ').trim() || '';
-                let branchName = '';
+                const soNumberCell = cells[cellIndex++];
+                const soNumber = soNumberCell?.innerText.split('\n')[0].trim() || '';
+                const customerName = soNumberCell?.querySelector('small')?.innerText || '';
                 
+                let branchName = '';
                 if (viewAllBranches && pickListsBranchColumnExists) {
                     branchName = cells[cellIndex++]?.innerText.replace(/\n/g, ' ').trim() || '';
                 }
@@ -3387,7 +3772,20 @@ function getBranchBadge($branch_id, $branch_name) {
                 const itemName = cells[cellIndex++]?.innerText.split('\n')[0].trim() || '';
                 const toPick = parseInt(cells[cellIndex++]?.innerText) || 0;
                 const picked = parseInt(cells[cellIndex++]?.innerText) || 0;
-                const location = cells[cellIndex++]?.innerText || '';
+                const locationHtml = cells[cellIndex++]?.innerHTML || '';
+                
+                // Extract location and coordinates
+                let locationText = '';
+                let coordinates = '';
+                const locationMatch = locationHtml.match(/📍 ([\d.-]+), ([\d.-]+)/);
+                if (locationMatch) {
+                    coordinates = locationMatch[1] + ', ' + locationMatch[2];
+                    const addressMatch = locationHtml.match(/<small>(.*?)<\/small>/);
+                    locationText = addressMatch ? addressMatch[1] : '';
+                } else {
+                    locationText = locationHtml.replace(/<[^>]*>/g, '').trim();
+                }
+                
                 const status = cells[cellIndex++]?.innerText || '';
                 const driver = cells[cellIndex++]?.innerText || '';
                 const encodedBy = cells[cellIndex++]?.innerText || '';
@@ -3404,12 +3802,14 @@ function getBranchBadge($branch_id, $branch_name) {
                 
                 const rowData = [
                     soNumber,
+                    customerName,
                     ...(viewAllBranches && pickListsBranchColumnExists ? [branchName] : []),
                     itemCode,
                     itemName,
                     toPick,
                     picked,
-                    location,
+                    locationText,
+                    coordinates,
                     status,
                     driver,
                     encodedBy,
@@ -3428,12 +3828,14 @@ function getBranchBadge($branch_id, $branch_name) {
         // Set column widths
         const colWidths = [
             { wch: 15 }, // SO Number
+            { wch: 20 }, // Customer Name
             ...(viewAllBranches && pickListsBranchColumnExists ? [{ wch: 15 }] : []), // Branch
             { wch: 15 }, // Item Code
             { wch: 30 }, // Item Name
             { wch: 15 }, // Quantity to Pick
             { wch: 15 }, // Quantity Picked
-            { wch: 15 }, // Location/Bin
+            { wch: 40 }, // Delivery Location
+            { wch: 30 }, // Coordinates
             { wch: 15 }, // Status
             { wch: 20 }, // Assigned Driver
             { wch: 20 }, // Encoded By
@@ -3491,7 +3893,7 @@ function getBranchBadge($branch_id, $branch_name) {
 
     // ========== DOCUMENT READY ==========
     document.addEventListener('DOMContentLoaded', function() {
-        console.log("DOM fully loaded - Pick List Items Multi-Select Mode");
+        console.log("DOM fully loaded - Pick List Items with Customer Location");
         console.log("User Branch:", userBranchId);
         console.log("View All Branches:", viewAllBranches);
         console.log("User Role:", userRole);
@@ -3552,6 +3954,16 @@ function getBranchBadge($branch_id, $branch_name) {
                     document.body.classList.remove('modal-open');
                     document.body.style.removeProperty('padding-right');
                     document.body.style.removeProperty('overflow');
+                    
+                    // Clean up maps
+                    if (maps.viewMap) {
+                        maps.viewMap.remove();
+                        maps.viewMap = null;
+                    }
+                    if (maps.editMap) {
+                        maps.editMap.remove();
+                        maps.editMap = null;
+                    }
                 });
             }
         });

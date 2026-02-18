@@ -302,76 +302,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             exit;
         }
         
-        // UPLOAD PHOTO
-        elseif ($_POST['action'] === 'upload_photo') {
-            $trip_id = (int)$_POST['trip_id'];
-            $photo_slot = (int)$_POST['photo_slot'];
-            
-            // Check if file was uploaded
-            if (!isset($_FILES['photo_file']) || $_FILES['photo_file']['error'] !== UPLOAD_ERR_OK) {
-                throw new Exception('No file uploaded or upload error');
-            }
-            
-            // Verify trip ticket belongs to user's branch
-            $check_query = "SELECT trip_id FROM trip_tickets WHERE trip_id = ?";
-            if (!$view_all_branches) {
-                $check_query .= " AND branch_id = ?";
-                $check_stmt = $conn->prepare($check_query);
-                $check_stmt->bind_param("ii", $trip_id, $branch_id);
-            } else {
-                $check_stmt = $conn->prepare($check_query);
-                $check_stmt->bind_param("i", $trip_id);
-            }
-            
-            $check_stmt->execute();
-            if ($check_stmt->get_result()->num_rows === 0) {
-                throw new Exception('Trip ticket not found or access denied');
-            }
-            
-            // Create upload directory if not exists
-            $upload_dir = '../uploads/trip_photos/';
-            if (!file_exists($upload_dir)) {
-                mkdir($upload_dir, 0777, true);
-            }
-            
-            // Generate unique filename
-            $file_extension = pathinfo($_FILES['photo_file']['name'], PATHINFO_EXTENSION);
-            $filename = 'trip_' . $trip_id . '_slot_' . $photo_slot . '_' . time() . '.' . $file_extension;
-            $filepath = $upload_dir . $filename;
-            
-            // Move uploaded file
-            if (!move_uploaded_file($_FILES['photo_file']['tmp_name'], $filepath)) {
-                throw new Exception('Failed to save uploaded file');
-            }
-            
-            // Check if photo column exists, if not add it
-            $check_photo_column = $conn->query("SHOW COLUMNS FROM trip_tickets LIKE 'photo_$photo_slot'");
-            if (!$check_photo_column || $check_photo_column->num_rows === 0) {
-                $conn->query("ALTER TABLE trip_tickets ADD COLUMN photo_$photo_slot VARCHAR(255) NULL");
-            }
-            
-            // Update database with photo path
-            $update_query = "UPDATE trip_tickets SET photo_$photo_slot = ? WHERE trip_id = ?";
-            $update_stmt = $conn->prepare($update_query);
-            $update_stmt->bind_param("si", $filename, $trip_id);
-            
-            if (!$update_stmt->execute()) {
-                // Delete uploaded file if database update fails
-                unlink($filepath);
-                throw new Exception('Failed to update database with photo info');
-            }
-            
-            $conn->commit();
-            
-            echo json_encode([
-                'success' => true,
-                'message' => 'Photo uploaded successfully',
-                'filename' => $filename,
-                'filepath' => 'uploads/trip_photos/' . $filename
-            ]);
-            exit;
-        }
-        
     } catch (Exception $e) {
         $conn->rollback();
         echo json_encode([
@@ -404,6 +334,7 @@ $trip_query = "
         tt.remarks,
         tt.created_at,
         tt.updated_at,
+        tt.photo_1,
         so.so_number,
         so.order_status,
         so.customer_id,
@@ -626,48 +557,30 @@ function formatCompletion($percentage) {
             color: #212529;
         }
         
-        .photo-proof {
+        .photo-view {
             background-color: white;
-            border: 2px dashed #dee2e6;
+            border: 1px solid #dee2e6;
             border-radius: 8px;
-            padding: 20px;
+            padding: 15px;
             min-height: 150px;
             display: flex;
             flex-direction: column;
             align-items: center;
             justify-content: center;
             text-align: center;
-            cursor: pointer;
-            transition: all 0.3s ease;
         }
         
-        .photo-proof:hover {
-            border-color: #0d6efd;
-            background-color: #f8f9ff;
+        .photo-view img {
+            max-width: 100%;
+            max-height: 200px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         
-        .photo-proof i {
+        .photo-view i {
             font-size: 40px;
             color: #6c757d;
             margin-bottom: 10px;
-        }
-        
-        .photo-proof .upload-text {
-            font-size: 14px;
-            color: #0d6efd;
-            font-weight: 500;
-        }
-        
-        .photo-proof .photo-name {
-            font-size: 12px;
-            color: #28a745;
-            margin-top: 5px;
-        }
-        
-        .photo-proof img {
-            max-width: 100%;
-            max-height: 150px;
-            border-radius: 4px;
         }
         
         .table-actions {
@@ -1086,10 +999,12 @@ function formatCompletion($percentage) {
                                 <div class="col-md-12 mb-3">
                                     <div class="detail-card">
                                         <div class="detail-label">Delivery Photo (1)</div>
-                                        <div class="photo-proof" id="photoProof1" onclick="uploadPhoto(1)">
-                                            <i class="bi bi-cloud-upload"></i>
-                                            <span class="upload-text">Click to upload photo</span>
-                                            <div id="photoPreview1"></div>
+                                        <div class="photo-view" id="photoProof1">
+                                            <div id="photoPreview1" class="text-center"></div>
+                                            <div id="photoPlaceholder1" class="text-center text-muted py-3">
+                                                <i class="bi bi-image" style="font-size: 40px;"></i>
+                                                <p class="mt-2">No photo available</p>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -1322,38 +1237,6 @@ function formatCompletion($percentage) {
         </div>
     </div>
 
-    <!-- Photo Upload Modal -->
-    <div class="modal fade" id="photoUploadModal" tabindex="-1" aria-labelledby="photoUploadModalLabel" aria-hidden="true">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header bg-info text-white">
-                    <h5 class="modal-title" id="photoUploadModalLabel"><i class="bi bi-camera me-2"></i>Upload Photo Proof</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <form id="photoUploadForm" enctype="multipart/form-data">
-                    <div class="modal-body">
-                        <p>Upload delivery photo for:</p>
-                        <div class="ticket-info mb-3 p-3 bg-light rounded">
-                            <strong>Trip Number:</strong> <span id="photoTripNumber"></span><br>
-                            <strong>Photo Slot:</strong> <span id="photoSlotNumber">1</span>
-                        </div>
-                        <input type="hidden" id="photoTripId" name="trip_id">
-                        <input type="hidden" id="photoSlot" name="photo_slot" value="1">
-                        <div class="mb-3">
-                            <label for="photoFile" class="form-label">Select Photo</label>
-                            <input type="file" class="form-control" id="photoFile" name="photo_file" accept="image/*" capture="environment" required>
-                            <small class="text-muted">You can take a photo using your camera or select from gallery</small>
-                        </div>
-                    </div>
-                    <div class="modal-footer">
-                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                        <button type="submit" class="btn btn-primary">Upload Photo</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
-
     <!-- Delete Confirmation Modal -->
     <div class="modal fade" id="deleteModal" tabindex="-1" aria-labelledby="deleteModalLabel" aria-hidden="true">
         <div class="modal-dialog">
@@ -1384,7 +1267,6 @@ function formatCompletion($percentage) {
     <script>
     // ========== GLOBAL VARIABLES ==========
     let currentTicket = null;
-    let currentPhotoSlot = 1;
     let tripTickets = <?= json_encode($trip_tickets) ?>;
     const branchId = <?php echo $branch_id; ?>;
     const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
@@ -1608,12 +1490,6 @@ function formatCompletion($percentage) {
         if (createTripDate) {
             createTripDate.value = formattedDate;
         }
-        
-        // Photo upload form submission
-        document.getElementById('photoUploadForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            uploadPhotoConfirm();
-        });
     });
 
     // Filter trip tickets
@@ -1792,10 +1668,13 @@ function formatCompletion($percentage) {
         
         // Load photo preview if exists
         const photoPreview = document.getElementById('photoPreview1');
+        const photoPlaceholder = document.getElementById('photoPlaceholder1');
         if (ticket.photo_1) {
-            photoPreview.innerHTML = `<img src="../uploads/trip_photos/${ticket.photo_1}" alt="Delivery Photo" style="max-width: 100%; max-height: 150px;">`;
+            photoPreview.innerHTML = `<img src="../uploads/trip_photos/${ticket.photo_1}" alt="Delivery Photo" style="max-width: 100%; max-height: 200px;" class="img-fluid rounded">`;
+            if (photoPlaceholder) photoPlaceholder.style.display = 'none';
         } else {
             photoPreview.innerHTML = '';
+            if (photoPlaceholder) photoPlaceholder.style.display = 'block';
         }
         
         // Show modal
@@ -1992,62 +1871,6 @@ function formatCompletion($percentage) {
         .catch(error => {
             Swal.close();
             Swal.fire('Error', 'An error occurred while creating the trip ticket', 'error');
-        });
-    }
-
-    // Photo upload functions
-    function uploadPhoto(slot) {
-        if (!currentTicket) {
-            Swal.fire('Error', 'No trip ticket selected', 'error');
-            return;
-        }
-        
-        currentPhotoSlot = slot;
-        document.getElementById('photoTripNumber').textContent = currentTicket.trip_number;
-        document.getElementById('photoSlotNumber').textContent = slot;
-        document.getElementById('photoTripId').value = currentTicket.trip_id;
-        document.getElementById('photoSlot').value = slot;
-        document.getElementById('photoFile').value = '';
-        
-        const modal = new bootstrap.Modal(document.getElementById('photoUploadModal'));
-        modal.show();
-    }
-
-    function uploadPhotoConfirm() {
-        const formData = new FormData(document.getElementById('photoUploadForm'));
-        formData.append('action', 'upload_photo');
-        
-        showLoading();
-        
-        fetch('trip_tickets.php', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            Swal.close();
-            
-            if (data.success) {
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Uploaded!',
-                    text: data.message,
-                    timer: 2000,
-                    showConfirmButton: false
-                }).then(() => {
-                    bootstrap.Modal.getInstance(document.getElementById('photoUploadModal')).hide();
-                    
-                    // Update photo preview
-                    const photoPreview = document.getElementById('photoPreview' + currentPhotoSlot);
-                    photoPreview.innerHTML = `<img src="../${data.filepath}" alt="Delivery Photo" style="max-width: 100%; max-height: 150px;">`;
-                });
-            } else {
-                Swal.fire('Error', data.message, 'error');
-            }
-        })
-        .catch(error => {
-            Swal.close();
-            Swal.fire('Error', 'An error occurred while uploading the photo', 'error');
         });
     }
 

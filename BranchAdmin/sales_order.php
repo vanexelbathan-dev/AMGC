@@ -426,7 +426,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     b.branch_name,
                     b.address as branch_address,
                     b.contact_number as branch_contact,
-                    b.email as branch_email,
                     COUNT(soi.so_item_id) as total_items,
                     SUM(soi.quantity_ordered) as total_quantity
                 FROM sales_orders so
