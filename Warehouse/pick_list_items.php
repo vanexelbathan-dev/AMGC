@@ -43,6 +43,89 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
     $items_branch_column_exists = true;
 }
 
+// Check if deliveries table exists and has necessary columns
+$deliveries_table_exists = false;
+$check_deliveries = $conn->query("SHOW TABLES LIKE 'deliveries'");
+if ($check_deliveries && $check_deliveries->num_rows > 0) {
+    $deliveries_table_exists = true;
+}
+
+// Function to create delivery records for completed pick list
+function createDeliveriesForPickList($conn, $pick_list_id, $branch_id, $user_id) {
+    try {
+        // Get pick list details
+        $pl_query = "SELECT pl.*, so.customer_id, so.so_number, d.driver_id, d.driver_name
+                     FROM pick_lists pl
+                     JOIN sales_orders so ON pl.so_id = so.so_id
+                     LEFT JOIN drivers d ON pl.driver_id = d.driver_id
+                     WHERE pl.pick_list_id = ?";
+        $pl_stmt = $conn->prepare($pl_query);
+        $pl_stmt->bind_param("i", $pick_list_id);
+        $pl_stmt->execute();
+        $pl_result = $pl_stmt->get_result();
+        $pick_list = $pl_result->fetch_assoc();
+        
+        if (!$pick_list) {
+            return false;
+        }
+        
+        // Check if trip ticket already exists for this pick list
+        $check_tt_query = "SELECT trip_id FROM trip_tickets WHERE picklist_id = ?";
+        $check_tt_stmt = $conn->prepare($check_tt_query);
+        $check_tt_stmt->bind_param("i", $pick_list_id);
+        $check_tt_stmt->execute();
+        $check_tt_result = $check_tt_stmt->get_result();
+        
+        $trip_id = null;
+        
+        // If no trip ticket exists, create one
+        if ($check_tt_result->num_rows == 0) {
+            // Generate trip number
+            $trip_number = 'TRP' . date('Ymd') . rand(1000, 9999);
+            
+            // Create trip ticket
+            $insert_tt_query = "INSERT INTO trip_tickets 
+                                (trip_number, picklist_id, so_id, driver_id, branch_id, trip_date, trip_status, created_by, created_at) 
+                                VALUES (?, ?, ?, ?, ?, NOW(), 'planned', ?, NOW())";
+            $insert_tt_stmt = $conn->prepare($insert_tt_query);
+            $insert_tt_stmt->bind_param("siiiii", $trip_number, $pick_list_id, $pick_list['so_id'], $pick_list['driver_id'], $branch_id, $user_id);
+            $insert_tt_stmt->execute();
+            $trip_id = $conn->insert_id;
+            $insert_tt_stmt->close();
+        } else {
+            $trip_data = $check_tt_result->fetch_assoc();
+            $trip_id = $trip_data['trip_id'];
+        }
+        $check_tt_stmt->close();
+        
+        // Check if delivery already exists for this customer/pick list
+        $check_delivery_query = "SELECT delivery_id FROM deliveries WHERE pick_list_id = ? AND customer_id = ?";
+        $check_delivery_stmt = $conn->prepare($check_delivery_query);
+        $check_delivery_stmt->bind_param("ii", $pick_list_id, $pick_list['customer_id']);
+        $check_delivery_stmt->execute();
+        $check_delivery_result = $check_delivery_stmt->get_result();
+        
+        if ($check_delivery_result->num_rows == 0) {
+            // Create delivery record
+            $insert_delivery_query = "INSERT INTO deliveries 
+                                      (trip_id, so_id, customer_id, pick_list_id, driver_id, branch_id, stop_sequence, delivery_status, created_at, created_by) 
+                                      VALUES (?, ?, ?, ?, ?, ?, 1, 'pending', NOW(), ?)";
+            $insert_delivery_stmt = $conn->prepare($insert_delivery_query);
+            $insert_delivery_stmt->bind_param("iiiiiii", $trip_id, $pick_list['so_id'], $pick_list['customer_id'], $pick_list_id, $pick_list['driver_id'], $branch_id, $user_id);
+            $insert_delivery_stmt->execute();
+            $insert_delivery_stmt->close();
+            
+            return true;
+        }
+        $check_delivery_stmt->close();
+        
+        return false;
+    } catch (Exception $e) {
+        error_log("Error creating delivery: " . $e->getMessage());
+        return false;
+    }
+}
+
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_pick_item') {
     // Get form data
@@ -212,6 +295,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $pick_totals = $check_result->fetch_assoc();
             
             if ($pick_totals['total_picked'] >= $pick_totals['total_to_pick']) {
+                // Update pick list status to completed
                 $update_pl_status = "UPDATE pick_lists SET pick_status = 'completed', updated_at = NOW() WHERE pick_list_id = ?";
                 $pl_status_stmt = $conn->prepare($update_pl_status);
                 $pl_status_stmt->bind_param("i", $item['pick_list_id']);
@@ -225,6 +309,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     $so_status_stmt->execute();
                     $so_status_stmt->close();
                 }
+                
+                // CREATE DELIVERY RECORD FOR THIS PICK LIST
+                createDeliveriesForPickList($conn, $item['pick_list_id'], $item['branch_id'], $user_id);
             }
             
             header('Content-Type: application/json');
@@ -544,6 +631,21 @@ function formatLocation($row) {
         .status-group-header i {
             margin-right: 8px;
         }
+
+        /* Delivery status indicator */
+        .delivery-status-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 500;
+            margin-left: 5px;
+        }
+        
+        .delivery-created {
+            background-color: #d1e7dd;
+            color: #0a3622;
+        }
     </style>
 </head>
 <body>
@@ -849,50 +951,63 @@ function formatLocation($row) {
                         </thead>
                         <tbody>
                             <?php
-                            // Build query with branch filter and customer location - ORDER BY pick_status to prioritize pending
-                            $pick_list_items_query = "SELECT pli.*, 
-                                                             pl.pick_list_number, 
-                                                             pl.pick_status as pick_list_status,
-                                                             pl.branch_id,
-                                                             b.branch_name,
-                                                             i.item_name, 
-                                                             i.item_code,
-                                                             d.driver_id,
-                                                             d.driver_name,
-                                                             d.vehicle_plate_number,
-                                                             so.order_status,
-                                                             so.so_number,
-                                                             c.latitude as customer_latitude,
-                                                             c.longitude as customer_longitude,
-                                                             c.full_address as customer_address,
-                                                             c.delivery_instructions
-                                                     FROM pick_list_items pli
-                                                     JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
-                                                     JOIN branches b ON pl.branch_id = b.branch_id
-                                                     JOIN items i ON pli.item_id = i.item_id
-                                                     LEFT JOIN drivers d ON pl.driver_id = d.driver_id
-                                                     LEFT JOIN sales_orders so ON pl.so_id = so.so_id
-                                                     LEFT JOIN customers c ON so.customer_id = c.customer_id";
-                            
-                            if (!$view_all_branches && $user_branch_id > 0) {
-                                $pick_list_items_query .= " WHERE pl.branch_id = ?";
-                                $stmt = $conn->prepare($pick_list_items_query . " ORDER BY 
-                                    CASE 
-                                        WHEN pl.pick_status IN ('open', 'in-progress') THEN 1
-                                        WHEN pl.pick_status = 'completed' THEN 2
-                                        ELSE 3
-                                    END,
-                                    pli.pick_item_id DESC");
-                                $stmt->bind_param("i", $user_branch_id);
-                            } else {
-                                $stmt = $conn->prepare($pick_list_items_query . " ORDER BY 
-                                    CASE 
-                                        WHEN pl.pick_status IN ('open', 'in-progress') THEN 1
-                                        WHEN pl.pick_status = 'completed' THEN 2
-                                        ELSE 3
-                                    END,
-                                    pli.pick_item_id DESC");
-                            }
+                            // Find this query around line 950-1000 and replace it with this corrected version:
+// Build query with branch filter and customer location - ORDER BY pick_status to prioritize pending
+$pick_list_items_query = "SELECT 
+    pli.pick_item_id,
+    pli.pick_list_id,
+    pli.item_id,
+    pli.quantity_to_pick,
+    pli.quantity_picked,
+    pli.location_bin,
+    pl.pick_list_number, 
+    pl.pick_status as pick_list_status,
+    pl.branch_id,
+    b.branch_name,
+    i.item_name, 
+    i.item_code,
+    d.driver_id,
+    d.driver_name,
+    d.vehicle_plate_number,
+    so.order_status,
+    so.so_number,
+    c.latitude as customer_latitude,
+    c.longitude as customer_longitude,
+    c.full_address as customer_address,
+    c.delivery_instructions,
+    -- Check if delivery exists for this pick list
+    (SELECT COUNT(*) FROM deliveries d WHERE d.pick_list_id = pl.pick_list_id) as has_delivery
+FROM pick_list_items pli
+INNER JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
+INNER JOIN branches b ON pl.branch_id = b.branch_id
+INNER JOIN items i ON pli.item_id = i.item_id
+LEFT JOIN drivers d ON pl.driver_id = d.driver_id
+LEFT JOIN sales_orders so ON pl.so_id = so.so_id
+LEFT JOIN customers c ON so.customer_id = c.customer_id";
+
+if (!$view_all_branches && $user_branch_id > 0) {
+    $pick_list_items_query .= " WHERE pl.branch_id = ?";
+    $pick_list_items_query .= " ORDER BY 
+        CASE 
+            WHEN pl.pick_status IN ('open', 'in-progress') THEN 1
+            WHEN pl.pick_status = 'completed' THEN 2
+            ELSE 3
+        END,
+        pli.pick_item_id DESC";
+    
+    $stmt = $conn->prepare($pick_list_items_query);
+    $stmt->bind_param("i", $user_branch_id);
+} else {
+    $pick_list_items_query .= " ORDER BY 
+        CASE 
+            WHEN pl.pick_status IN ('open', 'in-progress') THEN 1
+            WHEN pl.pick_status = 'completed' THEN 2
+            ELSE 3
+        END,
+        pli.pick_item_id DESC";
+    
+    $stmt = $conn->prepare($pick_list_items_query);
+}
                             
                             $stmt->execute();
                             $result = $stmt->get_result();
@@ -925,6 +1040,11 @@ function formatLocation($row) {
                                                     <?php echo getPickStatusText($row['pick_list_status']); ?>
                                                 </small>
                                             <?php endif; ?>
+                                            <?php if ($row['has_delivery'] > 0 && $row['pick_list_status'] == 'completed'): ?>
+                                                <br><span class="delivery-status-badge delivery-created">
+                                                    <i class="bi bi-truck"></i> Delivery Ready
+                                                </span>
+                                            <?php endif; ?>
                                         </td>
                                         <td>
                                             <div class="fw-semibold"><?php echo htmlspecialchars($row['item_name']); ?></div>
@@ -934,8 +1054,6 @@ function formatLocation($row) {
                                         <td class="text-center"><?php echo number_format($row['quantity_picked']); ?></td>
                                         <td>
                                             <?php if (!empty($row['driver_name'])): ?>
-                                                <span class="driver-badge">
-                                                    <i class="bi bi-truck"></i>
                                                     <?php echo htmlspecialchars($row['driver_name']); ?>
                                                 </span>
                                             <?php else: ?>
@@ -1324,6 +1442,12 @@ function formatLocation($row) {
                             <textarea class="form-control" id="pick_notes" name="pick_notes" 
                                       rows="2" placeholder="Add any notes about the picked items..."></textarea>
                         </div>
+                        
+                        <!-- Auto-create delivery notification -->
+                        <div class="alert alert-success mt-3" id="deliveryNotice" style="display: none;">
+                            <i class="bi bi-check-circle-fill me-2"></i>
+                            When all items are picked, a delivery record will be automatically created for the assigned driver.
+                        </div>
                     </div>
 
                     <!-- Action Buttons -->
@@ -1549,6 +1673,16 @@ function formatLocation($row) {
                 helpText.innerHTML = `Remaining to pick: <strong>${remainingToPick}</strong> of ${quantityToPick}`;
             }
             
+            // Show delivery notice if this might complete the pick list
+            const deliveryNotice = document.getElementById('deliveryNotice');
+            if (deliveryNotice) {
+                if (quantityPicked < quantityToPick) {
+                    deliveryNotice.style.display = 'block';
+                } else {
+                    deliveryNotice.style.display = 'none';
+                }
+            }
+            
             updateProgressBar(quantityPicked, quantityToPick);
             
             const notesField = document.getElementById('pick_notes');
@@ -1579,6 +1713,16 @@ function formatLocation($row) {
                 quantityPicked.value = value;
                 validateQuantity();
                 updateProgressBar(value, quantityToPick);
+                
+                // Update delivery notice
+                const deliveryNotice = document.getElementById('deliveryNotice');
+                if (deliveryNotice) {
+                    if (value < quantityToPick) {
+                        deliveryNotice.style.display = 'block';
+                    } else {
+                        deliveryNotice.style.display = 'none';
+                    }
+                }
             }
         }
 
@@ -1710,7 +1854,7 @@ function formatLocation($row) {
 
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
-            console.log("Pick List Management - Prioritized Pending Items with Driver Filter");
+            console.log("Pick List Management - Auto-create Delivery on Complete");
             
             initializeSidebar();
             
@@ -1787,7 +1931,14 @@ function formatLocation($row) {
                         return false;
                     }
                     
-                    if (!confirm('Are you sure you want to update the picked quantity? This will adjust inventory levels.')) {
+                    let confirmMessage = 'Are you sure you want to update the picked quantity? This will adjust inventory levels.';
+                    
+                    // Check if this will complete the pick list
+                    if (pickedValue >= quantityToPick && quantityPicked.value != quantityPicked.getAttribute('data-current')) {
+                        confirmMessage = 'This will complete the pick list and create a delivery record for the assigned driver. Continue?';
+                    }
+                    
+                    if (!confirm(confirmMessage)) {
                         return false;
                     }
                     
@@ -1800,7 +1951,7 @@ function formatLocation($row) {
                     .then(response => response.json())
                     .then(data => {
                         if (data.success) {
-                            alert('Pick quantity updated successfully!');
+                            alert('Pick quantity updated successfully! Delivery record will be created if all items are picked.');
                             window.location.reload();
                         } else {
                             alert('Error: ' + (data.message || 'Unknown error occurred'));
@@ -1820,11 +1971,13 @@ function formatLocation($row) {
                     const quantityInput = document.getElementById('update_quantity_picked');
                     const submitBtn = document.getElementById('submitUpdateBtn');
                     const progressContainer = document.getElementById('progressContainer');
+                    const deliveryNotice = document.getElementById('deliveryNotice');
                     
                     if (warningDiv) warningDiv.style.display = 'none';
                     if (quantityInput) quantityInput.classList.remove('is-invalid');
                     if (submitBtn) submitBtn.disabled = false;
                     if (progressContainer) progressContainer.style.display = 'none';
+                    if (deliveryNotice) deliveryNotice.style.display = 'none';
                 });
             }
 
