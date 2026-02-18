@@ -22,6 +22,22 @@ if ($user_role == 'delivery' && $branch_id == 0) {
     $_SESSION['branch_id'] = 1;
 }
 
+// Check if driver_id exists in session or get from users table
+$driver_id = $_SESSION['driver_id'] ?? 0;
+if ($driver_id == 0 && $user_role == 'delivery') {
+    // Try to get driver_id from users table
+    $driver_query = "SELECT driver_id FROM users WHERE user_id = ? AND driver_id IS NOT NULL";
+    $driver_stmt = $conn->prepare($driver_query);
+    $driver_stmt->bind_param("i", $user_id);
+    $driver_stmt->execute();
+    $driver_result = $driver_stmt->get_result();
+    if ($driver_row = $driver_result->fetch_assoc()) {
+        $driver_id = $driver_row['driver_id'];
+        $_SESSION['driver_id'] = $driver_id;
+    }
+    $driver_stmt->close();
+}
+
 // Check if branch_id column exists in deliveries table
 $delivery_branch_column_exists = false;
 $check_delivery_column = $conn->query("SHOW COLUMNS FROM deliveries LIKE 'branch_id'");
@@ -29,38 +45,111 @@ if ($check_delivery_column && $check_delivery_column->num_rows > 0) {
     $delivery_branch_column_exists = true;
 }
 
-// Determine branch filter condition for deliveries
+// Check if driver_id column exists in deliveries table
+$delivery_driver_column_exists = false;
+$check_delivery_driver_column = $conn->query("SHOW COLUMNS FROM deliveries LIKE 'driver_id'");
+if ($check_delivery_driver_column && $check_delivery_driver_column->num_rows > 0) {
+    $delivery_driver_column_exists = true;
+}
+
+// Determine filter conditions
 $delivery_branch_condition = "";
+$delivery_driver_condition = "";
 
 if ($delivery_branch_column_exists && !$view_all_branches && $branch_id > 0) {
     $delivery_branch_condition = "AND d.branch_id = $branch_id";
 }
 
+// For delivery role, filter by driver_id
+if ($user_role == 'delivery' && $driver_id > 0 && $delivery_driver_column_exists) {
+    $delivery_driver_condition = "AND d.driver_id = $driver_id";
+} elseif ($user_role == 'delivery' && !$delivery_driver_column_exists) {
+    // If driver_id column doesn't exist, show a warning but still show orders
+    $driver_column_warning = true;
+}
+
 // AUTO-CREATE DELIVERIES FROM WAREHOUSE READY ORDERS
 try {
-    // Find sales orders that are 'ready' but don't have a delivery record yet
-    $create_deliveries_query = "
-        INSERT INTO deliveries (trip_id, so_id, customer_id, stop_sequence, delivery_status, branch_id, created_at, updated_at)
-        SELECT 
-            COALESCE(t.trip_id, 0) as trip_id,
-            so.so_id,
-            so.customer_id,
-            NULL as stop_sequence,
-            'pending' as delivery_status,
-            so.branch_id,
-            NOW() as created_at,
-            NOW() as updated_at
-        FROM sales_orders so
-        LEFT JOIN deliveries d ON so.so_id = d.so_id
-        LEFT JOIN trip_tickets t ON so.so_id = t.so_id
-        WHERE so.order_status IN ('ready', 'processing')
-        AND d.delivery_id IS NULL
-        AND so.branch_id = $branch_id
-    ";
-    $conn->query($create_deliveries_query);
+    // First, get the driver's trip tickets to know which orders they're assigned to
+    if ($user_role == 'delivery' && $driver_id > 0) {
+        // Get all trip tickets assigned to this driver
+        $trip_ids_query = "SELECT trip_id FROM trip_tickets WHERE driver_id = ?";
+        $trip_stmt = $conn->prepare($trip_ids_query);
+        $trip_stmt->bind_param("i", $driver_id);
+        $trip_stmt->execute();
+        $trip_result = $trip_stmt->get_result();
+        
+        $trip_ids = [];
+        while ($trip_row = $trip_result->fetch_assoc()) {
+            $trip_ids[] = $trip_row['trip_id'];
+        }
+        $trip_stmt->close();
+        
+        // If driver has trip tickets, create deliveries for them if not exist
+        if (!empty($trip_ids)) {
+            $trip_ids_str = implode(',', $trip_ids);
+            
+            // Find sales orders that are 'ready' but don't have a delivery record yet
+            $create_deliveries_query = "
+                INSERT INTO deliveries (trip_id, so_id, customer_id, stop_sequence, delivery_status, branch_id, driver_id, created_at, updated_at)
+                SELECT 
+                    tt.trip_id,
+                    tt.so_id,
+                    so.customer_id,
+                    NULL as stop_sequence,
+                    'pending' as delivery_status,
+                    so.branch_id,
+                    ? as driver_id,
+                    NOW() as created_at,
+                    NOW() as updated_at
+                FROM trip_tickets tt
+                INNER JOIN sales_orders so ON tt.so_id = so.so_id
+                LEFT JOIN deliveries d ON tt.so_id = d.so_id
+                WHERE tt.trip_id IN ($trip_ids_str)
+                AND so.order_status IN ('ready', 'processing')
+                AND d.delivery_id IS NULL
+            ";
+            $create_stmt = $conn->prepare($create_deliveries_query);
+            $create_stmt->bind_param("i", $driver_id);
+            $create_stmt->execute();
+            $create_stmt->close();
+        }
+    } else {
+        // For non-delivery roles, create deliveries as before
+        $create_deliveries_query = "
+            INSERT INTO deliveries (trip_id, so_id, customer_id, stop_sequence, delivery_status, branch_id, created_at, updated_at)
+            SELECT 
+                COALESCE(t.trip_id, 0) as trip_id,
+                so.so_id,
+                so.customer_id,
+                NULL as stop_sequence,
+                'pending' as delivery_status,
+                so.branch_id,
+                NOW() as created_at,
+                NOW() as updated_at
+            FROM sales_orders so
+            LEFT JOIN deliveries d ON so.so_id = d.so_id
+            LEFT JOIN trip_tickets t ON so.so_id = t.so_id
+            WHERE so.order_status IN ('ready', 'processing')
+            AND d.delivery_id IS NULL
+            AND so.branch_id = $branch_id
+        ";
+        $conn->query($create_deliveries_query);
+    }
     
 } catch (Exception $e) {
     error_log("Error auto-creating deliveries: " . $e->getMessage());
+}
+
+// Build the WHERE clause for the main query
+$where_clause = "WHERE d.delivery_status IN ('pending', 'in-transit', 'partial', 'delivered')";
+$where_clause .= $delivery_branch_condition;
+
+if ($user_role == 'delivery' && $driver_id > 0 && $delivery_driver_column_exists) {
+    $where_clause .= " AND d.driver_id = $driver_id";
+} elseif ($user_role == 'delivery' && $delivery_driver_column_exists) {
+    // If driver_id exists but no driver_id assigned, show nothing
+    $where_clause .= " AND 1=0"; // No results
 }
 
 // Get delivery statistics including delivered
@@ -72,7 +161,7 @@ try {
             SUM(CASE WHEN delivery_status = 'delivered' AND DATE(delivery_date) = CURDATE() THEN 1 ELSE 0 END) as completed_today,
             SUM(CASE WHEN delivery_status = 'delivered' THEN 1 ELSE 0 END) as total_completed
         FROM deliveries d
-        WHERE 1=1 $delivery_branch_condition
+        $where_clause
     ";
     $stats_result = $conn->query($stats_query);
     $stats = $stats_result->fetch_assoc();
@@ -89,6 +178,7 @@ try {
             d.signed_by,
             d.remarks,
             d.branch_id,
+            d.driver_id,
             so.so_number,
             so.total_amount,
             so.order_date,
@@ -100,15 +190,17 @@ try {
             c.city,
             c.longitude,
             c.latitude,
+            dr.driver_name,
+            dr.vehicle_plate_number,
             GROUP_CONCAT(CONCAT(IFNULL(i.item_name, 'Unknown'), ' (', soi.quantity_ordered, ')') SEPARATOR '; ') as items,
             GROUP_CONCAT(CONCAT(soi.quantity_ordered, ' x ', IFNULL(i.item_name, 'Unknown'), ' - ₱', soi.unit_price) SEPARATOR '||') as items_receipt
         FROM deliveries d
         INNER JOIN sales_orders so ON d.so_id = so.so_id
         INNER JOIN customers c ON d.customer_id = c.customer_id
+        LEFT JOIN drivers dr ON d.driver_id = dr.driver_id
         LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
         LEFT JOIN items i ON soi.item_id = i.item_id
-        WHERE d.delivery_status IN ('pending', 'in-transit', 'partial', 'delivered')
-        $delivery_branch_condition
+        $where_clause
         GROUP BY d.delivery_id
         ORDER BY 
             CASE 
@@ -132,6 +224,19 @@ try {
     error_log("Database error in fordelivery.php: " . $e->getMessage());
     $delivery_orders = [];
     $stats = ['pending_count' => 0, 'active_count' => 0, 'completed_today' => 0, 'total_completed' => 0];
+    $driver_column_warning = true;
+}
+
+// Get driver info if applicable
+$driver_info = null;
+if ($user_role == 'delivery' && $driver_id > 0) {
+    $driver_query = "SELECT * FROM drivers WHERE driver_id = ?";
+    $driver_stmt = $conn->prepare($driver_query);
+    $driver_stmt->bind_param("i", $driver_id);
+    $driver_stmt->execute();
+    $driver_result = $driver_stmt->get_result();
+    $driver_info = $driver_result->fetch_assoc();
+    $driver_stmt->close();
 }
 ?>
 <!DOCTYPE html>
@@ -162,6 +267,40 @@ try {
             font-size: 0.75rem;
             font-weight: 600;
             margin-left: 5px;
+        }
+        
+        .driver-badge {
+            background-color: #e7f1ff;
+            color: #0d6efd;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            display: inline-block;
+        }
+        
+        .driver-info-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .driver-info-card h5 {
+            color: white;
+            border-bottom: 1px solid rgba(255,255,255,0.3);
+            padding-bottom: 10px;
+        }
+        
+        .driver-info-card .info-label {
+            color: rgba(255,255,255,0.8);
+            font-size: 0.9rem;
+        }
+        
+        .driver-info-card .info-value {
+            color: white;
+            font-weight: 600;
         }
         
         .alert-info {
@@ -355,6 +494,9 @@ try {
                     <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
                     <div class="user-details-sidebar">
                         <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
+                        <?php if ($driver_info): ?>
+                            <span class="user-role-sidebar">Driver: <?php echo htmlspecialchars($driver_info['driver_name']); ?></span>
+                        <?php endif; ?>
                     </div>
                 </div>
                 
@@ -377,6 +519,37 @@ try {
                 </div>
             </div>
 
+            <!-- Driver Info Card (for delivery role) -->
+            <?php if ($user_role == 'delivery' && $driver_info): ?>
+            <div class="driver-info-card">
+                <div class="row">
+                    <div class="col-md-3">
+                        <h5><i class="bi bi-truck"></i> Driver Details</h5>
+                    </div>
+                    <div class="col-md-9">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="info-label">Driver Name</div>
+                                <div class="info-value"><?php echo htmlspecialchars($driver_info['driver_name']); ?></div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="info-label">License</div>
+                                <div class="info-value"><?php echo htmlspecialchars($driver_info['license_number']); ?></div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="info-label">Vehicle</div>
+                                <div class="info-value"><?php echo htmlspecialchars($driver_info['vehicle_type']); ?></div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="info-label">Plate Number</div>
+                                <div class="info-value"><?php echo htmlspecialchars($driver_info['vehicle_plate_number']); ?></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
+
             <!-- Branch Info Alert (if no branch_id column in deliveries) -->
             <?php if (!$delivery_branch_column_exists): ?>
                 <div class="alert alert-info alert-dismissible fade show" role="alert">
@@ -388,6 +561,23 @@ try {
                     <code>ALTER TABLE deliveries ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
                     <br><br>
                     <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('deliveries')">
+                        <i class="bi bi-files"></i> Copy SQL
+                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
+
+            <!-- Driver Column Alert (if no driver_id column in deliveries) -->
+            <?php if (isset($driver_column_warning) && $driver_column_warning): ?>
+                <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    <i class="bi bi-info-circle"></i> 
+                    <strong>Driver filtering for deliveries not yet set up.</strong> Please run this SQL in phpMyAdmin to enable driver-specific delivery data:
+                    <br><br>
+                    <code>ALTER TABLE deliveries ADD COLUMN driver_id INT NULL;</code>
+                    <br>
+                    <code>ALTER TABLE deliveries ADD FOREIGN KEY (driver_id) REFERENCES drivers(driver_id);</code>
+                    <br><br>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('deliveries_driver')">
                         <i class="bi bi-files"></i> Copy SQL
                     </button>
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
@@ -476,7 +666,9 @@ try {
                     <i class="bi bi-truck" style="font-size: 2rem;"></i>
                     <p class="mt-3 mb-0">
                         No deliveries found.
-                        <?php if ($delivery_branch_column_exists && !$view_all_branches): ?>
+                        <?php if ($user_role == 'delivery'): ?>
+                            <br><small>You don't have any deliveries assigned yet.</small>
+                        <?php elseif ($delivery_branch_column_exists && !$view_all_branches): ?>
                             <br><small>No deliveries found for your branch.</small>
                         <?php endif; ?>
                     </p>
@@ -504,6 +696,9 @@ try {
                             <tr class="<?php echo $order['delivery_status'] == 'delivered' ? 'delivered-row' : ''; ?>">
                                 <td>
                                     <span class="badge bg-light text-dark"><?php echo htmlspecialchars($order['so_number']); ?></span>
+                                    <?php if ($user_role != 'delivery' && isset($order['driver_name']) && $order['driver_name']): ?>
+                                        <br><small class="driver-badge"><?php echo htmlspecialchars($order['driver_name']); ?></small>
+                                    <?php endif; ?>
                                 </td>
                                 <td><?php echo htmlspecialchars($order['customer_name']); ?></td>
                                 <td><?php echo htmlspecialchars($order['address'] . ', ' . $order['city']); ?></td>
@@ -844,6 +1039,8 @@ try {
     <script>
         const branchId = <?php echo $branch_id; ?>;
         const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
+        const userRole = '<?php echo $user_role; ?>';
+        const driverId = <?php echo $driver_id ?: 0; ?>;
 
         let currentDeliveryId = null;
         let currentSoId = null;
@@ -1428,6 +1625,8 @@ try {
             let sql = '';
             if (table === 'deliveries') {
                 sql = "ALTER TABLE deliveries ADD COLUMN branch_id INT NULL;\nALTER TABLE deliveries ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+            } else if (table === 'deliveries_driver') {
+                sql = "ALTER TABLE deliveries ADD COLUMN driver_id INT NULL;\nALTER TABLE deliveries ADD FOREIGN KEY (driver_id) REFERENCES drivers(driver_id);";
             }
             
             navigator.clipboard.writeText(sql).then(() => {

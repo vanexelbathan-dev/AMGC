@@ -15,6 +15,26 @@ $user_role = $_SESSION['role'];
 $branch_id = $_SESSION['branch_id'];
 $view_all_branches = $_SESSION['view_all_branches'] ?? false;
 
+// ================= GET DRIVER ID FOR DELIVERY ROLE =================
+$driver_id = 0;
+if ($user_role == 'delivery') {
+    // Try to get driver_id from session first
+    $driver_id = $_SESSION['driver_id'] ?? 0;
+    
+    // If not in session, get from users table
+    if ($driver_id == 0) {
+        $driver_query = "SELECT driver_id FROM users WHERE user_id = ? AND driver_id IS NOT NULL";
+        $driver_stmt = $conn->prepare($driver_query);
+        $driver_stmt->bind_param("i", $user_id);
+        $driver_stmt->execute();
+        $driver_result = $driver_stmt->get_result();
+        if ($driver_row = $driver_result->fetch_assoc()) {
+            $driver_id = $driver_row['driver_id'];
+            $_SESSION['driver_id'] = $driver_id;
+        }
+        $driver_stmt->close();
+    }
+}
 
 // ================= CHECK COLUMNS =================
 $tt_branch_column_exists = false;
@@ -29,14 +49,19 @@ if ($check_drivers_column && $check_drivers_column->num_rows > 0) {
     $drivers_branch_column_exists = true;
 }
 
-
-// ================= BRANCH FILTER =================
+// ================= BUILD FILTER CONDITIONS =================
 $branch_filter = "";
+$driver_filter = "";
 
+// Branch filter
 if ($tt_branch_column_exists && !$view_all_branches) {
-    $branch_filter = " AND branch_id = $branch_id ";
+    $branch_filter = " AND tt.branch_id = $branch_id ";
 }
 
+// Driver filter for delivery role
+if ($user_role == 'delivery' && $driver_id > 0) {
+    $driver_filter = " AND tt.driver_id = $driver_id ";
+}
 
 // ================= ADD TRIP =================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_trip') {
@@ -45,7 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $random = rand(1000, 9999);
     $trip_number = $prefix . $random;
 
-    $driver_id = $_POST['driver_id'];
+    $driver_id_post = $_POST['driver_id'];
     $trip_date = $_POST['trip_date'];
     $trip_status = $_POST['trip_status'];
     $total_stops = $_POST['total_stops'] ?: 0;
@@ -63,7 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
     $stmt->bind_param("siisssis",
         $trip_number,
-        $driver_id,
+        $driver_id_post,
         $insert_branch_id,
         $trip_date,
         $trip_status,
@@ -81,14 +106,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $stmt->close();
 }
 
-
 // ================= STATISTICS =================
+// Add driver filter to statistics
+$stats_filter = " WHERE 1=1 " . $branch_filter . $driver_filter;
 
 // Total Trips
 $total_query = "
     SELECT COUNT(*) as count 
-    FROM trip_tickets 
-    WHERE 1=1 $branch_filter
+    FROM trip_tickets tt
+    $stats_filter
 ";
 $result = $conn->query($total_query);
 $stats['total_trips'] = $result->fetch_assoc()['count'] ?? 0;
@@ -96,30 +122,26 @@ $stats['total_trips'] = $result->fetch_assoc()['count'] ?? 0;
 // Completed
 $completed_query = "
     SELECT COUNT(*) as count 
-    FROM trip_tickets 
-    WHERE trip_status = 'completed' $branch_filter
-";
+    FROM trip_tickets tt
+    WHERE tt.trip_status = 'completed' " . $branch_filter . $driver_filter;
 $result = $conn->query($completed_query);
 $stats['completed'] = $result->fetch_assoc()['count'] ?? 0;
 
 // In Progress
 $in_progress_query = "
     SELECT COUNT(*) as count 
-    FROM trip_tickets 
-    WHERE trip_status = 'in-progress' $branch_filter
-";
+    FROM trip_tickets tt
+    WHERE tt.trip_status = 'in-progress' " . $branch_filter . $driver_filter;
 $result = $conn->query($in_progress_query);
 $stats['in_transit'] = $result->fetch_assoc()['count'] ?? 0;
 
 // Planned
 $planned_query = "
     SELECT COUNT(*) as count 
-    FROM trip_tickets 
-    WHERE trip_status = 'planned' $branch_filter
-";
+    FROM trip_tickets tt
+    WHERE tt.trip_status = 'planned' " . $branch_filter . $driver_filter;
 $result = $conn->query($planned_query);
 $stats['pending'] = $result->fetch_assoc()['count'] ?? 0;
-
 
 // ================= DRIVERS =================
 $drivers_query = "
@@ -132,9 +154,13 @@ if ($drivers_branch_column_exists && !$view_all_branches) {
     $drivers_query .= " AND branch_id = $branch_id";
 }
 
+// For delivery role, only show their own driver
+if ($user_role == 'delivery' && $driver_id > 0) {
+    $drivers_query .= " AND driver_id = $driver_id";
+}
+
 $drivers_result = $conn->query($drivers_query);
 $drivers = $drivers_result ? $drivers_result->fetch_all(MYSQLI_ASSOC) : [];
-
 
 // ================= BRANCH DROPDOWN =================
 $branches_query = "
@@ -149,33 +175,41 @@ if (!$view_all_branches) {
 $branches_result = $conn->query($branches_query);
 $branches = $branches_result ? $branches_result->fetch_all(MYSQLI_ASSOC) : [];
 
-
-// ================= TRIP LIST - UPDATED QUERY TO GET DRIVER FROM PICK LIST =================
+// ================= TRIP LIST - FIXED: Get driver from pick_lists.driver_id =================
 $trip_tickets_query = "
     SELECT 
         tt.*, 
-        -- Get driver from pick list (priority) or fallback to trip ticket driver
-        COALESCE(pl.driver_name, d.driver_name) as driver_name,
+        -- Get driver from pick list (using driver_id from pick_lists)
+        d.driver_name,
+        d.license_number,
+        d.contact_number,
+        d.vehicle_type,
+        d.vehicle_plate_number,
         b.branch_name,
         pl.pick_list_id,
-        pl.pick_list_number
+        pl.pick_list_number,
+        pl.so_id,
+        so.so_number,
+        c.customer_name,
+        c.address,
+        c.city
     FROM trip_tickets tt
-    LEFT JOIN drivers d ON tt.driver_id = d.driver_id
     LEFT JOIN branches b ON tt.branch_id = b.branch_id
-    LEFT JOIN (
-        SELECT 
-            pl.pick_list_id,
-            pl.pick_list_number,
-            d.driver_name,
-            d.driver_id
-        FROM pick_lists pl
-        LEFT JOIN drivers d ON pl.driver_id = d.driver_id
-    ) pl ON tt.picklist_id = pl.pick_list_id
+    LEFT JOIN pick_lists pl ON tt.picklist_id = pl.pick_list_id
+    LEFT JOIN drivers d ON pl.driver_id = d.driver_id
+    LEFT JOIN sales_orders so ON pl.so_id = so.so_id
+    LEFT JOIN customers c ON so.customer_id = c.customer_id
     WHERE 1=1
 ";
 
+// Add branch filter
 if (!$view_all_branches) {
     $trip_tickets_query .= " AND tt.branch_id = $branch_id";
+}
+
+// Add driver filter for delivery role (filter by pick_lists.driver_id)
+if ($user_role == 'delivery' && $driver_id > 0) {
+    $trip_tickets_query .= " AND pl.driver_id = $driver_id";
 }
 
 $trip_tickets_query .= " ORDER BY tt.created_at DESC";
@@ -183,6 +217,22 @@ $trip_tickets_query .= " ORDER BY tt.created_at DESC";
 $result = $conn->query($trip_tickets_query);
 $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
 
+// Debug: Check if we got any trip tickets
+if (empty($trip_tickets) && $user_role == 'delivery') {
+    error_log("No trip tickets found for driver_id: " . $driver_id);
+}
+
+// ================= GET DRIVER INFO FOR DISPLAY =================
+$driver_info = null;
+if ($user_role == 'delivery' && $driver_id > 0) {
+    $driver_info_query = "SELECT * FROM drivers WHERE driver_id = ?";
+    $driver_info_stmt = $conn->prepare($driver_info_query);
+    $driver_info_stmt->bind_param("i", $driver_id);
+    $driver_info_stmt->execute();
+    $driver_info_result = $driver_info_stmt->get_result();
+    $driver_info = $driver_info_result->fetch_assoc();
+    $driver_info_stmt->close();
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -210,6 +260,31 @@ $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
             font-size: 0.75rem;
             font-weight: 600;
             margin-left: 5px;
+        }
+        
+        /* Driver info card */
+        .driver-info-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .driver-info-card h5 {
+            color: white;
+            border-bottom: 1px solid rgba(255,255,255,0.3);
+            padding-bottom: 10px;
+        }
+        
+        .driver-info-card .info-label {
+            color: rgba(255,255,255,0.8);
+            font-size: 0.9rem;
+        }
+        
+        .driver-info-card .info-value {
+            color: white;
+            font-weight: 600;
         }
         
         /* Alert for missing branch column */
@@ -327,6 +402,12 @@ $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
             min-width: 90px;
             text-align: center;
         }
+        
+        /* Customer info */
+        .customer-info {
+            font-size: 12px;
+            color: #6c757d;
+        }
     </style>
 </head>
 <body>
@@ -372,6 +453,9 @@ $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
                     <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
                     <div class="user-details-sidebar">
                         <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
+                        <?php if ($driver_info): ?>
+                            <span class="user-role-sidebar">Driver: <?php echo htmlspecialchars($driver_info['driver_name']); ?></span>
+                        <?php endif; ?>
                     </div>
                 </div>
                 
@@ -384,7 +468,7 @@ $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
 
         <!-- Main Content Area -->
         <div class="main-content">
-            <!-- Header Section with User Info and Logout -->
+            <!-- Header Section -->
             <div class="navbar-top">
                 <button class="mobile-toggle-btn" id="mobileToggleBtn">
                     <i class="bi bi-list"></i>
@@ -393,12 +477,45 @@ $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
                     <h2><i class="bi bi-ticket me-2"></i>Trip Tickets</h2>
                     <p>Track and manage delivery trip tickets</p>
                 </div>
+                <?php if ($user_role != 'delivery'): ?>
                 <div class="ms-auto me-3">
                     <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addTicketModal">
                         <i class="bi bi-plus-circle me-1"></i> New Trip Ticket
                     </button>
                 </div>
+                <?php endif; ?>
             </div>
+
+            <!-- Driver Info Card (for delivery role) -->
+            <?php if ($user_role == 'delivery' && $driver_info): ?>
+            <div class="driver-info-card">
+                <div class="row">
+                    <div class="col-md-3">
+                        <h5><i class="bi bi-truck"></i> Your Driver Details</h5>
+                    </div>
+                    <div class="col-md-9">
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="info-label">Driver Name</div>
+                                <div class="info-value"><?php echo htmlspecialchars($driver_info['driver_name']); ?></div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="info-label">License</div>
+                                <div class="info-value"><?php echo htmlspecialchars($driver_info['license_number']); ?></div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="info-label">Vehicle</div>
+                                <div class="info-value"><?php echo htmlspecialchars($driver_info['vehicle_type']); ?></div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="info-label">Plate Number</div>
+                                <div class="info-value"><?php echo htmlspecialchars($driver_info['vehicle_plate_number']); ?></div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <?php endif; ?>
 
             <!-- Branch Info Alerts -->
             <?php if (!$tt_branch_column_exists): ?>
@@ -459,7 +576,9 @@ $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
                         <div>
                             <div class="stat-value"><?php echo $stats['total_trips']; ?></div>
                             <div class="stat-label">Total Trips</div>
-                            <?php if ($tt_branch_column_exists && !$view_all_branches): ?>
+                            <?php if ($user_role == 'delivery'): ?>
+                                <small class="text-white-50">Your Trips</small>
+                            <?php elseif ($tt_branch_column_exists && !$view_all_branches): ?>
                                 <small class="text-white-50">Your Branch</small>
                             <?php endif; ?>
                         </div>
@@ -515,7 +634,7 @@ $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
                                 <span class="input-group-text">
                                     <i class="bi bi-search"></i>
                                 </span>
-                                <input type="text" class="form-control" id="searchInput" placeholder="Search by ticket ID, driver, or pick list...">
+                                <input type="text" class="form-control" id="searchInput" placeholder="Search by ticket ID, driver, customer...">
                             </div>
                         </div>
                         <div class="col-md-6">
@@ -538,14 +657,16 @@ $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
                     <i class="bi bi-ticket" style="font-size: 2rem;"></i>
                     <p class="mt-3 mb-0">
                         No trip tickets found.
-                        <?php if ($tt_branch_column_exists && !$view_all_branches): ?>
+                        <?php if ($user_role == 'delivery'): ?>
+                            <br><small>You don't have any trip tickets assigned yet. Please check with your warehouse supervisor.</small>
+                        <?php elseif ($tt_branch_column_exists && !$view_all_branches): ?>
                             <br><small>No trip tickets for your branch yet.</small>
                         <?php endif; ?>
                     </p>
                 </div>
             <?php else: ?>
 
-            <!-- Trip Tickets Table - UPDATED: Total Stops Removed, Driver from Pick List -->
+            <!-- Trip Tickets Table -->
             <div class="card">
                 <div class="table-responsive">
                     <table class="table table-hover mb-0">
@@ -556,6 +677,7 @@ $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
                                 <th>Branch</th>
                                 <th>Trip Date</th>
                                 <th>Status</th>
+                                <th>Customer</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -574,15 +696,20 @@ $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
                                 
                                 // Determine driver source
                                 $driver_display = !empty($row['driver_name']) ? $row['driver_name'] : 'N/A';
-                                $has_picklist_driver = !empty($row['pick_list_id']) && !empty($row['driver_name']);
+                                $customer_display = !empty($row['customer_name']) ? $row['customer_name'] : 'N/A';
+                                $picklist_info = !empty($row['pick_list_number']) ? 'PL: ' . $row['pick_list_number'] : '';
                                 ?>
                                 <tr>
                                     <td>
                                         <span class="badge bg-light text-dark fs-6 p-2"><?php echo htmlspecialchars($row['trip_number']); ?></span>
+                                        <?php if ($picklist_info): ?>
+                                            <br><small class="text-muted"><?php echo $picklist_info; ?></small>
+                                        <?php endif; ?>
                                     </td>
                                     <td>
                                         <?php if ($driver_display != 'N/A'): ?>
-                                                <?php echo htmlspecialchars($driver_display); ?>
+                                            <span class="driver-badge">
+                                                <i class="bi bi-person-badge"></i> <?php echo htmlspecialchars($driver_display); ?>
                                             </span>
                                         <?php else: ?>
                                             <span class="text-muted">—</span>
@@ -590,15 +717,18 @@ $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
                                     </td>
                                     <td>
                                         <?php echo htmlspecialchars($row['branch_name'] ?? 'N/A'); ?>
-                                        <?php if ($tt_branch_column_exists && $view_all_branches): ?>
-                                            <br><small class="text-muted">ID: <?php echo $row['branch_id']; ?></small>
-                                        <?php endif; ?>
                                     </td>
                                     <td><?php echo date('Y-m-d', strtotime($row['trip_date'])); ?></td>
                                     <td>
                                         <span class="badge <?php echo $status_badge; ?>" style="padding: 6px 12px;">
                                             <?php echo ucfirst(str_replace('-', ' ', $row['trip_status'])); ?>
                                         </span>
+                                    </td>
+                                    <td>
+                                        <span class="fw-semibold"><?php echo htmlspecialchars($customer_display); ?></span>
+                                        <?php if (!empty($row['so_number'])): ?>
+                                            <br><small class="text-muted"><?php echo htmlspecialchars($row['so_number']); ?></small>
+                                        <?php endif; ?>
                                     </td>
                                     <td>
                                         <button class="btn btn-sm btn-outline-info" data-bs-toggle="modal" data-bs-target="#viewDetailsModal" 
@@ -616,7 +746,8 @@ $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
         </div>
     </div>
 
-    <!-- Add Trip Ticket Modal -->
+    <!-- Add Trip Ticket Modal (for non-delivery roles only) -->
+    <?php if ($user_role != 'delivery'): ?>
     <div class="modal fade" id="addTicketModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
@@ -710,6 +841,7 @@ $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
             </div>
         </div>
     </div>
+    <?php endif; ?>
 
     <!-- View Details Modal -->
     <div class="modal fade" id="viewDetailsModal" tabindex="-1">
@@ -737,6 +869,8 @@ $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
         const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
         const ttBranchColumnExists = <?php echo $tt_branch_column_exists ? 'true' : 'false'; ?>;
         const driversBranchColumnExists = <?php echo $drivers_branch_column_exists ? 'true' : 'false'; ?>;
+        const userRole = '<?php echo $user_role; ?>';
+        const driverId = <?php echo $driver_id ?: 0; ?>;
 
         // ================= SIDEBAR FUNCTIONS =================
         function toggleSidebar() {
@@ -921,7 +1055,7 @@ $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
                 const rows = document.querySelectorAll('tbody tr');
                 
                 rows.forEach(row => {
-                    const statusCell = row.cells[5];
+                    const statusCell = row.cells[4];
                     if (statusCell) {
                         const status = statusCell.textContent.toLowerCase();
                         const statusValue = status.replace('in transit', 'in-progress').trim();
@@ -952,7 +1086,7 @@ $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
             }
         }
 
-        // Form validation
+        // Form validation (for non-delivery roles)
         const addTicketForm = document.getElementById('addTicketForm');
         if (addTicketForm) {
             addTicketForm.addEventListener('submit', function(e) {
@@ -987,11 +1121,10 @@ $trip_tickets = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
 
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', function() {
-            console.log("Trip Tickets page loaded - Driver from Pick List");
+            console.log("Trip Tickets page loaded - Fixed driver from pick_lists");
+            console.log("User Role:", userRole);
+            console.log("Driver ID:", driverId);
             console.log("Branch ID:", branchId);
-            console.log("View All Branches:", viewAllBranches);
-            console.log("TT Branch Column Exists:", ttBranchColumnExists);
-            console.log("Drivers Branch Column Exists:", driversBranchColumnExists);
             
             // Initialize sidebar
             initializeSidebar();
