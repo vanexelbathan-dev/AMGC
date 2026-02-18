@@ -671,6 +671,12 @@ function formatCompletion($percentage) {
                             <span class="nav-text">Purchase Orders</span>
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="drivers.php">
+                            <i class="bi bi-truck"></i>
+                            <span class="nav-text">Drivers</span>
+                        </a>
+                    </li>
                     <!-- TRIP TICKETS ACTIVE LINK -->
                     <li class="nav-item">
                         <a class="nav-link active" href="trip_tickets.php">

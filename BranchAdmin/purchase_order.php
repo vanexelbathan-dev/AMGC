@@ -813,6 +813,12 @@ function formatDateTime($dateStr) {
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="drivers.php">
+                            <i class="bi bi-truck"></i>
+                            <span class="nav-text">Drivers</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="trip_tickets.php">
                             <i class="bi bi-ticket-perforated"></i>
                             <span class="nav-text">Trip Tickets</span>

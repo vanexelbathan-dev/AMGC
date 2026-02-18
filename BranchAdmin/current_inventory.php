@@ -362,6 +362,7 @@ function getStockStatus($stock, $reorder_level) {
                 margin-right: -8px;
             }
         }
+        
     </style>
 </head>
 <body>
@@ -409,6 +410,12 @@ function getStockStatus($stock, $reorder_level) {
                         <a class="nav-link" href="purchase_order.php" data-title="Purchase Orders">
                             <i class="bi bi-box"></i>
                             <span class="nav-text">Purchase Orders</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="drivers.php">
+                            <i class="bi bi-truck"></i>
+                            <span class="nav-text">Drivers</span>
                         </a>
                     </li>
                     <li class="nav-item">
@@ -576,10 +583,10 @@ function getStockStatus($stock, $reorder_level) {
                             <?php if ($items_branch_column_exists && $view_all_branches): ?>
                                 <span class="badge bg-success align-self-center">All Branches</span>
                             <?php endif; ?>
-                            <button class="btn btn-sm btn-outline-success" onclick="exportToExcel()">
+                            <button class="btn btn-success" onclick="exportToExcel()">
                                 <i class="bi bi-file-earmark-excel"></i> Export to Excel
                             </button>
-                            <button class="btn btn-sm btn-primary" onclick="showAddItemModal()">
+                            <button class="btn btn-primary" onclick="showAddItemModal()">
                                 <i class="bi bi-plus-circle"></i> Add Item
                             </button>
                         </div>
@@ -670,15 +677,17 @@ function getStockStatus($stock, $reorder_level) {
                                             <span class="badge <?= $status_class ?>"><?= ucfirst($item['status']) ?></span>
                                         </td>
                                         <td>
-                                            <button class="btn btn-sm btn-outline-primary" onclick="viewItem(<?= $item['item_id'] ?>)" title="View">
+                                             <div class="action-btn" role="group">
+                                            <button class="btn-action btn-view" onclick="viewItem(<?= $item['item_id'] ?>)" title="View">
                                                 <i class="bi bi-eye"></i>
                                             </button>
-                                            <button class="btn btn-sm btn-outline-warning" onclick="editItem(<?= $item['item_id'] ?>)" title="Edit">
+                                            <button class="btn-action btn-edit" onclick="editItem(<?= $item['item_id'] ?>)" title="Edit">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
-                                            <button class="btn btn-sm btn-outline-danger" onclick="deleteItem(<?= $item['item_id'] ?>)" title="Delete">
+                                            <button class="btn-action btn-delete" onclick="deleteItem(<?= $item['item_id'] ?>)" title="Delete">
                                                 <i class="bi bi-trash"></i>
                                             </button>
+                                            </div>
                                         </td>
                                     </tr>
                                     <?php endforeach; ?>

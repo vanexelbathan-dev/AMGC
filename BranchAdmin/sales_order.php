@@ -891,6 +891,12 @@ function formatDateTime($dateStr) {
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="drivers.php">
+                            <i class="bi bi-truck"></i>
+                            <span class="nav-text">Drivers</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="trip_tickets.php">
                             <i class="bi bi-ticket-perforated"></i>
                             <span class="nav-text">Trip Tickets</span>
@@ -923,7 +929,7 @@ function formatDateTime($dateStr) {
                     </button>
                     
                     <div class="page-title">
-                        <h2><i class="bi bi-bag me-2"></i>Sales Orders</h2>
+                        <h2></i>Sales Orders</h2>
                         <p id="dashboardSubtitle">
                             Manage and track all sales orders
                         </p>
@@ -1084,7 +1090,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 <!-- Sales Orders Table -->
                 <div class="data-table">
                     <div class="table-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>Sales Orders</h5>
+                        <h5 class="mb-0">Sales Orders</h5>
                         <div class="d-flex gap-2 align-items-center">
                             <?php if ($so_branch_column_exists && $view_all_branches): ?>
                                 <span class="badge bg-success">All Branches</span>
@@ -1170,20 +1176,20 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                         </td>
                                         <td>
                                             <div class="action-buttons">
-                                                <button class="btn btn-sm btn-outline-primary" onclick="viewOrder(<?= $order['so_id'] ?>)" title="View">
+                                                <button class="btn-action btn-view" onclick="viewOrder(<?= $order['so_id'] ?>)" title="View">
                                                     <i class="bi bi-eye"></i>
                                                 </button>
                                                 <?php if ($order['order_status'] == 'pending'): ?>
-                                                    <button class="btn btn-sm btn-outline-warning" onclick="editOrder(<?= $order['so_id'] ?>)" title="Edit">
+                                                    <button class="btn-action btn-edit" onclick="editOrder(<?= $order['so_id'] ?>)" title="Edit">
                                                         <i class="bi bi-pencil"></i>
                                                     </button>
                                                 <?php elseif (in_array($order['order_status'], ['confirmed', 'processing', 'ready', 'delivered'])): ?>
-                                                    <button class="btn btn-sm btn-outline-success" onclick="printOrder(<?= $order['so_id'] ?>)" title="Print Order">
+                                                    <button class="btn-action btn-printer" onclick="printOrder(<?= $order['so_id'] ?>)" title="Print Order">
                                                         <i class="bi bi-printer"></i>
                                                     </button>
                                                 <?php endif; ?>
                                                 <?php if ($order['order_status'] == 'pending'): ?>
-                                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteOrder(<?= $order['so_id'] ?>)" title="Delete">
+                                                    <button class="btn-action btn-delete" onclick="deleteOrder(<?= $order['so_id'] ?>)" title="Delete">
                                                         <i class="bi bi-trash"></i>
                                                     </button>
                                                 <?php endif; ?>

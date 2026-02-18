@@ -1016,13 +1016,12 @@ a:hover {
 
 .table-header {
     padding: 1.25rem 1.5rem;
-    border-bottom: 1px solid var(--light-green);
-    background: #f9fafb;
+    background: #047857;
+;
 }
-
 .table-header h5 {
     margin: 0;
-    color: var(--dark-color);
+    color: white;
     font-weight: 600;
     font-size: 1.1rem;
 }
@@ -1118,32 +1117,86 @@ a:hover {
     gap: 0.5rem;
 }
 
-.btn-icon {
-    width: 32px;
-    height: 32px;
+.btn-action {
+     width: 36px;
+    height: 36px;
     border-radius: 8px;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    border: none;
-    transition: all 0.3s;
+    transition: all 0.2s;
+    border: 1px solid transparent;
 }
 
-.btn-icon.btn-view {
-    background: rgba(16, 185, 129, 0.1);
-    color: var(--primary-green);
+.btn-action.btn-view {
+    background-color: #e3f2fd;
+    color: #1976d2;
+    border-color: #bbdefb;
 }
-
-.btn-icon.btn-edit {
-    background: rgba(59, 130, 246, 0.1);
-    color: #3b82f6;
+        
+.btn-action.btn-view:hover {
+    background-color: #bbdefb;
+    transform: translateY(-2px);
 }
-
-.btn-icon.btn-delete {
-    background: rgba(239, 68, 68, 0.1);
+.btn-action.btn-edit {
+    background-color: #f3e5f5;
+    color: #7b1fa2;
+    border-color: #e1bee7;
+} 
+.btn-action.btn-edit:hover {
+    background-color: #e1bee7;
+    transform: translateY(-2px);
+}
+.btn-action.btn-delete {
+    background-color: #f7d6d6;
     color: #ef4444;
+    border-color: #fc9595;
+} 
+.btn-action.btn-delete:hover {
+    background-color: #fc9595;
+    transform: translateY(-2px);
 }
-
+.btn-action.btn-process {
+    background-color: #f2ddb8;
+    color: #f59e0b;
+    border-color: #f8d79e;
+} 
+.btn-action.btn-process:hover {
+    background-color: #f8d79e;
+    transform: translateY(-2px);
+}
+.btn-action.btn-approve {
+    background-color: #a0fde3;
+    color: #047857;
+    border-color: #66ceb3;
+} 
+.btn-action.btn-approve:hover {
+    background-color: #66ceb3;
+    transform: translateY(-2px);
+}
+.btn-action.btn-reject {
+    background-color: #f2ddb8;
+    color: #ef4444;
+    border-color: #fc9595;
+} 
+.btn-action.btn-reject:hover {
+    background-color: #fc9595;
+    transform: translateY(-2px);
+}
+.btn-action.btn-printer {
+    background-color: #a0fde3;
+    color: #047857;
+    border-color: #66ceb3;
+} 
+.btn-action.btn-printer:hover {
+    background-color: #66ceb3;
+    transform: translateY(-2px);
+}
+.btn-action i {
+    font-size: 1.1rem;
+    line-height: 1;
+    display: inline-block;
+}
 /* Page Content */
 .page-content {
     display: none;
@@ -1687,4 +1740,1067 @@ a:hover {
 .empty-state h4 {
     color: var(--dark-color);
     margin-bottom: 0.5rem;
+}
+ /* ===== FIXED TABLE STYLES FOR WAREHOUSE DASHBOARD ===== */
+/* OVERRIDE ALL BOOTSTRAP TABLE STYLES */
+
+/* Card Header - Green Gradient */
+
+.card-header {
+    background: #048964 !important;
+    color: white !important;
+    border-bottom: none !important;
+    padding: 1rem 1.25rem !important;
+    border-radius: 12px 12px 0 0 !important;
+    border: none !important;
+}
+
+.card-header i {
+    color: white !important;
+    margin-right: 8px;
+}
+
+/* Table Container */
+.table-responsive {
+    border-radius: 0 0 12px 12px !important;
+    overflow-x: auto !important;
+}
+
+/* Bootstrap Table Override */
+.table {
+    margin-bottom: 0 !important;
+    width: 100% !important;
+    border-collapse: collapse !important;
+}
+
+/* Table Header - Green Gradient */
+.table thead,
+.table-light thead,
+.table thead tr,
+.table thead th {
+    background: var(--dark-green) !important;
+    color: white !important;
+    border: none !important;
+    border-bottom: none !important;
+    font-weight: 600 !important;
+    padding: 0.75rem 1rem !important;
+    text-transform: uppercase !important;
+    font-size: 0.8rem !important;
+    letter-spacing: 0.5px !important;
+}
+
+/* Override Bootstrap's table-light */
+.table-light {
+    --bs-table-bg: transparent !important;
+}
+
+.table-light th {
+    background: linear-gradient(135deg, #047857, #44D34E) !important;
+    color: white !important;
+}
+
+/* Table Rows */
+.table tbody tr {
+    border-bottom: 1px solid #e2e8f0 !important;
+    transition: all 0.2s ease !important;
+}
+
+.table tbody tr:hover {
+    background-color: #d1fae5 !important;
+}
+
+/* Alternate row colors */
+.table tbody tr:nth-child(even) {
+    background-color: #f0fdf4 !important;
+}
+
+.table tbody tr:nth-child(odd) {
+    background-color: white !important;
+}
+
+.table tbody tr:nth-child(even):hover {
+    background-color: #d1fae5 !important;
+}
+
+/* Table Cells */
+.table tbody td {
+    padding: 0.75rem 1rem !important;
+    color: #1f2937 !important;
+    vertical-align: middle !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+}
+
+/* Badge Styles - Override Bootstrap */
+.badge {
+    padding: 0.35rem 1rem !important;
+    border-radius: 50px !important;
+    font-weight: 600 !important;
+    font-size: 0.75rem !important;
+    display: inline-block !important;
+    text-align: center !important;
+    border: 1px solid transparent !important;
+}
+
+/* Status Badge Colors */
+.badge.bg-warning,
+.badge.bg-warning.text-dark {
+    background: #ffedd5 !important;
+    color: #9a3412 !important;
+    border-color: #fdba74 !important;
+}
+
+.badge.bg-success {
+    background: #dcfce7 !important;
+    color: #166534 !important;
+    border-color: #86efac !important;
+}
+
+.badge.bg-danger {
+    background: #fee2e2 !important;
+    color: #991b1b !important;
+    border-color: #fca5a5 !important;
+}
+
+.badge.bg-info {
+    background: #cffafe !important;
+    color: #155e75 !important;
+    border-color: #7dd3fc !important;
+}
+
+.badge.bg-light {
+    background: #f3f4f6 !important;
+    color: #374151 !important;
+    border-color: #d1d5db !important;
+}
+
+/* Pick List # and Ticket ID badge */
+.badge.bg-light.text-dark {
+    background: #e5e7eb !important;
+    color: #1f2937 !important;
+    border: 1px solid #9ca3af !important;
+    font-family: monospace !important;
+}
+
+/* Empty State */
+.text-center {
+    color: #6b7280 !important;
+    padding: 2rem !important;
+}
+
+/* Card Body */
+.card-body {
+    padding: 1.25rem !important;
+}
+
+/* Alert Styles */
+.alert {
+    border-radius: 8px !important;
+    border: none !important;
+}
+
+.alert-warning {
+    background: #ffedd5 !important;
+    color: #9a3412 !important;
+    border-left: 4px solid #f59e0b !important;
+}
+
+.alert-success {
+    background: #dcfce7 !important;
+    color: #166534 !important;
+    border-left: 4px solid #10b981 !important;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .table thead th,
+    .table tbody td {
+        padding: 0.5rem 0.75rem !important;
+        font-size: 0.8rem !important;
+    }
+    
+    .badge {
+        padding: 0.25rem 0.75rem !important;
+        font-size: 0.7rem !important;
+    }
+}
+/* ===== FIXED TABLE STYLES FOR WAREHOUSE DASHBOARD ===== */
+/* OVERRIDE ALL BOOTSTRAP TABLE STYLES */
+
+/* Card Header - Green Gradient */
+.card {
+    border: none !important; /* Remove card outline */
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+}
+
+.card-header {
+    background: #048964 !important;
+    color: white !important;
+    border-bottom: none !important;
+    padding: 1rem 1.25rem !important;
+    border-radius: 12px 12px 0 0 !important;
+    border: none !important;
+}
+
+.card-header h5 {
+    color: white !important;
+    font-weight: 600 !important;
+    margin: 0 !important;
+    display: flex;
+    align-items: center;
+}
+
+.card-header i {
+    color: white !important;
+    margin-right: 8px;
+}
+
+/* Table Container */
+.table-responsive {
+    border-radius: 0 0 12px 12px !important;
+    overflow-x: auto !important;
+    border: none !important;
+}
+
+/* Bootstrap Table Override */
+.table {
+    margin-bottom: 0 !important;
+    width: 100% !important;
+    border-collapse: collapse !important;
+    border: none !important;
+}
+
+/* Table Header - Green Gradient */
+.table thead,
+.table-light thead,
+.table thead tr,
+.table thead th {
+    background: var(--dark-green);
+    color: white !important;
+    border: none !important;
+    border-bottom: none !important;
+    font-weight: 600 !important;
+    padding: 0.85rem 1.25rem !important;
+    text-transform: uppercase !important;
+    font-size: 0.8rem !important;
+    letter-spacing: 0.5px !important;
+}
+
+/* Override Bootstrap's table-light */
+.table-light {
+    --bs-table-bg: transparent !important;
+    --bs-table-color: transparent !important;
+}
+
+.table-light th {
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green)) !important;
+    color: white !important;
+    border: none !important;
+}
+
+/* Table Rows */
+.table tbody tr {
+    border-bottom: 1px solid var(--light-green) !important;
+    transition: all 0.2s ease !important;
+}
+
+.table tbody tr:hover {
+    background-color: var(--light-green) !important;
+}
+
+/* Alternate row colors */
+.table tbody tr:nth-child(even) {
+    background-color: rgba(209, 250, 229, 0.4) !important;
+}
+
+.table tbody tr:nth-child(odd) {
+    background-color: white !important;
+}
+
+.table tbody tr:nth-child(even):hover {
+    background-color: var(--light-green) !important;
+}
+
+/* Table Cells */
+.table tbody td {
+    padding: 0.85rem 1.25rem !important;
+    color: var(--dark-color) !important;
+    vertical-align: middle !important;
+    border-bottom: 1px solid var(--light-green) !important;
+    font-size: 0.95rem;
+    border-top: none !important;
+    border-left: none !important;
+    border-right: none !important;
+}
+
+/* Last row border fix */
+.table tbody tr:last-child td {
+    border-bottom: none !important;
+}
+
+/* Badge Styles - Override Bootstrap */
+.badge {
+    padding: 0.4rem 1rem !important;
+    border-radius: 50px !important;
+    font-weight: 600 !important;
+    font-size: 0.75rem !important;
+    display: inline-block !important;
+    text-align: center !important;
+    border: 1px solid transparent !important;
+    white-space: nowrap;
+}
+
+/* Status Badge Colors */
+.badge.bg-warning,
+.badge.bg-warning.text-dark {
+    background: rgba(245, 158, 11, 0.15) !important;
+    color: #f59e0b !important;
+    border-color: rgba(245, 158, 11, 0.3) !important;
+}
+
+.badge.bg-success {
+    background: rgba(16, 185, 129, 0.15) !important;
+    color: var(--primary-green) !important;
+    border-color: rgba(16, 185, 129, 0.3) !important;
+}
+
+.badge.bg-danger {
+    background: rgba(239, 68, 68, 0.15) !important;
+    color: #ef4444 !important;
+    border-color: rgba(239, 68, 68, 0.3) !important;
+}
+
+.badge.bg-info {
+    background: rgba(34, 211, 238, 0.15) !important;
+    color: #22d3ee !important;
+    border-color: rgba(34, 211, 238, 0.3) !important;
+}
+
+.badge.bg-primary {
+    background: rgba(16, 185, 129, 0.15) !important;
+    color: var(--primary-green) !important;
+    border-color: rgba(16, 185, 129, 0.3) !important;
+}
+
+.badge.bg-light {
+    background: rgba(156, 163, 175, 0.15) !important;
+    color: #6b7280 !important;
+    border-color: rgba(156, 163, 175, 0.3) !important;
+}
+
+/* Pick List # and Ticket ID badge */
+.badge.bg-light.text-dark {
+    background: var(--light-green) !important;
+    color: var(--dark-green) !important;
+    border: 1px solid var(--primary-green) !important;
+    font-family: monospace !important;
+    font-weight: 600 !important;
+}
+
+/* Empty State */
+.text-center {
+    color: #6b7280 !important;
+    padding: 2rem !important;
+}
+
+/* Card Body */
+.card-body {
+    padding: 1.25rem !important;
+    border: none !important;
+}
+
+/* Alert Styles */
+.alert {
+    border-radius: 8px !important;
+    border: none !important;
+}
+
+.alert-warning {
+    background: rgba(245, 158, 11, 0.15) !important;
+    color: #f59e0b !important;
+    border-left: 4px solid #f59e0b !important;
+}
+
+.alert-success {
+    background: rgba(16, 185, 129, 0.15) !important;
+    color: var(--primary-green) !important;
+    border-left: 4px solid var(--primary-green) !important;
+}
+
+/* ===== CUSTOM TABLE STYLES ===== */
+.custom-table {
+    margin: 0;
+    width: 100%;
+    border-collapse: collapse;
+    border: none !important;
+}
+
+.custom-table thead {
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green)) !important;
+    color: white;
+}
+
+.custom-table thead th {
+    background: transparent !important;
+    color: white !important;
+    border: none !important;
+    padding: 1rem 1.25rem;
+    font-weight: 600;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.custom-table tbody tr {
+    border-bottom: 1px solid var(--light-green);
+    transition: all 0.2s ease;
+}
+
+.custom-table tbody tr:hover {
+    background-color: var(--light-green) !important;
+}
+
+.custom-table tbody tr:nth-child(even) {
+    background-color: rgba(209, 250, 229, 0.4) !important;
+}
+
+.custom-table tbody td {
+    padding: 1rem 1.25rem;
+    color: var(--dark-color);
+    vertical-align: middle;
+    border-bottom: 1px solid var(--light-green);
+    font-size: 0.95rem;
+    border-top: none !important;
+    border-left: none !important;
+    border-right: none !important;
+}
+
+.custom-table tbody tr:last-child td {
+    border-bottom: none !important;
+}
+
+/* ===== COMPACT TABLE STYLES ===== */
+.compact-table {
+    margin: 0;
+    width: 100%;
+    border-collapse: collapse;
+    border: none !important;
+}
+
+.compact-table thead {
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green)) !important;
+}
+
+.compact-table thead th {
+    color: white !important;
+    font-weight: 600;
+    padding: 0.75rem 1rem;
+    border: none !important;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.compact-table tbody tr {
+    border-bottom: 1px solid var(--light-green);
+}
+
+.compact-table tbody tr:hover {
+    background-color: var(--light-green) !important;
+}
+
+.compact-table tbody tr:nth-child(even) {
+    background-color: rgba(209, 250, 229, 0.4) !important;
+}
+
+.compact-table tbody td {
+    padding: 0.75rem 1rem;
+    color: var(--dark-color);
+    border-bottom: 1px solid var(--light-green);
+    font-size: 0.9rem;
+    border-top: none !important;
+    border-left: none !important;
+    border-right: none !important;
+}
+
+.compact-table tbody tr:last-child td {
+    border-bottom: none !important;
+}
+
+/* ===== TABLE FOOTER & PAGINATION ===== */
+.table-footer {
+    background: #f9fafb;
+    border-top: 1px solid var(--light-green);
+    padding: 1rem 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.pagination {
+    margin: 0;
+    gap: 0.25rem;
+}
+
+.pagination .page-link {
+    color: var(--dark-green) !important;
+    border: 1px solid var(--light-green) !important;
+    margin: 0 2px;
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    transition: all 0.2s ease;
+}
+
+.pagination .page-link:hover {
+    background-color: rgba(16, 185, 129, 0.1) !important;
+    color: var(--primary-green) !important;
+    border-color: var(--primary-green) !important;
+}
+
+.pagination .page-item.active .page-link {
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green)) !important;
+    border-color: var(--primary-green) !important;
+    color: white !important;
+}
+
+/* ===== MOBILE RESPONSIVE ===== */
+@media (max-width: 992px) {
+    .table thead th,
+    .table tbody td,
+    .custom-table thead th,
+    .custom-table tbody td,
+    .compact-table thead th,
+    .compact-table tbody td {
+        padding: 0.7rem 0.9rem !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .table-responsive {
+        font-size: 0.85rem;
+    }
+    
+    .table thead th,
+    .table tbody td,
+    .custom-table thead th,
+    .custom-table tbody td,
+    .compact-table thead th,
+    .compact-table tbody td {
+        padding: 0.6rem 0.75rem !important;
+        font-size: 0.8rem !important;
+    }
+    
+    .badge {
+        padding: 0.25rem 0.75rem !important;
+        font-size: 0.7rem !important;
+    }
+    
+    .table-footer {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .pagination {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+@media (max-width: 576px) {
+    .table thead th,
+    .table tbody td,
+    .custom-table thead th,
+    .custom-table tbody td,
+    .compact-table thead th,
+    .compact-table tbody td {
+        padding: 0.5rem 0.6rem !important;
+        font-size: 0.75rem !important;
+    }
+    
+    .badge {
+        padding: 0.2rem 0.6rem !important;
+        font-size: 0.65rem !important;
+    }
+}
+
+/* ===== REMOVE ALL OUTLINES AND BORDERS FROM TABLE ===== */
+.table,
+.table thead,
+.table thead tr,
+.table thead th,
+.table tbody,
+.table tbody tr,
+.table tbody td,
+.custom-table,
+.custom-table thead,
+.custom-table thead tr,
+.custom-table thead th,
+.custom-table tbody,
+.custom-table tbody tr,
+.custom-table tbody td,
+.compact-table,
+.compact-table thead,
+.compact-table thead tr,
+.compact-table thead th,
+.compact-table tbody,
+.compact-table tbody tr,
+.compact-table tbody td {
+    outline: none !important;
+    border-top: none !important;
+    border-left: none !important;
+    border-right: none !important;
+}
+
+/* Remove border from card and table container */
+.card,
+.card-header,
+.card-body,
+.table-responsive {
+    outline: none !important;
+    border: none !important;
+}
+
+/* Only show bottom border for row separation */
+.table tbody tr td,
+.custom-table tbody tr td,
+.compact-table tbody tr td {
+    border-bottom: 1px solid var(--light-green) !important;
+    border-top: none !important;
+    border-left: none !important;
+    border-right: none !important;
+}
+
+/* Remove bottom border from last row */
+.table tbody tr:last-child td,
+.custom-table tbody tr:last-child td,
+.compact-table tbody tr:last-child td {
+    border-bottom: none !important;
+}
+/* ===== MOBILE RESPONSIVE FIXES FOR TABLES AND BUTTONS ===== */
+
+/* Fix for table buttons on mobile */
+@media (max-width: 768px) {
+    /* Table action buttons container */
+    .table-actions {
+        display: flex;
+        flex-direction: row !important; /* Keep buttons in row */
+        flex-wrap: wrap;
+        gap: 4px;
+        justify-content: flex-start;
+    }
+    
+    /* Make action buttons slightly smaller but still usable */
+    .btn-action,
+    .btn-icon-sm {
+        width: 32px !important;
+        height: 32px !important;
+        min-width: 32px !important;
+        padding: 0 !important;
+        margin: 2px !important;
+    }
+    
+    .btn-action i,
+    .btn-icon-sm i {
+        font-size: 0.9rem !important;
+    }
+    
+    /* For tables with many columns, ensure horizontal scroll works */
+    .table-responsive {
+        overflow-x: auto !important;
+        -webkit-overflow-scrolling: touch !important;
+        margin-bottom: 1rem !important;
+        border-radius: 8px !important;
+    }
+    
+    /* Prevent text from wrapping in table cells */
+    .table td, 
+    .table th,
+    .custom-table td,
+    .custom-table th,
+    .compact-table td,
+    .compact-table th {
+        white-space: nowrap !important;
+    }
+    
+    /* Allow certain cells to wrap if needed */
+    .table td.allow-wrap,
+    .custom-table td.allow-wrap,
+    .compact-table td.allow-wrap {
+        white-space: normal !important;
+        min-width: 150px !important;
+    }
+    
+    /* Status badges in mobile */
+    .status-badge,
+    .badge {
+        white-space: nowrap !important;
+        display: inline-block !important;
+        min-width: auto !important;
+        padding: 0.25rem 0.5rem !important;
+        font-size: 0.7rem !important;
+    }
+}
+
+/* Extra small devices - critical fixes */
+@media (max-width: 576px) {
+    /* Make action buttons even smaller but still tappable */
+    .btn-action,
+    .btn-icon-sm {
+        width: 28px !important;
+        height: 28px !important;
+        min-width: 28px !important;
+    }
+    
+    .btn-action i,
+    .btn-icon-sm i {
+        font-size: 0.8rem !important;
+    }
+    
+    /* Reduce padding in table cells to fit more content */
+    .table td, 
+    .table th,
+    .custom-table td,
+    .custom-table th,
+    .compact-table td,
+    .compact-table th {
+        padding: 0.5rem 0.4rem !important;
+        font-size: 0.75rem !important;
+    }
+    
+    /* Ensure action buttons don't get cut off */
+    .table-actions {
+        gap: 2px;
+    }
+}
+
+/* Very small devices */
+@media (max-width: 400px) {
+    .btn-action,
+    .btn-icon-sm {
+        width: 20px !important;
+        height: 20px !important;
+        min-width: 20px !important;
+    }
+    
+    .btn-action i,
+    .btn-icon-sm i {
+        font-size: 0.75rem !important;
+    }
+    
+    /* Stack action buttons vertically if needed */
+    .table-actions {
+        flex-direction: column !important;
+        gap: 2px;
+    }
+    
+    /* Adjust table padding */
+    .table td, 
+    .table th,
+    .custom-table td,
+    .custom-table th,
+    .compact-table td,
+    .compact-table th {
+        padding: 0.4rem 0.3rem !important;
+        font-size: 0.7rem !important;
+    }
+}
+
+/* ===== FIX FOR MODAL BUTTONS ON MOBILE ===== */
+@media (max-width: 576px) {
+    .modal-footer {
+        flex-direction: column !important;
+        gap: 8px !important;
+    }
+    
+    .modal-footer .btn {
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0.6rem !important;
+    }
+    
+    /* Fix modal body padding */
+    .modal-body {
+        padding: 1rem !important;
+    }
+    
+    /* Form inputs in modal */
+    .modal .form-control,
+    .modal .form-select {
+        font-size: 16px !important; /* Prevent zoom on iOS */
+        padding: 0.6rem !important;
+    }
+}
+
+/* ===== FIX FOR STAT CARDS ON MOBILE ===== */
+@media (max-width: 576px) {
+    .stat-card {
+        padding: 1rem !important;
+    }
+    
+    .stat-icon {
+        font-size: 1.8rem !important;
+    }
+    
+    .stat-value {
+        font-size: 1.4rem !important;
+    }
+    
+    .stat-label {
+        font-size: 0.8rem !important;
+    }
+}
+
+/* ===== FIX FOR QUICK ACTION BUTTONS ON MOBILE ===== */
+@media (max-width: 576px) {
+    .quick-actions {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 0.5rem !important;
+    }
+    
+    .quick-action-btn {
+        padding: 1rem 0.5rem !important;
+    }
+    
+    .quick-action-btn i {
+        font-size: 1.5rem !important;
+    }
+    
+    .quick-action-btn span {
+        font-size: 0.8rem !important;
+    }
+}
+
+/* ===== FIX FOR PAGINATION ON MOBILE ===== */
+@media (max-width: 576px) {
+    .table-footer {
+        flex-direction: column !important;
+        align-items: center !important;
+        gap: 0.5rem !important;
+    }
+    
+    .pagination {
+        flex-wrap: wrap !important;
+        justify-content: center !important;
+    }
+    
+    .pagination .page-link {
+        padding: 0.4rem 0.6rem !important;
+        font-size: 0.8rem !important;
+        margin: 2px !important;
+    }
+    
+    .pagination-info {
+        font-size: 0.8rem !important;
+        text-align: center !important;
+    }
+}
+
+/* ===== FIX FOR SEARCH BOX ON MOBILE ===== */
+@media (max-width: 576px) {
+    .search-box {
+        width: 100% !important;
+        margin-bottom: 0.5rem !important;
+    }
+    
+    .search-box input {
+        font-size: 16px !important; /* Prevent zoom on iOS */
+        padding: 0.6rem 0.6rem 0.6rem 2.2rem !important;
+    }
+}
+
+/* ===== ENSURE TOUCH TARGETS ARE LARGE ENOUGH ON MOBILE ===== */
+@media (max-width: 768px) {
+    /* Minimum touch target size 44x44 for better mobile experience */
+    .btn-action,
+    .btn-icon-sm,
+    .mobile-menu-btn,
+    .pagination .page-link,
+    .dropdown-item,
+    .nav-link {
+        min-width: 26px !important;
+        min-height: 26px !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+    }
+    
+    /* Adjust icons inside touch targets */
+    .btn-action i,
+    .btn-icon-sm i,
+    .mobile-menu-btn i {
+        font-size: 0.95rem !important;
+    }
+}
+
+/* ===== FIX FOR TABLES WITH LONG CONTENT ===== */
+/* Add this class to table cells that contain long text */
+.table .text-truncate-cell {
+    max-width: 150px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+}
+
+/* Tooltip for truncated content */
+[data-tooltip] {
+    position: relative;
+    cursor: help;
+}
+
+[data-tooltip]:hover:after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--dark-color);
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    white-space: nowrap;
+    z-index: 1000;
+    pointer-events: none;
+}
+/* ===== FINAL FIXES FOR TABLE HEADER AND BUTTONS ===== */
+/* Add this at the VERY END of your CSS file */
+
+/* Fix for table header gradient */
+.data-table .table-header {
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green)) !important;
+    padding: 1.25rem 1.5rem !important;
+    border-radius: 12px 12px 0 0 !important;
+    border: none !important;
+}
+
+/* Fix for table header text */
+.data-table .table-header h5,
+.data-table .table-header h5 i,
+.data-table .table-header .text-muted,
+.data-table .table-header .badge {
+    color: white !important;
+}
+
+.data-table .table-header .badge {
+    background: rgba(255, 255, 255, 0.2) !important;
+    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+}
+
+/* Fix for all buttons in table header */
+.data-table .table-header .btn,
+.data-table .table-header .btn-primary,
+.data-table .table-header .btn-success,
+.data-table .table-header .btn-danger,
+.data-table .table-header .btn-outline-primary,
+.data-table .table-header .btn-outline-success,
+.data-table .table-header .btn-outline-danger {
+    background: rgba(255, 255, 255, 0.15) !important;
+    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+    color: white !important;
+}
+
+.data-table .table-header .btn:hover,
+.data-table .table-header .btn-primary:hover,
+.data-table .table-header .btn-success:hover,
+.data-table .table-header .btn-danger:hover,
+.data-table .table-header .btn-outline-primary:hover,
+.data-table .table-header .btn-outline-success:hover,
+.data-table .table-header .btn-outline-danger:hover {
+    background: rgba(255, 255, 255, 0.25) !important;
+    transform: translateY(-2px);
+}
+
+/* Keep button colors but with white text */
+.data-table .table-header .btn-success {
+    background: rgba(5, 150, 105, 0.8) !important;
+}
+
+.data-table .table-header .btn-success:hover {
+    background: rgb(5, 150, 105) !important;
+}
+
+.data-table .table-header .btn-primary {
+    background: rgba(4, 120, 87, 0.8) !important;
+}
+
+.data-table .table-header .btn-primary:hover {
+    background: rgb(4, 120, 87) !important;
+}
+
+.data-table .table-header .btn-danger {
+    background: rgba(220, 53, 69, 0.8) !important;
+}
+
+.data-table .table-header .btn-danger:hover {
+    background: rgb(220, 53, 69) !important;
+}
+
+/* Fix for primary button outside header */
+.btn-primary {
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green)) !important;
+    border: none !important;
+    color: white !important;
+}
+
+.btn-primary:hover {
+    background: linear-gradient(135deg, var(--primary-green), var(--dark-green)) !important;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(16, 185, 129, 0.3);
+    color: white !important;
+}
+
+/* Fix for success button outside header */
+.btn-success {
+    background: linear-gradient(135deg, #059669, #10b981) !important;
+    border: none !important;
+    color: white !important;
+}
+
+.btn-success:hover {
+    background: linear-gradient(135deg, #10b981, #059669) !important;
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(5, 150, 105, 0.3);
+    color: white !important;
+}
+
+/* Ensure table container has proper border radius */
+.data-table {
+    border-radius: 12px !important;
+    overflow: hidden !important;
+}
+
+.data-table .table-responsive {
+    border-radius: 0 0 12px 12px !important;
+}
+
+/* Mobile responsive fixes for header buttons */
+@media (max-width: 768px) {
+    .data-table .table-header {
+        padding: 1rem !important;
+    }
+    
+    .data-table .table-header .btn {
+        padding: 0.4rem 0.8rem !important;
+        font-size: 0.8rem !important;
+    }
+}
+
+@media (max-width: 576px) {
+    .data-table .table-header {
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 0.75rem !important;
+    }
+    
+    .data-table .table-header .d-flex {
+        width: 100% !important;
+        flex-wrap: wrap !important;
+        gap: 0.5rem !important;
+    }
+    
+    .data-table .table-header .btn {
+        flex: 1 1 auto !important;
+        min-width: 100px !important;
+    }
 }

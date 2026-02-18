@@ -1,0 +1,90 @@
+        .branch-badge {
+            background-color: #e7f1ff;
+            color: #0d6efd;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 5px;
+        }
+        .alert-info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        .alert-info code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 4px;
+            color: #c7254e;
+        }
+        @media (max-width: 768px) {
+            .stat-card {
+                padding: 12px;
+                min-height: 85px;
+                margin-bottom: 8px;
+            }
+            .stat-icon {
+                font-size: 2rem;
+                margin-right: 12px;
+            }
+            .stat-value {
+                font-size: 1.5rem;
+            }
+            .stat-label {
+                font-size: 0.8rem;
+            }
+            .col-md-3, .col-md-4, .col-md-5, .col-md-6 {
+                width: 50%;
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+            .row.g-3 {
+                margin-left: -8px;
+                margin-right: -8px;
+            }
+        }
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        .document-notification {
+            animation: slideIn 0.5s ease-out;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-top: 20px;
+        }
+        .print-order-btn {
+            transition: all 0.3s ease;
+        }
+        .print-order-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        .invoice-badge {
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            margin-left: 5px;
+        }
+        .db-fix-card {
+            background: #fff3cd;
+            border: 1px solid #ffe69c;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .db-fix-card pre {
+            background: #212529;
+            color: #fff;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }

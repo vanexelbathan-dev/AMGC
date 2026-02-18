@@ -661,6 +661,12 @@ function formatDate($dateTimeStr) {
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="drivers.php">
+                            <i class="bi bi-truck"></i>
+                            <span class="nav-text">Drivers</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="trip_tickets.php">
                             <i class="bi bi-ticket-perforated"></i>
                             <span class="nav-text">Trip Tickets</span>
@@ -932,18 +938,18 @@ function formatDate($dateTimeStr) {
                                     <td class="col-actions">
                                         <div class="action-buttons">
                                             <?php if ($rmr['rmr_status'] === 'pending'): ?>
-                                                <button class="table-btn btn-process" onclick="processRMR(<?= $rmr['rmr_id'] ?>)" title="Process">
+                                                <button class="btn-action btn-process" onclick="processRMR(<?= $rmr['rmr_id'] ?>)" title="Process">
                                                     <i class="bi bi-gear"></i>
                                                 </button>
                                             <?php elseif ($rmr['rmr_status'] === 'processing'): ?>
-                                                <button class="table-btn btn-approve" onclick="showApprovalModal(<?= $rmr['rmr_id'] ?>, 'approve')" title="Approve">
+                                                <button class="btn-action btn-approve" onclick="showApprovalModal(<?= $rmr['rmr_id'] ?>, 'approve')" title="Approve">
                                                     <i class="bi bi-check-circle"></i>
                                                 </button>
-                                                <button class="table-btn btn-reject" onclick="showApprovalModal(<?= $rmr['rmr_id'] ?>, 'reject')" title="Reject">
+                                                <button class="btn-action btn-reject" onclick="showApprovalModal(<?= $rmr['rmr_id'] ?>, 'reject')" title="Reject">
                                                     <i class="bi bi-x-circle"></i>
                                                 </button>
                                             <?php endif; ?>
-                                            <button class="table-btn btn-view" onclick="viewRMR(<?= $rmr['rmr_id'] ?>)" title="View">
+                                            <button class="btn-action btn-view" onclick="viewRMR(<?= $rmr['rmr_id'] ?>)" title="View">
                                                 <i class="bi bi-eye"></i>
                                             </button>
                                         </div>
