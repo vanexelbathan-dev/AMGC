@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Feb 13, 2026 at 01:19 AM
+-- Generation Time: Feb 18, 2026 at 01:24 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -71,20 +71,22 @@ CREATE TABLE `customers` (
   `status` enum('active','inactive','suspended') DEFAULT 'active',
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
-  `branch_id` int(11) DEFAULT NULL
+  `branch_id` int(11) DEFAULT NULL,
+  `full_address` text DEFAULT NULL,
+  `delivery_instructions` text DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
 -- Dumping data for table `customers`
 --
 
-INSERT INTO `customers` (`customer_id`, `customer_name`, `customer_code`, `contact_person`, `email`, `phone_number`, `address`, `city`, `longitude`, `latitude`, `credit_limit`, `credit_used`, `status`, `created_at`, `updated_at`, `branch_id`) VALUES
-(1, 'Customer ABC Corp', 'CUST001', 'John Doe', 'john@abccorp.com', '02-1111-1111', '100 Business Ave', 'Manila', 121.036376, 13.88217100, 50000.00, 0.00, 'active', '2026-02-10 01:38:25', '2026-02-12 06:21:58', 2),
-(2, 'Customer XYZ Ltd', 'CUST002', 'Jane Smith', 'jane@xyzltd.com', '02-2222-2222', '200 Trade Street', 'Quezon City', 121.036376, 13.88217100, 75000.00, 0.00, 'active', '2026-02-10 01:38:25', '2026-02-12 06:22:03', 2),
-(3, 'Customer DEF Inc', 'CUST003', 'Bob Johnson', 'bob@definc.com', '02-3333-3333', '300 Commerce Rd', 'Makati', 121.036376, 13.88217100, 100000.00, 0.00, 'active', '2026-02-10 01:38:25', '2026-02-12 06:25:03', 1),
-(4, 'Van Exel Bathan', 'CUST004', 'Van Exel Bathan', 'vanbathan576@gmail.com', '09989798098', 'Calumala, Latag, Alitagtag', 'Sta. Teresita', 121.036423, 13.88223100, 0.00, 0.00, 'active', '2026-02-11 03:52:56', '2026-02-12 06:22:12', 1),
-(5, 'Ross Andrei Dolor', 'CUST-202602-0001', 'Ross', 'ross@gmail.com', '09987654322', 'Calumala, Latag, Alitagtag', 'Alitagtag', 121.036427, 13.88223100, 0.00, 0.00, 'active', '2026-02-12 02:36:39', '2026-02-12 06:22:17', 1),
-(6, 'Jill Anuran', 'CUST-202602-0002', 'Jill', 'jill@gmail.com', '09897675567', 'Latag, Taal, Batangas', 'Taal', 121.036395, 13.88219400, 0.00, 0.00, 'active', '2026-02-12 23:58:02', '2026-02-12 23:58:02', 1);
+INSERT INTO `customers` (`customer_id`, `customer_name`, `customer_code`, `contact_person`, `email`, `phone_number`, `address`, `city`, `longitude`, `latitude`, `credit_limit`, `credit_used`, `status`, `created_at`, `updated_at`, `branch_id`, `full_address`, `delivery_instructions`) VALUES
+(1, 'Customer ABC Corp', 'CUST001', 'John Doe', 'john@abccorp.com', '02-1111-1111', '100 Business Ave', 'Manila', 121.036376, 13.88217100, 50000.00, 0.00, 'active', '2026-02-10 01:38:25', '2026-02-12 06:21:58', 2, NULL, NULL),
+(2, 'Customer XYZ Ltd', 'CUST002', 'Jane Smith', 'jane@xyzltd.com', '02-2222-2222', '200 Trade Street', 'Quezon City', 121.036376, 13.88217100, 75000.00, 0.00, 'active', '2026-02-10 01:38:25', '2026-02-12 06:22:03', 2, NULL, NULL),
+(3, 'Customer DEF Inc', 'CUST003', 'Bob Johnson', 'bob@definc.com', '02-3333-3333', '300 Commerce Rd', 'Makati', 121.036376, 13.88217100, 100000.00, 0.00, 'active', '2026-02-10 01:38:25', '2026-02-12 06:25:03', 1, NULL, NULL),
+(4, 'Van Exel Bathan', 'CUST004', 'Van Exel Bathan', 'vanbathan576@gmail.com', '09989798098', 'Calumala, Latag, Alitagtag', 'Sta. Teresita', 121.036423, 13.88223100, 0.00, 0.00, 'active', '2026-02-11 03:52:56', '2026-02-12 06:22:12', 1, NULL, NULL),
+(5, 'Ross Andrei Dolor', 'CUST-202602-0001', 'Ross', 'ross@gmail.com', '09987654322', 'Calumala, Latag, Alitagtag', 'Alitagtag', 121.036427, 13.88223100, 0.00, 0.00, 'active', '2026-02-12 02:36:39', '2026-02-12 06:22:17', 1, NULL, NULL),
+(6, 'Jill Anuran', 'CUST-202602-0002', 'Jill', 'jill@gmail.com', '09897675567', 'Latag, Taal, Batangas', 'Taal', 121.036395, 13.88219400, 0.00, 0.00, 'active', '2026-02-12 23:58:02', '2026-02-12 23:58:02', 1, NULL, NULL);
 
 -- --------------------------------------------------------
 
@@ -103,7 +105,8 @@ CREATE TABLE `deliveries` (
   `signed_by` varchar(100) DEFAULT NULL,
   `remarks` text DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `branch_id` int(11) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -134,7 +137,8 @@ CREATE TABLE `drivers` (
 INSERT INTO `drivers` (`driver_id`, `user_id`, `driver_name`, `license_number`, `license_expiry`, `contact_number`, `vehicle_type`, `vehicle_plate_number`, `status`, `branch_id`, `created_at`, `updated_at`) VALUES
 (1, NULL, 'Juan Santos', 'DL-123456', '2026-12-31', '09-1234-5678', 'Van', 'ABC-1234', 'active', 1, '2026-02-10 01:38:25', '2026-02-10 01:38:25'),
 (2, NULL, 'Maria Cruz', 'DL-789012', '2025-06-30', '09-2345-6789', 'Truck', 'XYZ-5678', 'active', 1, '2026-02-10 01:38:25', '2026-02-10 01:38:25'),
-(3, NULL, 'Pedro Reyes', 'DL-345678', '2026-03-15', '09-3456-7890', 'Van', 'PQR-9012', 'active', 2, '2026-02-10 01:38:25', '2026-02-10 01:38:25');
+(3, NULL, 'Pedro Reyes', 'DL-345678', '2026-03-15', '09-3456-7890', 'Van', 'PQR-9012', 'active', 2, '2026-02-10 01:38:25', '2026-02-10 01:38:25'),
+(4, NULL, 'Ross Andrei Dolor', 'DL-202214', '2027-07-14', '09876785643', 'Truck', 'ROS-0714', 'active', 1, '2026-02-16 05:17:09', '2026-02-16 05:17:09');
 
 -- --------------------------------------------------------
 
@@ -176,8 +180,8 @@ CREATE TABLE `inventory` (
 --
 
 INSERT INTO `inventory` (`inventory_id`, `branch_id`, `item_id`, `quantity_on_hand`, `quantity_reserved`, `last_counted_date`, `last_updated_by`, `updated_at`) VALUES
-(1, 1, 1, 150, 20, NULL, NULL, '2026-02-10 01:38:25'),
-(2, 1, 2, 80, 10, NULL, NULL, '2026-02-10 01:38:25'),
+(1, 1, 1, 150, 18, NULL, NULL, '2026-02-16 06:26:51'),
+(2, 1, 2, 80, 8, NULL, NULL, '2026-02-16 06:27:03'),
 (3, 2, 1, 120, 15, NULL, NULL, '2026-02-10 01:38:25'),
 (4, 2, 3, 45, 5, NULL, NULL, '2026-02-10 01:38:25'),
 (5, 3, 2, 95, 25, NULL, NULL, '2026-02-10 01:38:25');
@@ -199,6 +203,37 @@ CREATE TABLE `inventory_transactions` (
   `created_by` int(11) NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `invoices`
+--
+
+CREATE TABLE `invoices` (
+  `invoice_id` int(11) NOT NULL,
+  `invoice_number` varchar(50) NOT NULL,
+  `so_id` int(11) DEFAULT NULL,
+  `customer_id` int(11) NOT NULL,
+  `branch_id` int(11) DEFAULT NULL,
+  `invoice_date` date NOT NULL,
+  `due_date` date NOT NULL,
+  `total_amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `status` enum('pending','paid','cancelled') NOT NULL DEFAULT 'pending',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+--
+-- Dumping data for table `invoices`
+--
+
+INSERT INTO `invoices` (`invoice_id`, `invoice_number`, `so_id`, `customer_id`, `branch_id`, `invoice_date`, `due_date`, `total_amount`, `status`, `created_at`, `updated_at`) VALUES
+(10, 'INV-20260216-00026', 26, 6, 1, '2026-02-16', '2026-03-18', 1700.00, 'pending', '2026-02-16 01:44:55', '2026-02-16 01:44:55'),
+(11, 'INV-20260216-00025', 25, 2, 1, '2026-02-16', '2026-03-18', 250.00, 'pending', '2026-02-16 01:51:59', '2026-02-16 01:51:59'),
+(12, 'INV-20260216-00024', 24, 4, 1, '2026-02-16', '2026-03-18', 225.00, 'pending', '2026-02-16 01:53:36', '2026-02-16 01:53:36'),
+(13, 'INV-20260216-00027', 27, 6, 1, '2026-02-16', '2026-03-18', 1000.00, 'pending', '2026-02-16 06:24:51', '2026-02-16 06:24:51'),
+(14, 'INV-20260216-00023', 23, 2, 1, '2026-02-16', '2026-03-18', 300.00, 'pending', '2026-02-16 06:34:52', '2026-02-16 06:34:52');
 
 -- --------------------------------------------------------
 
@@ -227,11 +262,11 @@ CREATE TABLE `items` (
 --
 
 INSERT INTO `items` (`item_id`, `item_code`, `item_name`, `description`, `category`, `stock`, `unit_type`, `unit_price`, `reorder_level`, `status`, `created_at`, `updated_at`, `branch_id`) VALUES
-(1, 'ITEM001', 'Product A', NULL, 'Category 1', 290, 'piece', 100.00, 50, 'active', '2026-02-10 01:38:25', '2026-02-12 06:21:13', 1),
-(2, 'ITEM002', 'Product B', NULL, 'Category 1', 145, 'piece', 150.00, 30, 'active', '2026-02-10 01:38:25', '2026-02-12 06:21:18', 1),
+(1, 'ITEM001', 'Product A', NULL, 'Category 1', 286, 'piece', 100.00, 50, 'active', '2026-02-10 01:38:25', '2026-02-16 06:26:51', 1),
+(2, 'ITEM002', 'Product B', NULL, 'Category 1', 141, 'piece', 150.00, 30, 'active', '2026-02-10 01:38:25', '2026-02-16 06:27:03', 1),
 (3, 'ITEM003', 'Product C', NULL, 'Category 2', 145, 'piece', 200.00, 25, 'active', '2026-02-10 01:38:25', '2026-02-12 06:21:22', 2),
-(4, 'ITEM004', 'Product D', NULL, 'Category 2', 155, 'piece', 75.00, 100, 'active', '2026-02-10 01:38:25', '2026-02-12 06:21:27', 2),
-(5, 'ITEM005', 'Product E', NULL, 'Category 3', 118, 'piece', 250.00, 20, 'active', '2026-02-10 01:38:25', '2026-02-12 06:21:32', 1);
+(4, 'ITEM004', 'Product D', NULL, 'Category 2', 152, 'piece', 75.00, 100, 'active', '2026-02-10 01:38:25', '2026-02-16 03:02:56', 2),
+(5, 'ITEM005', 'Product E', NULL, 'Category 3', 114, 'piece', 250.00, 20, 'active', '2026-02-10 01:38:25', '2026-02-16 06:27:13', 1);
 
 -- --------------------------------------------------------
 
@@ -245,13 +280,25 @@ CREATE TABLE `pick_lists` (
   `so_id` int(11) NOT NULL,
   `branch_id` int(11) NOT NULL,
   `driver_id` int(11) DEFAULT NULL,
-  `pick_date` date DEFAULT NULL,
+  `pick_date` date DEFAULT current_timestamp(),
   `pick_status` enum('open','in-progress','completed','cancelled') DEFAULT 'open',
   `picked_by` int(11) DEFAULT NULL,
   `verified_by` int(11) DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `pick_lists`
+--
+
+INSERT INTO `pick_lists` (`pick_list_id`, `pick_list_number`, `so_id`, `branch_id`, `driver_id`, `pick_date`, `pick_status`, `picked_by`, `verified_by`, `created_at`, `updated_at`) VALUES
+(3, 'B01-PL-20260213-5573', 26, 1, 1, '2026-02-13', 'cancelled', NULL, NULL, '2026-02-13 03:14:01', '2026-02-16 01:54:13'),
+(15, 'PL-20260216-00026', 26, 1, NULL, '2026-02-16', 'cancelled', NULL, NULL, '2026-02-16 01:44:55', '2026-02-16 05:01:40'),
+(16, 'PL-20260216-00025', 25, 1, 4, '2026-02-16', 'open', NULL, NULL, '2026-02-16 01:51:59', '2026-02-16 06:31:56'),
+(18, 'PL-20260216-00024', 24, 1, NULL, '2026-02-16', 'completed', NULL, NULL, '2026-02-16 01:53:36', '2026-02-16 05:03:03'),
+(20, 'PL-20260216-00027', 27, 1, NULL, '2026-02-16', 'completed', NULL, NULL, '2026-02-16 06:24:51', '2026-02-16 06:27:13'),
+(21, 'PL-20260216-00023', 23, 1, 4, '2026-02-16', 'completed', NULL, NULL, '2026-02-16 06:34:52', '2026-02-16 07:47:47');
 
 -- --------------------------------------------------------
 
@@ -265,8 +312,21 @@ CREATE TABLE `pick_list_items` (
   `item_id` int(11) NOT NULL,
   `quantity_to_pick` int(11) NOT NULL,
   `quantity_picked` int(11) DEFAULT 0,
-  `location_bin` varchar(50) DEFAULT NULL
+  `location_bin` varchar(50) DEFAULT NULL,
+  `branch_id` int(11) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `pick_list_items`
+--
+
+INSERT INTO `pick_list_items` (`pick_item_id`, `pick_list_id`, `item_id`, `quantity_to_pick`, `quantity_picked`, `location_bin`, `branch_id`) VALUES
+(34, 16, 5, 1, 0, 'Las Pinas', NULL),
+(35, 18, 4, 3, 3, NULL, NULL),
+(36, 20, 1, 2, 2, NULL, NULL),
+(37, 20, 2, 2, 2, NULL, NULL),
+(38, 20, 5, 2, 2, NULL, NULL),
+(39, 21, 2, 2, 0, 'Las Pinas', NULL);
 
 -- --------------------------------------------------------
 
@@ -307,6 +367,22 @@ CREATE TABLE `purchase_order_items` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `rmr_approvals`
+--
+
+CREATE TABLE `rmr_approvals` (
+  `approval_id` int(11) NOT NULL,
+  `rmr_id` int(11) NOT NULL,
+  `approved_amount` decimal(12,2) DEFAULT 0.00,
+  `approval_notes` text DEFAULT NULL,
+  `approved_by` int(11) NOT NULL,
+  `approved_at` datetime NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `rmr_requests`
 --
 
@@ -324,7 +400,7 @@ CREATE TABLE `rmr_requests` (
   `received_by` int(11) DEFAULT NULL,
   `inspector_name` varchar(100) DEFAULT NULL,
   `inspection_type` enum('visual','functional','lab','sample') DEFAULT NULL,
-  `disposition_type` enum('credit','refund','replacement','disposal') DEFAULT NULL,
+  `disposition_type` enum('credit','refund','replacement','disposal','return-to-supplier') DEFAULT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `branch_id` int(11) DEFAULT NULL
@@ -365,15 +441,16 @@ INSERT INTO `sales_orders` (`so_id`, `so_number`, `customer_id`, `branch_id`, `o
 (14, 'SO-20260211-0655817', 1, 1, '0000-00-00 00:00:00', NULL, 100.00, 'pending', 5, '2026-02-11 03:30:55', '2026-02-11 03:30:55'),
 (15, 'SO-20260211-0655504', 1, 1, '0000-00-00 00:00:00', NULL, 100.00, 'pending', 5, '2026-02-11 03:30:55', '2026-02-11 03:30:55'),
 (16, 'SO-20260211-0758571', 3, 1, '0000-00-00 00:00:00', NULL, 400.00, 'pending', 5, '2026-02-11 03:32:38', '2026-02-11 03:32:38'),
-(17, 'SO-20260211-0758716', 3, 1, '0000-00-00 00:00:00', NULL, 400.00, 'cancelled', 5, '2026-02-11 03:32:38', '2026-02-12 00:19:39'),
+(17, 'SO-20260211-0758716', 3, 1, '0000-00-00 00:00:00', NULL, 400.00, 'pending', 5, '2026-02-11 03:32:38', '2026-02-13 05:58:14'),
 (18, 'SO-20260211-2358681', 4, 1, '2026-02-11 04:59:18', NULL, 450.00, 'pending', 5, '2026-02-11 03:59:18', '2026-02-11 03:59:18'),
 (19, 'SO-20260211-6603841', 3, 1, '2026-02-11 06:10:03', NULL, 200.00, 'pending', 5, '2026-02-11 05:10:03', '2026-02-11 05:10:03'),
 (20, 'SO-20260211-6701691', 2, 1, '2026-02-11 06:11:41', NULL, 800.00, 'pending', 5, '2026-02-11 05:11:41', '2026-02-11 05:11:41'),
 (21, 'SO-20260211-7094558', 4, 1, '2026-02-11 06:18:14', NULL, 75.00, 'pending', 5, '2026-02-11 05:18:14', '2026-02-11 05:18:14'),
 (22, 'SO-20260211-7130609', 2, 1, '2026-02-11 06:18:50', NULL, 325.00, 'pending', 5, '2026-02-11 05:18:50', '2026-02-11 05:18:50'),
-(23, 'SO-20260211-7592571', 2, 1, '2026-02-11 06:26:32', NULL, 300.00, 'pending', 5, '2026-02-11 05:26:32', '2026-02-11 05:26:32'),
-(24, 'SO-20260211-8541533', 4, 1, '2026-02-11 06:42:21', NULL, 225.00, 'pending', 5, '2026-02-11 05:42:21', '2026-02-11 05:42:21'),
-(25, 'SO-20260211-9607250', 2, 1, '2026-02-11 07:00:07', NULL, 250.00, 'delivered', 5, '2026-02-11 06:00:07', '2026-02-11 23:30:42');
+(23, 'SO-20260211-7592571', 2, 1, '2026-02-11 00:00:00', NULL, 300.00, 'delivered', 5, '2026-02-11 05:26:32', '2026-02-16 07:47:47'),
+(24, 'SO-20260211-8541533', 4, 1, '2026-02-11 00:00:00', NULL, 225.00, 'delivered', 5, '2026-02-11 05:42:21', '2026-02-16 07:50:49'),
+(25, 'SO-20260211-9607250', 2, 1, '2026-02-11 00:00:00', NULL, 250.00, 'confirmed', 5, '2026-02-11 06:00:07', '2026-02-16 01:51:59'),
+(27, 'SO-20260216-2976391', 6, 1, '2026-02-16 00:00:00', NULL, 1000.00, 'delivered', 5, '2026-02-16 06:22:56', '2026-02-16 07:50:45');
 
 -- --------------------------------------------------------
 
@@ -408,7 +485,13 @@ INSERT INTO `sales_order_items` (`so_item_id`, `so_id`, `item_id`, `quantity_ord
 (10, 22, 5, 1, 0, 250.00),
 (11, 23, 2, 2, 0, 150.00),
 (12, 24, 4, 3, 0, 75.00),
-(13, 25, 5, 1, 0, 250.00);
+(13, 25, 5, 1, 0, 250.00),
+(14, 26, 1, 2, 0, 100.00),
+(15, 26, 2, 5, 0, 150.00),
+(16, 26, 5, 3, 0, 250.00),
+(17, 27, 1, 2, 0, 100.00),
+(18, 27, 2, 2, 0, 150.00),
+(19, 27, 5, 2, 0, 250.00);
 
 -- --------------------------------------------------------
 
@@ -436,6 +519,8 @@ CREATE TABLE `sales_reports` (
 CREATE TABLE `trip_tickets` (
   `trip_id` int(11) NOT NULL,
   `trip_number` varchar(50) NOT NULL,
+  `so_id` int(11) NOT NULL,
+  `picklist_id` int(11) DEFAULT NULL,
   `driver_id` int(11) NOT NULL,
   `branch_id` int(11) NOT NULL,
   `trip_date` date NOT NULL,
@@ -448,8 +533,19 @@ CREATE TABLE `trip_tickets` (
   `remarks` text DEFAULT NULL,
   `created_by` int(11) NOT NULL,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  `photo_1` varchar(250) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `trip_tickets`
+--
+
+INSERT INTO `trip_tickets` (`trip_id`, `trip_number`, `so_id`, `picklist_id`, `driver_id`, `branch_id`, `trip_date`, `trip_status`, `start_time`, `end_time`, `total_stops`, `total_delivered`, `total_failed`, `remarks`, `created_by`, `created_at`, `updated_at`, `photo_1`) VALUES
+(7, 'TT-20260216-00025', 25, 16, 1, 1, '2026-02-16', 'planned', NULL, NULL, NULL, 0, 0, NULL, 2, '2026-02-16 01:51:59', '2026-02-16 01:51:59', NULL),
+(8, 'TT-20260216-00024', 24, 18, 1, 1, '2026-02-16', 'completed', NULL, NULL, NULL, 0, 0, NULL, 2, '2026-02-16 01:53:36', '2026-02-16 07:50:49', NULL),
+(9, 'TT-20260216-00027', 27, 20, 1, 1, '2026-02-16', 'completed', NULL, NULL, 3, 6, 0, '0', 2, '2026-02-16 06:24:51', '2026-02-17 23:28:06', NULL),
+(10, 'TT-20260216-00023', 23, 21, 1, 1, '2026-02-16', 'planned', NULL, NULL, 1, 0, 2, '0', 2, '2026-02-16 06:34:52', '2026-02-16 07:48:01', NULL);
 
 -- --------------------------------------------------------
 
@@ -481,7 +577,7 @@ INSERT INTO `users` (`user_id`, `email`, `password_hash`, `first_name`, `last_na
 (3, 'warehouse@amgc.com', '$2y$10$l6UbK0Nw645/SuS6i7tMW.FFcoIK5E8dDDh5vpKzRHba1ETkI5kIS', 'Warehouse', 'Manager', 'warehouse', 'Warehouse', 'active', '2026-02-10 01:38:25', '2026-02-11 03:12:51', 1),
 (4, 'delivery@amgc.com', '$2y$10$l6UbK0Nw645/SuS6i7tMW.FFcoIK5E8dDDh5vpKzRHba1ETkI5kIS', 'Delivery', 'Manager', 'delivery', 'Delivery', 'active', '2026-02-10 01:38:25', '2026-02-11 03:12:51', 1),
 (5, 'sales@amgc.com', '$2y$10$l6UbK0Nw645/SuS6i7tMW.FFcoIK5E8dDDh5vpKzRHba1ETkI5kIS', 'Sales', 'Officer', 'sales', 'Sales', 'active', '2026-02-10 01:38:25', '2026-02-11 03:12:51', 1),
-(6, 'vanbathan576@gmail.com', '$2y$10$l6UbK0Nw645/SuS6i7tMW.FFcoIK5E8dDDh5vpKzRHba1ETkI5kIS', 'Van Exel', 'Bathan', 'sales', 'Branch 2', 'active', '2026-02-10 02:22:15', '2026-02-12 06:23:34', 2),
+(6, 'vanbathan576@gmail.com', '$2y$10$l6UbK0Nw645/SuS6i7tMW.FFcoIK5E8dDDh5vpKzRHba1ETkI5kIS', 'Van Exel', 'Bathan', 'branch_admin', 'Branch 2', 'active', '2026-02-10 02:22:15', '2026-02-13 05:18:32', 2),
 (7, 'ross@gmail.com', '$2y$10$l6UbK0Nw645/SuS6i7tMW.FFcoIK5E8dDDh5vpKzRHba1ETkI5kIS', 'Ross Andrei', 'Dolor', 'branch_admin', 'Calaca Branch', 'active', '2026-02-12 07:59:58', '2026-02-12 07:59:58', 2);
 
 -- --------------------------------------------------------
@@ -594,7 +690,8 @@ ALTER TABLE `deliveries`
   ADD KEY `so_id` (`so_id`),
   ADD KEY `customer_id` (`customer_id`),
   ADD KEY `idx_trip_id` (`trip_id`),
-  ADD KEY `idx_delivery_status` (`delivery_status`);
+  ADD KEY `idx_delivery_status` (`delivery_status`),
+  ADD KEY `branch_id` (`branch_id`);
 
 --
 -- Indexes for table `drivers`
@@ -638,6 +735,16 @@ ALTER TABLE `inventory_transactions`
   ADD KEY `idx_created_at` (`created_at`);
 
 --
+-- Indexes for table `invoices`
+--
+ALTER TABLE `invoices`
+  ADD PRIMARY KEY (`invoice_id`),
+  ADD UNIQUE KEY `unique_invoice_number` (`invoice_number`),
+  ADD KEY `idx_so_id` (`so_id`),
+  ADD KEY `idx_customer_id` (`customer_id`),
+  ADD KEY `idx_branch_id` (`branch_id`);
+
+--
 -- Indexes for table `items`
 --
 ALTER TABLE `items`
@@ -655,12 +762,12 @@ ALTER TABLE `pick_lists`
   ADD PRIMARY KEY (`pick_list_id`),
   ADD UNIQUE KEY `pick_list_number` (`pick_list_number`),
   ADD KEY `so_id` (`so_id`),
-  ADD KEY `branch_id` (`branch_id`),
   ADD KEY `picked_by` (`picked_by`),
   ADD KEY `verified_by` (`verified_by`),
   ADD KEY `idx_pick_list_number` (`pick_list_number`),
   ADD KEY `idx_pick_status` (`pick_status`),
-  ADD KEY `driver_id` (`driver_id`);
+  ADD KEY `driver_id` (`driver_id`),
+  ADD KEY `fk_picklist_branch` (`branch_id`);
 
 --
 -- Indexes for table `pick_list_items`
@@ -668,7 +775,8 @@ ALTER TABLE `pick_lists`
 ALTER TABLE `pick_list_items`
   ADD PRIMARY KEY (`pick_item_id`),
   ADD KEY `item_id` (`item_id`),
-  ADD KEY `idx_pick_list_id` (`pick_list_id`);
+  ADD KEY `idx_pick_list_id` (`pick_list_id`),
+  ADD KEY `fk_picklistitem_branch` (`branch_id`);
 
 --
 -- Indexes for table `purchase_orders`
@@ -676,10 +784,10 @@ ALTER TABLE `pick_list_items`
 ALTER TABLE `purchase_orders`
   ADD PRIMARY KEY (`po_id`),
   ADD UNIQUE KEY `po_number` (`po_number`),
-  ADD KEY `branch_id` (`branch_id`),
   ADD KEY `created_by` (`created_by`),
   ADD KEY `idx_po_number` (`po_number`),
-  ADD KEY `idx_po_status` (`po_status`);
+  ADD KEY `idx_po_status` (`po_status`),
+  ADD KEY `fk_purchase_orders_branch` (`branch_id`);
 
 --
 -- Indexes for table `purchase_order_items`
@@ -688,6 +796,15 @@ ALTER TABLE `purchase_order_items`
   ADD PRIMARY KEY (`po_item_id`),
   ADD KEY `idx_po_id` (`po_id`),
   ADD KEY `idx_item_id` (`item_id`);
+
+--
+-- Indexes for table `rmr_approvals`
+--
+ALTER TABLE `rmr_approvals`
+  ADD PRIMARY KEY (`approval_id`),
+  ADD KEY `idx_rmr_id` (`rmr_id`),
+  ADD KEY `idx_approved_by` (`approved_by`),
+  ADD KEY `idx_approved_at` (`approved_at`);
 
 --
 -- Indexes for table `rmr_requests`
@@ -738,12 +855,14 @@ ALTER TABLE `sales_reports`
 ALTER TABLE `trip_tickets`
   ADD PRIMARY KEY (`trip_id`),
   ADD UNIQUE KEY `trip_number` (`trip_number`),
-  ADD KEY `driver_id` (`driver_id`),
-  ADD KEY `branch_id` (`branch_id`),
   ADD KEY `created_by` (`created_by`),
   ADD KEY `idx_trip_number` (`trip_number`),
   ADD KEY `idx_trip_status` (`trip_status`),
-  ADD KEY `idx_trip_date` (`trip_date`);
+  ADD KEY `idx_trip_date` (`trip_date`),
+  ADD KEY `fk_trip_tickets_branch` (`branch_id`),
+  ADD KEY `idx_so_id` (`so_id`),
+  ADD KEY `idx_picklist_id` (`picklist_id`),
+  ADD KEY `fk_trip_ticket_driver` (`driver_id`);
 
 --
 -- Indexes for table `users`
@@ -782,7 +901,7 @@ ALTER TABLE `deliveries`
 -- AUTO_INCREMENT for table `drivers`
 --
 ALTER TABLE `drivers`
-  MODIFY `driver_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+  MODIFY `driver_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
 
 --
 -- AUTO_INCREMENT for table `driver_tracking`
@@ -803,6 +922,12 @@ ALTER TABLE `inventory_transactions`
   MODIFY `transaction_id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT for table `invoices`
+--
+ALTER TABLE `invoices`
+  MODIFY `invoice_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=15;
+
+--
 -- AUTO_INCREMENT for table `items`
 --
 ALTER TABLE `items`
@@ -812,25 +937,31 @@ ALTER TABLE `items`
 -- AUTO_INCREMENT for table `pick_lists`
 --
 ALTER TABLE `pick_lists`
-  MODIFY `pick_list_id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `pick_list_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=22;
 
 --
 -- AUTO_INCREMENT for table `pick_list_items`
 --
 ALTER TABLE `pick_list_items`
-  MODIFY `pick_item_id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `pick_item_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=40;
 
 --
 -- AUTO_INCREMENT for table `purchase_orders`
 --
 ALTER TABLE `purchase_orders`
-  MODIFY `po_id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `po_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
 
 --
 -- AUTO_INCREMENT for table `purchase_order_items`
 --
 ALTER TABLE `purchase_order_items`
   MODIFY `po_item_id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `rmr_approvals`
+--
+ALTER TABLE `rmr_approvals`
+  MODIFY `approval_id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `rmr_requests`
@@ -842,13 +973,13 @@ ALTER TABLE `rmr_requests`
 -- AUTO_INCREMENT for table `sales_orders`
 --
 ALTER TABLE `sales_orders`
-  MODIFY `so_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=26;
+  MODIFY `so_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=28;
 
 --
 -- AUTO_INCREMENT for table `sales_order_items`
 --
 ALTER TABLE `sales_order_items`
-  MODIFY `so_item_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=14;
+  MODIFY `so_item_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=20;
 
 --
 -- AUTO_INCREMENT for table `sales_reports`
@@ -860,7 +991,7 @@ ALTER TABLE `sales_reports`
 -- AUTO_INCREMENT for table `trip_tickets`
 --
 ALTER TABLE `trip_tickets`
-  MODIFY `trip_id` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `trip_id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=11;
 
 --
 -- AUTO_INCREMENT for table `users`
@@ -891,7 +1022,8 @@ ALTER TABLE `customers`
 ALTER TABLE `deliveries`
   ADD CONSTRAINT `deliveries_ibfk_1` FOREIGN KEY (`trip_id`) REFERENCES `trip_tickets` (`trip_id`) ON DELETE CASCADE,
   ADD CONSTRAINT `deliveries_ibfk_2` FOREIGN KEY (`so_id`) REFERENCES `sales_orders` (`so_id`),
-  ADD CONSTRAINT `deliveries_ibfk_3` FOREIGN KEY (`customer_id`) REFERENCES `customers` (`customer_id`);
+  ADD CONSTRAINT `deliveries_ibfk_3` FOREIGN KEY (`customer_id`) REFERENCES `customers` (`customer_id`),
+  ADD CONSTRAINT `deliveries_ibfk_4` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`branch_id`);
 
 --
 -- Constraints for table `drivers`
@@ -924,6 +1056,18 @@ ALTER TABLE `inventory_transactions`
   ADD CONSTRAINT `inventory_transactions_ibfk_3` FOREIGN KEY (`created_by`) REFERENCES `users` (`user_id`);
 
 --
+-- Constraints for table `invoices`
+--
+ALTER TABLE `invoices`
+  ADD CONSTRAINT `fk_invoice_sales_order` FOREIGN KEY (`so_id`) REFERENCES `sales_orders` (`so_id`) ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_invoices_branch_id` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`branch_id`) ON DELETE SET NULL ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_invoices_customer_id` FOREIGN KEY (`customer_id`) REFERENCES `customers` (`customer_id`) ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_invoices_so_id` FOREIGN KEY (`so_id`) REFERENCES `sales_orders` (`so_id`) ON UPDATE CASCADE,
+  ADD CONSTRAINT `invoices_ibfk_1` FOREIGN KEY (`so_id`) REFERENCES `sales_orders` (`so_id`),
+  ADD CONSTRAINT `invoices_ibfk_2` FOREIGN KEY (`so_id`) REFERENCES `sales_orders` (`so_id`),
+  ADD CONSTRAINT `invoices_ibfk_3` FOREIGN KEY (`so_id`) REFERENCES `sales_orders` (`so_id`);
+
+--
 -- Constraints for table `items`
 --
 ALTER TABLE `items`
@@ -933,6 +1077,7 @@ ALTER TABLE `items`
 -- Constraints for table `pick_lists`
 --
 ALTER TABLE `pick_lists`
+  ADD CONSTRAINT `fk_picklist_branch` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`branch_id`) ON UPDATE CASCADE,
   ADD CONSTRAINT `pick_lists_ibfk_1` FOREIGN KEY (`so_id`) REFERENCES `sales_orders` (`so_id`),
   ADD CONSTRAINT `pick_lists_ibfk_2` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`branch_id`),
   ADD CONSTRAINT `pick_lists_ibfk_3` FOREIGN KEY (`picked_by`) REFERENCES `users` (`user_id`),
@@ -943,6 +1088,7 @@ ALTER TABLE `pick_lists`
 -- Constraints for table `pick_list_items`
 --
 ALTER TABLE `pick_list_items`
+  ADD CONSTRAINT `fk_picklistitem_branch` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`branch_id`) ON UPDATE CASCADE,
   ADD CONSTRAINT `pick_list_items_ibfk_1` FOREIGN KEY (`pick_list_id`) REFERENCES `pick_lists` (`pick_list_id`) ON DELETE CASCADE,
   ADD CONSTRAINT `pick_list_items_ibfk_2` FOREIGN KEY (`item_id`) REFERENCES `items` (`item_id`);
 
@@ -950,6 +1096,7 @@ ALTER TABLE `pick_list_items`
 -- Constraints for table `purchase_orders`
 --
 ALTER TABLE `purchase_orders`
+  ADD CONSTRAINT `fk_purchase_orders_branch` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`branch_id`) ON UPDATE CASCADE,
   ADD CONSTRAINT `purchase_orders_ibfk_1` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`branch_id`),
   ADD CONSTRAINT `purchase_orders_ibfk_2` FOREIGN KEY (`created_by`) REFERENCES `users` (`user_id`);
 
@@ -959,6 +1106,13 @@ ALTER TABLE `purchase_orders`
 ALTER TABLE `purchase_order_items`
   ADD CONSTRAINT `purchase_order_items_ibfk_1` FOREIGN KEY (`po_id`) REFERENCES `purchase_orders` (`po_id`) ON DELETE CASCADE,
   ADD CONSTRAINT `purchase_order_items_ibfk_2` FOREIGN KEY (`item_id`) REFERENCES `items` (`item_id`);
+
+--
+-- Constraints for table `rmr_approvals`
+--
+ALTER TABLE `rmr_approvals`
+  ADD CONSTRAINT `fk_rmr_approvals_rmr` FOREIGN KEY (`rmr_id`) REFERENCES `rmr_requests` (`rmr_id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_rmr_approvals_user` FOREIGN KEY (`approved_by`) REFERENCES `users` (`user_id`) ON UPDATE CASCADE;
 
 --
 -- Constraints for table `rmr_requests`
@@ -1001,9 +1155,13 @@ ALTER TABLE `sales_reports`
 -- Constraints for table `trip_tickets`
 --
 ALTER TABLE `trip_tickets`
+  ADD CONSTRAINT `fk_trip_ticket_branch` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`branch_id`) ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_trip_ticket_driver` FOREIGN KEY (`driver_id`) REFERENCES `drivers` (`driver_id`) ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_trip_tickets_branch` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`branch_id`) ON UPDATE CASCADE,
   ADD CONSTRAINT `trip_tickets_ibfk_1` FOREIGN KEY (`driver_id`) REFERENCES `drivers` (`driver_id`),
   ADD CONSTRAINT `trip_tickets_ibfk_2` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`branch_id`),
-  ADD CONSTRAINT `trip_tickets_ibfk_3` FOREIGN KEY (`created_by`) REFERENCES `users` (`user_id`);
+  ADD CONSTRAINT `trip_tickets_ibfk_3` FOREIGN KEY (`created_by`) REFERENCES `users` (`user_id`),
+  ADD CONSTRAINT `trip_tickets_ibfk_4` FOREIGN KEY (`branch_id`) REFERENCES `branches` (`branch_id`);
 
 --
 -- Constraints for table `users`
