@@ -1,3 +1,139 @@
+<?php
+// Start session and include database connection
+require_once '../config/database.php';
+require_once '../config/session_handler.php';
+
+// Check if user is logged in
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
+    header("Location: ../login.php");
+    exit();
+}
+
+// Get current user info and branch context
+$user_id = $_SESSION['user_id'];
+$user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Driver User';
+$user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'delivery';
+$branch_id = $_SESSION['branch_id'] ?? 0;
+$view_all_branches = $_SESSION['view_all_branches'] ?? false;
+
+// AUTO-FIX: Kung ang user ay delivery role at walang branch_id, i-set sa 1 (Main Branch)
+if ($user_role == 'delivery' && $branch_id == 0) {
+    $branch_id = 1;
+    $_SESSION['branch_id'] = 1;
+}
+
+// Check if branch_id column exists in deliveries table
+$delivery_branch_column_exists = false;
+$check_delivery_column = $conn->query("SHOW COLUMNS FROM deliveries LIKE 'branch_id'");
+if ($check_delivery_column && $check_delivery_column->num_rows > 0) {
+    $delivery_branch_column_exists = true;
+}
+
+// Determine branch filter condition for deliveries
+$delivery_branch_condition = "";
+
+if ($delivery_branch_column_exists && !$view_all_branches && $branch_id > 0) {
+    $delivery_branch_condition = "AND d.branch_id = $branch_id";
+}
+
+// AUTO-CREATE DELIVERIES FROM WAREHOUSE READY ORDERS
+try {
+    // Find sales orders that are 'ready' but don't have a delivery record yet
+    $create_deliveries_query = "
+        INSERT INTO deliveries (trip_id, so_id, customer_id, stop_sequence, delivery_status, branch_id, created_at, updated_at)
+        SELECT 
+            COALESCE(t.trip_id, 0) as trip_id,
+            so.so_id,
+            so.customer_id,
+            NULL as stop_sequence,
+            'pending' as delivery_status,
+            so.branch_id,
+            NOW() as created_at,
+            NOW() as updated_at
+        FROM sales_orders so
+        LEFT JOIN deliveries d ON so.so_id = d.so_id
+        LEFT JOIN trip_tickets t ON so.so_id = t.so_id
+        WHERE so.order_status IN ('ready', 'processing')
+        AND d.delivery_id IS NULL
+        AND so.branch_id = $branch_id
+    ";
+    $conn->query($create_deliveries_query);
+    
+} catch (Exception $e) {
+    error_log("Error auto-creating deliveries: " . $e->getMessage());
+}
+
+// Get delivery statistics including delivered
+try {
+    $stats_query = "
+        SELECT 
+            SUM(CASE WHEN delivery_status = 'pending' THEN 1 ELSE 0 END) as pending_count,
+            SUM(CASE WHEN delivery_status IN ('in-transit', 'partial') THEN 1 ELSE 0 END) as active_count,
+            SUM(CASE WHEN delivery_status = 'delivered' AND DATE(delivery_date) = CURDATE() THEN 1 ELSE 0 END) as completed_today,
+            SUM(CASE WHEN delivery_status = 'delivered' THEN 1 ELSE 0 END) as total_completed
+        FROM deliveries d
+        WHERE 1=1 $delivery_branch_condition
+    ";
+    $stats_result = $conn->query($stats_query);
+    $stats = $stats_result->fetch_assoc();
+    
+    // Get delivery orders data from deliveries table
+    $query = "
+        SELECT 
+            d.delivery_id,
+            d.so_id,
+            d.trip_id,
+            d.stop_sequence,
+            d.delivery_date,
+            d.delivery_status,
+            d.signed_by,
+            d.remarks,
+            d.branch_id,
+            so.so_number,
+            so.total_amount,
+            so.order_date,
+            c.customer_id,
+            c.customer_name,
+            c.contact_person,
+            c.phone_number,
+            c.address,
+            c.city,
+            c.longitude,
+            c.latitude,
+            GROUP_CONCAT(CONCAT(IFNULL(i.item_name, 'Unknown'), ' (', soi.quantity_ordered, ')') SEPARATOR '; ') as items,
+            GROUP_CONCAT(CONCAT(soi.quantity_ordered, ' x ', IFNULL(i.item_name, 'Unknown'), ' - ₱', soi.unit_price) SEPARATOR '||') as items_receipt
+        FROM deliveries d
+        INNER JOIN sales_orders so ON d.so_id = so.so_id
+        INNER JOIN customers c ON d.customer_id = c.customer_id
+        LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
+        LEFT JOIN items i ON soi.item_id = i.item_id
+        WHERE d.delivery_status IN ('pending', 'in-transit', 'partial', 'delivered')
+        $delivery_branch_condition
+        GROUP BY d.delivery_id
+        ORDER BY 
+            CASE 
+                WHEN d.delivery_status = 'pending' THEN 1
+                WHEN d.delivery_status = 'in-transit' THEN 2
+                WHEN d.delivery_status = 'partial' THEN 3
+                WHEN d.delivery_status = 'delivered' THEN 4
+                ELSE 5
+            END,
+            d.delivery_date DESC
+    ";
+    
+    $result = $conn->query($query);
+    $delivery_orders = [];
+    
+    if ($result) {
+        $delivery_orders = $result->fetch_all(MYSQLI_ASSOC);
+    }
+    
+} catch (Exception $e) {
+    error_log("Database error in fordelivery.php: " . $e->getMessage());
+    $delivery_orders = [];
+    $stats = ['pending_count' => 0, 'active_count' => 0, 'completed_today' => 0, 'total_completed' => 0];
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -15,8 +151,9 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <!-- Leaflet CSS for maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        /* Branch badge styling */
         .branch-badge {
             background-color: #e7f1ff;
             color: #0d6efd;
@@ -27,7 +164,6 @@
             margin-left: 5px;
         }
         
-        /* Alert for missing branch column */
         .alert-info {
             background-color: #d1ecf1;
             border-color: #bee5eb;
@@ -40,160 +176,143 @@
             border-radius: 4px;
             color: #c7254e;
         }
+        
+        .btn-group .btn {
+            margin-right: 2px;
+        }
+        
+        .modal-xl {
+            max-width: 800px;
+        }
+        
+        .receipt-btn {
+            background-color: #6f42c1;
+            color: white;
+            border: none;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .receipt-btn:hover {
+            background-color: #5a32a3;
+            color: white;
+        }
+        
+        .map-icon-btn {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 3px;
+        }
+        
+        .map-icon-btn:hover {
+            background-color: #218838;
+            color: white;
+        }
+        
+        .map-icon-btn i {
+            font-size: 0.9rem;
+        }
+        
+        .status-badge-delivered {
+            background-color: #28a745;
+            color: white;
+        }
+        
+        .delivered-row {
+            background-color: #f8f9fa;
+        }
+        
+        /* Map Modal Styles */
+        .location-map {
+            height: 400px;
+            width: 100%;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        
+        .location-info {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+        }
+        
+        .location-info p {
+            margin-bottom: 8px;
+        }
+        
+        .location-info i {
+            color: #dc3545;
+            margin-right: 8px;
+        }
+        
+        .coordinates-badge {
+            background-color: #e7f1ff;
+            color: #0d6efd;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .coordinates-badge i {
+            font-size: 1rem;
+        }
+        
+        /* Photo Modal Styles */
+        .photo-modal-img {
+            max-width: 100%;
+            max-height: 70vh;
+            display: block;
+            margin: 0 auto;
+        }
+        
+        @media (max-width: 768px) {
+            .location-map {
+                height: 300px;
+            }
+            .modal-dialog {
+                margin: 10px;
+            }
+            .btn-group {
+                display: flex;
+                flex-direction: column;
+            }
+            .btn-group .btn {
+                margin-bottom: 2px;
+                width: 100%;
+            }
+        }
     </style>
 </head>
 <body>
-    <?php
-    // Start session and include database connection
-    require_once '../config/database.php';
-    require_once '../config/session_handler.php';
+    <!-- Display success/error messages -->
+    <?php if (isset($_SESSION['success_message'])): ?>
+        <div class="alert alert-success alert-dismissible fade show m-3" role="alert">
+            <?php echo $_SESSION['success_message']; unset($_SESSION['success_message']); ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    <?php endif; ?>
     
-    // Check if user is logged in
-    if (!isset($_SESSION['user_id']) || !isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
-        header("Location: ../login.php");
-        exit();
-    }
-    
-    // Get current user info and branch context
-    $user_id = $_SESSION['user_id'];
-    $user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Driver User';
-    $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'delivery';
-    $branch_id = $_SESSION['branch_id'] ?? 0;
-    $view_all_branches = $_SESSION['view_all_branches'] ?? false;
-    
-    // Check if branch_id column exists in sales_orders table
-    $so_branch_column_exists = false;
-    $check_so_column = $conn->query("SHOW COLUMNS FROM sales_orders LIKE 'branch_id'");
-    if ($check_so_column && $check_so_column->num_rows > 0) {
-        $so_branch_column_exists = true;
-    }
-    
-    // Check if branch_id column exists in trip_tickets table
-    $tt_branch_column_exists = false;
-    $check_tt_column = $conn->query("SHOW COLUMNS FROM trip_tickets LIKE 'branch_id'");
-    if ($check_tt_column && $check_tt_column->num_rows > 0) {
-        $tt_branch_column_exists = true;
-    }
-    
-    // Check if branch_id column exists in deliveries table
-    $delivery_branch_column_exists = false;
-    $check_delivery_column = $conn->query("SHOW COLUMNS FROM deliveries LIKE 'branch_id'");
-    if ($check_delivery_column && $check_delivery_column->num_rows > 0) {
-        $delivery_branch_column_exists = true;
-    }
-    
-    // Determine branch filter condition
-    $branch_condition = "";
-    $tt_branch_condition = "";
-    $delivery_branch_condition = "";
-    
-    if ($so_branch_column_exists && !$view_all_branches) {
-        $branch_condition = "AND so.branch_id = $branch_id";
-    }
-    
-    if ($tt_branch_column_exists && !$view_all_branches) {
-        $tt_branch_condition = "AND tt.branch_id = $branch_id";
-    }
-    
-    if ($delivery_branch_column_exists && !$view_all_branches) {
-        $delivery_branch_condition = "AND d.branch_id = $branch_id";
-    }
-    
-    // Get delivery statistics with branch filtering
-    try {
-            $total_for_delivery = 0;
-            $in_transit = 0;
-            $completed_today = 0;
-        // Total for delivery (sales orders with status 'ready' or 'processing')
-        $query = "SELECT COUNT(*) as total_for_delivery 
-                  FROM sales_orders 
-                  WHERE order_status IN ('processing', 'ready') 
-                  $branch_condition";
-        $result = $conn->query($query);
-        if ($result) {
-            $row = $result->fetch_assoc();
-            $total_for_delivery = $row['total_for_delivery'] ?? 0;
-        }
-        
-        // In transit (trip tickets in progress)
-        if ($tt_branch_column_exists && !$view_all_branches) {
-            $query = "SELECT COUNT(*) as in_transit 
-                      FROM trip_tickets 
-                      WHERE trip_status = 'in-progress' 
-                      AND branch_id = $branch_id";
-        } else {
-            $query = "SELECT COUNT(*) as in_transit 
-                      FROM trip_tickets 
-                      WHERE trip_status = 'in-progress'";
-        }
-        $result = $conn->query($query);
-            if ($result) {
-            $row = $result->fetch_assoc();
-            $in_transit = $row['in_transit'] ?? 0;
-        }
-        
-        // Completed today (deliveries completed today)
-        if ($delivery_branch_column_exists && !$view_all_branches) {
-            $query = "
-                SELECT COUNT(DISTINCT d.delivery_id) as completed_today 
-                FROM deliveries d
-                JOIN sales_orders so ON d.so_id = so.so_id
-                WHERE d.delivery_status = 'delivered' 
-                AND DATE(d.delivery_date) = CURDATE()
-                AND d.branch_id = $branch_id
-            ";
-        } else {
-            $query = "
-                SELECT COUNT(DISTINCT d.delivery_id) as completed_today 
-                FROM deliveries d
-                JOIN sales_orders so ON d.so_id = so.so_id
-                WHERE d.delivery_status = 'delivered' 
-                AND DATE(d.delivery_date) = CURDATE()
-            ";
-        }
-        $result = $conn->query($query);
-        if ($result) {
-            $row = $result->fetch_assoc();
-            $completed_today = $row['completed_today'] ?? 0;
-        }
-        
-        // Get delivery orders data with branch filtering
-        $query = "
-            SELECT 
-                so.so_id,
-                so.so_number,
-                c.customer_name,
-                c.contact_person,
-                c.phone_number,
-                c.address,
-                c.city,
-                so.order_status,
-                so.total_amount,
-                so.order_date,
-                so.delivery_date,
-                so.branch_id,
-                GROUP_CONCAT(CONCAT(i.item_name, ' (', soi.quantity_ordered, ')') SEPARATOR '; ') as items
-            FROM sales_orders so
-            JOIN customers c ON so.customer_id = c.customer_id
-            LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
-            LEFT JOIN items i ON soi.item_id = i.item_id
-            WHERE so.order_status IN ('processing', 'ready', 'confirmed')
-            $branch_condition
-            GROUP BY so.so_id
-            ORDER BY so.delivery_date ASC, so.order_date ASC
-        ";
-        
-        $result = $conn->query($query);
-        $delivery_orders = [];
-        if ($result) {
-            $delivery_orders = $result->fetch_all(MYSQLI_ASSOC);
-        }
-        
-    } catch (Exception $e) {
-        error_log("Database error in fordelivery.php: " . $e->getMessage());
-        $delivery_orders = [];
-    }
-    ?>
+    <?php if (isset($_SESSION['error_message'])): ?>
+        <div class="alert alert-danger alert-dismissible fade show m-3" role="alert">
+            <?php echo $_SESSION['error_message']; unset($_SESSION['error_message']); ?>
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        </div>
+    <?php endif; ?>
 
     <!-- MAIN APPLICATION -->
     <div id="appPage">
@@ -201,7 +320,6 @@
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <h3>
-                    <!-- Burger icon moved before logo -->
                     <button class="desktop-toggle-btn" id="desktopToggleBtn">
                         <i class="bi bi-list" id="toggleIcon"></i>
                     </button>
@@ -232,13 +350,11 @@
                     </li>
                 </ul>
             </div>
-            <!-- User Profile Section at the bottom of sidebar -->
             <div class="sidebar-footer">
                 <div class="user-profile-sidebar">
                     <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
                     <div class="user-details-sidebar">
                         <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-
                     </div>
                 </div>
                 
@@ -251,7 +367,6 @@
 
         <!-- Main Content Area -->
         <div class="main-content">
-            <!-- Header Section with User Info and Logout -->
             <div class="navbar-top">
                 <button class="mobile-toggle-btn" id="mobileToggleBtn">
                     <i class="bi bi-list"></i>
@@ -262,39 +377,7 @@
                 </div>
             </div>
 
-            <!-- Branch Info Alert (if no branch_id column in sales_orders) -->
-            <?php if (!$so_branch_column_exists): ?>
-                <div class="alert alert-info alert-dismissible fade show" role="alert">
-                    <i class="bi bi-info-circle"></i> 
-                    <strong>Branch filtering for sales orders not yet set up.</strong> Please run this SQL in phpMyAdmin to enable branch-specific order data:
-                    <br><br>
-                    <code>ALTER TABLE sales_orders ADD COLUMN branch_id INT NULL;</code>
-                    <br>
-                    <code>ALTER TABLE sales_orders ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
-                    <br><br>
-                    <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('sales_orders')">
-                        <i class="bi bi-files"></i> Copy SQL
-                    </button>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-            <?php endif; ?>
-
-            <?php if (!$tt_branch_column_exists): ?>
-                <div class="alert alert-info alert-dismissible fade show" role="alert">
-                    <i class="bi bi-info-circle"></i> 
-                    <strong>Branch filtering for trip tickets not yet set up.</strong> Please run this SQL in phpMyAdmin to enable branch-specific trip ticket data:
-                    <br><br>
-                    <code>ALTER TABLE trip_tickets ADD COLUMN branch_id INT NULL;</code>
-                    <br>
-                    <code>ALTER TABLE trip_tickets ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
-                    <br><br>
-                    <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('trip_tickets')">
-                        <i class="bi bi-files"></i> Copy SQL
-                    </button>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-            <?php endif; ?>
-
+            <!-- Branch Info Alert (if no branch_id column in deliveries) -->
             <?php if (!$delivery_branch_column_exists): ?>
                 <div class="alert alert-info alert-dismissible fade show" role="alert">
                     <i class="bi bi-info-circle"></i> 
@@ -313,49 +396,54 @@
 
             <!-- Delivery Stats -->
             <div class="row g-3 mb-4 delivery-stats">
-                <!-- Total for Delivery -->
-                <div class="col-md-4 mb-3">
+                <div class="col-md-3 mb-3">
                     <div class="stat-card inventory">
+                        <div class="stat-icon">
+                            <i class="bi bi-clock"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value"><?php echo $stats['pending_count'] ?? 0; ?></div>
+                            <div class="stat-label">Pending</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-3 mb-3">
+                    <div class="stat-card pending">
                         <div class="stat-icon">
                             <i class="bi bi-truck"></i>
                         </div>
                         <div>
-                            <div class="stat-value"><?php echo $total_for_delivery; ?></div>
-                            <div class="stat-label">Total for Delivery</div>
-                            
+                            <div class="stat-value"><?php echo $stats['active_count'] ?? 0; ?></div>
+                            <div class="stat-label">Active (In Transit/Partial)</div>
                         </div>
                     </div>
                 </div>
 
-                <!-- In Transit -->
-                <div class="col-md-4 mb-3">
-                    <div class="stat-card pending">
-                        <div class="stat-icon">
-                            <i class="bi bi-hourglass-split"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $in_transit; ?></div>
-                            <div class="stat-label">In Transit</div>
-                            
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Completed Today -->
-                <div class="col-md-4 mb-3">
+                <div class="col-md-3 mb-3">
                     <div class="stat-card complete">
                         <div class="stat-icon">
                             <i class="bi bi-check-circle"></i>
                         </div>
                         <div>
-                            <div class="stat-value"><?php echo $completed_today; ?></div>
+                            <div class="stat-value"><?php echo $stats['completed_today'] ?? 0; ?></div>
                             <div class="stat-label">Completed Today</div>
-                        
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-3 mb-3">
+                    <div class="stat-card sales">
+                        <div class="stat-icon">
+                            <i class="bi bi-archive"></i>
+                        </div>
+                        <div>
+                            <div class="stat-value"><?php echo $stats['total_completed'] ?? 0; ?></div>
+                            <div class="stat-label">Total Completed</div>
                         </div>
                     </div>
                 </div>
             </div>
-
 
             <!-- Search and Filter -->
             <div class="card mb-4">
@@ -372,9 +460,10 @@
                         <div class="col-md-6">
                             <select class="form-select" id="statusFilter">
                                 <option value="">All Status</option>
-                                <option value="processing">Processing</option>
-                                <option value="ready">Ready</option>
-                                <option value="confirmed">Confirmed</option>
+                                <option value="pending">Pending</option>
+                                <option value="in-transit">In Transit</option>
+                                <option value="partial">Partial</option>
+                                <option value="delivered">Delivered</option>
                             </select>
                         </div>
                     </div>
@@ -386,9 +475,9 @@
                 <div class="alert alert-info text-center py-4">
                     <i class="bi bi-truck" style="font-size: 2rem;"></i>
                     <p class="mt-3 mb-0">
-                        No orders ready for delivery at this time.
-                        <?php if ($so_branch_column_exists && !$view_all_branches): ?>
-                            <br><small>No orders found for your branch.</small>
+                        No deliveries found.
+                        <?php if ($delivery_branch_column_exists && !$view_all_branches): ?>
+                            <br><small>No deliveries found for your branch.</small>
                         <?php endif; ?>
                     </p>
                 </div>
@@ -406,13 +495,16 @@
                                 <th>Contact</th>
                                 <th>Items</th>
                                 <th>Status</th>
+                                <th>Stop</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php foreach ($delivery_orders as $order): ?>
-                            <tr>
-                                <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($order['so_number']); ?></span></td>
+                            <tr class="<?php echo $order['delivery_status'] == 'delivered' ? 'delivered-row' : ''; ?>">
+                                <td>
+                                    <span class="badge bg-light text-dark"><?php echo htmlspecialchars($order['so_number']); ?></span>
+                                </td>
                                 <td><?php echo htmlspecialchars($order['customer_name']); ?></td>
                                 <td><?php echo htmlspecialchars($order['address'] . ', ' . $order['city']); ?></td>
                                 <td><?php echo htmlspecialchars($order['phone_number']); ?></td>
@@ -420,15 +512,15 @@
                                     <?php 
                                     if (!empty($order['items'])) {
                                         $items = explode('; ', $order['items']);
-                                        foreach ($items as $index => $item):
-                                            if ($index == 0):
+                                        $display_items = array_slice($items, 0, 2);
+                                        foreach ($display_items as $index => $item):
                                     ?>
                                         <small class="d-block"><?php echo htmlspecialchars($item); ?></small>
-                                    <?php else: ?>
-                                        <small class="d-block text-muted"><?php echo htmlspecialchars($item); ?></small>
                                     <?php 
-                                            endif;
-                                        endforeach; 
+                                        endforeach;
+                                        if (count($items) > 2) {
+                                            echo '<small class="text-muted">+' . (count($items) - 2) . ' more</small>';
+                                        }
                                     } else {
                                         echo '<small class="text-muted">No items listed</small>';
                                     }
@@ -437,41 +529,86 @@
                                 <td>
                                     <?php
                                     $status_badge = '';
-                                    switch ($order['order_status']) {
-                                        case 'processing':
+                                    $status_text = '';
+                                    switch ($order['delivery_status']) {
+                                        case 'pending':
                                             $status_badge = 'bg-warning';
+                                            $status_text = 'Pending';
                                             break;
-                                        case 'ready':
-                                            $status_badge = 'bg-info';
-                                            break;
-                                        case 'confirmed':
+                                        case 'in-transit':
                                             $status_badge = 'bg-primary';
+                                            $status_text = 'In Transit';
+                                            break;
+                                        case 'partial':
+                                            $status_badge = 'bg-info';
+                                            $status_text = 'Partial';
+                                            break;
+                                        case 'delivered':
+                                            $status_badge = 'bg-success';
+                                            $status_text = 'Delivered';
                                             break;
                                         default:
                                             $status_badge = 'bg-secondary';
+                                            $status_text = ucfirst($order['delivery_status']);
                                     }
                                     ?>
                                     <span class="badge <?php echo $status_badge; ?>">
-                                        <?php echo ucfirst($order['order_status']); ?>
+                                        <?php echo $status_text; ?>
                                     </span>
+                                    <?php if ($order['delivery_status'] == 'delivered' && !empty($order['signed_by'])): ?>
+                                    <?php endif; ?>
                                 </td>
                                 <td>
-                                    <button class="btn btn-sm btn-info" title="View" onclick="viewDelivery(<?php echo $order['so_id']; ?>)">
-                                        <i class="bi bi-eye"></i>
-                                    </button>
-                                    <?php if ($order['order_status'] == 'processing'): ?>
-                                    <button class="btn btn-sm btn-success" title="Mark as Ready" onclick="updateStatus(this, <?php echo $order['so_id']; ?>, 'ready')">
-                                        <i class="bi bi-box-seam"></i>
-                                    </button>
-                                    <?php elseif ($order['order_status'] == 'ready'): ?>
-                                    <button class="btn btn-sm btn-primary" title="Mark as En-route" onclick="updateStatus(this, <?php echo $order['so_id']; ?>, 'confirmed')">
-                                        <i class="bi bi-truck"></i>
-                                    </button>
-                                    <?php elseif ($order['order_status'] == 'confirmed'): ?>
-                                    <button class="btn btn-sm btn-success" title="Mark as Delivered" onclick="showDeliveryModal(<?php echo $order['so_id']; ?>, '<?php echo htmlspecialchars($order['so_number']); ?>')">
-                                        <i class="bi bi-check-lg"></i>
-                                    </button>
+                                    <?php if ($order['stop_sequence']): ?>
+                                        <span class="badge bg-secondary">Stop #<?php echo $order['stop_sequence']; ?></span>
+                                    <?php else: ?>
+                                        <span class="text-muted">-</span>
                                     <?php endif; ?>
+                                </td>
+                                <td>
+                                    <div class="btn-group" role="group">
+                                        <button class="btn btn-sm btn-info" title="View Details" onclick="viewDeliveryDetails(<?php echo $order['delivery_id']; ?>)">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                        
+                                        <?php 
+                                        $has_coordinates = !empty($order['latitude']) && !empty($order['longitude']) && 
+                                                           $order['latitude'] != 0 && $order['longitude'] != 0;
+                                        if ($has_coordinates): 
+                                        ?>
+                                            <button class="btn btn-sm map-icon-btn" title="View on Map" onclick="showLocation(
+                                                <?php echo $order['latitude']; ?>, 
+                                                <?php echo $order['longitude']; ?>, 
+                                                '<?php echo htmlspecialchars(addslashes($order['customer_name'])); ?>', 
+                                                '<?php echo htmlspecialchars(addslashes($order['address'] . ', ' . $order['city'])); ?>'
+                                            )">
+                                                <i class="bi bi-geo-alt-fill"></i>
+                                            </button>
+                                        <?php endif; ?>
+                                        
+                                        <?php if ($order['delivery_status'] == 'pending'): ?>
+                                            <button class="btn btn-sm btn-primary" title="Start Delivery" onclick="updateDeliveryStatus(<?php echo $order['delivery_id']; ?>, 'in-transit')">
+                                                <i class="bi bi-truck"></i>
+                                            </button>
+                                        <?php elseif ($order['delivery_status'] == 'in-transit'): ?>
+                                            <button class="btn btn-sm btn-success" title="Mark as Delivered" onclick="showDeliveryModal(<?php echo $order['delivery_id']; ?>, <?php echo $order['so_id']; ?>, '<?php echo htmlspecialchars(addslashes($order['so_number'])); ?>')">
+                                                <i class="bi bi-check-lg"></i>
+                                            </button>
+                                            <button class="btn btn-sm btn-warning" title="Mark as Partial" onclick="updateDeliveryStatus(<?php echo $order['delivery_id']; ?>, 'partial')">
+                                                <i class="bi bi-exclamation-triangle"></i>
+                                            </button>
+                                        <?php elseif ($order['delivery_status'] == 'partial'): ?>
+                                            <button class="btn btn-sm btn-success" title="Complete Remaining Items" onclick="showDeliveryModal(<?php echo $order['delivery_id']; ?>, <?php echo $order['so_id']; ?>, '<?php echo htmlspecialchars(addslashes($order['so_number'])); ?>')">
+                                                <i class="bi bi-check-lg"></i>
+                                            </button>
+                                        <?php endif; ?>
+                                        
+                                        <?php if ($order['delivery_status'] == 'delivered'): ?>
+                                            <button class="btn btn-sm receipt-btn" title="Print Receipt" onclick="showReceiptModal(<?php echo $order['delivery_id']; ?>, '<?php echo htmlspecialchars(addslashes($order['so_number'])); ?>', '<?php echo htmlspecialchars(addslashes($order['customer_name'])); ?>', '<?php echo htmlspecialchars(addslashes($order['address'] . ', ' . $order['city'])); ?>', '<?php echo htmlspecialchars(addslashes($order['signed_by'])); ?>', '<?php echo $order['delivery_date']; ?>', '<?php echo htmlspecialchars(addslashes($order['items_receipt'])); ?>')">
+                                                <i class="bi bi-receipt"></i>
+                                            </button>
+                                        <?php endif; ?>
+                                    </div>
                                 </td>
                             </tr>
                             <?php endforeach; ?>
@@ -483,61 +620,147 @@
         </div>
     </div>
 
+    <!-- View Details Modal (NO MAP) -->
+    <div class="modal fade" id="viewDetailsModal" tabindex="-1" aria-labelledby="viewDetailsModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header py-2">
+                    <h5 class="modal-title" id="viewDetailsModalLabel">
+                        <i class="bi bi-truck text-primary me-2"></i>
+                        Delivery Details
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body p-3" id="viewDetailsModalBody">
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-3">Loading delivery details...</p>
+                    </div>
+                </div>
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Location Map Modal (Original Style) -->
+    <div class="modal fade" id="locationMapModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-geo-alt-fill text-danger me-2"></i>
+                        Customer Location
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="customerLocationMap" class="location-map"></div>
+                    
+                    <div class="location-info">
+                        <h6 id="modalCustomerName" class="mb-3"></h6>
+                        <p>
+                            <i class="bi bi-geo-alt"></i>
+                            <strong>Address:</strong> <span id="modalCustomerAddress"></span>
+                        </p>
+                        <p>
+                            <i class="bi bi-geo"></i>
+                            <strong>Coordinates:</strong>
+                            <span id="modalCoordinates" class="coordinates-badge">
+                                <i class="bi bi-crosshair"></i>
+                                <span id="modalLat"></span>, <span id="modalLng"></span>
+                            </span>
+                        </p>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" onclick="openInGoogleMaps()">
+                        <i class="bi bi-google"></i> Open in Google Maps
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Photo Modal -->
+    <div class="modal fade" id="photoModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-image text-primary me-2"></i>
+                        Proof of Delivery Photo
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <img src="" alt="Proof of Delivery" class="photo-modal-img" id="photoModalImg">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <a href="#" class="btn btn-primary" id="downloadPhotoBtn" download>
+                        <i class="bi bi-download"></i> Download
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Delivery Modal -->
     <div class="modal fade" id="deliveryModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Delivery Completion</h5>
+                <div class="modal-header py-2">
+                    <h5 class="modal-title">Complete Delivery</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body">
+                <div class="modal-body p-3">
                     <form id="deliveryForm" enctype="multipart/form-data" action="update_delivery.php" method="POST">
+                        <input type="hidden" name="delivery_id" id="modalDeliveryId">
                         <input type="hidden" name="so_id" id="modalSoId">
                         <input type="hidden" name="so_number" id="modalSoNumber">
                         <input type="hidden" name="branch_id" value="<?php echo $branch_id; ?>">
                         
-                        <div class="alert alert-info">
+                        <div class="alert alert-info py-2">
                             <strong id="orderIdDisplay"></strong> - Delivery Confirmation Required
-                            <?php if ($so_branch_column_exists && !$view_all_branches): ?>
-                                <br><small>Branch: <?php echo $branch_id; ?></small>
-                            <?php endif; ?>
                         </div>
 
-                        <h6 class="mb-3">Delivery Information</h6>
-                        <div class="row mb-3">
+                        <div class="row mb-2">
                             <div class="col-md-6">
-                                <label class="form-label">Delivery Date</label>
-                                <input type="datetime-local" class="form-control" name="delivery_date" required value="<?php echo date('Y-m-d\TH:i'); ?>">
+                                <label class="form-label small">Delivery Date</label>
+                                <input type="datetime-local" class="form-control form-control-sm" name="delivery_date" required value="<?php echo date('Y-m-d\TH:i'); ?>">
                             </div>
                             <div class="col-md-6">
-                                <label class="form-label">Signed By (Customer Name)</label>
-                                <input type="text" class="form-control" name="signed_by" placeholder="Customer name">
+                                <label class="form-label small">Signed By</label>
+                                <input type="text" class="form-control form-control-sm" name="signed_by" placeholder="Customer name" required>
                             </div>
                         </div>
 
-                        <h6 class="mb-3">Photo Documentation</h6>
-                        <div class="mb-3">
-                            <label class="form-label">Upload Proof of Delivery Photo</label>
-                            <input type="file" class="form-control" name="proof_photo" accept="image/*" required>
-                            <small class="text-muted">Please upload a photo showing the delivered package at the delivery location</small>
+                        <div class="mb-2">
+                            <label class="form-label small">Proof of Delivery Photo</label>
+                            <input type="file" class="form-control form-control-sm" name="proof_photo" accept="image/*" required>
+                            <small class="text-muted">Upload photo of delivered package</small>
                         </div>
 
-                        <div class="mb-3">
-                            <label class="form-label">Remarks</label>
-                            <textarea class="form-control" name="remarks" rows="3" placeholder="Any notes about the delivery..."></textarea>
+                        <div class="mb-2">
+                            <label class="form-label small">Remarks</label>
+                            <textarea class="form-control form-control-sm" name="remarks" rows="2" placeholder="Any notes..."></textarea>
                         </div>
 
-                        <div class="form-check mb-3">
+                        <div class="form-check mb-2">
                             <input class="form-check-input" type="checkbox" name="confirm_delivery" required>
-                            <label class="form-check-label">
-                                I confirm this delivery has been completed successfully
+                            <label class="form-check-label small">
+                                I confirm this delivery is complete
                             </label>
                         </div>
                         
-                        <div class="modal-footer">
-                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                            <button type="submit" class="btn btn-primary">Confirm Delivery</button>
+                        <div class="modal-footer py-2 px-0">
+                            <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="submit" class="btn btn-sm btn-primary">Confirm Delivery</button>
                         </div>
                     </form>
                 </div>
@@ -545,30 +768,103 @@
         </div>
     </div>
 
-    <!-- JavaScript -->
+    <!-- Receipt Modal -->
+    <div class="modal fade" id="receiptModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header py-2">
+                    <h5 class="modal-title">
+                        <i class="bi bi-receipt me-2"></i>
+                        Delivery Receipt
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4" id="receiptContent">
+                    <!-- Receipt content will be loaded here -->
+                </div>
+                <div class="modal-footer py-2">
+                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-sm btn-primary" onclick="window.print()">
+                        <i class="bi bi-printer"></i> Print Receipt
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Partial Delivery Modal -->
+    <div class="modal fade" id="partialModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Partial Delivery</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="partialForm">
+                        <div class="mb-3">
+                            <label class="form-label">Reason for Partial Delivery</label>
+                            <select class="form-select" id="partialReason" required>
+                                <option value="">Select reason</option>
+                                <option value="Out of stock">Out of stock</option>
+                                <option value="Damaged items">Damaged items</option>
+                                <option value="Customer refused some items">Customer refused some items</option>
+                                <option value="Wrong items">Wrong items</option>
+                                <option value="Quantity mismatch">Quantity mismatch</option>
+                                <option value="Other">Other</option>
+                            </select>
+                        </div>
+                        <div class="mb-3" id="otherReasonDiv" style="display: none;">
+                            <label class="form-label">Please specify</label>
+                            <input type="text" class="form-control" id="otherReason" placeholder="Enter reason">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Items Delivered</label>
+                            <div id="itemsList" class="border p-2 rounded mb-2" style="max-height: 200px; overflow-y: auto;">
+                                <!-- Items will be loaded here -->
+                            </div>
+                            <small class="text-muted">Check the items that were successfully delivered</small>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Additional Details</label>
+                            <textarea class="form-control" id="partialDetails" rows="3" placeholder="Provide more details about the partial delivery..."></textarea>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-warning" onclick="submitPartialDelivery()">Submit Partial</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // Branch context variables
         const branchId = <?php echo $branch_id; ?>;
         const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
-        const soBranchColumnExists = <?php echo $so_branch_column_exists ? 'true' : 'false'; ?>;
-        const ttBranchColumnExists = <?php echo $tt_branch_column_exists ? 'true' : 'false'; ?>;
-        const deliveryBranchColumnExists = <?php echo $delivery_branch_column_exists ? 'true' : 'false'; ?>;
 
-        let currentOrderId = null;
+        let currentDeliveryId = null;
+        let currentSoId = null;
         let currentOrderNumber = null;
+        let map = null;
+        let marker = null;
+        let currentLat = null;
+        let currentLng = null;
+        let currentCustomerName = null;
+        let currentAddress = null;
+        let currentPartialDeliveryId = null;
+        let currentItems = [];
 
         // ================= SIDEBAR FUNCTIONS =================
-        // Toggle sidebar collapse/expand
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
             const isMobile = window.innerWidth <= 992;
             
             if (isMobile) {
-                // On mobile, toggle active state
                 sidebar.classList.toggle('active');
                 
-                // Create overlay for mobile
                 if (!document.querySelector('.sidebar-overlay')) {
                     const overlay = document.createElement('div');
                     overlay.className = 'sidebar-overlay';
@@ -582,7 +878,6 @@
                         overlay.classList.add('active');
                     }, 10);
                 } else {
-                    // If overlay exists, toggle its active state
                     const overlay = document.querySelector('.sidebar-overlay');
                     overlay.classList.toggle('active');
                     if (!sidebar.classList.contains('active')) {
@@ -594,18 +889,13 @@
                     }
                 }
             } else {
-                // On desktop, toggle between expanded and collapsed
                 sidebar.classList.toggle('collapsed');
-                
-                // Store preference in localStorage
                 localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
                 
-                // Show/hide nav text
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = sidebar.classList.contains('collapsed') ? 'none' : 'inline-block';
                 });
                 
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = sidebar.classList.contains('collapsed') ? '80px' : '250px';
@@ -613,7 +903,6 @@
             }
         }
 
-        // Close mobile sidebar
         function closeMobileSidebar() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.querySelector('.sidebar-overlay');
@@ -630,11 +919,9 @@
             }
         }
 
-        // Initialize sidebar when page loads
         function initializeSidebar() {
             const sidebar = document.getElementById('sidebar');
             
-            // Load saved preference from localStorage for desktop
             if (window.innerWidth > 992) {
                 const savedCollapsed = localStorage.getItem('sidebarCollapsed');
                 if (savedCollapsed === 'true') {
@@ -643,7 +930,6 @@
                         text.style.display = 'none';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '80px';
@@ -654,21 +940,18 @@
                         text.style.display = 'inline-block';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '250px';
                     }
                 }
             } else {
-                // On mobile, always start with closed sidebar
                 sidebar.classList.remove('active');
                 sidebar.classList.remove('collapsed');
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = 'inline-block';
                 });
                 
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = '0';
@@ -676,19 +959,16 @@
             }
         }
 
-        // Handle window resize for sidebar
         function handleSidebarResize() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.querySelector('.sidebar-overlay');
             
             if (window.innerWidth > 992) {
-                // Desktop mode - remove mobile overlay
                 if (overlay) {
                     overlay.remove();
                 }
                 sidebar.classList.remove('active');
                 
-                // Load saved preference
                 const savedCollapsed = localStorage.getItem('sidebarCollapsed');
                 if (savedCollapsed === 'true') {
                     sidebar.classList.add('collapsed');
@@ -696,7 +976,6 @@
                         text.style.display = 'none';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '80px';
@@ -707,20 +986,17 @@
                         text.style.display = 'inline-block';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '250px';
                     }
                 }
             } else {
-                // Mobile mode - always show expanded when visible
                 sidebar.classList.remove('collapsed');
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = 'inline-block';
                 });
                 
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = '0';
@@ -751,62 +1027,406 @@
                 const rows = document.querySelectorAll('tbody tr');
                 
                 rows.forEach(row => {
-                    const status = row.cells[5]?.textContent.toLowerCase() || '';
-                    row.style.display = (filter === '' || status.includes(filter)) ? '' : 'none';
+                    const statusCell = row.cells[5];
+                    if (statusCell) {
+                        const status = statusCell.textContent.toLowerCase().trim();
+                        row.style.display = (filter === '' || status.includes(filter)) ? '' : 'none';
+                    }
                 });
             });
         }
 
-        // View delivery details
-        function viewDelivery(orderId) {
-            window.location.href = 'order_details.php?id=' + orderId;
+        // Update delivery status (for start and partial)
+        function updateDeliveryStatus(deliveryId, newStatus) {
+            if (newStatus === 'in-transit') {
+                if (confirm('Start this delivery?')) {
+                    const formData = new FormData();
+                    formData.append('delivery_id', deliveryId);
+                    formData.append('status', newStatus);
+                    formData.append('branch_id', branchId);
+                    
+                    fetch('update_delivery_status.php', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            location.reload();
+                        } else {
+                            alert('Error: ' + data.message);
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Error updating status');
+                    });
+                }
+            } else if (newStatus === 'partial') {
+                // Load items for partial delivery
+                loadItemsForPartial(deliveryId);
+            }
         }
 
-        // Update delivery status
-        function updateStatus(button, orderId, newStatus) {
-            if (confirm('Are you sure you want to update the status?')) {
-                fetch('update_order_status.php', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                    },
-                    body: 'so_id=' + orderId + '&new_status=' + newStatus + '&branch_id=' + branchId
-                })
+        // Load items for partial delivery
+        function loadItemsForPartial(deliveryId) {
+            currentPartialDeliveryId = deliveryId;
+            
+            fetch('get_delivery_items.php?delivery_id=' + deliveryId)
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        location.reload();
+                        currentItems = data.items;
+                        displayItemsForPartial();
+                        
+                        const modal = new bootstrap.Modal(document.getElementById('partialModal'));
+                        modal.show();
                     } else {
-                        alert('Error: ' + data.message);
+                        alert('Error loading items: ' + data.message);
                     }
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    alert('Error updating status');
+                    alert('Error loading items');
                 });
-            }
         }
 
-        // Show delivery modal
-        function showDeliveryModal(orderId, orderNumber) {
-            currentOrderId = orderId;
+        // Display items for partial delivery
+        function displayItemsForPartial() {
+            const itemsDiv = document.getElementById('itemsList');
+            let html = '';
+            
+            currentItems.forEach((item, index) => {
+                html += `
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" value="${item.item_id}" id="item_${index}" checked>
+                        <label class="form-check-label" for="item_${index}">
+                            ${item.item_name} - Qty: ${item.quantity} - ₱${item.price}
+                        </label>
+                    </div>
+                `;
+            });
+            
+            itemsDiv.innerHTML = html;
+        }
+
+        // Submit Partial Delivery
+        function submitPartialDelivery() {
+            const reason = document.getElementById('partialReason').value;
+            let details = document.getElementById('partialDetails').value;
+            
+            if (!reason) {
+                alert('Please select a reason');
+                return;
+            }
+            
+            let finalReason = reason;
+            if (reason === 'Other') {
+                const otherReason = document.getElementById('otherReason').value;
+                if (!otherReason) {
+                    alert('Please specify the reason');
+                    return;
+                }
+                finalReason = otherReason;
+            }
+            
+            // Get selected items
+            const checkboxes = document.querySelectorAll('#itemsList input[type="checkbox"]:checked');
+            if (checkboxes.length === 0) {
+                alert('Please select at least one item that was delivered');
+                return;
+            }
+            
+            const deliveredItems = Array.from(checkboxes).map(cb => cb.value);
+            
+            if (details) {
+                finalReason += ' - ' + details;
+            }
+            
+            finalReason += ` [Delivered items: ${checkboxes.length} of ${currentItems.length}]`;
+            
+            const formData = new FormData();
+            formData.append('delivery_id', currentPartialDeliveryId);
+            formData.append('status', 'partial');
+            formData.append('remarks', finalReason);
+            formData.append('branch_id', branchId);
+            
+            fetch('update_delivery_status.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Close modal
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('partialModal'));
+                    modal.hide();
+                    // Reload to show updated status
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error updating status');
+            });
+        }
+
+        // View delivery details in modal (NO MAP)
+        function viewDeliveryDetails(deliveryId) {
+            const modalBody = document.getElementById('viewDetailsModalBody');
+            modalBody.innerHTML = `
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-3">Loading delivery details...</p>
+                </div>
+            `;
+            
+            const modal = new bootstrap.Modal(document.getElementById('viewDetailsModal'));
+            modal.show();
+            
+            // Fetch delivery details via AJAX
+            fetch('get_delivery_details.php?delivery_id=' + deliveryId)
+                .then(response => response.text())
+                .then(data => {
+                    modalBody.innerHTML = data;
+                    
+                    // Add click handlers for photo links
+                    document.querySelectorAll('.view-photo-btn').forEach(btn => {
+                        btn.addEventListener('click', function(e) {
+                            e.preventDefault();
+                            const photoUrl = this.getAttribute('data-photo');
+                            showPhotoModal(photoUrl);
+                        });
+                    });
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    modalBody.innerHTML = `
+                        <div class="alert alert-danger m-3">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            Error loading delivery details. Please try again.
+                        </div>
+                    `;
+                });
+        }
+
+        // Show photo modal
+        function showPhotoModal(photoUrl) {
+            const modalImg = document.getElementById('photoModalImg');
+            const downloadBtn = document.getElementById('downloadPhotoBtn');
+            
+            modalImg.src = photoUrl;
+            downloadBtn.href = photoUrl;
+            
+            const modal = new bootstrap.Modal(document.getElementById('photoModal'));
+            modal.show();
+        }
+
+        // Show delivery modal (for complete delivery)
+        function showDeliveryModal(deliveryId, soId, orderNumber) {
+            currentDeliveryId = deliveryId;
+            currentSoId = soId;
             currentOrderNumber = orderNumber;
+            
             document.getElementById('orderIdDisplay').textContent = orderNumber;
-            document.getElementById('modalSoId').value = orderId;
+            document.getElementById('modalDeliveryId').value = deliveryId;
+            document.getElementById('modalSoId').value = soId;
             document.getElementById('modalSoNumber').value = orderNumber;
             document.getElementById('deliveryForm').reset();
+            
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            document.querySelector('input[name="delivery_date"]').value = `${year}-${month}-${day}T${hours}:${minutes}`;
+            
             const modal = new bootstrap.Modal(document.getElementById('deliveryModal'));
             modal.show();
         }
 
-        // Copy SQL for database setup
+        // Show receipt modal
+        function showReceiptModal(deliveryId, soNumber, customerName, address, signedBy, deliveryDate, itemsRaw) {
+            const receiptContent = document.getElementById('receiptContent');
+            const date = new Date(deliveryDate);
+            const formattedDate = date.toLocaleString('en-PH', {
+                year: 'numeric',
+                month: 'long',
+                day: 'numeric',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+            
+            // Parse items
+            const items = itemsRaw ? itemsRaw.split('||') : [];
+            
+            let itemsHtml = '';
+            let total = 0;
+            
+            items.forEach(item => {
+                const parts = item.split(' x ');
+                if (parts.length === 2) {
+                    const qtyPrice = parts[1].split(' - ₱');
+                    if (qtyPrice.length === 2) {
+                        const qty = parts[0];
+                        const itemName = qtyPrice[0];
+                        const price = parseFloat(qtyPrice[1]);
+                        const subtotal = qty * price;
+                        total += subtotal;
+                        
+                        itemsHtml += `
+                            <tr>
+                                <td>${itemName}</td>
+                                <td class="text-center">${qty}</td>
+                                <td class="text-end">₱${price.toFixed(2)}</td>
+                                <td class="text-end">₱${subtotal.toFixed(2)}</td>
+                            </tr>
+                        `;
+                    }
+                }
+            });
+            
+            receiptContent.innerHTML = `
+                <div class="receipt" style="font-family: 'Courier New', monospace;">
+                    <div class="text-center mb-4">
+                        <h3>AMGC INVENTORY SYSTEM</h3>
+                        <h5>DELIVERY RECEIPT</h5>
+                        <hr>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-6">
+                            <strong>Receipt #:</strong> RCP-${deliveryId}-${Date.now()}<br>
+                            <strong>Order #:</strong> ${soNumber}<br>
+                            <strong>Delivery ID:</strong> #${deliveryId}
+                        </div>
+                        <div class="col-6 text-end">
+                            <strong>Date:</strong> ${formattedDate}<br>
+                            <strong>Signed by:</strong> ${signedBy}
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <strong>Customer:</strong> ${customerName}<br>
+                        <strong>Address:</strong> ${address}
+                    </div>
+                    
+                    <table class="table table-sm table-bordered">
+                        <thead>
+                            <tr>
+                                <th>Item</th>
+                                <th class="text-center">Qty</th>
+                                <th class="text-end">Price</th>
+                                <th class="text-end">Subtotal</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${itemsHtml}
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <th colspan="3" class="text-end">TOTAL:</th>
+                                <th class="text-end">₱${total.toFixed(2)}</th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                    
+                    <div class="text-center mt-4">
+                        <p>Thank you for your business!</p>
+                        <p>This serves as your official delivery receipt.</p>
+                        <hr>
+                        <small>Received by: _________________________</small><br>
+                        <small>Date: ______________________________</small>
+                    </div>
+                </div>
+            `;
+            
+            const modal = new bootstrap.Modal(document.getElementById('receiptModal'));
+            modal.show();
+        }
+
+        // Show location on map (from map icon)
+        function showLocation(lat, lng, customerName, address) {
+            currentLat = parseFloat(lat);
+            currentLng = parseFloat(lng);
+            currentCustomerName = customerName;
+            currentAddress = address;
+            
+            document.getElementById('modalCustomerName').textContent = customerName;
+            document.getElementById('modalCustomerAddress').textContent = address;
+            document.getElementById('modalLat').textContent = currentLat.toFixed(6);
+            document.getElementById('modalLng').textContent = currentLng.toFixed(6);
+            
+            const modal = new bootstrap.Modal(document.getElementById('locationMapModal'));
+            modal.show();
+            
+            // Small delay to ensure modal is rendered
+            setTimeout(() => {
+                initMap(currentLat, currentLng, customerName);
+            }, 500);
+        }
+
+        // Initialize map
+        function initMap(lat, lng, customerName) {
+            const mapElement = document.getElementById('customerLocationMap');
+            
+            if (map) {
+                map.remove();
+                map = null;
+            }
+            
+            if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
+                mapElement.innerHTML = '<div class="alert alert-danger p-2">Invalid coordinates</div>';
+                return;
+            }
+            
+            try {
+                map = L.map('customerLocationMap').setView([lat, lng], 15);
+                
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap'
+                }).addTo(map);
+                
+                marker = L.marker([lat, lng]).addTo(map);
+                marker.bindPopup(`<b>${customerName}</b><br>Delivery Location`).openPopup();
+                
+            } catch (error) {
+                console.error('Map error:', error);
+                mapElement.innerHTML = '<div class="alert alert-danger p-2">Map unavailable</div>';
+            }
+        }
+
+        // Open in Google Maps
+        function openInGoogleMaps() {
+            if (currentLat && currentLng) {
+                const url = `https://www.google.com/maps/search/?api=1&query=${currentLat},${currentLng}`;
+                window.open(url, '_blank');
+            }
+        }
+
+        // Handle reason change in partial modal
+        document.addEventListener('change', function(e) {
+            if (e.target && e.target.id === 'partialReason') {
+                const otherDiv = document.getElementById('otherReasonDiv');
+                if (e.target.value === 'Other') {
+                    otherDiv.style.display = 'block';
+                    document.getElementById('otherReason').required = true;
+                } else {
+                    otherDiv.style.display = 'none';
+                    document.getElementById('otherReason').required = false;
+                }
+            }
+        });
+
+        // Copy SQL
         function copySQL(table) {
             let sql = '';
-            if (table === 'sales_orders') {
-                sql = "ALTER TABLE sales_orders ADD COLUMN branch_id INT NULL;\nALTER TABLE sales_orders ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
-            } else if (table === 'trip_tickets') {
-                sql = "ALTER TABLE trip_tickets ADD COLUMN branch_id INT NULL;\nALTER TABLE trip_tickets ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
-            } else if (table === 'deliveries') {
+            if (table === 'deliveries') {
                 sql = "ALTER TABLE deliveries ADD COLUMN branch_id INT NULL;\nALTER TABLE deliveries ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
             }
             
@@ -815,26 +1435,17 @@
             });
         }
 
-        // Logout function
+        // Logout
         function logout() {
             if (confirm('Are you sure you want to logout?')) {
                 window.location.href = '../logout.php';
             }
         }
 
-        // Initialize when page loads
+        // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
-            console.log("Delivery Management page loaded!");
-            console.log("Branch ID:", branchId);
-            console.log("View All Branches:", viewAllBranches);
-            console.log("SO Branch Column Exists:", soBranchColumnExists);
-            console.log("TT Branch Column Exists:", ttBranchColumnExists);
-            console.log("Delivery Branch Column Exists:", deliveryBranchColumnExists);
-            
-            // Initialize sidebar
             initializeSidebar();
             
-            // Setup mobile toggle button
             const mobileToggleBtn = document.getElementById('mobileToggleBtn');
             if (mobileToggleBtn) {
                 mobileToggleBtn.addEventListener('click', function(e) {
@@ -843,15 +1454,6 @@
                 });
             }
             
-            const mobileMenuBtn = document.getElementById('mobileMenuBtn');
-            if (mobileMenuBtn) {
-                mobileMenuBtn.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    toggleSidebar();
-                });
-            }
-            
-            // Setup desktop toggle button
             const desktopToggleBtn = document.getElementById('desktopToggleBtn');
             if (desktopToggleBtn) {
                 desktopToggleBtn.addEventListener('click', function(e) {
@@ -860,7 +1462,6 @@
                 });
             }
             
-            // Add click listeners to sidebar links to close on mobile
             document.querySelectorAll('.sidebar .nav-link').forEach(link => {
                 link.addEventListener('click', function() {
                     if (window.innerWidth <= 992) {
@@ -869,10 +1470,9 @@
                 });
             });
             
-            // Close sidebar when clicking outside on mobile
             document.addEventListener('click', function(event) {
                 const sidebar = document.getElementById('sidebar');
-                const mobileBtn = document.getElementById('mobileToggleBtn') || document.getElementById('mobileMenuBtn');
+                const mobileBtn = document.getElementById('mobileToggleBtn');
                 const overlay = document.querySelector('.sidebar-overlay');
                 const isMobile = window.innerWidth <= 992;
                 
@@ -884,22 +1484,28 @@
                 }
             });
 
-            // Add resize event listener
             window.addEventListener('resize', handleSidebarResize);
+            
+            const locationModal = document.getElementById('locationMapModal');
+            if (locationModal) {
+                locationModal.addEventListener('hidden.bs.modal', function () {
+                    if (map) {
+                        map.remove();
+                        map = null;
+                    }
+                });
+            }
         });
 
         // Keyboard shortcuts
         document.addEventListener('keydown', function(e) {
-            // Ctrl + B to toggle sidebar (desktop only)
             if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
                 e.preventDefault();
                 toggleSidebar();
             }
-            // Escape to close sidebar on mobile
             else if (e.key === 'Escape' && window.innerWidth <= 992) {
                 closeMobileSidebar();
             }
-            // Ctrl + F to focus search
             else if (e.ctrlKey && e.key === 'f' && !e.target.matches('input, textarea')) {
                 e.preventDefault();
                 const searchInput = document.getElementById('searchInput');
