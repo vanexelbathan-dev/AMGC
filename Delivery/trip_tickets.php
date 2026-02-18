@@ -49,6 +49,101 @@ if ($check_drivers_column && $check_drivers_column->num_rows > 0) {
     $drivers_branch_column_exists = true;
 }
 
+// ================= HANDLE STATUS UPDATE =================
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_trip_status') {
+    header('Content-Type: application/json');
+    
+    try {
+        $trip_id = intval($_POST['trip_id']);
+        $new_status = $_POST['status'];
+        
+        // Verify that the trip exists and user has permission
+        $check_query = "SELECT tt.trip_id, tt.branch_id, tt.driver_id, tt.trip_status 
+                       FROM trip_tickets tt
+                       WHERE tt.trip_id = ?";
+        $check_stmt = $conn->prepare($check_query);
+        $check_stmt->bind_param("i", $trip_id);
+        $check_stmt->execute();
+        $result = $check_stmt->get_result();
+        $trip = $result->fetch_assoc();
+        
+        if (!$trip) {
+            throw new Exception('Trip ticket not found');
+        }
+        
+        // Check branch permission
+        if (!$view_all_branches && $trip['branch_id'] != $branch_id) {
+            throw new Exception('You do not have permission to update this trip ticket');
+        }
+        
+        // For delivery role, check if they are the assigned driver
+        if ($user_role == 'delivery' && $trip['driver_id'] != $driver_id) {
+            throw new Exception('You are not assigned to this trip');
+        }
+        
+        // Update the status
+        $update_query = "UPDATE trip_tickets SET trip_status = ?, updated_at = NOW() WHERE trip_id = ?";
+        $update_stmt = $conn->prepare($update_query);
+        $update_stmt->bind_param("si", $new_status, $trip_id);
+        
+        if (!$update_stmt->execute()) {
+            throw new Exception('Failed to update status');
+        }
+        
+        echo json_encode(['success' => true, 'message' => 'Status updated successfully']);
+        
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+    }
+    exit;
+}
+
+// ================= FUNCTION TO AUTO-UPDATE TRIP STATUS BASED ON DELIVERIES =================
+function updateTripStatusBasedOnDeliveries($conn, $trip_id) {
+    try {
+        // Check all deliveries for this trip
+        $check_query = "
+            SELECT 
+                COUNT(*) as total_deliveries,
+                SUM(CASE WHEN delivery_status = 'delivered' THEN 1 ELSE 0 END) as delivered_count,
+                SUM(CASE WHEN delivery_status IN ('pending', 'in-transit') THEN 1 ELSE 0 END) as pending_count
+            FROM deliveries 
+            WHERE trip_id = ?
+        ";
+        $check_stmt = $conn->prepare($check_query);
+        $check_stmt->bind_param("i", $trip_id);
+        $check_stmt->execute();
+        $result = $check_stmt->get_result();
+        $delivery_stats = $result->fetch_assoc();
+        
+        // If all deliveries are delivered, update trip status to completed
+        if ($delivery_stats['total_deliveries'] > 0 && 
+            $delivery_stats['delivered_count'] == $delivery_stats['total_deliveries']) {
+            
+            $update_query = "UPDATE trip_tickets SET trip_status = 'completed', updated_at = NOW() WHERE trip_id = ? AND trip_status != 'completed'";
+            $update_stmt = $conn->prepare($update_query);
+            $update_stmt->bind_param("i", $trip_id);
+            $update_stmt->execute();
+            
+            return true;
+        }
+        
+        return false;
+    } catch (Exception $e) {
+        error_log("Error auto-updating trip status: " . $e->getMessage());
+        return false;
+    }
+}
+
+// Check if we need to auto-update trip status (called when a delivery is completed)
+if (isset($_GET['check_trip_status']) && isset($_GET['trip_id'])) {
+    header('Content-Type: application/json');
+    $trip_id = intval($_GET['trip_id']);
+    $updated = updateTripStatusBasedOnDeliveries($conn, $trip_id);
+    echo json_encode(['updated' => $updated]);
+    exit;
+}
+
 // ================= ADD TRIP =================
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'add_trip') {
 
@@ -100,7 +195,7 @@ if (!$view_all_branches && $branch_id > 0) {
     $stats_where .= " AND tt.branch_id = $branch_id";
 }
 
-// Add driver filter for delivery role - FILTER SA TRIP_TICKETS TABLE
+// Add driver filter for delivery role
 if ($user_role == 'delivery' && $driver_id > 0) {
     $stats_where .= " AND tt.driver_id = $driver_id";
 }
@@ -151,10 +246,23 @@ if (!$view_all_branches && $branch_id > 0) {
 $branches_result = $conn->query($branches_query);
 $branches = $branches_result ? $branches_result->fetch_all(MYSQLI_ASSOC) : [];
 
-// ================= TRIP LIST - FIXED: FILTER SA TRIP_TICKETS.DRIVER_ID =================
+// ================= TRIP LIST =================
 $trip_tickets_query = "
     SELECT 
-        tt.*, 
+        tt.trip_id,
+        tt.trip_number,
+        tt.driver_id,
+        tt.branch_id,
+        tt.trip_date,
+        tt.trip_status,
+        tt.total_stops,
+        tt.total_delivered,
+        tt.total_failed,
+        tt.remarks,
+        tt.created_at,
+        tt.updated_at,
+        tt.created_by,
+        tt.picklist_id,
         -- Get driver info from drivers table
         d.driver_name,
         d.license_number,
@@ -162,7 +270,6 @@ $trip_tickets_query = "
         d.vehicle_type,
         d.vehicle_plate_number,
         b.branch_name,
-        pl.pick_list_id,
         pl.pick_list_number,
         pl.so_id,
         so.so_number,
@@ -190,29 +297,27 @@ if (!$view_all_branches && $branch_id > 0) {
     $trip_tickets_query .= " AND tt.branch_id = $branch_id";
 }
 
-// Add driver filter for delivery role - ITO ANG PINAKA-IMPORTANTE!
-// Filter by driver_id sa trip_tickets table mismo
+// Add driver filter for delivery role
 if ($user_role == 'delivery' && $driver_id > 0) {
     $trip_tickets_query .= " AND tt.driver_id = $driver_id";
 }
 
-$trip_tickets_query .= " GROUP BY tt.trip_id ORDER BY tt.created_at DESC";
+$trip_tickets_query .= " GROUP BY tt.trip_id ORDER BY 
+    CASE 
+        WHEN tt.trip_status IN ('planned', 'in-progress') THEN 1
+        WHEN tt.trip_status = 'completed' THEN 2
+        ELSE 3
+    END,
+    tt.created_at DESC";
 
 $result = $conn->query($trip_tickets_query);
 
 if (!$result) {
-    // Log error para malaman kung may mali sa query
     error_log("SQL Error in trip_tickets.php: " . $conn->error);
     error_log("Query: " . $trip_tickets_query);
     $trip_tickets = [];
 } else {
     $trip_tickets = $result->fetch_all(MYSQLI_ASSOC);
-}
-
-// Debug: Check kung may nakuha na trip tickets
-if ($user_role == 'delivery') {
-    error_log("Delivery Role - Driver ID: " . $driver_id);
-    error_log("Number of trip tickets found: " . count($trip_tickets));
 }
 
 // ================= GET ALL DELIVERIES FOR EACH TRIP =================
@@ -251,6 +356,31 @@ if ($user_role == 'delivery' && $driver_id > 0) {
     $driver_info_result = $driver_info_stmt->get_result();
     $driver_info = $driver_info_result->fetch_assoc();
     $driver_info_stmt->close();
+}
+
+// Helper function for trip status badge
+function getTripStatusBadge($status) {
+    return match($status) {
+        'planned' => 'bg-warning text-dark',
+        'pending' => 'bg-warning text-dark',
+        'in-progress' => 'bg-primary text-white',
+        'completed' => 'bg-success text-white',
+        'cancelled' => 'bg-danger text-white',
+        'delayed' => 'bg-info text-white',
+        default => 'bg-secondary text-white'
+    };
+}
+
+function getTripStatusText($status) {
+    return match($status) {
+        'planned' => 'Pending',
+        'pending' => 'Pending',
+        'in-progress' => 'In Transit',
+        'completed' => 'Completed',
+        'cancelled' => 'Cancelled',
+        'delayed' => 'Delayed',
+        default => ucfirst(str_replace('-', ' ', $status))
+    };
 }
 ?>
 <!DOCTYPE html>
@@ -405,12 +535,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             color: #0d6efd;
         }
         
-        .picklist-indicator {
-            font-size: 10px;
-            color: #6c757d;
-            display: block;
-        }
-        
         /* Status badges */
         .status-badge {
             display: inline-block;
@@ -438,53 +562,230 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             margin-left: 5px;
         }
         
-        /* Trip card styling */
-        .trip-card {
-            border: 1px solid #dee2e6;
-            border-radius: 8px;
-            margin-bottom: 15px;
-            background-color: white;
+        /* ===== TABLE STYLES FROM pick_list_items.php ===== */
+        /* Pick List Table styling */
+        .trip-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
         }
         
-        .trip-card-header {
+        .trip-table thead th {
             background-color: #f8f9fa;
-            padding: 12px 15px;
-            border-bottom: 1px solid #dee2e6;
-            border-radius: 8px 8px 0 0;
-            cursor: pointer;
+            font-weight: 600;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #495057;
+            padding: 14px 12px;
+            border-bottom: 2px solid #dee2e6;
+            white-space: nowrap;
+            vertical-align: middle;
+            text-align: left;
         }
         
-        .trip-card-header:hover {
+        .trip-table tbody td {
+            padding: 14px 12px;
+            vertical-align: middle;
+            border-bottom: 1px solid #e9ecef;
+            font-size: 13px;
+        }
+        
+        .trip-table tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+        
+        /* Column widths */
+        .col-trip-number { width: 12%; }
+        .col-driver { width: 12%; }
+        .col-branch { width: 8%; }
+        .col-date { width: 10%; }
+        .col-status { width: 10%; }
+        .col-customer { width: 15%; }
+        .col-deliveries { width: 10%; }
+        .col-actions { width: 10%; text-align: center; }
+        
+        /* Action buttons styling */
+        .action-buttons {
+            display: flex;
+            gap: 5px;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .table-btn {
+            background: none;
+            border: none;
+            padding: 6px;
+            border-radius: 4px;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        
+        .table-btn:hover {
             background-color: #e9ecef;
         }
         
-        .trip-card-body {
-            padding: 15px;
+        .btn-view { color: #0d6efd; }
+        .btn-edit { color: #ffc107; }
+        .btn-status { color: #198754; }
+        
+        /* Status group headers */
+        .status-group-header {
+            background-color: #e9ecef;
+            font-weight: 600;
+            padding: 8px 16px;
+            border-left: 4px solid #0d6efd;
         }
         
-        .delivery-item {
-            padding: 10px;
-            border-left: 3px solid #0d6efd;
-            margin-bottom: 10px;
-            background-color: #f8f9fa;
-            border-radius: 4px;
-        }
-        
-        .delivery-item.pending {
+        .status-group-header.pending {
             border-left-color: #ffc107;
         }
         
-        .delivery-item.delivered {
-            border-left-color: #198754;
-            background-color: #d1e7dd;
-        }
-        
-        .delivery-item.partial {
-            border-left-color: #0dcaf0;
-        }
-        
-        .delivery-item.in-transit {
+        .status-group-header.in-progress {
             border-left-color: #0d6efd;
+        }
+        
+        .status-group-header.completed {
+            border-left-color: #198754;
+            margin-top: 20px;
+        }
+        
+        .status-group-header i {
+            margin-right: 8px;
+        }
+        
+        /* Filter section */
+        .filter-section {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+            margin-bottom: 25px;
+            padding: 16px 20px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .filter-controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+        }
+        
+        .filter-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .filter-dropdowns {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+        }
+        
+        .filter-dropdown {
+            min-width: 160px;
+        }
+        
+        .filter-dropdown .form-select {
+            font-size: 13px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid #ced4da;
+            background-color: white;
+            cursor: pointer;
+        }
+        
+        .filter-dropdown .form-select:focus {
+            border-color: #0d6efd;
+            box-shadow: 0 0 0 0.2rem rgba(13,110,253,0.25);
+        }
+        
+        .filter-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 4px;
+            display: block;
+        }
+
+        /* Search Box Styling */
+        .search-box {
+            position: relative;
+            min-width: 250px;
+        }
+        
+        .search-box i {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #6c757d;
+            font-size: 14px;
+            z-index: 10;
+            pointer-events: none;
+        }
+        
+        .search-box input {
+            width: 100%;
+            padding: 8px 12px 8px 38px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            height: 40px;
+            font-size: 14px;
+        }
+        
+        .search-box input:focus {
+            border-color: #0d6efd;
+            box-shadow: 0 0 0 0.25rem rgba(13,110,253,0.25);
+            outline: none;
+        }
+        
+        /* Status update modal */
+        .status-option {
+            padding: 10px;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .status-option:hover {
+            background-color: #f8f9fa;
+            border-color: #0d6efd;
+        }
+        
+        .status-option.selected {
+            background-color: #e7f1ff;
+            border-color: #0d6efd;
+            border-width: 2px;
+        }
+        
+        .status-option .status-badge {
+            display: inline-block;
+            width: 100px;
+            margin-right: 10px;
+        }
+        
+        /* Auto-update notification */
+        .auto-update-badge {
+            background-color: #198754;
+            color: white;
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 10px;
+            margin-left: 5px;
         }
     </style>
 </head>
@@ -703,32 +1004,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 </div>
             </div>
 
-            <!-- Search and Filter -->
-            <div class="card mb-4">
-                <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <div class="input-group">
-                                <span class="input-group-text">
-                                    <i class="bi bi-search"></i>
-                                </span>
-                                <input type="text" class="form-control" id="searchInput" placeholder="Search by ticket ID, driver, customer...">
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <select class="form-select" id="statusFilter">
-                                <option value="">All Status</option>
-                                <option value="completed">Completed</option>
-                                <option value="in-progress">In Transit</option>
-                                <option value="planned">Pending</option>
-                                <option value="delayed">Delayed</option>
-                                <option value="cancelled">Cancelled</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
             <!-- No Trip Tickets Message -->
             <?php if (empty($trip_tickets)): ?>
                 <div class="alert alert-info text-center py-4">
@@ -736,7 +1011,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                     <p class="mt-3 mb-0">
                         No trip tickets found.
                         <?php if ($user_role == 'delivery'): ?>
-                            <br><small>You don't have any trip tickets assigned yet. Please check with your warehouse supervisor.</small>
+                            <br><small>You don't have any trip tickets assigned yet.</small>
                         <?php elseif ($tt_branch_column_exists && !$view_all_branches): ?>
                             <br><small>No trip tickets for your branch yet.</small>
                         <?php endif; ?>
@@ -744,137 +1019,107 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 </div>
             <?php else: ?>
 
-            <!-- Trip Tickets List with Deliveries -->
-            <div class="row">
-                <?php foreach ($trip_tickets as $row): 
-                    $status_badge = '';
-                    switch($row['trip_status']) {
-                        case 'completed': $status_badge = 'bg-success'; break;
-                        case 'in-progress': $status_badge = 'bg-warning text-dark'; break;
-                        case 'cancelled': $status_badge = 'bg-danger'; break;
-                        case 'delayed': $status_badge = 'bg-info'; break;
-                        case 'planned':
-                        default: $status_badge = 'bg-secondary';
-                    }
-                    
-                    $driver_display = !empty($row['driver_name']) ? $row['driver_name'] : 'N/A';
-                    $customer_display = !empty($row['customer_name']) ? $row['customer_name'] : 'N/A';
-                    $deliveries = $trip_deliveries[$row['trip_id']] ?? [];
-                    $delivery_count = count($deliveries);
-                ?>
-                <div class="col-12">
-                    <div class="trip-card">
-                        <div class="trip-card-header" onclick="toggleTripDetails('trip-<?php echo $row['trip_id']; ?>')">
-                            <div class="row align-items-center">
-                                <div class="col-md-2">
-                                    <span class="badge bg-light text-dark fs-6 p-2"><?php echo htmlspecialchars($row['trip_number']); ?></span>
+            <!-- Trip Tickets Table - Same design as pick_list_items.php -->
+            <div class="card">
+                <div class="table-responsive">
+                    <table class="table trip-table mb-0 align-middle" id="tripTable">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="col-trip-number">TRIP NUMBER</th>
+                                <th class="col-driver">DRIVER</th>
+                                <th class="col-branch">BRANCH</th>
+                                <th class="col-date">TRIP DATE</th>
+                                <th class="col-status">STATUS</th>
+                                <th class="col-customer">CUSTOMER</th>
+                                <th class="col-deliveries">DELIVERIES</th>
+                                <th class="col-actions text-center">ACTIONS</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tripTableBody">
+                            <?php 
+                            $current_status_group = '';
+                            foreach ($trip_tickets as $row): 
+                                // Determine status group for headers
+                                $status_group = '';
+                                if (in_array($row['trip_status'], ['planned', 'in-progress'])) {
+                                    $status_group = 'pending';
+                                } elseif ($row['trip_status'] == 'completed') {
+                                    $status_group = 'completed';
+                                }
+
+                                
+                                $driver_display = !empty($row['driver_name']) ? $row['driver_name'] : 'N/A';
+                                $customer_display = !empty($row['customer_name']) ? $row['customer_name'] : 'N/A';
+                                $delivery_count = $row['delivery_count'] ?? 0;
+                                $pending_count = $row['pending_deliveries'] ?? 0;
+                                $delivered_count = $row['delivered_count'] ?? 0;
+                                
+                                // Check if all deliveries are delivered but trip status is not completed
+                                $needs_update = ($delivery_count > 0 && $delivered_count == $delivery_count && $row['trip_status'] != 'completed');
+                            ?>
+                            <tr class="trip-row" 
+                                data-status="<?php echo $row['trip_status']; ?>"
+                                data-driver-id="<?php echo $row['driver_id'] ?? ''; ?>"
+                                data-trip-id="<?php echo $row['trip_id']; ?>"
+                                data-search="<?php echo strtolower($row['trip_number'] . ' ' . ($row['driver_name'] ?? '') . ' ' . ($row['customer_name'] ?? '')); ?>">
+                                <td class="col-trip-number">
+                                    <span class="fw-semibold"><?php echo htmlspecialchars($row['trip_number']); ?></span>
                                     <?php if (!empty($row['pick_list_number'])): ?>
-                                        <br><small class="text-muted">PL: <?php echo $row['pick_list_number']; ?></small>
+                                        <br><small class="text-muted">PL: <?php echo htmlspecialchars($row['pick_list_number']); ?></small>
                                     <?php endif; ?>
-                                </div>
-                                <div class="col-md-2">
+                                    <?php if ($needs_update): ?>
+                                        <br><span class="auto-update-badge"><i class="bi bi-arrow-repeat"></i> Auto-update ready</span>
+                                    <?php endif; ?>
+                                </td>
+                                <td class="col-driver">
                                     <?php if ($driver_display != 'N/A'): ?>
-                                        <span class="driver-badge">
-                                            <i class="bi bi-person-badge"></i> <?php echo htmlspecialchars($driver_display); ?>
+                                        <span">
+                                            <i></i> <?php echo htmlspecialchars($driver_display); ?>
                                         </span>
                                     <?php else: ?>
                                         <span class="text-muted">—</span>
                                     <?php endif; ?>
-                                </div>
-                                <div class="col-md-1">
+                                </td>
+                                <td class="col-branch">
                                     <?php echo htmlspecialchars($row['branch_name'] ?? 'N/A'); ?>
-                                </div>
-                                <div class="col-md-1">
+                                </td>
+                                <td class="col-date">
                                     <?php echo date('Y-m-d', strtotime($row['trip_date'])); ?>
-                                </div>
-                                <div class="col-md-1">
-                                    <span class="badge <?php echo $status_badge; ?>" style="padding: 6px 12px;">
-                                        <?php echo ucfirst(str_replace('-', ' ', $row['trip_status'])); ?>
+                                </td>
+                                <td class="col-status">
+                                    <span class="badge <?php echo getTripStatusBadge($row['trip_status']); ?>" style="padding: 6px 12px;">
+                                        <?php echo getTripStatusText($row['trip_status']); ?>
                                     </span>
-                                </div>
-                                <div class="col-md-3">
+                                </td>
+                                <td class="col-customer">
                                     <span class="fw-semibold"><?php echo htmlspecialchars($customer_display); ?></span>
                                     <?php if (!empty($row['so_number'])): ?>
                                         <br><small class="text-muted"><?php echo htmlspecialchars($row['so_number']); ?></small>
                                     <?php endif; ?>
-                                </div>
-                                <div class="col-md-2 text-end">
+                                </td>
+                                <td class="col-deliveries">
                                     <span class="badge bg-primary delivery-count">
-                                        <i class="bi bi-box"></i> <?php echo $delivery_count; ?> deliveries
+                                        <i class="bi bi-box"></i> <?php echo $delivery_count; ?>
                                     </span>
-                                    <br>
-                                    <?php if ($row['pending_deliveries'] > 0): ?>
-                                        <small class="text-warning"><?php echo $row['pending_deliveries']; ?> pending</small>
+                                    <?php if ($pending_count > 0): ?>
+                                        <br><small class="text-warning"><?php echo $pending_count; ?> pending</small>
                                     <?php endif; ?>
-                                    <?php if ($row['delivered_count'] > 0): ?>
-                                        <small class="text-success"><?php echo $row['delivered_count']; ?> delivered</small>
+                                    <?php if ($delivered_count > 0): ?>
+                                        <br><small class="text-success"><?php echo $delivered_count; ?> delivered</small>
                                     <?php endif; ?>
-                                    <button class="btn btn-sm btn-outline-info ms-2" onclick="loadTripDetails('<?php echo $row['trip_id']; ?>')">
-                                        <i class="bi bi-eye"></i>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="trip-card-body" id="trip-<?php echo $row['trip_id']; ?>" style="display: none;">
-                            <h6 class="mb-3"><i class="bi bi-truck"></i> Deliveries for this Trip</h6>
-                            <?php if (empty($deliveries)): ?>
-                                <p class="text-muted">No deliveries recorded for this trip yet.</p>
-                            <?php else: ?>
-                                <div class="row">
-                                    <?php foreach ($deliveries as $delivery): 
-                                        $delivery_status_badge = '';
-                                        $status_class = '';
-                                        switch($delivery['delivery_status']) {
-                                            case 'delivered': 
-                                                $delivery_status_badge = 'bg-success'; 
-                                                $status_class = 'delivered';
-                                                break;
-                                            case 'pending': 
-                                                $delivery_status_badge = 'bg-warning text-dark'; 
-                                                $status_class = 'pending';
-                                                break;
-                                            case 'in-transit': 
-                                                $delivery_status_badge = 'bg-primary'; 
-                                                $status_class = 'in-transit';
-                                                break;
-                                            case 'partial': 
-                                                $delivery_status_badge = 'bg-info'; 
-                                                $status_class = 'partial';
-                                                break;
-                                            default: 
-                                                $delivery_status_badge = 'bg-secondary';
-                                                $status_class = '';
-                                        }
-                                    ?>
-                                    <div class="col-md-6">
-                                        <div class="delivery-item <?php echo $status_class; ?>">
-                                            <div class="d-flex justify-content-between">
-                                                <strong>Stop #<?php echo $delivery['stop_sequence'] ?? 'N/A'; ?></strong>
-                                                <span class="badge <?php echo $delivery_status_badge; ?>">
-                                                    <?php echo ucfirst($delivery['delivery_status']); ?>
-                                                </span>
-                                            </div>
-                                            <p class="mb-1"><strong><?php echo htmlspecialchars($delivery['customer_name']); ?></strong></p>
-                                            <p class="mb-1 small"><?php echo htmlspecialchars($delivery['address'] . ', ' . $delivery['city']); ?></p>
-                                            <?php if ($delivery['delivery_status'] == 'delivered' && !empty($delivery['signed_by'])): ?>
-                                                <p class="mb-0 small text-success">
-                                                    <i class="bi bi-check-circle"></i> Received by: <?php echo htmlspecialchars($delivery['signed_by']); ?>
-                                                </p>
-                                            <?php endif; ?>
-                                            <?php if (!empty($delivery['remarks'])): ?>
-                                                <p class="mb-0 small text-muted">
-                                                    <i class="bi bi-chat"></i> <?php echo htmlspecialchars($delivery['remarks']); ?>
-                                                </p>
-                                            <?php endif; ?>
-                                        </div>
+                                </td>
+                                <td class="col-actions">
+                                    <div class="action-buttons">
+                                        <button class="table-btn btn-view" onclick="viewTripDetails(<?php echo $row['trip_id']; ?>)" title="View Details">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
                                     </div>
-                                    <?php endforeach; ?>
-                                </div>
-                            <?php endif; ?>
-                        </div>
-                    </div>
+                                </td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
                 </div>
-                <?php endforeach; ?>
             </div>
             <?php endif; ?>
         </div>
@@ -995,6 +1240,63 @@ if ($user_role == 'delivery' && $driver_id > 0) {
         </div>
     </div>
 
+    <!-- Update Status Modal -->
+    <div class="modal fade" id="statusModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title"><i class="bi bi-arrow-repeat me-2"></i>Update Trip Status</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="statusTripId">
+                    
+                    <div class="alert alert-info mb-3">
+                        <strong>Trip #: <span id="statusTripNumber"></span></strong>
+                    </div>
+                    
+                    <div class="alert alert-success mb-3" id="autoUpdateNotice" style="display: none;">
+                        <i class="bi bi-info-circle-fill me-2"></i>
+                        <strong>Note:</strong> This trip can be auto-completed because all deliveries are marked as delivered.
+                    </div>
+                    
+                    <p class="mb-3">Select new status:</p>
+                    
+                    <div class="status-option" onclick="selectStatus('planned')" id="opt-planned">
+                        <span class="badge bg-warning text-dark status-badge">Pending</span>
+                        <span>Trip is planned but not yet started</span>
+                    </div>
+                    
+                    <div class="status-option" onclick="selectStatus('in-progress')" id="opt-in-progress">
+                        <span class="badge bg-primary text-white status-badge">In Transit</span>
+                        <span>Delivery is in progress</span>
+                    </div>
+                    
+                    <div class="status-option" onclick="selectStatus('completed')" id="opt-completed">
+                        <span class="badge bg-success text-white status-badge">Completed</span>
+                        <span>All deliveries completed</span>
+                    </div>
+                    
+                    <div class="status-option" onclick="selectStatus('delayed')" id="opt-delayed">
+                        <span class="badge bg-info text-white status-badge">Delayed</span>
+                        <span>Delivery is delayed</span>
+                    </div>
+                    
+                    <div class="status-option" onclick="selectStatus('cancelled')" id="opt-cancelled">
+                        <span class="badge bg-danger text-white status-badge">Cancelled</span>
+                        <span>Trip has been cancelled</span>
+                    </div>
+                    
+                    <input type="hidden" id="selectedStatus" value="">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-warning" onclick="updateTripStatus()" id="updateStatusBtn">Update Status</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
@@ -1005,6 +1307,9 @@ if ($user_role == 'delivery' && $driver_id > 0) {
         const driversBranchColumnExists = <?php echo $drivers_branch_column_exists ? 'true' : 'false'; ?>;
         const userRole = '<?php echo $user_role; ?>';
         const driverId = <?php echo $driver_id ?: 0; ?>;
+
+        let currentTripId = null;
+        let currentTripNumber = null;
 
         // ================= SIDEBAR FUNCTIONS =================
         function toggleSidebar() {
@@ -1154,20 +1459,8 @@ if ($user_role == 'delivery' && $driver_id > 0) {
         }
         // ================= END SIDEBAR FUNCTIONS =================
 
-        // Toggle trip details visibility
-        function toggleTripDetails(tripId) {
-            const element = document.getElementById(tripId);
-            if (element) {
-                if (element.style.display === 'none' || element.style.display === '') {
-                    element.style.display = 'block';
-                } else {
-                    element.style.display = 'none';
-                }
-            }
-        }
-
-        // Load trip details via AJAX
-        function loadTripDetails(tripId) {
+        // View trip details
+        function viewTripDetails(tripId) {
             fetch('get_trip_details.php?trip_id=' + tripId + '&branch_id=' + branchId + '&view_all=' + viewAllBranches)
                 .then(response => response.text())
                 .then(data => {
@@ -1177,39 +1470,165 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    document.getElementById('tripDetailsContent').innerHTML = '<div class="alert alert-danger">Failed to load trip details</div>';
+                    alert('Failed to load trip details');
                 });
         }
 
-        // Search functionality
-        const searchInput = document.getElementById('searchInput');
-        if (searchInput) {
-            searchInput.addEventListener('keyup', function() {
-                const filter = this.value.toLowerCase();
-                const cards = document.querySelectorAll('.trip-card');
-                
-                cards.forEach(card => {
-                    const text = card.textContent.toLowerCase();
-                    card.style.display = text.includes(filter) ? '' : 'none';
-                });
+        // Show status update modal
+        function showStatusModal(tripId, currentStatus) {
+            currentTripId = tripId;
+            
+            // Get trip number from the row
+            const row = document.querySelector(`.trip-row[data-trip-id="${tripId}"]`);
+            if (row) {
+                const tripNumber = row.querySelector('.fw-semibold').textContent;
+                document.getElementById('statusTripNumber').textContent = tripNumber;
+            }
+            
+            // Check if this trip can be auto-completed
+            const deliveredCount = parseInt(row.querySelector('.text-success')?.textContent || '0');
+            const deliveryCount = parseInt(row.querySelector('.badge.bg-primary')?.textContent.replace(/[^0-9]/g, '') || '0');
+            
+            const autoUpdateNotice = document.getElementById('autoUpdateNotice');
+            if (deliveryCount > 0 && deliveredCount == deliveryCount && currentStatus != 'completed') {
+                autoUpdateNotice.style.display = 'block';
+            } else {
+                autoUpdateNotice.style.display = 'none';
+            }
+            
+            // Remove selected class from all options
+            document.querySelectorAll('.status-option').forEach(opt => {
+                opt.classList.remove('selected');
+            });
+            
+            // Add selected class to current status option
+            const currentOpt = document.getElementById(`opt-${currentStatus}`);
+            if (currentOpt) {
+                currentOpt.classList.add('selected');
+                document.getElementById('selectedStatus').value = currentStatus;
+            }
+            
+            const modal = new bootstrap.Modal(document.getElementById('statusModal'));
+            modal.show();
+        }
+
+        // Select status option
+        function selectStatus(status) {
+            document.querySelectorAll('.status-option').forEach(opt => {
+                opt.classList.remove('selected');
+            });
+            document.getElementById(`opt-${status}`).classList.add('selected');
+            document.getElementById('selectedStatus').value = status;
+        }
+
+        // Update trip status
+        function updateTripStatus() {
+            const newStatus = document.getElementById('selectedStatus').value;
+            
+            if (!newStatus) {
+                alert('Please select a status');
+                return;
+            }
+            
+            if (!confirm('Are you sure you want to update this trip status?')) {
+                return;
+            }
+            
+            const formData = new FormData();
+            formData.append('action', 'update_trip_status');
+            formData.append('trip_id', currentTripId);
+            formData.append('status', newStatus);
+            
+            fetch(window.location.href, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    alert(data.message);
+                    location.reload();
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Failed to update status');
             });
         }
 
-        // Status filter
-        const statusFilter = document.getElementById('statusFilter');
-        if (statusFilter) {
-            statusFilter.addEventListener('change', function() {
-                const filter = this.value.toLowerCase();
-                const cards = document.querySelectorAll('.trip-card');
-                
-                cards.forEach(card => {
-                    const statusElement = card.querySelector('.badge.bg-success, .badge.bg-warning, .badge.bg-secondary, .badge.bg-info, .badge.bg-danger');
-                    if (statusElement) {
-                        const status = statusElement.textContent.toLowerCase().trim();
-                        card.style.display = (filter === '' || status.includes(filter.replace('-', ' '))) ? '' : 'none';
+        // Check if trip needs auto-update
+        function checkTripAutoUpdate(tripId) {
+            fetch('?check_trip_status=1&trip_id=' + tripId)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.updated) {
+                        // Reload to show updated status
+                        location.reload();
                     }
-                });
+                })
+                .catch(error => console.error('Error checking trip status:', error));
+        }
+
+        // Auto-check trips that might need update when page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            // Check all trips that have all deliveries delivered but not completed
+            document.querySelectorAll('.trip-row .auto-update-badge').forEach(badge => {
+                const row = badge.closest('.trip-row');
+                if (row) {
+                    const tripId = row.dataset.tripId;
+                    if (tripId) {
+                        checkTripAutoUpdate(tripId);
+                    }
+                }
             });
+        });
+
+        // Filter table function
+        function filterTable() {
+            const searchInput = document.getElementById('searchInput');
+            const statusFilter = document.getElementById('statusFilter');
+            const driverFilter = document.getElementById('driverFilter');
+            const rows = document.querySelectorAll('.trip-row');
+            
+            const searchText = searchInput ? searchInput.value.toLowerCase() : '';
+            const statusValue = statusFilter ? statusFilter.value : '';
+            const driverValue = driverFilter ? driverFilter.value : '';
+            
+            rows.forEach(row => {
+                let showRow = true;
+                
+                if (searchText) {
+                    const searchData = row.dataset.search || row.textContent.toLowerCase();
+                    showRow = searchData.includes(searchText);
+                }
+                
+                if (showRow && statusValue) {
+                    const rowStatus = row.dataset.status;
+                    showRow = rowStatus === statusValue;
+                }
+                
+                if (showRow && driverValue) {
+                    const rowDriverId = row.dataset.driverId;
+                    showRow = rowDriverId === driverValue;
+                }
+                
+                row.style.display = showRow ? '' : 'none';
+            });
+        }
+
+        // Clear all filters
+        function clearFilters() {
+            const searchInput = document.getElementById('searchInput');
+            const statusFilter = document.getElementById('statusFilter');
+            const driverFilter = document.getElementById('driverFilter');
+            
+            if (searchInput) searchInput.value = '';
+            if (statusFilter) statusFilter.value = '';
+            if (driverFilter) driverFilter.value = '';
+            
+            filterTable();
         }
 
         // Copy SQL for database setup
@@ -1268,15 +1687,10 @@ if ($user_role == 'delivery' && $driver_id > 0) {
 
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', function() {
-            console.log("Trip Tickets page loaded - Filtering by driver_id in trip_tickets table");
-            console.log("User Role:", userRole);
-            console.log("Driver ID:", driverId);
-            console.log("Branch ID:", branchId);
+            console.log("Trip Tickets page loaded - With auto-complete when all deliveries are delivered");
             
-            // Initialize sidebar
             initializeSidebar();
             
-            // Setup mobile toggle button
             const mobileToggleBtn = document.getElementById('mobileToggleBtn');
             if (mobileToggleBtn) {
                 mobileToggleBtn.addEventListener('click', function(e) {
@@ -1293,7 +1707,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 });
             }
             
-            // Add click listeners to sidebar links to close on mobile
             document.querySelectorAll('.sidebar .nav-link').forEach(link => {
                 link.addEventListener('click', function() {
                     if (window.innerWidth <= 992) {
@@ -1302,7 +1715,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 });
             });
             
-            // Close sidebar when clicking outside on mobile
             document.addEventListener('click', function(event) {
                 const sidebar = document.getElementById('sidebar');
                 const mobileBtn = document.getElementById('mobileToggleBtn');
@@ -1317,8 +1729,16 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 }
             });
 
-            // Add resize event listener
             window.addEventListener('resize', handleSidebarResize);
+
+            // Filter event listeners
+            const searchInput = document.getElementById('searchInput');
+            const statusFilter = document.getElementById('statusFilter');
+            const driverFilter = document.getElementById('driverFilter');
+            
+            if (searchInput) searchInput.addEventListener('keyup', filterTable);
+            if (statusFilter) statusFilter.addEventListener('change', filterTable);
+            if (driverFilter) driverFilter.addEventListener('change', filterTable);
         });
 
         // Keyboard shortcuts
