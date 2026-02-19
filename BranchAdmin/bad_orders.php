@@ -37,6 +37,20 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
     $items_branch_column_exists = true;
 }
 
+// Check if price columns exist in items table
+$price_case_exists = false;
+$check_price_case = $conn->query("SHOW COLUMNS FROM items LIKE 'price_case'");
+if ($check_price_case && $check_price_case->num_rows > 0) {
+    $price_case_exists = true;
+}
+
+// Check if inventory_transactions table exists
+$inventory_transactions_exists = false;
+$check_inv_trans = $conn->query("SHOW TABLES LIKE 'inventory_transactions'");
+if ($check_inv_trans && $check_inv_trans->num_rows > 0) {
+    $inventory_transactions_exists = true;
+}
+
 // Determine branch filter condition
 $rmr_branch_condition = "";
 $delivery_branch_condition = "";
@@ -120,6 +134,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
             }
             
+            // Get RMR details for inventory update
+            $rmr_details_query = "SELECT r.*, i.stock as current_stock, i.item_name 
+                                 FROM rmr_requests r
+                                 JOIN items i ON r.item_id = i.item_id
+                                 WHERE r.rmr_id = ?";
+            $rmr_details_stmt = $conn->prepare($rmr_details_query);
+            $rmr_details_stmt->bind_param("i", $rmr_id);
+            $rmr_details_stmt->execute();
+            $rmr_details = $rmr_details_stmt->get_result()->fetch_assoc();
+            
+            if (!$rmr_details) {
+                throw new Exception('RMR details not found');
+            }
+            
             // Update RMR status to approved
             $update_query = "UPDATE rmr_requests 
                            SET rmr_status = 'approved', 
@@ -140,11 +168,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $history_stmt->bind_param("idsi", $rmr_id, $approved_amount, $approval_notes, $user_id);
             $history_stmt->execute();
             
+            // If disposition is 'credit' or 'refund', add stock back to inventory
+            if (in_array($disposition_type, ['credit', 'refund', 'replacement'])) {
+                $item_id = $rmr_details['item_id'];
+                $return_quantity = $rmr_details['return_quantity'];
+                $branch_id_for_update = $rmr_details['branch_id'] ?? $branch_id;
+                
+                // Check if inventory record exists for this branch and item
+                $inv_query = "SELECT inventory_id, quantity_on_hand FROM inventory WHERE branch_id = ? AND item_id = ?";
+                $inv_stmt = $conn->prepare($inv_query);
+                $inv_stmt->bind_param("ii", $branch_id_for_update, $item_id);
+                $inv_stmt->execute();
+                $inv_result = $inv_stmt->get_result();
+                
+                if ($inv_result->num_rows > 0) {
+                    // Update existing inventory
+                    $inv_row = $inv_result->fetch_assoc();
+                    $new_quantity = $inv_row['quantity_on_hand'] + $return_quantity;
+                    
+                    $update_inv_query = "UPDATE inventory 
+                                       SET quantity_on_hand = ?, last_updated_by = ?, updated_at = NOW() 
+                                       WHERE inventory_id = ?";
+                    $update_inv_stmt = $conn->prepare($update_inv_query);
+                    $update_inv_stmt->bind_param("iii", $new_quantity, $user_id, $inv_row['inventory_id']);
+                    
+                    if (!$update_inv_stmt->execute()) {
+                        throw new Exception('Failed to update inventory');
+                    }
+                } else {
+                    // Create new inventory record
+                    $insert_inv_query = "INSERT INTO inventory (branch_id, item_id, quantity_on_hand, quantity_reserved, last_updated_by, updated_at) 
+                                       VALUES (?, ?, ?, 0, ?, NOW())";
+                    $insert_inv_stmt = $conn->prepare($insert_inv_query);
+                    $insert_inv_stmt->bind_param("iiii", $branch_id_for_update, $item_id, $return_quantity, $user_id);
+                    
+                    if (!$insert_inv_stmt->execute()) {
+                        throw new Exception('Failed to create inventory record');
+                    }
+                }
+                
+                // Update items table stock
+                $update_item_query = "UPDATE items SET stock = stock + ?, updated_at = NOW() WHERE item_id = ?";
+                $update_item_stmt = $conn->prepare($update_item_query);
+                $update_item_stmt->bind_param("ii", $return_quantity, $item_id);
+                
+                if (!$update_item_stmt->execute()) {
+                    throw new Exception('Failed to update item stock');
+                }
+                
+                // Record inventory transaction if table exists
+                if ($inventory_transactions_exists) {
+                    $trans_query = "INSERT INTO inventory_transactions 
+                                   (branch_id, item_id, transaction_type, quantity_changed, reference_type, reference_id, created_by, created_at) 
+                                   VALUES (?, ?, 'in', ?, 'rmr', ?, ?, NOW())";
+                    $trans_stmt = $conn->prepare($trans_query);
+                    $trans_stmt->bind_param("iiiii", $branch_id_for_update, $item_id, $return_quantity, $rmr_id, $user_id);
+                    $trans_stmt->execute();
+                }
+            }
+            
             $conn->commit();
+            
+            $inventory_message = in_array($disposition_type, ['credit', 'refund', 'replacement']) ? ' Inventory has been updated.' : '';
             
             echo json_encode([
                 'success' => true,
-                'message' => 'RMR approved successfully'
+                'message' => 'RMR approved successfully.' . $inventory_message
             ]);
             exit;
         }
@@ -203,7 +292,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     i.item_code,
                     i.item_name,
                     i.unit_price,
+                    i.price_case,
+                    i.price_inner_pack,
+                    i.price_box,
+                    i.price_carton,
                     i.unit_type,
+                    i.stock as current_stock,
                     b.branch_name,
                     CONCAT(u.first_name, ' ', u.last_name) as received_by_name
                 FROM rmr_requests r
@@ -321,44 +415,90 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 }
 
 // FETCH RMR REQUESTS FROM DATABASE (including those from rejected deliveries)
-$rmr_query = "
-    SELECT 
-        r.rmr_id,
-        r.rmr_number,
-        r.delivery_id,
-        r.so_id,
-        r.return_quantity,
-        r.return_reason,
-        r.reason_details,
-        r.rmr_status,
-        r.received_date,
-        r.inspector_name,
-        r.inspection_type,
-        r.disposition_type,
-        r.branch_id,
-        r.created_at,
-        r.updated_at,
-        c.customer_name,
-        c.customer_id,
-        i.item_id,
-        i.item_code,
-        i.item_name,
-        i.unit_price,
-        i.unit_type,
-        b.branch_name,
-        CONCAT(u.first_name, ' ', u.last_name) as received_by_name,
-        d.delivery_status as source_delivery_status,
-        d.delivery_date as source_delivery_date
-    FROM rmr_requests r
-    JOIN customers c ON r.customer_id = c.customer_id
-    JOIN items i ON r.item_id = i.item_id
-    LEFT JOIN branches b ON r.branch_id = b.branch_id
-    LEFT JOIN users u ON r.received_by = u.user_id
-    LEFT JOIN deliveries d ON r.delivery_id = d.delivery_id
-    WHERE 1=1
-    $rmr_branch_condition
-    ORDER BY r.created_at DESC, r.rmr_id DESC
-";
+if ($price_case_exists) {
+    $rmr_query = "
+        SELECT 
+            r.rmr_id,
+            r.rmr_number,
+            r.delivery_id,
+            r.so_id,
+            r.return_quantity,
+            r.return_reason,
+            r.reason_details,
+            r.rmr_status,
+            r.received_date,
+            r.inspector_name,
+            r.inspection_type,
+            r.disposition_type,
+            r.branch_id,
+            r.created_at,
+            r.updated_at,
+            c.customer_name,
+            c.customer_id,
+            i.item_id,
+            i.item_code,
+            i.item_name,
+            i.unit_price,
+            i.price_case,
+            i.price_inner_pack,
+            i.price_box,
+            i.price_carton,
+            i.unit_type,
+            b.branch_name,
+            CONCAT(u.first_name, ' ', u.last_name) as received_by_name,
+            d.delivery_status as source_delivery_status,
+            d.delivery_date as source_delivery_date
+        FROM rmr_requests r
+        JOIN customers c ON r.customer_id = c.customer_id
+        JOIN items i ON r.item_id = i.item_id
+        LEFT JOIN branches b ON r.branch_id = b.branch_id
+        LEFT JOIN users u ON r.received_by = u.user_id
+        LEFT JOIN deliveries d ON r.delivery_id = d.delivery_id
+        WHERE 1=1
+        $rmr_branch_condition
+        ORDER BY r.created_at DESC, r.rmr_id DESC
+    ";
+} else {
+    $rmr_query = "
+        SELECT 
+            r.rmr_id,
+            r.rmr_number,
+            r.delivery_id,
+            r.so_id,
+            r.return_quantity,
+            r.return_reason,
+            r.reason_details,
+            r.rmr_status,
+            r.received_date,
+            r.inspector_name,
+            r.inspection_type,
+            r.disposition_type,
+            r.branch_id,
+            r.created_at,
+            r.updated_at,
+            c.customer_name,
+            c.customer_id,
+            i.item_id,
+            i.item_code,
+            i.item_name,
+            i.unit_price,
+            i.unit_type,
+            b.branch_name,
+            CONCAT(u.first_name, ' ', u.last_name) as received_by_name,
+            d.delivery_status as source_delivery_status,
+            d.delivery_date as source_delivery_date
+        FROM rmr_requests r
+        JOIN customers c ON r.customer_id = c.customer_id
+        JOIN items i ON r.item_id = i.item_id
+        LEFT JOIN branches b ON r.branch_id = b.branch_id
+        LEFT JOIN users u ON r.received_by = u.user_id
+        LEFT JOIN deliveries d ON r.delivery_id = d.delivery_id
+        WHERE 1=1
+        $rmr_branch_condition
+        ORDER BY r.created_at DESC, r.rmr_id DESC
+    ";
+}
+
 $rmr_result = $conn->query($rmr_query);
 
 if (!$rmr_result) {
@@ -415,8 +555,17 @@ if (!$rejected_result) {
     $rejected_deliveries = $rejected_result->fetch_all(MYSQLI_ASSOC);
 }
 
-// FETCH ITEMS FOR RMR CREATION
-$items_query = "SELECT item_id, item_code, item_name, unit_price, unit_type FROM items WHERE status = 'active'";
+// FETCH ITEMS FOR RMR CREATION - WITH ALL PRICE COLUMNS
+if ($price_case_exists) {
+    $items_query = "SELECT item_id, item_code, item_name, unit_price, price_case, price_inner_pack, price_box, price_carton, unit_type, stock 
+                    FROM items 
+                    WHERE status = 'active'";
+} else {
+    $items_query = "SELECT item_id, item_code, item_name, unit_price, unit_type, stock 
+                    FROM items 
+                    WHERE status = 'active'";
+}
+
 if ($items_branch_column_exists && !$view_all_branches) {
     $items_query .= " AND branch_id = $branch_id";
 }
@@ -504,9 +653,9 @@ function getUnitText($unit) {
 
 function getDispositionText($disposition) {
     return match($disposition) {
-        'credit' => 'Credit to Customer',
-        'refund' => 'Cash Refund',
-        'replacement' => 'Replacement',
+        'credit' => 'Credit to Customer (Return to Stock)',
+        'refund' => 'Cash Refund (Return to Stock)',
+        'replacement' => 'Replacement (Return to Stock)',
         'disposal' => 'Destroy Item',
         'return-to-supplier' => 'Return to Supplier',
         default => $disposition ? ucfirst(str_replace('-', ' ', $disposition)) : ''
@@ -565,6 +714,14 @@ function formatDate($dateTimeStr) {
             padding: 2px 4px;
             border-radius: 4px;
             color: #c7254e;
+        }
+        
+        /* Inventory integration alert */
+        .inventory-alert {
+            background-color: #d4edda;
+            border-color: #c3e6cb;
+            color: #155724;
+            border-left: 4px solid #28a745;
         }
         
         /* Table styles for RMR */
@@ -1126,6 +1283,13 @@ function formatDate($dateTimeStr) {
                     </div>
                 </div>
 
+                <!-- Inventory Integration Alert -->
+                <div class="alert alert-success alert-dismissible fade show inventory-alert" role="alert">
+                    <i class="bi bi-arrow-return-left me-2"></i>
+                    <strong>Inventory Integration:</strong> Approved RMRs with Credit/Refund/Replacement will automatically add items back to inventory.
+                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+                </div>
+
                 <!-- Branch Info Alerts -->
                 <?php if (!$rmr_branch_column_exists): ?>
                     <div class="alert alert-info alert-dismissible fade show" role="alert">
@@ -1396,7 +1560,7 @@ function formatDate($dateTimeStr) {
                                 <tbody>
                                     <?php if (empty($rejected_deliveries)): ?>
                                     <tr>
-                                        <td colspan="9" class="empty-state-table">
+                                        <td colspan="8" class="empty-state-table">
                                             <i class="bi bi-check-circle"></i>
                                             <h5>No Rejected Deliveries Found</h5>
                                             <p class="text-muted">
@@ -1681,12 +1845,13 @@ function formatDate($dateTimeStr) {
                         <div class="mb-3">
                             <label class="form-label">Disposition *</label>
                             <select class="form-select" id="dispositionType">
-                                <option value="credit">Credit to Customer</option>
-                                <option value="refund">Cash Refund</option>
-                                <option value="replacement">Replacement Item</option>
+                                <option value="credit">Credit to Customer (Return to Stock)</option>
+                                <option value="refund">Cash Refund (Return to Stock)</option>
+                                <option value="replacement">Replacement (Return to Stock)</option>
                                 <option value="disposal">Destroy Item</option>
                                 <option value="return-to-supplier">Return to Supplier</option>
                             </select>
+                            <small class="text-muted">Credit/Refund/Replacement will add items back to inventory</small>
                         </div>
                         <div class="mb-3">
                             <label class="form-label">Approved Amount *</label>
@@ -2039,7 +2204,7 @@ function formatDate($dateTimeStr) {
         if (action === 'approve') {
             modalTitle.textContent = 'Approve RMR';
             modalHeader.className = 'modal-header bg-success text-white';
-            approvalMessage.textContent = 'Approve the selected RMR for credit/refund?';
+            approvalMessage.textContent = 'Approve the selected RMR?';
             approvalFields.style.display = 'block';
             rejectionFields.style.display = 'none';
             approveBtn.style.display = 'inline-block';
@@ -2305,7 +2470,7 @@ function formatDate($dateTimeStr) {
                                     </tr>
                                     <tr>
                                         <td class="detail-label">Disposition:</td>
-                                        <td>${rmr.disposition_type ? rmr.disposition_type.replace(/-/g, ' ') : 'N/A'}</td>
+                                        <td>${rmr.disposition_type ? getDispositionText(rmr.disposition_type) : 'N/A'}</td>
                                     </tr>
                                     <tr>
                                         <td class="detail-label">Reason Details:</td>
@@ -2631,6 +2796,17 @@ function formatDate($dateTimeStr) {
             'other': 'Other'
         };
         return texts[reason] || reason;
+    }
+
+    function getDispositionText(disposition) {
+        const texts = {
+            'credit': 'Credit to Customer (Return to Stock)',
+            'refund': 'Cash Refund (Return to Stock)',
+            'replacement': 'Replacement (Return to Stock)',
+            'disposal': 'Destroy Item',
+            'return-to-supplier': 'Return to Supplier'
+        };
+        return texts[disposition] || disposition;
     }
 
     // Print RMR Details

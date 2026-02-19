@@ -16,6 +16,13 @@ if ($check_column && $check_column->num_rows > 0) {
     $items_branch_column_exists = true;
 }
 
+// Check if price columns exist
+$price_case_exists = false;
+$check_price_case = $conn->query("SHOW COLUMNS FROM items LIKE 'price_case'");
+if ($check_price_case && $check_price_case->num_rows > 0) {
+    $price_case_exists = true;
+}
+
 // Determine branch filter condition
 $branch_condition = "";
 if ($items_branch_column_exists && !$view_all_branches) {
@@ -52,17 +59,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 throw new Exception('Item code already exists');
             }
             
-            // Insert new item with branch_id
+            // Insert new item with branch_id and price columns
             if ($items_branch_column_exists) {
-                $insert_query = "INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, reorder_level, status, branch_id, created_at, updated_at) 
-                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
-                $insert_stmt = $conn->prepare($insert_query);
-                $insert_stmt->bind_param("ssssisdisi", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status, $branch_id);
+                if ($price_case_exists) {
+                    $insert_query = "INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, price_case, price_inner_pack, price_box, price_carton, reorder_level, status, branch_id, created_at, updated_at) 
+                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
+                    $insert_stmt = $conn->prepare($insert_query);
+                    $insert_stmt->bind_param("ssssisdddddisi", 
+                        $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, 
+                        $unit_price * 12, $unit_price * 6, $unit_price * 24, $unit_price * 48, 
+                        $reorder_level, $status, $branch_id);
+                } else {
+                    $insert_query = "INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, reorder_level, status, branch_id, created_at, updated_at) 
+                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
+                    $insert_stmt = $conn->prepare($insert_query);
+                    $insert_stmt->bind_param("ssssisdisi", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status, $branch_id);
+                }
             } else {
-                $insert_query = "INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, reorder_level, status, created_at, updated_at) 
-                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
-                $insert_stmt = $conn->prepare($insert_query);
-                $insert_stmt->bind_param("ssssisdis", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status);
+                if ($price_case_exists) {
+                    $insert_query = "INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, price_case, price_inner_pack, price_box, price_carton, reorder_level, status, created_at, updated_at) 
+                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
+                    $insert_stmt = $conn->prepare($insert_query);
+                    $insert_stmt->bind_param("ssssisdddddis", 
+                        $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, 
+                        $unit_price * 12, $unit_price * 6, $unit_price * 24, $unit_price * 48, 
+                        $reorder_level, $status);
+                } else {
+                    $insert_query = "INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, reorder_level, status, created_at, updated_at) 
+                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
+                    $insert_stmt = $conn->prepare($insert_query);
+                    $insert_stmt->bind_param("ssssisdis", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status);
+                }
             }
             
             if (!$insert_stmt->execute()) {
@@ -106,11 +133,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
             }
             
-            $update_query = "UPDATE items 
-                           SET item_name = ?, description = ?, category = ?, stock = ?, unit_type = ?, unit_price = ?, reorder_level = ?, status = ?, updated_at = NOW() 
-                           WHERE item_id = ?";
-            $update_stmt = $conn->prepare($update_query);
-            $update_stmt->bind_param("sssisdsii", $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status, $item_id);
+            // Update with price columns if they exist
+            if ($price_case_exists) {
+                $update_query = "UPDATE items 
+                               SET item_name = ?, description = ?, category = ?, stock = ?, unit_type = ?, 
+                                   unit_price = ?, price_case = ?, price_inner_pack = ?, price_box = ?, price_carton = ?,
+                                   reorder_level = ?, status = ?, updated_at = NOW() 
+                               WHERE item_id = ?";
+                $update_stmt = $conn->prepare($update_query);
+                $update_stmt->bind_param("sssisdddddisi", 
+                    $item_name, $description, $category, $stock, $unit_type, $unit_price,
+                    $unit_price * 12, $unit_price * 6, $unit_price * 24, $unit_price * 48,
+                    $reorder_level, $status, $item_id);
+            } else {
+                $update_query = "UPDATE items 
+                               SET item_name = ?, description = ?, category = ?, stock = ?, unit_type = ?, unit_price = ?, reorder_level = ?, status = ?, updated_at = NOW() 
+                               WHERE item_id = ?";
+                $update_stmt = $conn->prepare($update_query);
+                $update_stmt->bind_param("sssisdsii", $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status, $item_id);
+            }
             
             if (!$update_stmt->execute()) {
                 throw new Exception('Failed to update item: ' . $update_stmt->error);
@@ -202,6 +243,62 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             exit;
         }
         
+        // UPDATE STOCK AFTER SALES ORDER
+        elseif ($_POST['action'] === 'update_stock_from_sales') {
+            $item_id = (int)$_POST['item_id'];
+            $quantity_sold = (int)$_POST['quantity'];
+            $so_id = (int)$_POST['so_id'];
+            
+            // Verify item belongs to user's branch
+            if ($items_branch_column_exists && !$view_all_branches) {
+                $check_query = "SELECT item_id, stock FROM items WHERE item_id = ? AND branch_id = ?";
+                $check_stmt = $conn->prepare($check_query);
+                $check_stmt->bind_param("ii", $item_id, $branch_id);
+                $check_stmt->execute();
+                $check_result = $check_stmt->get_result();
+                
+                if ($check_result->num_rows === 0) {
+                    throw new Exception('Item not found or access denied');
+                }
+                
+                $item = $check_result->fetch_assoc();
+                
+                // Check if enough stock
+                if ($item['stock'] < $quantity_sold) {
+                    throw new Exception('Insufficient stock for item');
+                }
+                
+                // Update stock
+                $new_stock = $item['stock'] - $quantity_sold;
+                $update_query = "UPDATE items SET stock = ?, updated_at = NOW() WHERE item_id = ?";
+                $update_stmt = $conn->prepare($update_query);
+                $update_stmt->bind_param("ii", $new_stock, $item_id);
+                
+                if (!$update_stmt->execute()) {
+                    throw new Exception('Failed to update stock');
+                }
+                
+                // Record inventory transaction (if table exists)
+                $check_transaction_table = $conn->query("SHOW TABLES LIKE 'inventory_transactions'");
+                if ($check_transaction_table && $check_transaction_table->num_rows > 0) {
+                    $trans_query = "INSERT INTO inventory_transactions 
+                                   (branch_id, item_id, transaction_type, quantity_changed, reference_type, reference_id, created_by, created_at) 
+                                   VALUES (?, ?, 'out', ?, 'sales_order', ?, ?, NOW())";
+                    $trans_stmt = $conn->prepare($trans_query);
+                    $trans_stmt->bind_param("iiiii", $branch_id, $item_id, $quantity_sold, $so_id, $user_id);
+                    $trans_stmt->execute();
+                }
+            }
+            
+            $conn->commit();
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Stock updated successfully'
+            ]);
+            exit;
+        }
+        
     } catch (Exception $e) {
         $conn->rollback();
         echo json_encode([
@@ -213,26 +310,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 }
 
 // FETCH ALL ITEMS FROM items TABLE WITH BRANCH FILTERING
-$items_query = "
-    SELECT 
-        item_id,
-        item_code,
-        item_name,
-        description,
-        category,
-        stock as quantity_on_hand,
-        unit_type,
-        unit_price,
-        reorder_level,
-        status,
-        branch_id,
-        created_at,
-        updated_at
-    FROM items
-    WHERE 1=1
-    $branch_condition
-    ORDER BY item_code ASC
-";
+if ($price_case_exists) {
+    $items_query = "
+        SELECT 
+            item_id,
+            item_code,
+            item_name,
+            description,
+            category,
+            stock as quantity_on_hand,
+            unit_type,
+            unit_price,
+            price_case,
+            price_inner_pack,
+            price_box,
+            price_carton,
+            reorder_level,
+            status,
+            branch_id,
+            created_at,
+            updated_at
+        FROM items
+        WHERE 1=1
+        $branch_condition
+        ORDER BY item_code ASC
+    ";
+} else {
+    $items_query = "
+        SELECT 
+            item_id,
+            item_code,
+            item_name,
+            description,
+            category,
+            stock as quantity_on_hand,
+            unit_type,
+            unit_price,
+            reorder_level,
+            status,
+            branch_id,
+            created_at,
+            updated_at
+        FROM items
+        WHERE 1=1
+        $branch_condition
+        ORDER BY item_code ASC
+    ";
+}
 
 $items_result = $conn->query($items_query);
 $items = $items_result->fetch_all(MYSQLI_ASSOC);
@@ -336,6 +460,13 @@ function getStockStatus($stock, $reorder_level) {
                 margin-left: -8px;
                 margin-right: -8px;
             }
+        }
+        
+        /* Alert for sales integration */
+        .sales-integration-alert {
+            background-color: #cff4fc;
+            border-color: #b6effb;
+            color: #055160;
         }
         
     </style>
@@ -1493,6 +1624,39 @@ function getStockStatus($stock, $reorder_level) {
         });
     }
 
+    // ========== STOCK UPDATE FUNCTION (called from sales order) ==========
+    function updateStockFromSales(itemId, quantity, soId) {
+        showLoading();
+        
+        const formData = new FormData();
+        formData.append('action', 'update_stock_from_sales');
+        formData.append('item_id', itemId);
+        formData.append('quantity', quantity);
+        formData.append('so_id', soId);
+        
+        fetch('current_inventory.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            Swal.close();
+            
+            if (data.success) {
+                console.log('Stock updated successfully for item ' + itemId);
+                // Optionally refresh the page or update the specific row
+                // location.reload();
+            } else {
+                console.error('Failed to update stock:', data.message);
+                Swal.fire('Error', data.message, 'error');
+            }
+        })
+        .catch(error => {
+            Swal.close();
+            console.error('Error updating stock:', error);
+        });
+    }
+
     // ========== COPY SQL FUNCTION ==========
     function copySQL(table) {
         let sql = '';
@@ -1542,6 +1706,10 @@ function getStockStatus($stock, $reorder_level) {
             showAddItemModal();
         }
     });
+
+    // ========== EXPOSE FUNCTION FOR SALES ORDER PAGE ==========
+    // This makes the function available globally for other pages to call
+    window.updateInventoryFromSales = updateStockFromSales;
     </script>
 </body>
 </html>
