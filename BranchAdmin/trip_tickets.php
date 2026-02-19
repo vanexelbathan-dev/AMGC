@@ -859,7 +859,7 @@ function formatCompletion($percentage) {
                 <!-- Main Table -->
                 <div class="data-table">
                     <div class="table-header d-flex justify-content-between align-items-center">
-                        <h5><i class="bi bi-list-check me-2"></i>Trip Ticket List</h5>
+                        <h5>Trip Ticket List</h5>
                         <div class="d-flex gap-2">
                             <?php if ($tt_branch_column_exists && $view_all_branches): ?>
                                 <span class="badge bg-success align-self-center">All Branches</span>
@@ -925,18 +925,14 @@ function formatCompletion($percentage) {
                                         <td><strong><?= htmlspecialchars($ticket['trip_number']) ?></strong></td>
                                         <td>
                                             <?php if ($ticket['so_number']): ?>
-                                                <a href="javascript:void(0)" onclick="viewSalesOrder(<?= $ticket['so_id'] ?>)">
-                                                    <?= htmlspecialchars($ticket['so_number']) ?>
-                                                </a>
+                                                <?= htmlspecialchars($ticket['so_number']) ?>
                                             <?php else: ?>
                                                 <span class="text-muted">N/A</span>
                                             <?php endif; ?>
                                         </td>
                                         <td>
                                             <?php if ($ticket['pick_list_number']): ?>
-                                                <a href="javascript:void(0)" onclick="viewPickList(<?= $ticket['picklist_id'] ?>)">
-                                                    <?= htmlspecialchars($ticket['pick_list_number']) ?>
-                                                </a>
+                                                <?= htmlspecialchars($ticket['pick_list_number']) ?>
                                             <?php else: ?>
                                                 <span class="text-muted">N/A</span>
                                             <?php endif; ?>
@@ -961,15 +957,15 @@ function formatCompletion($percentage) {
                                             </span>
                                         </td>
                                         <td>
-                                            <div class="table-actions">
-                                                <button class="btn btn-sm btn-outline-primary btn-icon-sm" onclick="viewTripTicket('<?= htmlspecialchars($ticket['trip_number']) ?>')" title="View">
+                                            <div class="action-buttons">
+                                                <button class="btn-action btn-view" onclick="viewTripTicket('<?= htmlspecialchars($ticket['trip_number']) ?>')" title="View">
                                                     <i class="bi bi-eye"></i>
                                                 </button>
-                                                <button class="btn btn-sm btn-outline-warning btn-icon-sm" onclick="editTripTicket('<?= htmlspecialchars($ticket['trip_number']) ?>')" title="Edit">
+                                                <button class="btn-action btn-edit" onclick="editTripTicket('<?= htmlspecialchars($ticket['trip_number']) ?>')" title="Edit">
                                                     <i class="bi bi-pencil"></i>
                                                 </button>
                                                 <?php if ($ticket['trip_status'] != 'completed'): ?>
-                                                <button class="btn btn-sm btn-outline-success btn-icon-sm" onclick="finalizeTripTicket(<?= $ticket['trip_id'] ?>)" title="Finalize">
+                                                <button class="btn-action btn-finalize" onclick="finalizeTripTicket(<?= $ticket['trip_id'] ?>)" title="Finalize">
                                                     <i class="bi bi-check-circle"></i>
                                                 </button>
                                                 <?php endif; ?>
@@ -981,7 +977,6 @@ function formatCompletion($percentage) {
                             </tbody>
                         </table>
                     </div>
-                </div>
             </div>
         </div>
     </div>

@@ -614,20 +614,20 @@ function getOrderStatusText($status) {
     };
 }
 
-// Payment status based on invoice if available, otherwise simplified
+/// Payment status based on invoice if available, otherwise simplified
 function getPaymentStatus($order_status, $invoice_status = null) {
-    if ($order_status === 'cancelled') return ['status' => 'Cancelled', 'class' => 'badge-danger'];
+    if ($order_status === 'cancelled') return ['status' => 'Cancelled', 'class' => 'bg-danger'];
     
     if ($invoice_status) {
         return match($invoice_status) {
-            'paid' => ['status' => 'Paid', 'class' => 'badge-success'],
-            'pending' => ['status' => 'Pending', 'class' => 'badge-warning'],
-            'cancelled' => ['status' => 'Cancelled', 'class' => 'badge-danger'],
-            default => ['status' => 'Pending', 'class' => 'badge-warning']
+            'paid' => ['status' => 'Paid', 'class' => 'bg-success'],
+            'pending' => ['status' => 'Pending', 'class' => 'bg-warning text-dark'],
+            'cancelled' => ['status' => 'Cancelled', 'class' => 'bg-danger'],
+            default => ['status' => 'Pending', 'class' => 'bg-warning text-dark']
         };
     }
     
-    return ['status' => 'No Invoice', 'class' => 'badge-secondary'];
+    return ['status' => 'No Invoice', 'class' => 'bg-secondary'];
 }
 
 function formatDate($dateStr) {
@@ -1096,16 +1096,16 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                 <span class="badge bg-success">All Branches</span>
                             <?php endif; ?>
                             <span class="text-muted me-2">Total: ₱<?= number_format(array_sum(array_column($sales_orders, 'total_amount')), 2) ?></span>
-                            <button class="btn btn-sm btn-outline-primary" onclick="printReport()">
-                                <i class="bi bi-printer me-1"></i> Print
+                            <button class="btn btn-primary" onclick="printReport()">
+                                <i class="bi bi-printer"></i> Print
                             </button>
-                            <button class="btn btn-sm btn-outline-success" onclick="exportToExcel()">
-                                <i class="bi bi-file-earmark-excel me-1"></i> Export to Excel
+                            <button class="btn btn-success" onclick="exportToExcel()">
+                                <i class="bi bi-file-earmark-excel"></i> Export to Excel
                             </button>
                         </div>
                     </div>
-                    <div class="table-responsive">
-                        <table class="table custom-table" id="salesOrdersTable">
+                    <div class="table-container">
+                        <table class="table custom-table compact-table" id="salesOrdersTable">
                             <thead>
                                 <tr>
                                     <th>Order No.</th>
@@ -1184,7 +1184,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                                         <i class="bi bi-pencil"></i>
                                                     </button>
                                                 <?php elseif (in_array($order['order_status'], ['confirmed', 'processing', 'ready', 'delivered'])): ?>
-                                                    <button class="btn-action btn-printer" onclick="printOrder(<?= $order['so_id'] ?>)" title="Print Order">
+                                                    <button class="btn-action btn-print" onclick="printOrder(<?= $order['so_id'] ?>)" title="Print Order">
                                                         <i class="bi bi-printer"></i>
                                                     </button>
                                                 <?php endif; ?>

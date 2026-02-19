@@ -1266,8 +1266,8 @@ function formatLocation($item) {
                 </div>
 
                 <!-- Pick List Items Table -->
-                <div class="table-responsive">
-                    <table class="table pick-list-table" id="pickListTable">
+                <div class="table-container">
+                    <table class="table custom-table compact-table" id="pickListTable">
                         <thead>
                             <tr>
                                 <th class="col-so">SO NUMBER</th>
@@ -1401,7 +1401,7 @@ function formatLocation($item) {
                                     </span>
                                 </td>
                                 <td class="col-actions">
-                                    <div class="action-buttons">
+                                    <div class="action-btn">
                                         <button class="btn-action btn-view" onclick="viewItem(<?= $item['pick_item_id'] ?>)" title="View">
                                             <i class="bi bi-eye"></i>
                                         </button>

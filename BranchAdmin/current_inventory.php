@@ -305,31 +305,6 @@ function getStockStatus($stock, $reorder_level) {
     <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-        /* Branch badge styling */
-        .branch-badge {
-            background-color: #e7f1ff;
-            color: #0d6efd;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            margin-left: 5px;
-        }
-        
-        /* Alert for missing branch column */
-        .alert-info {
-            background-color: #d1ecf1;
-            border-color: #bee5eb;
-            color: #0c5460;
-        }
-        
-        .alert-info code {
-            background-color: #f8f9fa;
-            padding: 2px 4px;
-            border-radius: 4px;
-            color: #c7254e;
-        }
-        
         /* Mobile responsive adjustments */
         @media (max-width: 768px) {
             .stat-card {
@@ -577,7 +552,7 @@ function getStockStatus($stock, $reorder_level) {
                 <!-- INVENTORY TABLE - REAL DATA FROM DATABASE WITH BRANCH FILTERING -->
                 <div class="data-table">
                     <div class="table-header d-flex justify-content-between align-items-center">
-                        <h5 class="mb-0"><i class="bi bi-list-ul me-2"></i>Current Inventory Items</h5>
+                        <h5 class="mb-0">Current Inventory Items</h5>
                         <div class="d-flex gap-2">
                             <span class="text-muted me-2">Total Value: ₱<?= number_format($total_value, 2) ?></span>
                             <?php if ($items_branch_column_exists && $view_all_branches): ?>
@@ -591,8 +566,8 @@ function getStockStatus($stock, $reorder_level) {
                             </button>
                         </div>
                     </div>
-                    <div class="table-responsive">
-                        <table class="table custom-table" id="inventoryTable">
+                    <div class="table-container">
+                        <table class="table custom-table compact-table" id="inventoryTable">
                             <thead>
                                 <tr>
                                     <th>Item Code</th>
@@ -820,75 +795,75 @@ function getStockStatus($stock, $reorder_level) {
         </div>
     </div>
 
-    <!-- EDIT ITEM MODAL -->
-    <div class="modal fade" id="editItemModal" tabindex="-1" aria-hidden="true">
-        <div class="dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header bg-warning text-dark">
-                    <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Edit Item</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="editItemForm">
-                        <input type="hidden" id="editItemId">
-                        
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <label for="editItemCode" class="form-label">Item Code</label>
-                                <input type="text" class="form-control" id="editItemCode" readonly>
-                            </div>
-                            <div class="col-md-6">
-                                <label for="editItemName" class="form-label">Item Name *</label>
-                                <input type="text" class="form-control" id="editItemName" required>
-                            </div>
-                            <div class="col-12">
-                                <label for="editDescription" class="form-label">Description</label>
-                                <textarea class="form-control" id="editDescription" rows="2"></textarea>
-                            </div>
-                            <div class="col-md-4">
-                                <label for="editCategory" class="form-label">Category</label>
-                                <input type="text" class="form-control" id="editCategory">
-                            </div>
-                            <div class="col-md-4">
-                                <label for="editStock" class="form-label">Current Stock *</label>
-                                <input type="number" class="form-control" id="editStock" min="0" required>
-                            </div>
-                            <div class="col-md-4">
-                                <label for="editUnitType" class="form-label">Unit Type *</label>
-                                <select class="form-select" id="editUnitType" required>
-                                    <option value="piece">Piece</option>
-                                    <option value="case">Case</option>
-                                    <option value="box">Box</option>
-                                    <option value="carton">Carton</option>
-                                    <option value="inner-pack">Inner Pack</option>
-                                </select>
-                            </div>
-                            <div class="col-md-4">
-                                <label for="editUnitPrice" class="form-label">Unit Price (₱) *</label>
-                                <input type="number" class="form-control" id="editUnitPrice" min="0" step="0.01" required>
-                            </div>
-                            <div class="col-md-4">
-                                <label for="editReorderLevel" class="form-label">Reorder Level *</label>
-                                <input type="number" class="form-control" id="editReorderLevel" min="0" required>
-                            </div>
-                            <div class="col-md-4">
-                                <label for="editStatus" class="form-label">Status</label>
-                                <select class="form-select" id="editStatus">
-                                    <option value="active">Active</option>
-                                    <option value="inactive">Inactive</option>
-                                    <option value="discontinued">Discontinued</option>
-                                </select>
-                            </div>
+   <!-- EDIT ITEM MODAL - CORRECTED VERSION -->
+<div class="modal fade" id="editItemModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg"> <!-- Ito ang dapat na class -->
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Edit Item</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editItemForm">
+                    <input type="hidden" id="editItemId">
+                    
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label for="editItemCode" class="form-label">Item Code</label>
+                            <input type="text" class="form-control" id="editItemCode" readonly>
                         </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="updateItem()">Update Item</button>
-                </div>
+                        <div class="col-md-6">
+                            <label for="editItemName" class="form-label">Item Name *</label>
+                            <input type="text" class="form-control" id="editItemName" required>
+                        </div>
+                        <div class="col-12">
+                            <label for="editDescription" class="form-label">Description</label>
+                            <textarea class="form-control" id="editDescription" rows="2"></textarea>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="editCategory" class="form-label">Category</label>
+                            <input type="text" class="form-control" id="editCategory">
+                        </div>
+                        <div class="col-md-4">
+                            <label for="editStock" class="form-label">Current Stock *</label>
+                            <input type="number" class="form-control" id="editStock" min="0" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="editUnitType" class="form-label">Unit Type *</label>
+                            <select class="form-select" id="editUnitType" required>
+                                <option value="piece">Piece</option>
+                                <option value="case">Case</option>
+                                <option value="box">Box</option>
+                                <option value="carton">Carton</option>
+                                <option value="inner-pack">Inner Pack</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="editUnitPrice" class="form-label">Unit Price (₱) *</label>
+                            <input type="number" class="form-control" id="editUnitPrice" min="0" step="0.01" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="editReorderLevel" class="form-label">Reorder Level *</label>
+                            <input type="number" class="form-control" id="editReorderLevel" min="0" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label for="editStatus" class="form-label">Status</label>
+                            <select class="form-select" id="editStatus">
+                                <option value="active">Active</option>
+                                <option value="inactive">Inactive</option>
+                                <option value="discontinued">Discontinued</option>
+                            </select>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="updateItem()">Update Item</button>
             </div>
         </div>
     </div>
+</div>
 
     <!-- DELETE CONFIRMATION MODAL -->
     <div class="modal fade" id="deleteItemModal" tabindex="-1" aria-hidden="true">

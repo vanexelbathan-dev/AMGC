@@ -148,7 +148,6 @@ a:hover {
     z-index: 1000;
     left: 0;
     top: 0;
-    /* CRITICAL FIX: Remove overflow from main sidebar */
     overflow: hidden;
     display: flex;
     flex-direction: column;
@@ -190,6 +189,11 @@ a:hover {
     justify-content: flex-start;
     font-size: 1.25rem;
     position: relative;
+    color: white;
+}
+
+.sidebar-header h3 .nav-text {
+    color: white;
 }
 
 .logo-icon {
@@ -211,7 +215,7 @@ a:hover {
     display: none;
 }
 
-/* Burger icon replaces logo when collapsed - FIXED POSITIONING */
+/* Burger icon replaces logo when collapsed */
 .sidebar.collapsed .sidebar-header h3 {
     justify-content: center;
     padding: 0;
@@ -254,14 +258,7 @@ a:hover {
     visibility: visible;
 }
 
-.logo-icon {
-    width: 32px;
-    height: 32px;
-    margin-right: 12px;
-    transition: margin 0.3s ease;
-}
-
-/* Desktop Toggle Button (Burger Icon) - FIXED POSITIONING */
+/* Desktop Toggle Button (Burger Icon) */
 .desktop-toggle-btn {
     position: absolute;
     right: 10px;
@@ -317,18 +314,7 @@ a:hover {
     padding: 1.5rem 0;
 }
 
-/* SIDEBAR NAV LINKS FIX - PREVENT BLUE VISITED COLOR */
-.sidebar .nav-link,
-.sidebar .nav-link:link,
-.sidebar .nav-link:visited,
-.sidebar .nav-link:hover,
-.sidebar .nav-link:active,
-.sidebar .nav-link:focus {
-    color: #9ca3af;
-    text-decoration: none;
-    outline: none;
-}
-
+/* ===== FIXED SIDEBAR NAVIGATION LINKS - WHITE TEXT ===== */
 .sidebar .nav-link {
     padding: 12px 20px;
     margin: 4px 15px;
@@ -341,45 +327,72 @@ a:hover {
     background: transparent;
     white-space: nowrap;
     overflow: hidden;
+    color: white !important; /* Force white text */
 }
 
+.sidebar .nav-link:link,
+.sidebar .nav-link:visited {
+    color: white !important; /* White for unvisited links */
+    text-decoration: none;
+    outline: none;
+}
+
+.sidebar .nav-link:hover {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--primary-green) !important; /* Green on hover */
+}
+
+.sidebar .nav-link:active,
+.sidebar .nav-link:focus {
+    color: white !important;
+    outline: none;
+}
+
+.sidebar .nav-link.active {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--primary-green) !important; /* Green for active */
+    border-left: 3px solid var(--primary-green);
+}
+
+/* Sidebar icons - white by default */
+.sidebar .nav-link i {
+    width: 24px;
+    font-size: 1.1rem;
+    margin-right: 12px;
+    color: white !important; /* White icons */
+    flex-shrink: 0;
+    transition: color 0.3s ease;
+}
+
+.sidebar .nav-link:hover i,
+.sidebar .nav-link.active i {
+    color: var(--primary-green) !important; /* Green icons on hover/active */
+}
+
+/* Collapsed sidebar adjustments */
 .sidebar.collapsed .nav-link {
     padding: 12px 15px;
     margin: 4px 8px;
     justify-content: center;
 }
 
-/* Specific states */
-.sidebar .nav-link:hover {
-    background: rgba(16, 185, 129, 0.1);
-    color: var(--primary-green);
+.sidebar.collapsed .nav-link i {
+    margin-right: 0;
+    font-size: 1.2rem;
+    color: white !important;
+}
+
+.sidebar.collapsed .nav-link:hover i,
+.sidebar.collapsed .nav-link.active i {
+    color: var(--primary-green) !important;
 }
 
 .sidebar.collapsed .nav-link:hover {
     transform: none;
 }
 
-.sidebar .nav-link.active {
-    background: rgba(16, 185, 129, 0.15);
-    color: var(--primary-green);
-    border-left: 3px solid var(--primary-green);
-}
-
 .sidebar.collapsed .nav-link.active {
     transform: none;
-}
-
-.sidebar .nav-link i {
-    width: 24px;
-    font-size: 1.1rem;
-    margin-right: 12px;
-    color: inherit;
-    flex-shrink: 0;
-}
-
-.sidebar.collapsed .nav-link i {
-    margin-right: 0;
-    font-size: 1.2rem;
 }
 
 /* Main Content */
@@ -395,7 +408,7 @@ a:hover {
     margin-left: var(--sidebar-collapsed-width);
 }
 
-/* Mobile Menu Button - MOVED TO NAVBAR */
+/* Mobile Menu Button */
 .mobile-menu-btn {
     display: none;
     background: white;
@@ -563,7 +576,7 @@ a:hover {
     }
 }
 
-/* Para sa mas maliit na screen, lalo pang bawasan */
+/* Para sa mas maliit na screen */
 @media (max-width: 576px) {
     .main-content {
         padding: 8px 10px 10px;
@@ -681,16 +694,13 @@ a:hover {
     border-top: 1px solid rgba(255, 255, 255, 0.1);
     backdrop-filter: blur(10px);
     z-index: 10;
-    /* CRITICAL: No overflow, fixed height */
     overflow: hidden;
     flex-shrink: 0;
     min-height: fit-content;
-    /* Smooth transitions */
     transition: all 0.3s ease;
-    /* Center content when collapsed */
     display: flex;
     flex-direction: column;
-    align-items: stretch; /* Default to stretch for expanded */
+    align-items: stretch;
 }
 
 .user-profile-sidebar {
@@ -989,7 +999,7 @@ a:hover {
 /* Buttons */
 .btn-primary {
     background: linear-gradient(135deg, var(--primary-green), var(--secondary-green));
-    border: none;
+    border: none !important;
     border-radius: 8px;
     padding: 0.75rem 1.5rem;
     font-weight: 600;
@@ -1016,12 +1026,13 @@ a:hover {
 
 .table-header {
     padding: 1.25rem 1.5rem;
-    background: #047857;
-;
+    border-bottom: 1px solid var(--light-green);
+    background: #f9fafb;
 }
+
 .table-header h5 {
     margin: 0;
-    color: white;
+    color: var(--dark-color);
     font-weight: 600;
     font-size: 1.1rem;
 }
@@ -1117,86 +1128,32 @@ a:hover {
     gap: 0.5rem;
 }
 
-.btn-action {
-     width: 36px;
-    height: 36px;
+.btn-icon {
+    width: 32px;
+    height: 32px;
     border-radius: 8px;
-    display: inline-flex;
+    display: flex;
     align-items: center;
     justify-content: center;
-    transition: all 0.2s;
-    border: 1px solid transparent;
+    border: none;
+    transition: all 0.3s;
 }
 
-.btn-action.btn-view {
-    background-color: #e3f2fd;
-    color: #1976d2;
-    border-color: #bbdefb;
+.btn-icon.btn-view {
+    background: rgba(16, 185, 129, 0.1);
+    color: var(--primary-green);
 }
-        
-.btn-action.btn-view:hover {
-    background-color: #bbdefb;
-    transform: translateY(-2px);
+
+.btn-icon.btn-edit {
+    background: rgba(59, 130, 246, 0.1);
+    color: #3b82f6;
 }
-.btn-action.btn-edit {
-    background-color: #f3e5f5;
-    color: #7b1fa2;
-    border-color: #e1bee7;
-} 
-.btn-action.btn-edit:hover {
-    background-color: #e1bee7;
-    transform: translateY(-2px);
-}
-.btn-action.btn-delete {
-    background-color: #f7d6d6;
+
+.btn-icon.btn-delete {
+    background: rgba(239, 68, 68, 0.1);
     color: #ef4444;
-    border-color: #fc9595;
-} 
-.btn-action.btn-delete:hover {
-    background-color: #fc9595;
-    transform: translateY(-2px);
 }
-.btn-action.btn-process {
-    background-color: #f2ddb8;
-    color: #f59e0b;
-    border-color: #f8d79e;
-} 
-.btn-action.btn-process:hover {
-    background-color: #f8d79e;
-    transform: translateY(-2px);
-}
-.btn-action.btn-approve {
-    background-color: #a0fde3;
-    color: #047857;
-    border-color: #66ceb3;
-} 
-.btn-action.btn-approve:hover {
-    background-color: #66ceb3;
-    transform: translateY(-2px);
-}
-.btn-action.btn-reject {
-    background-color: #f2ddb8;
-    color: #ef4444;
-    border-color: #fc9595;
-} 
-.btn-action.btn-reject:hover {
-    background-color: #fc9595;
-    transform: translateY(-2px);
-}
-.btn-action.btn-printer {
-    background-color: #a0fde3;
-    color: #047857;
-    border-color: #66ceb3;
-} 
-.btn-action.btn-printer:hover {
-    background-color: #66ceb3;
-    transform: translateY(-2px);
-}
-.btn-action i {
-    font-size: 1.1rem;
-    line-height: 1;
-    display: inline-block;
-}
+
 /* Page Content */
 .page-content {
     display: none;
@@ -1305,7 +1262,6 @@ a:hover {
 .table-container {
     max-width: 100%;
     overflow-x: auto;
-    border-radius: 12px;
 }
 
 /* Compact Table */
@@ -1412,16 +1368,6 @@ a:hover {
     border-radius: 20px;
     font-weight: 600;
     display: inline-block;
-}
-
-/* Form Card */
-.form-card {
-    background: white;
-    border-radius: 12px;
-    padding: 1.5rem;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
-    border: 1px solid var(--light-green);
-    margin-bottom: 1.5rem;
 }
 
 /* Custom Table Header */
@@ -1741,191 +1687,392 @@ a:hover {
     color: var(--dark-color);
     margin-bottom: 0.5rem;
 }
- /* ===== FIXED TABLE STYLES FOR WAREHOUSE DASHBOARD ===== */
-/* OVERRIDE ALL BOOTSTRAP TABLE STYLES */
 
-/* Card Header - Green Gradient */
-
-.card-header {
-    background: #048964 !important;
-    color: white !important;
-    border-bottom: none !important;
-    padding: 1rem 1.25rem !important;
-    border-radius: 12px 12px 0 0 !important;
-    border: none !important;
+/* Sidebar overlay for mobile */
+.sidebar-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 999;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
 }
 
-.card-header i {
-    color: white !important;
-    margin-right: 8px;
+.sidebar-overlay.active {
+    opacity: 1;
+    visibility: visible;
 }
 
-/* Table Container */
-.table-responsive {
-    border-radius: 0 0 12px 12px !important;
-    overflow-x: auto !important;
+/* Mobile Toggle Button */
+.mobile-toggle-btn {
+    display: none;
+    background: white;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 1.4rem;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    color: var(--dark-color);
+    opacity: 0.7;
+    transition: all 0.3s ease;
+    width: 44px;
+    height: 44px;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    margin-right: 10px;
 }
 
-/* Bootstrap Table Override */
-.table {
-    margin-bottom: 0 !important;
-    width: 100% !important;
-    border-collapse: collapse !important;
+.mobile-toggle-btn:hover {
+    background: white;
+    opacity: 1;
+    color: var(--primary-green);
+    transform: scale(1.05);
 }
 
-/* Table Header - Green Gradient */
-.table thead,
-.table-light thead,
-.table thead tr,
-.table thead th {
-    background: var(--dark-green) !important;
-    color: white !important;
-    border: none !important;
-    border-bottom: none !important;
-    font-weight: 600 !important;
-    padding: 0.75rem 1rem !important;
-    text-transform: uppercase !important;
-    font-size: 0.8rem !important;
-    letter-spacing: 0.5px !important;
+.mobile-toggle-btn i {
+    font-size: 1.4rem;
+    transition: transform 0.3s ease;
 }
 
-/* Override Bootstrap's table-light */
-.table-light {
-    --bs-table-bg: transparent !important;
+.mobile-toggle-btn.active i {
+    transform: rotate(90deg);
 }
 
-.table-light th {
-    background: linear-gradient(135deg, #047857, #44D34E) !important;
-    color: white !important;
+@media (max-width: 992px) {
+    .mobile-toggle-btn {
+        display: flex;
+    }
 }
 
-/* Table Rows */
-.table tbody tr {
-    border-bottom: 1px solid #e2e8f0 !important;
-    transition: all 0.2s ease !important;
-}
-
-.table tbody tr:hover {
-    background-color: #d1fae5 !important;
-}
-
-/* Alternate row colors */
-.table tbody tr:nth-child(even) {
-    background-color: #f0fdf4 !important;
-}
-
-.table tbody tr:nth-child(odd) {
-    background-color: white !important;
-}
-
-.table tbody tr:nth-child(even):hover {
-    background-color: #d1fae5 !important;
-}
-
-/* Table Cells */
-.table tbody td {
-    padding: 0.75rem 1rem !important;
-    color: #1f2937 !important;
-    vertical-align: middle !important;
-    border-bottom: 1px solid #e2e8f0 !important;
-}
-
-/* Badge Styles - Override Bootstrap */
-.badge {
-    padding: 0.35rem 1rem !important;
-    border-radius: 50px !important;
-    font-weight: 600 !important;
-    font-size: 0.75rem !important;
-    display: inline-block !important;
-    text-align: center !important;
-    border: 1px solid transparent !important;
-}
-
-/* Status Badge Colors */
-.badge.bg-warning,
-.badge.bg-warning.text-dark {
-    background: #ffedd5 !important;
-    color: #9a3412 !important;
-    border-color: #fdba74 !important;
-}
-
-.badge.bg-success {
-    background: #dcfce7 !important;
-    color: #166534 !important;
-    border-color: #86efac !important;
-}
-
-.badge.bg-danger {
-    background: #fee2e2 !important;
-    color: #991b1b !important;
-    border-color: #fca5a5 !important;
-}
-
-.badge.bg-info {
-    background: #cffafe !important;
-    color: #155e75 !important;
-    border-color: #7dd3fc !important;
-}
-
-.badge.bg-light {
-    background: #f3f4f6 !important;
-    color: #374151 !important;
-    border-color: #d1d5db !important;
-}
-
-/* Pick List # and Ticket ID badge */
-.badge.bg-light.text-dark {
-    background: #e5e7eb !important;
-    color: #1f2937 !important;
-    border: 1px solid #9ca3af !important;
-    font-family: monospace !important;
-}
-
-/* Empty State */
-.text-center {
-    color: #6b7280 !important;
-    padding: 2rem !important;
-}
-
-/* Card Body */
-.card-body {
-    padding: 1.25rem !important;
-}
-
-/* Alert Styles */
-.alert {
-    border-radius: 8px !important;
-    border: none !important;
-}
-
-.alert-warning {
-    background: #ffedd5 !important;
-    color: #9a3412 !important;
-    border-left: 4px solid #f59e0b !important;
-}
-
-.alert-success {
-    background: #dcfce7 !important;
-    color: #166534 !important;
-    border-left: 4px solid #10b981 !important;
-}
-
-/* Mobile responsive */
+/* Additional mobile responsive adjustments */
 @media (max-width: 768px) {
-    .table thead th,
-    .table tbody td {
-        padding: 0.5rem 0.75rem !important;
-        font-size: 0.8rem !important;
+    .navbar-top {
+        padding: 0.75rem;
     }
     
-    .badge {
-        padding: 0.25rem 0.75rem !important;
-        font-size: 0.7rem !important;
+    .form-card {
+        padding: 1rem;
+    }
+    
+    .data-table {
+        overflow-x: auto;
+    }
+    
+    .table-responsive {
+        font-size: 0.9rem;
     }
 }
-/* ===== FIXED TABLE STYLES FOR WAREHOUSE DASHBOARD ===== */
-/* OVERRIDE ALL BOOTSTRAP TABLE STYLES */
 
+@media (max-width: 576px) {
+    .navbar-top {
+        padding: 0.5rem;
+    }
+    
+    .page-title h2 {
+        font-size: 1.2rem;
+    }
+    
+    .page-title p {
+        font-size: 0.8rem;
+    }
+    
+    .form-card .row {
+        margin-left: -5px;
+        margin-right: -5px;
+    }
+    
+    .form-card .col-md-3 {
+        padding-left: 5px;
+        padding-right: 5px;
+        margin-bottom: 10px;
+    }
+    
+    .custom-table th,
+    .custom-table td {
+        padding: 0.5rem;
+        font-size: 0.85rem;
+    }
+}
+
+/* Loading animation */
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+.loading-spinner {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid rgba(16, 185, 129, 0.3);
+    border-radius: 50%;
+    border-top-color: var(--primary-green);
+    animation: spin 1s ease-in-out infinite;
+}
+
+/* Empty state styling (duplicate, consolidated) */
+.empty-state {
+    padding: 3rem 1rem;
+    text-align: center;
+    color: #6b7280;
+}
+
+.empty-state-icon {
+    font-size: 3rem;
+    color: var(--light-green);
+    margin-bottom: 1rem;
+    opacity: 0.5;
+}
+
+.empty-state h4 {
+    color: var(--dark-color);
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+}
+
+/* Fix for modal backdrop */
+.modal-backdrop {
+    z-index: 1040;
+}
+
+.modal {
+    z-index: 1050;
+}
+
+/* Tooltip styles */
+.tooltip {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+}
+
+/* Custom scrollbar for tables */
+.table-responsive::-webkit-scrollbar {
+    height: 8px;
+}
+
+.table-responsive::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.table-responsive::-webkit-scrollbar-thumb {
+    background: var(--primary-green);
+    border-radius: 4px;
+}
+
+.table-responsive::-webkit-scrollbar-thumb:hover {
+    background: var(--dark-green);
+}
+ .badge {
+            padding: 0.5em 1em;
+            font-weight: 600;
+            font-size: 0.75rem;
+            border-radius: 50px;
+        }
+        
+        .badge.bg-light {
+            background-color: #eaecf4 !important;
+            color: #4e73df !important;
+        }
+        
+        .badge.bg-warning {
+            background-color: #fff3cd !important;
+            color: #856404 !important;
+        }
+        
+        .badge.bg-info {
+            background-color: #d1ecf1 !important;
+            color: #0c5460 !important;
+        }
+        
+        .badge.bg-primary {
+            background-color: #cce5ff !important;
+            color: #004085 !important;
+        }
+        
+        .badge.bg-success {
+            background-color: #d4edda !important;
+            color: #155724 !important;
+        }
+        
+        .badge.bg-danger {
+            background-color: #f8d7da !important;
+            color: #721c24 !important;
+        }
+          .action-buttons {
+            display: flex;
+            gap: 5px;
+        }
+        
+        .btn-action {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+        }
+        
+        .btn-view {
+            background-color: #e3f2fd;
+            color: #1976d2;
+            border-color: #bbdefb;
+        }
+        
+        .btn-view:hover {
+            background-color: #bbdefb;
+            transform: translateY(-2px);
+        }
+        
+        .btn-edit {
+            background-color: #f3e5f5;
+            color: #7b1fa2;
+            border-color: #e1bee7;
+        }
+        
+        .btn-edit:hover {
+            background-color: #e1bee7;
+            transform: translateY(-2px);
+        }
+        
+         .btn-print {
+            background-color: #f5eee5;
+            color:  rgba(211, 120, 46, 0.871);
+            border-color: rgba(212, 167, 130, 0.871);
+        }
+        
+        .btn-print:hover {
+            background-color: #dfc6a1;
+            transform: translateY(-2px);
+        }
+        
+        .btn-delete {
+            background-color: #f5e5e5;
+            color:  rgba(211, 46, 46, 0.871);
+            border-color: rgba(212, 130, 130, 0.871);
+        }
+        
+        .btn-delete:hover {
+            background-color: #dfa1a1;
+            transform: translateY(-2px);
+        }
+        .btn-location {
+            background-color: #e8f5e9;
+            color: #388e3c;
+            border-color: #c8e6c9;
+        }
+        
+        .btn-location:hover {
+            background-color: #c8e6c9;
+            transform: translateY(-2px);
+        }
+        
+        .btn-finalize {
+            background-color: #fdb99ac2;
+            color:  rgb(211, 104, 46);
+            border-color: rgba(206, 118, 71, 0.916);
+        }
+        
+        .btn-finalize:hover {
+            background-color: #f8a780;
+            transform: translateY(-2px);
+        }
+
+        /* Map Modal */
+        .map-modal .modal-dialog {
+            max-width: 800px;
+        }
+        
+        #viewLocationMap {
+            height: 400px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        
+        /* Location Coordinates Input */
+        .coordinates-container {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+        
+        .coordinates-container .form-group {
+            flex: 1;
+        }
+        
+        .location-buttons {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .location-info {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+        }
+        
+        /* Auto-generated code styling */
+        .code-preview {
+            background-color: #e9ecef;
+            border: 1px solid #ced4da;
+            border-radius: 5px;
+            padding: 10px 15px;
+            font-family: monospace;
+            font-size: 1.1em;
+            color: #0d6efd;
+            font-weight: bold;
+        }
+        
+        .code-label {
+            font-size: 0.85em;
+            color: #6c757d;
+            margin-bottom: 5px;
+        }
+        
+        .refresh-code {
+            cursor: pointer;
+            color: #0d6efd;
+            margin-left: 10px;
+        }
+        
+        .refresh-code:hover {
+            color: #0a58ca;
+        }
+        
+        /* Branch badge */
+        .branch-badge {
+            background-color: #e7f1ff;
+            color: #0d6efd;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 5px;
+        }
+        
+        /* Alert for missing branch column */
+        .alert-info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        
+        .alert-info code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 4px;
+            color: #c7254e;
+        }
 /* Card Header - Green Gradient */
 .card {
     border: none !important; /* Remove card outline */
@@ -1974,7 +2121,7 @@ a:hover {
 .table-light thead,
 .table thead tr,
 .table thead th {
-    background: var(--dark-green);
+    background: var(--dark-green) !important;
     color: white !important;
     border: none !important;
     border-bottom: none !important;
@@ -2377,298 +2524,13 @@ a:hover {
 .compact-table tbody tr:last-child td {
     border-bottom: none !important;
 }
-/* ===== MOBILE RESPONSIVE FIXES FOR TABLES AND BUTTONS ===== */
 
-/* Fix for table buttons on mobile */
-@media (max-width: 768px) {
-    /* Table action buttons container */
-    .table-actions {
-        display: flex;
-        flex-direction: row !important; /* Keep buttons in row */
-        flex-wrap: wrap;
-        gap: 4px;
-        justify-content: flex-start;
-    }
-    
-    /* Make action buttons slightly smaller but still usable */
-    .btn-action,
-    .btn-icon-sm {
-        width: 32px !important;
-        height: 32px !important;
-        min-width: 32px !important;
-        padding: 0 !important;
-        margin: 2px !important;
-    }
-    
-    .btn-action i,
-    .btn-icon-sm i {
-        font-size: 0.9rem !important;
-    }
-    
-    /* For tables with many columns, ensure horizontal scroll works */
-    .table-responsive {
-        overflow-x: auto !important;
-        -webkit-overflow-scrolling: touch !important;
-        margin-bottom: 1rem !important;
-        border-radius: 8px !important;
-    }
-    
-    /* Prevent text from wrapping in table cells */
-    .table td, 
-    .table th,
-    .custom-table td,
-    .custom-table th,
-    .compact-table td,
-    .compact-table th {
-        white-space: nowrap !important;
-    }
-    
-    /* Allow certain cells to wrap if needed */
-    .table td.allow-wrap,
-    .custom-table td.allow-wrap,
-    .compact-table td.allow-wrap {
-        white-space: normal !important;
-        min-width: 150px !important;
-    }
-    
-    /* Status badges in mobile */
-    .status-badge,
-    .badge {
-        white-space: nowrap !important;
-        display: inline-block !important;
-        min-width: auto !important;
-        padding: 0.25rem 0.5rem !important;
-        font-size: 0.7rem !important;
-    }
-}
-
-/* Extra small devices - critical fixes */
-@media (max-width: 576px) {
-    /* Make action buttons even smaller but still tappable */
-    .btn-action,
-    .btn-icon-sm {
-        width: 28px !important;
-        height: 28px !important;
-        min-width: 28px !important;
-    }
-    
-    .btn-action i,
-    .btn-icon-sm i {
-        font-size: 0.8rem !important;
-    }
-    
-    /* Reduce padding in table cells to fit more content */
-    .table td, 
-    .table th,
-    .custom-table td,
-    .custom-table th,
-    .compact-table td,
-    .compact-table th {
-        padding: 0.5rem 0.4rem !important;
-        font-size: 0.75rem !important;
-    }
-    
-    /* Ensure action buttons don't get cut off */
-    .table-actions {
-        gap: 2px;
-    }
-}
-
-/* Very small devices */
-@media (max-width: 400px) {
-    .btn-action,
-    .btn-icon-sm {
-        width: 20px !important;
-        height: 20px !important;
-        min-width: 20px !important;
-    }
-    
-    .btn-action i,
-    .btn-icon-sm i {
-        font-size: 0.75rem !important;
-    }
-    
-    /* Stack action buttons vertically if needed */
-    .table-actions {
-        flex-direction: column !important;
-        gap: 2px;
-    }
-    
-    /* Adjust table padding */
-    .table td, 
-    .table th,
-    .custom-table td,
-    .custom-table th,
-    .compact-table td,
-    .compact-table th {
-        padding: 0.4rem 0.3rem !important;
-        font-size: 0.7rem !important;
-    }
-}
-
-/* ===== FIX FOR MODAL BUTTONS ON MOBILE ===== */
-@media (max-width: 576px) {
-    .modal-footer {
-        flex-direction: column !important;
-        gap: 8px !important;
-    }
-    
-    .modal-footer .btn {
-        width: 100% !important;
-        margin: 0 !important;
-        padding: 0.6rem !important;
-    }
-    
-    /* Fix modal body padding */
-    .modal-body {
-        padding: 1rem !important;
-    }
-    
-    /* Form inputs in modal */
-    .modal .form-control,
-    .modal .form-select {
-        font-size: 16px !important; /* Prevent zoom on iOS */
-        padding: 0.6rem !important;
-    }
-}
-
-/* ===== FIX FOR STAT CARDS ON MOBILE ===== */
-@media (max-width: 576px) {
-    .stat-card {
-        padding: 1rem !important;
-    }
-    
-    .stat-icon {
-        font-size: 1.8rem !important;
-    }
-    
-    .stat-value {
-        font-size: 1.4rem !important;
-    }
-    
-    .stat-label {
-        font-size: 0.8rem !important;
-    }
-}
-
-/* ===== FIX FOR QUICK ACTION BUTTONS ON MOBILE ===== */
-@media (max-width: 576px) {
-    .quick-actions {
-        grid-template-columns: repeat(2, 1fr) !important;
-        gap: 0.5rem !important;
-    }
-    
-    .quick-action-btn {
-        padding: 1rem 0.5rem !important;
-    }
-    
-    .quick-action-btn i {
-        font-size: 1.5rem !important;
-    }
-    
-    .quick-action-btn span {
-        font-size: 0.8rem !important;
-    }
-}
-
-/* ===== FIX FOR PAGINATION ON MOBILE ===== */
-@media (max-width: 576px) {
-    .table-footer {
-        flex-direction: column !important;
-        align-items: center !important;
-        gap: 0.5rem !important;
-    }
-    
-    .pagination {
-        flex-wrap: wrap !important;
-        justify-content: center !important;
-    }
-    
-    .pagination .page-link {
-        padding: 0.4rem 0.6rem !important;
-        font-size: 0.8rem !important;
-        margin: 2px !important;
-    }
-    
-    .pagination-info {
-        font-size: 0.8rem !important;
-        text-align: center !important;
-    }
-}
-
-/* ===== FIX FOR SEARCH BOX ON MOBILE ===== */
-@media (max-width: 576px) {
-    .search-box {
-        width: 100% !important;
-        margin-bottom: 0.5rem !important;
-    }
-    
-    .search-box input {
-        font-size: 16px !important; /* Prevent zoom on iOS */
-        padding: 0.6rem 0.6rem 0.6rem 2.2rem !important;
-    }
-}
-
-/* ===== ENSURE TOUCH TARGETS ARE LARGE ENOUGH ON MOBILE ===== */
-@media (max-width: 768px) {
-    /* Minimum touch target size 44x44 for better mobile experience */
-    .btn-action,
-    .btn-icon-sm,
-    .mobile-menu-btn,
-    .pagination .page-link,
-    .dropdown-item,
-    .nav-link {
-        min-width: 26px !important;
-        min-height: 26px !important;
-        display: inline-flex !important;
-        align-items: center !important;
-        justify-content: center !important;
-    }
-    
-    /* Adjust icons inside touch targets */
-    .btn-action i,
-    .btn-icon-sm i,
-    .mobile-menu-btn i {
-        font-size: 0.95rem !important;
-    }
-}
-
-/* ===== FIX FOR TABLES WITH LONG CONTENT ===== */
-/* Add this class to table cells that contain long text */
-.table .text-truncate-cell {
-    max-width: 150px !important;
-    overflow: hidden !important;
-    text-overflow: ellipsis !important;
-    white-space: nowrap !important;
-}
-
-/* Tooltip for truncated content */
-[data-tooltip] {
-    position: relative;
-    cursor: help;
-}
-
-[data-tooltip]:hover:after {
-    content: attr(data-tooltip);
-    position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    background: var(--dark-color);
-    color: white;
-    padding: 4px 8px;
-    border-radius: 4px;
-    font-size: 0.75rem;
-    white-space: nowrap;
-    z-index: 1000;
-    pointer-events: none;
-}
 /* ===== FINAL FIXES FOR TABLE HEADER AND BUTTONS ===== */
 /* Add this at the VERY END of your CSS file */
 
 /* Fix for table header gradient */
 .data-table .table-header {
-    background: linear-gradient(135deg, var(--dark-green), var(--primary-green)) !important;
+    background: var(--dark-green) !important;
     padding: 1.25rem 1.5rem !important;
     border-radius: 12px 12px 0 0 !important;
     border: none !important;

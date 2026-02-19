@@ -730,10 +730,6 @@ function formatDateTime($dateStr) {
             background-color: #e9ecef;
         }
         
-        .btn-view { color: #0d6efd; }
-        .btn-edit { color: #ffc107; }
-        .btn-delete { color: #dc3545; }
-        
         .license-expiry-warning {
             font-size: 11px;
             color: #dc3545;
@@ -1059,13 +1055,13 @@ function formatDateTime($dateStr) {
                                     </td>
                                     <td class="col-actions">
                                         <div class="action-buttons">
-                                            <button class="table-btn btn-view" onclick="viewDriver(<?= $driver['driver_id'] ?>)" title="View">
+                                            <button class="btn-action btn-view" onclick="viewDriver(<?= $driver['driver_id'] ?>)" title="View">
                                                 <i class="bi bi-eye"></i>
                                             </button>
-                                            <button class="table-btn btn-edit" onclick="editDriver(<?= $driver['driver_id'] ?>)" title="Edit">
+                                            <button class="btn-action btn-edit" onclick="editDriver(<?= $driver['driver_id'] ?>)" title="Edit">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
-                                            <button class="table-btn btn-delete" onclick="deleteDriver(<?= $driver['driver_id'] ?>)" title="Delete">
+                                            <button class="btn-action btn-delete" onclick="deleteDriver(<?= $driver['driver_id'] ?>)" title="Delete">
                                                 <i class="bi bi-trash"></i>
                                             </button>
                                         </div>
