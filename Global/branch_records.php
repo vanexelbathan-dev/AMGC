@@ -657,8 +657,8 @@ if (empty($user_initials)) {
                     <div class="table-header">
                         <h5>Branch Activity Log</h5>
                     </div>
-                    <div class="table-responsive">
-                        <table class="table custom-table">
+                    <div class="table-container">
+                        <table class="table custom-table compact-table">
                             <thead>
                                 <tr>
                                     <th style="display: none;">ID</th>
