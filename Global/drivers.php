@@ -2135,7 +2135,7 @@ function formatDate($dateStr) {
 
                 // User account badge
                 const userBadge = driver.user_id ? 
-                    `<span class="user-badge"><i class="bi bi-person-check"></i> ${escapeHtml(driver.email)}</span>` : 
+                    `<span> ${escapeHtml(driver.email)}</span>` : 
                     `<span class="text-muted fst-italic">No account</span>`;
 
                 return `
