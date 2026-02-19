@@ -11,7 +11,7 @@ if (!isset($_SESSION['user_id'])) {
 // Get filter parameters
 $status = isset($_GET['status']) ? $_GET['status'] : '';
 $origin = isset($_GET['origin']) ? $_GET['origin'] : '';
-$date = isset($_GET['date']) ? $_GET['date'] : '';
+$date = isset($_GET['date']) ? $_GET['date'] : ''; // Empty by default to show all data
 $sort = isset($_GET['sort']) ? $_GET['sort'] : 'date';
 
 // Handle AJAX request for trips
@@ -30,7 +30,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
     ];
 
     // Build WHERE clause for filtering
-    $where_conditions = ["1=1"];
+    $where_conditions = [];
     $params = [];
     $types = "";
 
@@ -48,14 +48,18 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
         $types .= "i";
     }
 
-    // Date filter
+    // Date filter - ONLY apply if date is provided and not empty
     if (!empty($date)) {
         $where_conditions[] = "DATE(tt.trip_date) = ?";
         $params[] = $date;
         $types .= "s";
     }
 
-    $where_clause = implode(" AND ", $where_conditions);
+    // Build WHERE clause - if no filters, get ALL records
+    $where_clause = "";
+    if (!empty($where_conditions)) {
+        $where_clause = "WHERE " . implode(" AND ", $where_conditions);
+    }
 
     // Get trip tickets with driver and branch information
     $sql = "SELECT 
@@ -82,7 +86,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
             LEFT JOIN drivers d ON tt.driver_id = d.driver_id
             LEFT JOIN branches b ON tt.branch_id = b.branch_id
             LEFT JOIN users u ON tt.created_by = u.user_id
-            WHERE $where_clause";
+            $where_clause";
 
     // Add sorting
     switch ($sort) {
@@ -119,7 +123,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
         elseif ($row['trip_status'] == 'in-progress') $in_progress_count++;
         elseif ($row['trip_status'] == 'delayed') $delayed_count++;
 
-        // Get deliveries for this trip to determine destinations and item count
+        // Get deliveries for this trip
         $deliveries_sql = "SELECT 
                             COUNT(*) as delivery_count,
                             COUNT(DISTINCT so_id) as order_count
@@ -134,7 +138,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
         $delivery_count = $deliveries_row['delivery_count'] ?? 0;
         $order_count = $deliveries_row['order_count'] ?? 0;
 
-        // Get destinations (customers) for this trip
+        // Get destinations
         $destinations_sql = "SELECT 
                                 c.city,
                                 c.customer_name
@@ -157,23 +161,18 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
             $destination_text .= ' + ' . ($delivery_count - 2) . ' more';
         }
 
-        // Get pick list information for items
-        $picklist_sql = "SELECT 
-                            pl.pick_list_id,
-                            pl.pick_list_number,
-                            COUNT(pli.pick_item_id) as item_count
-                        FROM pick_lists pl
-                        LEFT JOIN pick_list_items pli ON pl.pick_list_id = pli.pick_list_id
-                        WHERE pl.so_id IN (SELECT so_id FROM deliveries WHERE trip_id = ?)
-                        GROUP BY pl.pick_list_id
-                        LIMIT 1";
-        $picklist_stmt = $conn->prepare($picklist_sql);
-        $picklist_stmt->bind_param("i", $row['trip_id']);
-        $picklist_stmt->execute();
-        $picklist_result = $picklist_stmt->get_result();
-        $picklist_row = $picklist_result->fetch_assoc();
-        
-        $item_count = $picklist_row['item_count'] ?? $order_count * 2; // Fallback estimate
+        // Get item count from sales_order_items
+        $items_sql = "SELECT COUNT(soi.so_item_id) as item_count
+                     FROM deliveries del
+                     JOIN sales_orders so ON del.so_id = so.so_id
+                     JOIN sales_order_items soi ON so.so_id = soi.so_id
+                     WHERE del.trip_id = ?";
+        $items_stmt = $conn->prepare($items_sql);
+        $items_stmt->bind_param("i", $row['trip_id']);
+        $items_stmt->execute();
+        $items_result = $items_stmt->get_result();
+        $items_row = $items_result->fetch_assoc();
+        $item_count = $items_row['item_count'] ?? 0;
 
         // Format times
         $departure_time = $row['start_time'] ? date('M d, Y h:i A', strtotime($row['start_time'])) : 'Not started';
@@ -199,7 +198,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
             'total_failed' => $row['total_failed'] ?? 0,
             'remarks' => $row['remarks'] ?? '',
             'trip_date' => $row['trip_date'],
-            'invoice_no' => 'INV-' . $row['trip_number'] // Placeholder invoice
+            'invoice_no' => 'INV-' . $row['trip_number']
         ];
     }
 
@@ -375,69 +374,6 @@ if (isset($_GET['ajax_details']) && isset($_GET['id'])) {
     exit;
 }
 
-// Handle AJAX request for trip items
-if (isset($_GET['ajax_items']) && isset($_GET['trip_id'])) {
-    header('Content-Type: application/json');
-    
-    $trip_id = intval($_GET['trip_id']);
-    
-    $sql = "SELECT 
-                tt.trip_id,
-                tt.trip_number,
-                i.item_id,
-                i.item_name,
-                i.item_code,
-                soi.quantity_ordered as quantity,
-                soi.unit_price,
-                (soi.quantity_ordered * soi.unit_price) as total_price,
-                del.delivery_status,
-                del.remarks as delivery_remarks,
-                c.customer_name
-            FROM trip_tickets tt
-            JOIN deliveries del ON tt.trip_id = del.trip_id
-            JOIN sales_orders so ON del.so_id = so.so_id
-            JOIN sales_order_items soi ON so.so_id = soi.so_id
-            JOIN items i ON soi.item_id = i.item_id
-            JOIN customers c ON del.customer_id = c.customer_id
-            WHERE tt.trip_id = ?
-            ORDER BY del.stop_sequence, i.item_name";
-    
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("i", $trip_id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    
-    $items = [];
-    while ($row = $result->fetch_assoc()) {
-        $statusBadge = 'bg-info';
-        if ($row['delivery_status'] == 'delivered') $statusBadge = 'bg-success';
-        elseif ($row['delivery_status'] == 'rejected') $statusBadge = 'bg-danger';
-        elseif ($row['delivery_status'] == 'partial') $statusBadge = 'bg-warning';
-        elseif ($row['delivery_status'] == 'rescheduled') $statusBadge = 'bg-secondary';
-        
-        $items[] = [
-            'trip_id' => $row['trip_id'],
-            'trip_number' => $row['trip_number'],
-            'customer_name' => $row['customer_name'],
-            'item_name' => $row['item_name'],
-            'item_code' => $row['item_code'],
-            'quantity' => $row['quantity'],
-            'unit_price' => $row['unit_price'],
-            'total_price' => $row['total_price'],
-            'status' => $row['delivery_status'],
-            'status_badge' => $statusBadge,
-            'notes' => $row['delivery_remarks'] ?? '-'
-        ];
-    }
-
-    echo json_encode([
-        'success' => true,
-        'items' => $items,
-        'trip_id' => $trip_id
-    ]);
-    exit;
-}
-
 // Get branches for filter dropdown
 $branches_sql = "SELECT branch_id, branch_name FROM branches WHERE status = 'active' ORDER BY branch_name";
 $branches_result = $conn->query($branches_sql);
@@ -462,8 +398,8 @@ if (empty($user_initials)) {
     $user_initials = 'AD';
 }
 
-// Set default date to today
-$default_date = date('Y-m-d');
+// Set default date to empty string to show all data
+$default_date = isset($_GET['date']) ? $_GET['date'] : '';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -633,9 +569,6 @@ $default_date = date('Y-m-d');
                 <div class="row g-3 mb-4">
                     <div class="col-12">
                         <div class="form-card">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <h5 class="mb-0">Filter Trips</h5>
-                            </div>
                             <div class="row mt-3">
                                 <div class="col-md-3">
                                     <label class="form-label">Status</label>
@@ -661,7 +594,7 @@ $default_date = date('Y-m-d');
                                 </div>
                                 <div class="col-md-3">
                                     <label class="form-label">Trip Date</label>
-                                    <input type="date" class="form-control" id="dateFilter" value="<?php echo $default_date; ?>" onchange="loadTrips()">
+                                    <input type="date" class="form-control" id="dateFilter" value="<?php echo $default_date; ?>" placeholder="Select date" onchange="loadTrips()">
                                 </div>
                                 <div class="col-md-3">
                                     <label class="form-label">Sort By</label>
@@ -707,38 +640,6 @@ $default_date = date('Y-m-d');
                                 </tr>
                             </tbody>
                         </table>
-                    </div>
-                </div>
-
-                <div class="row g-3 mt-4">
-                    <div class="col-12">
-                        <div class="data-table">
-                            <div class="table-header">
-                                <h5>Trip Items Detail</h5>
-                                <span id="selectedTripInfo" class="text-muted"></span>
-                            </div>
-                            <div class="table-responsive">
-                                <table class="table custom-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Customer</th>
-                                            <th>Item Name</th>
-                                            <th>Item Code</th>
-                                            <th>Quantity</th>
-                                            <th>Unit Price</th>
-                                            <th>Total Price</th>
-                                            <th>Status</th>
-                                            <th>Notes</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="tripItemsTable">
-                                        <tr>
-                                            <td colspan="8" class="text-center py-4">Select a trip to view items</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -928,7 +829,7 @@ $default_date = date('Y-m-d');
                 }
 
                 return `
-                <tr onclick="loadTripItems(${trip.trip_id})" style="cursor: pointer;">
+                <tr>
                     <td><strong>${escapeHtml(trip.trip_number)}</strong></td>
                     <td>${escapeHtml(trip.driver_name)}</td>
                     <td>${escapeHtml(trip.origin)}</td>
@@ -941,9 +842,9 @@ $default_date = date('Y-m-d');
                         </span>
                     </td>
                     <td class="text-end">${trip.total_stops || 0}</td>
-                    <td class="text-end">${trip.total_delivered || 0}/${trip.total_stops || 0}</td>
+                    <td class="text-end">${trip.total_delivered || 0}</td>
                     <td>
-                        <button class="btn btn-sm btn-info" onclick="event.stopPropagation(); viewTrip(${trip.trip_id})">
+                        <button class="btn btn-sm btn-info" onclick="viewTrip(${trip.trip_id})">
                             <i class="bi bi-eye"></i> View
                         </button>
                     </td>
@@ -957,49 +858,6 @@ $default_date = date('Y-m-d');
             document.getElementById('completedTrips').textContent = stats.completedTrips || 0;
             document.getElementById('inProgressTrips').textContent = stats.inProgressTrips || 0;
             document.getElementById('delayedTrips').textContent = stats.delayedTrips || 0;
-        }
-
-        async function loadTripItems(tripId) {
-            document.getElementById('selectedTripInfo').textContent = 'Loading items...';
-            
-            try {
-                const response = await fetch(`trip_tickets.php?ajax_items=1&trip_id=${tripId}`);
-                const data = await response.json();
-                
-                if (data.success) {
-                    displayTripItems(data.items || []);
-                    document.getElementById('selectedTripInfo').textContent = `Trip #${data.trip_id} Items`;
-                }
-            } catch (error) {
-                console.error('Error loading trip items:', error);
-                document.getElementById('tripItemsTable').innerHTML = '<tr><td colspan="8" class="text-center py-4 text-danger">Error loading items</td></tr>';
-            }
-        }
-
-        function displayTripItems(items) {
-            const tbody = document.getElementById('tripItemsTable');
-            
-            if (items.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4">No items found for this trip</td></tr>';
-                return;
-            }
-
-            tbody.innerHTML = items.map(item => `
-                <tr>
-                    <td>${escapeHtml(item.customer_name)}</td>
-                    <td><strong>${escapeHtml(item.item_name)}</strong></td>
-                    <td>${escapeHtml(item.item_code)}</td>
-                    <td class="text-end">${item.quantity}</td>
-                    <td class="text-end">₱${parseFloat(item.unit_price).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</td>
-                    <td class="text-end">₱${parseFloat(item.total_price).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</td>
-                    <td>
-                        <span class="badge ${item.status_badge}">
-                            ${escapeHtml(item.status)}
-                        </span>
-                    </td>
-                    <td>${escapeHtml(item.notes)}</td>
-                </tr>
-            `).join('');
         }
 
         function viewTrip(tripId) {
@@ -1174,10 +1032,6 @@ $default_date = date('Y-m-d');
             });
 
             window.addEventListener('resize', handleSidebarResize);
-            
-            // Set default date to today
-            const today = new Date().toISOString().split('T')[0];
-            document.getElementById('dateFilter').value = today;
             
             // Load trips on page load
             loadTrips();
