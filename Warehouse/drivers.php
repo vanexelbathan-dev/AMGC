@@ -371,8 +371,8 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
 
             <!-- Drivers Table -->
             <div class="card">
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0">
+                <div class="table-container">
+                    <table class="table custom-table compact-table">
                         <thead class="table-light">
                             <tr>
                                 <th>Driver Name</th>

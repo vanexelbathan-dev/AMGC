@@ -932,9 +932,9 @@ function formatLocation($row) {
 
             <!-- Clean Pick List Items Table - Location bin removed, customer location only -->
             <div class="card">
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0 align-middle">
-                        <thead class="table-light">
+                <div class="table-container">
+                    <table class="table custom-table compact-table">
+                        <thead>
                             <tr>
                                 <th>Pick List</th>
                                 <th>Item</th>
