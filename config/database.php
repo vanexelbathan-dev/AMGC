@@ -1,10 +1,10 @@
 <?php
 // DATABASE CONFIG
-define('DB_HOST', 'srv1981.hstgr.io');
-define('DB_USER', 'u431396407_amgc2026');
-define('DB_PASSWORD', 'Amgc@2026');
-define('DB_NAME', 'u431396407_amgc_system');
-define('DB_PORT', 3306);
+define('DB_HOST', 'localhost'); 
+define('DB_USER', 'root'); 
+define('DB_PASSWORD', ''); 
+define('DB_NAME', 'amgc_inventory_system'); 
+define('DB_PORT', 3306); 
 define('DB_CHARSET', 'utf8mb4');
 
 // CONNECT DATABASE
