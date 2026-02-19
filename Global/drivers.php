@@ -980,28 +980,7 @@ function formatDate($dateStr) {
             justify-content: center;
             align-items: center;
         }
-        
-        .table-btn {
-            background: none;
-            border: none;
-            padding: 6px;
-            border-radius: 4px;
-            transition: all 0.2s;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            font-size: 14px;
-        }
-        
-        .table-btn:hover {
-            background-color: #e9ecef;
-        }
-        
-        .btn-view { color: #0d6efd; }
-        .btn-edit { color: #ffc107; }
-        .btn-delete { color: #dc3545; }
-        
+
         .license-expiry-warning {
             font-size: 11px;
             color: #dc3545;
@@ -1315,7 +1294,7 @@ function formatDate($dateStr) {
                         <button class="btn btn-outline-success" onclick="exportToExcel()">
                             <i class="bi bi-file-earmark-excel me-1"></i> Export
                         </button>
-                        <button class="add-driver-btn" onclick="showAddDriverModal()">
+                        <button class="btn btn-primary" onclick="showAddDriverModal()">
                             <i class="bi bi-plus-circle me-1"></i> Add Driver
                         </button>
                     </div>
@@ -2170,14 +2149,14 @@ function formatDate($dateStr) {
                         ${userBadge}
                     </td>
                     <td class="col-actions">
-                        <div class="action-buttons">
-                            <button class="table-btn btn-view" onclick="viewDriver(${driver.id})" title="View">
+                        <div class="action-btn">
+                            <button class="btn-action btn-view" onclick="viewDriver(${driver.id})" title="View">
                                 <i class="bi bi-eye"></i>
                             </button>
-                            <button class="table-btn btn-edit" onclick="editDriver(${driver.id})" title="Edit">
+                            <button class="btn-action btn-edit" onclick="editDriver(${driver.id})" title="Edit">
                                 <i class="bi bi-pencil"></i>
                             </button>
-                            <button class="table-btn btn-delete" onclick="deleteDriver(${driver.id})" title="Delete">
+                            <button class="btn-action btn-delete" onclick="deleteDriver(${driver.id})" title="Delete">
                                 <i class="bi bi-trash"></i>
                             </button>
                         </div>

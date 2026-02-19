@@ -172,6 +172,91 @@ if (isset($_GET['ajax']) && isset($_GET['id'])) {
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
 </head>
+<style>
+      /* Additional responsive styles for filter section */
+@media (max-width: 768px) {
+    .form-card {
+        padding: 15px;
+    }
+    
+    .form-card .row.mt-3 {
+        margin-top: 10px !important;
+    }
+    
+    .col-md-4 {
+        width: 100%;
+        margin-bottom: 12px;
+        padding-left: 8px;
+        padding-right: 8px;
+    }
+    
+    .col-md-4:last-child {
+        margin-bottom: 0;
+    }
+    
+    .form-label {
+        font-size: 0.9rem;
+        margin-bottom: 5px;
+        font-weight: 500;
+    }
+    
+    .form-select {
+        font-size: 0.95rem;
+        padding: 10px 12px;
+        height: auto;
+        min-height: 45px;
+        width: 100%;
+        border-radius: 8px;
+    }
+    
+    .form-card h5 {
+        font-size: 1.1rem;
+    }
+    
+    .d-flex.justify-content-between.align-items-center {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+}
+
+@media (max-width: 576px) {
+    .form-card {
+        padding: 12px;
+    }
+    
+    .col-md-4 {
+        margin-bottom: 10px;
+    }
+    
+    .form-label {
+        font-size: 0.85rem;
+        margin-bottom: 4px;
+    }
+    
+    .form-select {
+        font-size: 0.9rem;
+        padding: 8px 10px;
+        min-height: 42px;
+    }
+    
+    .form-card h5 {
+        font-size: 1rem;
+    }
+}
+
+/* Optional: Para sa mas maayos na display sa landscape orientation */
+@media (max-width: 768px) and (orientation: landscape) {
+    .col-md-4 {
+        width: 33.33%;
+        margin-bottom: 0;
+    }
+    
+    .form-select {
+        min-height: 40px;
+        padding: 8px 10px;
+    }
+}
+</style>
 <body>
     <!-- MAIN APPLICATION -->
     <div id="appPage">
@@ -327,8 +412,8 @@ if (isset($_GET['ajax']) && isset($_GET['id'])) {
                     <div class="table-header">
                         <h5>Complete Items Catalog</h5>
                     </div>
-                    <div class="table-responsive">
-                        <table class="table custom-table">
+                    <div class="table-container">
+                        <table class="table custom-table compact-table" id="itemsTable">
                             <thead>
                                 <tr>
                                     <th>ID</th>

@@ -1024,12 +1024,7 @@ function formatDate($dateTimeStr) {
         .btn-action:hover {
             background-color: #e9ecef;
         }
-        
-        .btn-view { color: #0d6efd; }
-        .btn-process { color: #ffc107; }
-        .btn-approve { color: #198754; }
-        .btn-reject { color: #dc3545; }
-        .btn-create { color: #0d6efd; }
+
         
         .nav-tabs .nav-link {
             color: #495057;
@@ -1243,6 +1238,12 @@ function formatDate($dateTimeStr) {
                             <span class="nav-text">Purchase Orders</span>
                         </a>
                     </li>
+                     <li class="nav-item">
+                        <a class="nav-link" href="drivers.php">
+                            <i class="bi bi-truck"></i>
+                            <span class="nav-text">Drivers</span>
+                        </a>
+                    </li>
                     <li class="nav-item">
                         <a class="nav-link" href="trip_tickets.php">
                             <i class="bi bi-ticket-perforated"></i>
@@ -1444,8 +1445,8 @@ function formatDate($dateTimeStr) {
                 <div class="tab-content" id="rmrTabsContent">
                     <!-- RMR List Tab -->
                     <div class="tab-pane fade show active" id="rmr-list" role="tabpanel">
-                        <div class="table-responsive">
-                            <table class="table rmr-table" id="rmrTable">
+                        <div class="table-container">
+                            <table class="table custom-table compact-table" id="rmrTable">
                                 <thead>
                                     <tr>
                                         <th class="col-rmr">RMR NUMBER</th>
@@ -1543,8 +1544,8 @@ function formatDate($dateTimeStr) {
 
                     <!-- Rejected Deliveries Tab -->
                     <div class="tab-pane fade" id="rejected-deliveries" role="tabpanel">
-                        <div class="table-responsive">
-                            <table class="table rejected-table" id="rejectedTable">
+                        <div class="table-container">
+                            <table class="table custom-table compact-table" id="rejectedTable">
                                 <thead>
                                     <tr>
                                         <th>DELIVERY ID</th>

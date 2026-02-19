@@ -552,7 +552,16 @@
             background: #dc2626;
             border-color: #dc2626;
         }
+         .btn-process {
+            background-color: #fdb99ac2;
+            color:  rgb(211, 104, 46);
+            border-color: rgba(206, 118, 71, 0.916);
+        }
         
+        .btn-process:hover {
+            background-color: #f8a780;
+            transform: translateY(-2px);
+        }
         /* Modal Styles */
         .modal-content {
             border-radius: 12px;
@@ -654,3 +663,35 @@
                 text-align: center;
             }
         }
+        /* Gawing mas specific ang selectors */
+.table .action-buttons .btn-process {
+    background-color: #fdb99a !important;  /* temporary !important para ma-test */
+    color: rgb(211, 104, 46) !important;
+    border: 1px solid rgba(206, 118, 71, 0.916) !important;
+}
+
+.table .action-buttons .btn-process:hover {
+    background-color: #f8a780 !important;
+    transform: translateY(-2px);
+}
+
+.table .action-buttons .btn-view {
+    background-color: #e3f2fd !important;
+    color: #1976d2 !important;
+    border: 1px solid #bbdefb !important;
+}
+
+.table .action-buttons .btn-view:hover {
+    background-color: #bbdefb !important;
+    transform: translateY(-2px);
+}
+.table .action-buttons .btn-create {
+    background-color: #e8f5e9 !important;
+    color: #388e3c !important;
+    border: 1px solid #c8e6c9 !important;
+}
+
+.table .action-buttons .btn-create:hover {
+    background-color: #c8e6c9 !important;
+    transform: translateY(-2px);
+}

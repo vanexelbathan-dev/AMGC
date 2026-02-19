@@ -450,8 +450,8 @@ $categories = $categories_result->fetch_all(MYSQLI_ASSOC);
 
             <!-- Inventory Table -->
             <div class="card">
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0">
+                <div class="table-container">
+                    <table class="table custom-table compact-table">
                         <thead class="table-light">
                             <tr>
                                 <th>Item Code</th>

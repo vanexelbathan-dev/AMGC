@@ -613,8 +613,8 @@ $default_date = isset($_GET['date']) ? $_GET['date'] : '';
                     <div class="table-header">
                         <h5>Trip Ticket Information</h5>
                     </div>
-                    <div class="table-responsive">
-                        <table class="table custom-table">
+                    <div class="table-container">
+                        <table class="table custom-table compact-table">
                             <thead>
                                 <tr>
                                     <th>Trip #</th>
@@ -844,8 +844,8 @@ $default_date = isset($_GET['date']) ? $_GET['date'] : '';
                     <td class="text-end">${trip.total_stops || 0}</td>
                     <td class="text-end">${trip.total_delivered || 0}</td>
                     <td>
-                        <button class="btn btn-sm btn-info" onclick="viewTrip(${trip.trip_id})">
-                            <i class="bi bi-eye"></i> View
+                        <button class="btn-action btn-view" onclick="viewTrip(${trip.trip_id})">
+                            <i class="bi bi-eye"></i>
                         </button>
                     </td>
                 </tr>

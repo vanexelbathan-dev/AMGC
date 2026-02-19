@@ -558,8 +558,8 @@ $stats = $stats_result->fetch_assoc();
             <!-- Orders Table - DESIGN GAYA NG CUSTOMER.PHP -->
             <div class="card">
                 <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-hover mb-0" id="ordersTable">
+                    <div class="table-container">
+                        <table class="table custom-table compact-table" id="ordersTable">
                             <thead class="table-light">
                                 <tr>
                                     <th>Order #</th>

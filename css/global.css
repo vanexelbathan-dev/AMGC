@@ -989,7 +989,7 @@ a:hover {
 /* Buttons */
 .btn-primary {
     background: linear-gradient(135deg, var(--primary-green), var(--secondary-green));
-    border: none;
+    border: none !important;
     border-radius: 8px;
     padding: 0.75rem 1.5rem;
     font-weight: 600;
@@ -1117,18 +1117,15 @@ a:hover {
     gap: 0.5rem;
 }
 .btn-action {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    border: none;
-    transition: all 0.3s;
-    margin: 0 2px;
-    padding: 0;
-    cursor: pointer;
-}
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+        }
 
 /* Action buttons container */
 .action-buttons {
@@ -1145,20 +1142,35 @@ a:hover {
     border: 1px solid #3b82f6;
 }
 
+ .btn-view:hover {
+            background-color: #bbdefb;
+            transform: translateY(-2px);
+        }
 .btn-action.btn-map {
     background: #fbbe2422;
     color: #fbbf24;
     border: 1px solid #fbbf24;
 }
 
-.btn-icon.btn-edit {
-    background: rgba(59, 130, 246, 0.1);
-    color: #3b82f6;
+.btn-action.btn-edit {
+    background-color: #f3e5f5;
+    color: #7b1fa2;
+    border-color: #e1bee7;
+}
+        
+.btn-edit:hover {
+    background-color: #e1bee7;
+    transform: translateY(-2px);
 }
 
-.btn-icon.btn-delete {
-    background: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
+.btn-action.btn-delete {
+            background-color: #f5e5e5;
+            color:  rgba(211, 46, 46, 0.871);
+            border-color: rgba(212, 130, 130, 0.871);
+}
+.btn-delete:hover {
+     background-color: #dfa1a1;
+     transform: translateY(-2px);
 }
 
 /* Table cell alignment - IMPORTANTE ITO */
@@ -1170,34 +1182,6 @@ a:hover {
     vertical-align: middle !important;
     white-space: nowrap !important;
 }
-
-/* Icon inside button */
-.btn-action i {
-    font-size: 1.1rem;
-    line-height: 1;
-    display: inline-block;
-}
-
-.btn-action.btn-view {
-    background: #3b83f61e;
-    color: #3b82f6;
-    border: 1px solid #3b82f6;
-}
-.btn-action.btn-map {
-    background: #fbbe2422;
-    color: #fbbf24;
-    border: 1px solid #fbbf24;
-}
-.btn-icon.btn-edit {
-    background: rgba(59, 130, 246, 0.1);
-    color: #3b82f6;
-}
-
-.btn-icon.btn-delete {
-    background: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
-}
-
 /* Page Content */
 .page-content {
     display: none;
@@ -1306,7 +1290,6 @@ a:hover {
 .table-container {
     max-width: 100%;
     overflow-x: auto;
-    border-radius: 12px;
 }
 
 /* Compact Table */
@@ -3114,3 +3097,59 @@ a:hover {
         display: none !important;
     }
 }
+  /* Mobile responsive adjustments ONLY */
+        @media (max-width: 768px) {
+            .stat-card {
+                padding: 12px;
+                min-height: 85px;
+                margin-bottom: 8px;
+            }
+            .stat-icon {
+                font-size: 2rem;
+                margin-right: 12px;
+            }
+            .stat-value {
+                font-size: 1.5rem;
+            }
+            .stat-label {
+                font-size: 0.8rem;
+            }
+            .col-md-3 {
+                width: 50%;
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+            .row.g-3 {
+                margin-left: -8px;
+                margin-right: -8px;
+            }
+            .mb-3 {
+                margin-bottom: 8px !important;
+            }
+        }
+        @media (max-width: 576px) {
+            .stat-card {
+                min-height: 80px;
+                padding: 10px;
+            }
+            .stat-icon {
+                font-size: 1.8rem;
+                margin-right: 10px;
+            }
+            .stat-value {
+                font-size: 1.3rem;
+            }
+            .stat-label {
+                font-size: 0.75rem;
+            }
+            .col-md-3 {
+                width: 50%;
+                padding-left: 6px;
+                padding-right: 6px;
+            }
+            .row.g-3 {
+                margin-left: -6px;
+                margin-right: -6px;
+            }
+        }
+        

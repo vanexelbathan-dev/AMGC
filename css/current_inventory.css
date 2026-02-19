@@ -1984,7 +1984,16 @@ a:hover {
             background-color: #f8a780;
             transform: translateY(-2px);
         }
-
+        .btn-process {
+            background-color: #fdb99ac2;
+            color:  rgb(211, 104, 46);
+            border-color: rgba(206, 118, 71, 0.916);
+        }
+        
+        .btn-process:hover {
+            background-color: #f8a780;
+            transform: translateY(-2px);
+        }
         /* Map Modal */
         .map-modal .modal-dialog {
             max-width: 800px;

@@ -1046,7 +1046,7 @@ function formatDateTime($dateStr) {
                                     <?php endif; ?>
                                     <td class="col-user">
                                         <?php if ($driver['user_id']): ?>
-                                            <span class="user-badge"> 
+                                            <span> 
                                                 <?= htmlspecialchars($driver['email']) ?>
                                             </span>
                                         <?php else: ?>
