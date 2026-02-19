@@ -969,9 +969,7 @@ function formatLocation($item) {
                         <i class="bi bi-list"></i>
                     </button>    
                     <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
-                    <span class="nav-text">
-                        <?php echo $view_all_branches ? 'Administrator' : ucfirst(str_replace('_', ' ', $user_role)); ?>
-                    </span>
+                        <span class="nav-text">Branch Admin</span>
                 </h3>
             </div>
             
