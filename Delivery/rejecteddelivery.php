@@ -70,6 +70,19 @@ if ($check_so_column && $check_so_column->num_rows > 0) {
     $so_branch_column_exists = true;
 }
 
+// Check if rejection_photo and rejection_reason columns exist in deliveries table
+$rejection_photo_column_exists = false;
+$check_photo_column = $conn->query("SHOW COLUMNS FROM deliveries LIKE 'rejection_photo'");
+if ($check_photo_column && $check_photo_column->num_rows > 0) {
+    $rejection_photo_column_exists = true;
+}
+
+$rejection_reason_column_exists = false;
+$check_reason_column = $conn->query("SHOW COLUMNS FROM deliveries LIKE 'rejection_reason'");
+if ($check_reason_column && $check_reason_column->num_rows > 0) {
+    $rejection_reason_column_exists = true;
+}
+
 // Determine branch filter condition
 $branch_condition = "";
 
@@ -102,6 +115,8 @@ try {
             d.so_id,
             d.stop_sequence,
             d.driver_id,
+            d.rejection_photo,
+            d.rejection_reason,
             so.so_number,
             so.order_status,
             c.customer_id,
@@ -203,6 +218,13 @@ try {
             padding: 2px 4px;
             border-radius: 4px;
             color: #c7254e;
+        }
+        
+        /* Alert for missing columns */
+        .alert-warning {
+            background-color: #fff3cd;
+            border-color: #ffecb5;
+            color: #856404;
         }
         
         /* Mobile responsive adjustments */
@@ -356,6 +378,34 @@ try {
         .status-partial { background-color: #0dcaf0; color: #000; }
         .status-delivered { background-color: #198754; color: #fff; }
         .status-rejected { background-color: #dc3545; color: #fff; }
+        
+        /* Photo thumbnail */
+        .photo-thumbnail {
+            width: 40px;
+            height: 40px;
+            object-fit: cover;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .photo-placeholder {
+            width: 40px;
+            height: 40px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #6c757d;
+            font-size: 12px;
+        }
+        
+        /* Modal image */
+        .modal-image {
+            max-width: 100%;
+            max-height: 400px;
+            border-radius: 8px;
+        }
     </style>
 </head>
 <body>
@@ -427,6 +477,26 @@ try {
                 </div>
             </div>
 
+            <!-- Column Missing Alerts -->
+            <?php if (!$rejection_photo_column_exists || !$rejection_reason_column_exists): ?>
+                <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                    <i class="bi bi-exclamation-triangle"></i> 
+                    <strong>Database columns missing.</strong> Please run this SQL to add the required columns:
+                    <br><br>
+                    <?php if (!$rejection_photo_column_exists): ?>
+                        <code>ALTER TABLE deliveries ADD COLUMN rejection_photo VARCHAR(255) NULL AFTER remarks;</code><br>
+                    <?php endif; ?>
+                    <?php if (!$rejection_reason_column_exists): ?>
+                        <code>ALTER TABLE deliveries ADD COLUMN rejection_reason TEXT NULL AFTER rejection_photo;</code><br>
+                    <?php endif; ?>
+                    <br>
+                    <button type="button" class="btn btn-sm btn-warning" onclick="copySQL()">
+                        <i class="bi bi-files"></i> Copy SQL
+                    </button>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            <?php endif; ?>
+
             <!-- Driver Info Card (for delivery role) -->
             <?php if ($user_role == 'delivery' && $driver_info): ?>
             <div class="driver-info-card">
@@ -486,6 +556,23 @@ try {
                         <br><small>No pending deliveries for your branch.</small>
                     <?php endif; ?>
                 </div>
+            <?php endif; ?>
+
+            <!-- Success/Error Messages -->
+            <?php if (isset($_SESSION['success_message'])): ?>
+                <div class="alert alert-success alert-dismissible fade show" role="alert">
+                    <i class="bi bi-check-circle me-2"></i><?php echo $_SESSION['success_message']; ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+                <?php unset($_SESSION['success_message']); ?>
+            <?php endif; ?>
+
+            <?php if (isset($_SESSION['error_message'])): ?>
+                <div class="alert alert-danger alert-dismissible fade show" role="alert">
+                    <i class="bi bi-exclamation-triangle me-2"></i><?php echo $_SESSION['error_message']; ?>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+                <?php unset($_SESSION['error_message']); ?>
             <?php endif; ?>
 
             <!-- Rejected Delivery Form -->
@@ -695,6 +782,7 @@ try {
                                     <th>Customer</th>
                                     <th>Stop</th>
                                     <th>Reason</th>
+                                    <th>Photo</th>
                                     <th>Status</th>
                                 </tr>
                             </thead>
@@ -706,7 +794,27 @@ try {
                                     <td><?php echo htmlspecialchars($rejection['customer_name']); ?></td>
                                     <td><span class="badge bg-secondary">#<?php echo $rejection['stop_sequence'] ?? 'N/A'; ?></span></td>
                                     <td>
-                                        <small><?php echo htmlspecialchars(substr($rejection['remarks'] ?? '', 0, 50)) . (strlen($rejection['remarks'] ?? '') > 50 ? '...' : ''); ?></small>
+                                        <small>
+                                            <?php 
+                                            if (!empty($rejection['rejection_reason'])) {
+                                                echo htmlspecialchars(substr($rejection['rejection_reason'], 0, 50)) . (strlen($rejection['rejection_reason'] ?? '') > 50 ? '...' : '');
+                                            } else {
+                                                echo htmlspecialchars(substr($rejection['remarks'] ?? 'No reason provided', 0, 50)) . (strlen($rejection['remarks'] ?? '') > 50 ? '...' : '');
+                                            }
+                                            ?>
+                                        </small>
+                                    </td>
+                                    <td>
+                                        <?php if (!empty($rejection['rejection_photo'])): ?>
+                                            <img src="../uploads/rejections/<?php echo basename($rejection['rejection_photo']); ?>" 
+                                                 class="photo-thumbnail" 
+                                                 onclick="viewPhoto('<?php echo basename($rejection['rejection_photo']); ?>', '<?php echo htmlspecialchars($rejection['rejection_reason'] ?? $rejection['remarks'] ?? ''); ?>')"
+                                                 alt="Rejection photo">
+                                        <?php else: ?>
+                                            <div class="photo-placeholder">
+                                                <i class="bi bi-image"></i>
+                                            </div>
+                                        <?php endif; ?>
                                     </td>
                                     <td><span class="badge bg-danger">Rejected</span></td>
                                 </tr>
@@ -715,6 +823,37 @@ try {
                         </table>
                     </div>
                     <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Photo View Modal -->
+    <div class="modal fade" id="photoModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Rejection Photo</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <img src="" id="modalPhoto" class="modal-image" alt="Rejection photo">
+                    <p id="modalReason" class="mt-3 text-muted"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Details Modal -->
+    <div class="modal fade" id="detailsModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-info text-white">
+                    <h5 class="modal-title">Rejection Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="detailsModalBody">
+                    Loading...
                 </div>
             </div>
         </div>
@@ -997,6 +1136,68 @@ try {
             document.getElementById('customerId').value = '';
         }
 
+        // View photo
+        function viewPhoto(photoPath, reason) {
+            const modal = new bootstrap.Modal(document.getElementById('photoModal'));
+            document.getElementById('modalPhoto').src = '../uploads/rejections/' + photoPath;
+            document.getElementById('modalReason').textContent = reason;
+            modal.show();
+        }
+
+        // View details
+        function viewDetails(deliveryId) {
+            // Find the delivery data from the table
+            const rows = document.querySelectorAll('tbody tr');
+            let deliveryData = null;
+            
+            rows.forEach(row => {
+                if (row.querySelector('td:first-child')?.textContent.includes(deliveryId)) {
+                    const cells = row.querySelectorAll('td');
+                    deliveryData = {
+                        date: cells[0]?.textContent || 'N/A',
+                        order: cells[1]?.textContent || 'N/A',
+                        customer: cells[2]?.textContent || 'N/A',
+                        stop: cells[3]?.textContent || 'N/A',
+                        reason: cells[4]?.textContent || 'N/A',
+                        hasPhoto: cells[5]?.querySelector('img') !== null
+                    };
+                }
+            });
+            
+            if (deliveryData) {
+                const modalBody = document.getElementById('detailsModalBody');
+                modalBody.innerHTML = `
+                    <table class="table table-sm">
+                        <tr>
+                            <th>Delivery Date:</th>
+                            <td>${deliveryData.date}</td>
+                        </tr>
+                        <tr>
+                            <th>Order #:</th>
+                            <td>${deliveryData.order}</td>
+                        </tr>
+                        <tr>
+                            <th>Customer:</th>
+                            <td>${deliveryData.customer}</td>
+                        </tr>
+                        <tr>
+                            <th>Stop #:</th>
+                            <td>${deliveryData.stop}</td>
+                        </tr>
+                        <tr>
+                            <th>Reason:</th>
+                            <td>${deliveryData.reason}</td>
+                        </tr>
+                        <tr>
+                            <th>Photo:</th>
+                            <td>${deliveryData.hasPhoto ? '<span class="text-success"><i class="bi bi-check-circle"></i> Available</span>' : '<span class="text-muted"><i class="bi bi-x-circle"></i> No photo</span>'}</td>
+                        </tr>
+                    </table>
+                `;
+                new bootstrap.Modal(document.getElementById('detailsModal')).show();
+            }
+        }
+
         // Copy SQL for database setup
         function copySQL(table) {
             let sql = '';
@@ -1004,6 +1205,8 @@ try {
                 sql = "ALTER TABLE deliveries ADD COLUMN branch_id INT NULL;\nALTER TABLE deliveries ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
             } else if (table === 'sales_orders') {
                 sql = "ALTER TABLE sales_orders ADD COLUMN branch_id INT NULL;\nALTER TABLE sales_orders ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+            } else {
+                sql = "ALTER TABLE deliveries ADD COLUMN rejection_photo VARCHAR(255) NULL AFTER remarks;\nALTER TABLE deliveries ADD COLUMN rejection_reason TEXT NULL AFTER rejection_photo;";
             }
             
             navigator.clipboard.writeText(sql).then(() => {

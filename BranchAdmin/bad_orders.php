@@ -360,7 +360,13 @@ $rmr_query = "
     ORDER BY r.created_at DESC, r.rmr_id DESC
 ";
 $rmr_result = $conn->query($rmr_query);
-$rmr_requests = $rmr_result->fetch_all(MYSQLI_ASSOC);
+
+if (!$rmr_result) {
+    $rmr_requests = [];
+    error_log("RMR Query Error: " . $conn->error);
+} else {
+    $rmr_requests = $rmr_result->fetch_all(MYSQLI_ASSOC);
+}
 
 // FETCH REJECTED DELIVERIES THAT DON'T HAVE RMR YET
 $rejected_deliveries_query = "
@@ -374,7 +380,8 @@ $rejected_deliveries_query = "
         d.delivery_date,
         d.delivery_status,
         d.remarks,
-        d.stop_sequence,
+        d.rejection_photo,
+        d.rejection_reason,
         so.so_number,
         so.total_amount,
         c.customer_name,
@@ -383,31 +390,30 @@ $rejected_deliveries_query = "
         c.address,
         c.city,
         tt.trip_number,
-        -- Get item information (this is simplified - you may need to adjust based on your schema)
-        -- For now, we'll use a placeholder since rejected deliveries don't have direct item links
-        NULL as item_id,
-        'Unknown' as item_code,
-        'Unknown Item' as item_name,
-        0 as unit_price,
-        'pc' as unit_type,
         -- Check if RMR already exists
         (SELECT COUNT(*) FROM rmr_requests r WHERE r.delivery_id = d.delivery_id) as has_rmr
     FROM deliveries d
-    JOIN sales_orders so ON d.so_id = so.so_id
-    JOIN customers c ON d.customer_id = c.customer_id
+    LEFT JOIN sales_orders so ON d.so_id = so.so_id
+    LEFT JOIN customers c ON d.customer_id = c.customer_id
     LEFT JOIN trip_tickets tt ON d.trip_id = tt.trip_id
     WHERE d.delivery_status = 'rejected'
 ";
 
 // Add branch filter
 if ($delivery_branch_column_exists && !$view_all_branches) {
-    $rejected_deliveries_query .= " AND d.branch_id = $branch_id";
+    $rejected_deliveries_query .= " AND d.branch_id = " . intval($branch_id);
 }
 
-$rejected_deliveries_query .= " ORDER BY d.delivery_date DESC";
+$rejected_deliveries_query .= " ORDER BY d.delivery_date DESC LIMIT 100";
 
 $rejected_result = $conn->query($rejected_deliveries_query);
-$rejected_deliveries = $rejected_result->fetch_all(MYSQLI_ASSOC);
+
+if (!$rejected_result) {
+    $rejected_deliveries = [];
+    error_log("Rejected Deliveries Query Error: " . $conn->error);
+} else {
+    $rejected_deliveries = $rejected_result->fetch_all(MYSQLI_ASSOC);
+}
 
 // FETCH ITEMS FOR RMR CREATION
 $items_query = "SELECT item_id, item_code, item_name, unit_price, unit_type FROM items WHERE status = 'active'";
@@ -416,7 +422,13 @@ if ($items_branch_column_exists && !$view_all_branches) {
 }
 $items_query .= " ORDER BY item_name ASC";
 $items_result = $conn->query($items_query);
-$items_list = $items_result->fetch_all(MYSQLI_ASSOC);
+
+if (!$items_result) {
+    $items_list = [];
+    error_log("Items Query Error: " . $conn->error);
+} else {
+    $items_list = $items_result->fetch_all(MYSQLI_ASSOC);
+}
 
 // CALCULATE STATISTICS FROM REAL DATA (branch-specific)
 $total_rmr = count($rmr_requests);
@@ -605,16 +617,10 @@ function formatDate($dateTimeStr) {
         <?php endif; ?>
         .col-actions { width: 13%; text-align: center; }
         
-        /* Rejected deliveries section */
-        .rejected-section {
-            margin-top: 40px;
-            margin-bottom: 20px;
-            padding-top: 20px;
-            border-top: 2px solid #dee2e6;
-        }
-        
+        /* Rejected deliveries table enhancements */
         .rejected-table {
             width: 100%;
+            table-layout: fixed;
             border-collapse: collapse;
             background-color: white;
             border-radius: 8px;
@@ -629,6 +635,9 @@ function formatDate($dateTimeStr) {
             color: #721c24;
             padding: 14px 12px;
             border-bottom: 2px solid #f5c6cb;
+            white-space: nowrap;
+            vertical-align: middle;
+            text-align: left;
         }
         
         .rejected-table tbody td {
@@ -636,6 +645,60 @@ function formatDate($dateTimeStr) {
             vertical-align: middle;
             border-bottom: 1px solid #e9ecef;
             font-size: 13px;
+            word-wrap: break-word;
+        }
+        
+        .rejected-table tbody tr:hover {
+            background-color: #fff5f5;
+        }
+        
+        /* Custom column widths for better flexibility */
+        .rejected-table th:nth-child(1) { width: 8%; }  /* Delivery ID */
+        .rejected-table th:nth-child(2) { width: 10%; } /* Order # */
+        .rejected-table th:nth-child(3) { width: 15%; } /* Customer */
+        .rejected-table th:nth-child(4) { width: 10%; } /* Trip # */
+        .rejected-table th:nth-child(5) { width: 12%; } /* Delivery Date */
+        .rejected-table th:nth-child(6) { width: 8%; }  /* Photo */
+        .rejected-table th:nth-child(7) { width: 8%; }  /* Status */
+        .rejected-table th:nth-child(8) { width: 12%; } /* Actions */
+        
+
+        
+        /* Photo thumbnail styling - bigger but not too wide */
+        .photo-thumbnail {
+            width: 50px;
+            height: 50px;
+            object-fit: cover;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: transform 0.2s;
+            border: 1px solid #dee2e6;
+        }
+        
+        .photo-thumbnail:hover {
+            transform: scale(1.1);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        
+        .photo-placeholder {
+            width: 50px;
+            height: 50px;
+            background-color: #f8f9fa;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #6c757d;
+            font-size: 14px;
+            border: 1px solid #dee2e6;
+        }
+        
+        /* Action buttons container */
+        .rejected-table .action-buttons {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-start;
+            align-items: center;
         }
         
         .empty-state-table {
@@ -829,6 +892,150 @@ function formatDate($dateTimeStr) {
             font-size: 10px;
             font-weight: 500;
             margin-left: 5px;
+        }
+        
+        /* Image gallery styling - bigger preview */
+        .rejection-image-container {
+            margin-top: 15px;
+            border: 1px dashed #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            background-color: #f8f9fa;
+        }
+        
+        .rejection-image {
+            max-width: 100%;
+            max-height: 250px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: transform 0.2s;
+            border: 2px solid #dee2e6;
+        }
+        
+        .rejection-image:hover {
+            transform: scale(1.02);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        .no-image-placeholder {
+            padding: 30px;
+            text-align: center;
+            background-color: #e9ecef;
+            border-radius: 8px;
+            color: #6c757d;
+        }
+        
+        .no-image-placeholder i {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+        
+        /* Photo Modal - bigger but not too wide */
+        #photoViewModal .modal-dialog {
+            max-width: 600px;
+            margin: 1.75rem auto;
+        }
+        
+        #photoViewModal .modal-dialog-centered {
+            display: flex;
+            align-items: center;
+            min-height: calc(100% - 3.5rem);
+        }
+        
+        #photoViewModal .modal-content {
+            background-color: transparent;
+            border: none;
+            border-radius: 12px;
+        }
+        
+        #photoViewModal .modal-header {
+            border-radius: 12px 12px 0 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 16px;
+        }
+        
+        #photoViewModal .modal-header .btn-close {
+            filter: brightness(0) invert(1);
+            opacity: 0.8;
+        }
+        
+        #photoViewModal .modal-header .btn-close:hover {
+            opacity: 1;
+        }
+        
+        #photoViewModal .modal-body {
+            background-color: rgba(0, 0, 0, 0.85);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 400px;
+            padding: 20px;
+            border-radius: 0;
+        }
+        
+        #photoViewModal .modal-footer {
+            border-radius: 0 0 12px 12px;
+            background-color: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(5px);
+            border-top: 1px solid rgba(0,0,0,0.1);
+            padding: 12px 16px;
+        }
+        
+        #photoViewModal img {
+            max-height: 450px;
+            max-width: 100%;
+            object-fit: contain;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            border-radius: 8px;
+        }
+        
+        /* Details Modal Remarks Styling - normal font, just line breaks */
+        .details-remarks {
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            font-size: 13px;
+            line-height: 1.6;
+            border-left: 4px solid #6c757d;
+            font-family: inherit;
+        }
+        
+        .details-remarks .remark-line {
+            margin-bottom: 8px;
+            padding: 4px 0;
+            border-bottom: 1px solid #e9ecef;
+            white-space: normal;
+        }
+        
+        .details-remarks .remark-line:last-child {
+            border-bottom: none;
+            margin-bottom: 0;
+        }
+        
+        .details-remarks .timestamp {
+            font-weight: 500;
+            color: #495057;
+        }
+        
+        /* Debug panel styling */
+        .debug-panel {
+            margin-top: 30px;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .debug-panel pre {
+            background-color: #fff;
+            padding: 10px;
+            border-radius: 4px;
+            max-height: 300px;
+            overflow: auto;
         }
     </style>
 </head>
@@ -1181,42 +1388,65 @@ function formatDate($dateTimeStr) {
                                         <th>CUSTOMER</th>
                                         <th>TRIP #</th>
                                         <th>DELIVERY DATE</th>
-                                        <th>REMARKS</th>
-                                        <th>STOP</th>
+                                        <th>PHOTO</th>
+                                        <th>STATUS</th>
                                         <th>ACTIONS</th>
                                     </tr>
                                 </thead>
                                 <tbody>
                                     <?php if (empty($rejected_deliveries)): ?>
                                     <tr>
-                                        <td colspan="8" class="empty-state-table">
+                                        <td colspan="9" class="empty-state-table">
                                             <i class="bi bi-check-circle"></i>
                                             <h5>No Rejected Deliveries Found</h5>
                                             <p class="text-muted">
                                                 All rejected deliveries have been processed.
+                                                <?php if ($delivery_branch_column_exists && !$view_all_branches): ?>
+                                                    <br>No rejected deliveries found for your branch.
+                                                <?php endif; ?>
                                             </p>
+                                            <?php if (isset($_GET['debug'])): ?>
+                                            <p class="text-danger">Debug: Check query and database connection</p>
+                                            <?php endif; ?>
                                         </td>
                                     </tr>
                                     <?php else: ?>
                                         <?php foreach ($rejected_deliveries as $delivery): ?>
                                         <tr>
                                             <td><span class="badge bg-light text-dark">#<?= $delivery['delivery_id'] ?></span></td>
-                                            <td><strong><?= htmlspecialchars($delivery['so_number']) ?></strong></td>
-                                            <td><?= htmlspecialchars($delivery['customer_name']) ?></td>
+                                            <td data-so-id="<?= $delivery['so_id'] ?? 0 ?>"><strong><?= htmlspecialchars($delivery['so_number'] ?? 'N/A') ?></strong></td>
+                                            <td data-customer-id="<?= $delivery['customer_id'] ?? 0 ?>"><?= htmlspecialchars($delivery['customer_name'] ?? 'Unknown') ?></td>
                                             <td><?= htmlspecialchars($delivery['trip_number'] ?? 'N/A') ?></td>
                                             <td><?= $delivery['delivery_date'] ? date('Y-m-d H:i', strtotime($delivery['delivery_date'])) : 'N/A' ?></td>
                                             <td>
-                                                <small><?= htmlspecialchars(substr($delivery['remarks'] ?? '', 0, 50)) ?>...</small>
-                                            </td>
-                                            <td><span class="badge bg-secondary">#<?= $delivery['stop_sequence'] ?? 'N/A' ?></span></td>
-                                            <td>
-                                                <?php if ($delivery['has_rmr'] > 0): ?>
-                                                    <span class="badge bg-info">RMR Created</span>
+                                                <?php if (!empty($delivery['rejection_photo'])): ?>
+                                                    <img src="../uploads/rejections/<?= basename($delivery['rejection_photo']); ?>" 
+                                                         class="photo-thumbnail" 
+                                                         onclick="openPhotoModal('<?= basename($delivery['rejection_photo']); ?>')"
+                                                         alt="Rejection photo"
+                                                         title="Click to view full size">
                                                 <?php else: ?>
-                                                    <button class="btn btn-sm btn-primary" onclick="showCreateRMRModal(<?= $delivery['delivery_id'] ?>, <?= $delivery['so_id'] ?>, <?= $delivery['customer_id'] ?>)">
-                                                        <i class="bi bi-plus-circle"></i> Create RMR
-                                                    </button>
+                                                    <div class="photo-placeholder">
+                                                        <i class="bi bi-image"></i>
+                                                    </div>
                                                 <?php endif; ?>
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-danger">Rejected</span>
+                                            </td>
+                                            <td>
+                                                <div class="action-buttons">
+                                                    <?php if ($delivery['has_rmr'] > 0): ?>
+                                                        <span class="badge bg-info">RMR Created</span>
+                                                    <?php else: ?>
+                                                        <button class="btn-action btn-view" onclick='viewRejectedDelivery(<?= $delivery['delivery_id'] ?>, "<?= addslashes($delivery['rejection_photo'] ?? '') ?>", "<?= addslashes(trim(preg_replace('/\s+/', ' ', $delivery['rejection_reason'] ?? 'No rejection reason provided'))) ?>", <?= json_encode($delivery['remarks'] ?? 'No remarks provided') ?>)' title="View Details">
+                                                            <i class="bi bi-eye"></i>
+                                                        </button>
+                                                        <button class="btn-action btn-create" onclick="showCreateRMRModal(<?= $delivery['delivery_id'] ?>, <?= $delivery['so_id'] ?? 0 ?>, <?= $delivery['customer_id'] ?? 0 ?>)" title="Create RMR">
+                                                            <i class="bi bi-plus-circle"></i>
+                                                        </button>
+                                                    <?php endif; ?>
+                                                </div>
                                             </td>
                                         </tr>
                                         <?php endforeach; ?>
@@ -1229,6 +1459,91 @@ function formatDate($dateTimeStr) {
             </div>
         </div>
     </div>
+
+    <!-- View Rejected Delivery Modal (Centered) -->
+    <div class="modal fade" id="viewRejectedDeliveryModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title"><i class="bi bi-eye me-2"></i>Rejected Delivery Details</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" id="rejectedDeliveryDetails">
+                    <!-- Details will be loaded here -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" onclick="createRMRFromView()" id="createRMRFromViewBtn">
+                        <i class="bi bi-plus-circle"></i> Create RMR
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Photo View Modal (Bigger but not too wide) -->
+    <div class="modal fade" id="photoViewModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" style="max-width: 600px;">
+            <div class="modal-content">
+                <div class="modal-header bg-info text-white">
+                    <h5 class="modal-title"><i class="bi bi-image me-2"></i>Rejection Photo</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center p-3">
+                    <img src="" id="modalPhoto" class="img-fluid rounded" alt="Rejection photo" style="max-height: 450px; width: auto; margin: 0 auto;">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" onclick="downloadPhoto()">
+                        <i class="bi bi-download"></i> Download
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Debug Information Panel (only visible with debug parameter) -->
+    <?php if (isset($_GET['debug'])): ?>
+    <div class="container mt-4">
+        <div class="debug-panel">
+            <h5><i class="bi bi-bug"></i> Debug Information</h5>
+            <hr>
+            <div class="row">
+                <div class="col-md-6">
+                    <h6>Session/Branch Info:</h6>
+                    <ul>
+                        <li><strong>Branch ID:</strong> <?= $branch_id ?></li>
+                        <li><strong>View All Branches:</strong> <?= $view_all_branches ? 'Yes' : 'No' ?></li>
+                        <li><strong>Delivery Branch Column Exists:</strong> <?= $delivery_branch_column_exists ? 'Yes' : 'No' ?></li>
+                        <li><strong>RMR Branch Column Exists:</strong> <?= $rmr_branch_column_exists ? 'Yes' : 'No' ?></li>
+                    </ul>
+                    
+                    <h6 class="mt-3">Query Results:</h6>
+                    <ul>
+                        <li><strong>RMR Requests Found:</strong> <?= count($rmr_requests) ?></li>
+                        <li><strong>Rejected Deliveries Found:</strong> <?= count($rejected_deliveries) ?></li>
+                        <li><strong>Items Available:</strong> <?= count($items_list) ?></li>
+                    </ul>
+                </div>
+                <div class="col-md-6">
+                    <h6>Rejected Deliveries Query:</h6>
+                    <pre><?= htmlspecialchars($rejected_deliveries_query) ?></pre>
+                    
+                    <?php if (count($rejected_deliveries) > 0): ?>
+                    <h6 class="mt-3">First Rejected Delivery Data:</h6>
+                    <pre><?php print_r($rejected_deliveries[0]); ?></pre>
+                    <?php endif; ?>
+                    
+                    <?php if ($conn->error): ?>
+                    <div class="alert alert-danger mt-3">
+                        <strong>Database Error:</strong> <?= $conn->error ?>
+                    </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <!-- Process RMR Modal -->
     <div class="modal fade" id="processRMRModal" tabindex="-1" aria-hidden="true">
@@ -1540,6 +1855,7 @@ function formatDate($dateTimeStr) {
         console.log("Bad Orders - Live Database Mode");
         console.log("Branch ID:", branchId);
         console.log("View All Branches:", viewAllBranches);
+        console.log("Rejected Deliveries Found:", <?= count($rejected_deliveries) ?>);
         
         initializeSidebar();
         
@@ -2021,6 +2337,235 @@ function formatDate($dateTimeStr) {
             Swal.close();
             Swal.fire('Error', 'An error occurred while fetching RMR details', 'error');
         });
+    }
+
+    // View Rejected Delivery Details with clean formatted remarks
+    function viewRejectedDelivery(deliveryId, photoPath, rejectionReason, remarks) {
+        // Find the delivery data from the table row
+        const button = event.target.closest('button');
+        const row = button.closest('tr');
+        const cells = row.querySelectorAll('td');
+        
+        const deliveryData = {
+            id: deliveryId,
+            order_number: cells[1]?.innerText.trim() || 'N/A',
+            customer: cells[2]?.innerText.trim() || 'N/A',
+            trip_number: cells[3]?.innerText.trim() || 'N/A',
+            delivery_date: cells[4]?.innerText.trim() || 'N/A',
+            remarks: remarks || 'No remarks provided',
+            rejection_reason: rejectionReason || 'No rejection reason provided',
+            photo: photoPath || null,
+            status: 'Rejected'
+        };
+        
+        // Clean remarks - remove rejection reason and photo references
+        let cleanRemarks = deliveryData.remarks;
+        if (deliveryData.rejection_reason && deliveryData.rejection_reason !== 'No rejection reason provided') {
+            cleanRemarks = cleanRemarks.replace('REASON: ' + deliveryData.rejection_reason, '');
+            cleanRemarks = cleanRemarks.replace('REASON:', '');
+        }
+        cleanRemarks = cleanRemarks.replace(/\[PHOTO:.*?\]/g, '');
+        cleanRemarks = cleanRemarks.replace(/\s+/g, ' ').trim();
+        
+        // Format remarks for display - normal font, just line breaks
+        let formattedRemarks = '<div class="details-remarks">';
+        
+        if (cleanRemarks && cleanRemarks !== 'No remarks provided') {
+            // Split by common delimiters and format with line breaks
+            const lines = cleanRemarks.split(/(?=\[)|(?=REJECTED by)|(?=DETAILS:)|(?=PROPOSED ACTION:)|(?=RETRY DATE:)/);
+            
+            lines.forEach(line => {
+                line = line.trim();
+                if (line) {
+                    formattedRemarks += `<div class="remark-line">${line}</div>`;
+                }
+            });
+        } else {
+            formattedRemarks += `<div class="remark-line">${deliveryData.remarks}</div>`;
+        }
+        
+        formattedRemarks += '</div>';
+        
+        // Create rejection reason HTML
+        let reasonHtml = '';
+        if (deliveryData.rejection_reason && deliveryData.rejection_reason !== 'No rejection reason provided') {
+            reasonHtml = `
+                <div class="p-3 bg-light rounded" style="max-height: 100px; overflow-y: auto; font-size: 13px;">
+                    ${deliveryData.rejection_reason.replace(/\n/g, '<br>')}
+                </div>
+            `;
+        } else {
+            reasonHtml = `<div class="p-3 bg-light rounded">${deliveryData.rejection_reason}</div>`;
+        }
+        
+        // Create image HTML with clickable photo - bigger preview
+        let imageHtml = '';
+        if (deliveryData.photo && deliveryData.photo !== '') {
+            imageHtml = `
+                <div class="rejection-image-container text-center">
+                    <h6 class="fw-bold mb-3"><i class="bi bi-camera"></i> Rejection Photo</h6>
+                    <div class="d-flex justify-content-center">
+                        <img src="../uploads/rejections/${deliveryData.photo}" 
+                             class="rejection-image img-fluid" 
+                             alt="Rejection Photo" 
+                             onclick="openPhotoModal('${deliveryData.photo}')"
+                             style="max-height: 250px; cursor: pointer; border: 2px solid #dee2e6; border-radius: 8px;">
+                    </div>
+                    <p class="text-muted mt-2"><small><i class="bi bi-zoom-in"></i> Click image to enlarge</small></p>
+                </div>
+            `;
+        } else {
+            imageHtml = `
+                <div class="no-image-placeholder text-center">
+                    <i class="bi bi-image" style="font-size: 48px;"></i>
+                    <p class="mt-2">No photo available for this rejection</p>
+                </div>
+            `;
+        }
+        
+        // Populate modal with delivery details including photo
+        const content = document.getElementById('rejectedDeliveryDetails');
+        content.innerHTML = `
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="rmr-details-card">
+                        <h6 class="fw-bold mb-3"><i class="bi bi-truck"></i> Delivery Information</h6>
+                        <table class="table table-sm table-borderless">
+                            <tr>
+                                <td width="40%" class="detail-label">Delivery ID:</td>
+                                <td class="detail-value">#${deliveryData.id}</td>
+                            </tr>
+                            <tr>
+                                <td class="detail-label">Order Number:</td>
+                                <td><strong>${deliveryData.order_number}</strong></td>
+                            </tr>
+                            <tr>
+                                <td class="detail-label">Trip Number:</td>
+                                <td>${deliveryData.trip_number}</td>
+                            </tr>
+                            <tr>
+                                <td class="detail-label">Delivery Date:</td>
+                                <td>${deliveryData.delivery_date}</td>
+                            </tr>
+                            <tr>
+                                <td class="detail-label">Status:</td>
+                                <td><span class="badge bg-danger">${deliveryData.status}</span></td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="rmr-details-card">
+                        <h6 class="fw-bold mb-3"><i class="bi bi-person"></i> Customer Information</h6>
+                        <table class="table table-sm table-borderless">
+                            <tr>
+                                <td width="40%" class="detail-label">Customer Name:</td>
+                                <td>${deliveryData.customer}</td>
+                            </tr>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            <div class="row mt-2">
+                <div class="col-12">
+                    <div class="rmr-details-card">
+                        <h6 class="fw-bold mb-3"><i class="bi bi-exclamation-diamond"></i> Rejection Reason</h6>
+                        ${reasonHtml}
+                    </div>
+                </div>
+            </div>
+            <div class="row mt-2">
+                <div class="col-12">
+                    <div class="rmr-details-card">
+                        <h6 class="fw-bold mb-3"><i class="bi bi-chat"></i> Remarks</h6>
+                        ${formattedRemarks}
+                    </div>
+                </div>
+            </div>
+            <div class="row mt-2">
+                <div class="col-12">
+                    ${imageHtml}
+                </div>
+            </div>
+        `;
+        
+        // Store delivery data for RMR creation
+        const createBtn = document.getElementById('createRMRFromViewBtn');
+        createBtn.setAttribute('data-delivery-id', deliveryId);
+        createBtn.setAttribute('data-so-id', cells[1]?.getAttribute('data-so-id') || '0');
+        createBtn.setAttribute('data-customer-id', cells[2]?.getAttribute('data-customer-id') || '0');
+        
+        new bootstrap.Modal(document.getElementById('viewRejectedDeliveryModal')).show();
+    }
+
+    // Open photo in centered modal - bigger size
+    function openPhotoModal(photoPath) {
+        const modal = new bootstrap.Modal(document.getElementById('photoViewModal'));
+        const modalImg = document.getElementById('modalPhoto');
+        modalImg.src = '../uploads/rejections/' + photoPath;
+        modal.show();
+    }
+
+    // Download photo function
+    function downloadPhoto() {
+        const img = document.getElementById('modalPhoto');
+        const photoPath = img.src;
+        const fileName = photoPath.split('/').pop();
+        
+        // Show loading
+        Swal.fire({
+            title: 'Downloading...',
+            text: 'Please wait',
+            allowOutsideClick: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+        
+        // Create a temporary link to download the image
+        fetch(photoPath)
+            .then(response => response.blob())
+            .then(blob => {
+                const url = window.URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = fileName;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(url);
+                
+                Swal.close();
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Download Complete',
+                    text: 'Photo has been downloaded successfully',
+                    timer: 1500,
+                    showConfirmButton: false
+                });
+            })
+            .catch(error => {
+                Swal.close();
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Download Failed',
+                    text: 'Unable to download the photo. Please try again.'
+                });
+            });
+    }
+
+    // Create RMR from View Modal
+    function createRMRFromView() {
+        const btn = document.getElementById('createRMRFromViewBtn');
+        const deliveryId = btn.getAttribute('data-delivery-id');
+        const soId = btn.getAttribute('data-so-id');
+        const customerId = btn.getAttribute('data-customer-id');
+        
+        bootstrap.Modal.getInstance(document.getElementById('viewRejectedDeliveryModal')).hide();
+        
+        setTimeout(() => {
+            showCreateRMRModal(deliveryId, soId, customerId);
+        }, 300);
     }
 
     // Edit RMR from View

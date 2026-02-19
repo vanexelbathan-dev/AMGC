@@ -67,9 +67,9 @@ try {
     $conn->begin_transaction();
     
     // Combine reason if "Other" was selected
-    $final_reason = $rejection_reason;
+    $final_rejection_reason = $rejection_reason;
     if ($rejection_reason == 'Other' && !empty($other_reason)) {
-        $final_reason = 'Other: ' . $other_reason;
+        $final_rejection_reason = 'Other: ' . $other_reason;
     }
     
     // Format rejection date
@@ -79,20 +79,8 @@ try {
         $formatted_date = date('Y-m-d H:i:s');
     }
     
-    // Combine remarks
-    $remarks = "REASON: " . $final_reason . ". DETAILS: " . $description;
-    if (!empty($additional_notes)) {
-        $remarks .= " ADDITIONAL NOTES: " . $additional_notes;
-    }
-    if (!empty($proposed_action)) {
-        $remarks .= " PROPOSED ACTION: " . $proposed_action;
-    }
-    if (!empty($retry_date)) {
-        $remarks .= " RETRY DATE: " . $retry_date;
-    }
-    
     // Handle file upload
-    $photo_path = null;
+    $photo_filename = null;
     if (isset($_FILES['rejection_photo']) && $_FILES['rejection_photo']['error'] == 0) {
         $upload_dir = '../uploads/rejections/';
         
@@ -110,14 +98,28 @@ try {
             $target_file = $upload_dir . $file_name;
             
             if (move_uploaded_file($_FILES['rejection_photo']['tmp_name'], $target_file)) {
-                $photo_path = $target_file;
-                $remarks .= " [PHOTO: " . $file_name . "]";
+                $photo_filename = $file_name;
             } else {
                 error_log("Failed to move uploaded file: " . error_get_last()['message']);
             }
         } else {
             error_log("Upload directory is not writable: " . $upload_dir);
         }
+    }
+    
+    // Combine remarks (keeping existing remarks format for backward compatibility)
+    $remarks = "REASON: " . $final_rejection_reason . ". DETAILS: " . $description;
+    if (!empty($additional_notes)) {
+        $remarks .= " ADDITIONAL NOTES: " . $additional_notes;
+    }
+    if (!empty($proposed_action)) {
+        $remarks .= " PROPOSED ACTION: " . $proposed_action;
+    }
+    if (!empty($retry_date)) {
+        $remarks .= " RETRY DATE: " . $retry_date;
+    }
+    if (!empty($photo_filename)) {
+        $remarks .= " [PHOTO: " . $photo_filename . "]";
     }
     
     // Check if delivery exists and update it
@@ -137,15 +139,42 @@ try {
     
     if ($check_result->num_rows == 0) {
         // If delivery doesn't exist, create new rejected delivery record
-        $insert_query = "INSERT INTO deliveries (so_id, customer_id, driver_id, branch_id, delivery_date, delivery_status, remarks, created_at) 
-                        VALUES (?, ?, ?, ?, ?, 'rejected', ?, NOW())";
+        // First, check if the columns exist
+        $columns_check = $conn->query("SHOW COLUMNS FROM deliveries LIKE 'rejection_photo'");
+        $rejection_photo_exists = $columns_check && $columns_check->num_rows > 0;
+        
+        $columns_check = $conn->query("SHOW COLUMNS FROM deliveries LIKE 'rejection_reason'");
+        $rejection_reason_exists = $columns_check && $columns_check->num_rows > 0;
+        
+        // Build the insert query dynamically
+        $insert_fields = "so_id, customer_id, driver_id, branch_id, delivery_date, delivery_status, remarks, created_at";
+        $insert_values = "?, ?, ?, ?, ?, 'rejected', ?, NOW()";
+        $insert_types = "iiiiss";
+        $insert_params = [$so_id, $customer_id, $driver_id, $branch_id, $formatted_date, $remarks];
+        
+        if ($rejection_photo_exists) {
+            $insert_fields .= ", rejection_photo";
+            $insert_values .= ", ?";
+            $insert_types .= "s";
+            $insert_params[] = $photo_filename;
+        }
+        
+        if ($rejection_reason_exists) {
+            $insert_fields .= ", rejection_reason";
+            $insert_values .= ", ?";
+            $insert_types .= "s";
+            $insert_params[] = $final_rejection_reason;
+        }
+        
+        $insert_query = "INSERT INTO deliveries ($insert_fields) VALUES ($insert_values)";
         $insert_stmt = $conn->prepare($insert_query);
         
         if (!$insert_stmt) {
             throw new Exception("Database prepare error for insert: " . $conn->error);
         }
         
-        $insert_stmt->bind_param("iiiiss", $so_id, $customer_id, $driver_id, $branch_id, $formatted_date, $remarks);
+        // Bind parameters dynamically
+        $insert_stmt->bind_param($insert_types, ...$insert_params);
         
         if (!$insert_stmt->execute()) {
             throw new Exception("Failed to insert delivery record: " . $insert_stmt->error);
@@ -161,21 +190,46 @@ try {
             throw new Exception("This delivery is already marked as rejected");
         }
         
-        // Update the existing delivery record
+        // Check which columns exist
+        $columns_check = $conn->query("SHOW COLUMNS FROM deliveries LIKE 'rejection_photo'");
+        $rejection_photo_exists = $columns_check && $columns_check->num_rows > 0;
+        
+        $columns_check = $conn->query("SHOW COLUMNS FROM deliveries LIKE 'rejection_reason'");
+        $rejection_reason_exists = $columns_check && $columns_check->num_rows > 0;
+        
+        // Build the update query dynamically
         $update_query = "UPDATE deliveries SET 
                          delivery_status = 'rejected',
                          remarks = CONCAT(IFNULL(remarks, ''), ?),
-                         signed_by = NULL,
-                         delivery_date = ?
-                         WHERE delivery_id = ?";
+                         delivery_date = ?";
+        
+        $update_types = "ss";
+        $update_params = [$remarks_prefix ?? "\n[" . date('Y-m-d H:i:s') . "] REJECTED by " . $user_name . ": " . $remarks, $formatted_date];
+        
+        if ($rejection_photo_exists) {
+            $update_query .= ", rejection_photo = ?";
+            $update_types .= "s";
+            $update_params[] = $photo_filename;
+        }
+        
+        if ($rejection_reason_exists) {
+            $update_query .= ", rejection_reason = ?";
+            $update_types .= "s";
+            $update_params[] = $final_rejection_reason;
+        }
+        
+        $update_query .= " WHERE delivery_id = ?";
+        $update_types .= "i";
+        $update_params[] = $delivery_id;
+        
+        $remarks_prefix = "\n[" . date('Y-m-d H:i:s') . "] REJECTED by " . $user_name . ": ";
         
         $update_stmt = $conn->prepare($update_query);
         if (!$update_stmt) {
             throw new Exception("Database prepare error for update: " . $conn->error);
         }
         
-        $remarks_prefix = "\n[" . date('Y-m-d H:i:s') . "] REJECTED by " . $user_name . ": " . $remarks;
-        $update_stmt->bind_param("ssi", $remarks_prefix, $formatted_date, $delivery_id);
+        $update_stmt->bind_param($update_types, ...$update_params);
         
         if (!$update_stmt->execute()) {
             throw new Exception("Failed to update delivery record: " . $update_stmt->error);
