@@ -1284,13 +1284,6 @@ function formatDate($dateTimeStr) {
                     </div>
                 </div>
 
-                <!-- Inventory Integration Alert -->
-                <div class="alert alert-success alert-dismissible fade show inventory-alert" role="alert">
-                    <i class="bi bi-arrow-return-left me-2"></i>
-                    <strong>Inventory Integration:</strong> Approved RMRs with Credit/Refund/Replacement will automatically add items back to inventory.
-                    <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-                </div>
-
                 <!-- Branch Info Alerts -->
                 <?php if (!$rmr_branch_column_exists): ?>
                     <div class="alert alert-info alert-dismissible fade show" role="alert">
