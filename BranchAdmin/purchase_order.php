@@ -23,6 +23,13 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
     $items_branch_column_exists = true;
 }
 
+// Check if branch_id column exists in inventory table
+$inventory_branch_column_exists = false;
+$check_inventory_column = $conn->query("SHOW COLUMNS FROM inventory LIKE 'branch_id'");
+if ($check_inventory_column && $check_inventory_column->num_rows > 0) {
+    $inventory_branch_column_exists = true;
+}
+
 // Determine branch filter condition - ONLY if column exists
 $po_branch_condition = "";
 if ($po_branch_column_exists && !$view_all_branches) {
@@ -49,25 +56,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $expected_delivery = $_POST['expected_delivery'] ?? null;
             $total_amount = (float)$_POST['total_amount'];
             $po_status = $_POST['po_status'] ?? 'draft';
+            $created_by = $user_id;
             
             // Insert with branch_id if column exists
             if ($po_branch_column_exists) {
-                $insert_query = "INSERT INTO purchase_orders (po_number, supplier_name, order_date, expected_delivery, total_amount, po_status, branch_id, created_at, updated_at) 
+                $insert_query = "INSERT INTO purchase_orders (po_number, supplier_name, order_date, expected_delivery, total_amount, po_status, branch_id, created_by, created_at, updated_at) 
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
+                $insert_stmt = $conn->prepare($insert_query);
+                $insert_stmt->bind_param("ssssdsii", $po_number, $supplier_name, $order_date, $expected_delivery, $total_amount, $po_status, $branch_id, $created_by);
+            } else {
+                $insert_query = "INSERT INTO purchase_orders (po_number, supplier_name, order_date, expected_delivery, total_amount, po_status, created_by, created_at, updated_at) 
                                VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
                 $insert_stmt = $conn->prepare($insert_query);
-                $insert_stmt->bind_param("ssssdsi", $po_number, $supplier_name, $order_date, $expected_delivery, $total_amount, $po_status, $branch_id);
-            } else {
-                $insert_query = "INSERT INTO purchase_orders (po_number, supplier_name, order_date, expected_delivery, total_amount, po_status, created_at, updated_at) 
-                               VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())";
-                $insert_stmt = $conn->prepare($insert_query);
-                $insert_stmt->bind_param("ssssds", $po_number, $supplier_name, $order_date, $expected_delivery, $total_amount, $po_status);
+                $insert_stmt->bind_param("ssssdsi", $po_number, $supplier_name, $order_date, $expected_delivery, $total_amount, $po_status, $created_by);
             }
             
             if (!$insert_stmt->execute()) {
-                throw new Exception('Failed to create purchase order');
+                throw new Exception('Failed to create purchase order: ' . $insert_stmt->error);
             }
             
             $po_id = $conn->insert_id;
+            
+            // Add items if provided
+            if (isset($_POST['items']) && !empty($_POST['items'])) {
+                $items = json_decode($_POST['items'], true);
+                if (is_array($items) && count($items) > 0) {
+                    foreach ($items as $item) {
+                        $item_id = (int)$item['item_id'];
+                        $quantity = (int)$item['quantity'];
+                        $unit_price = (float)$item['unit_price'];
+                        
+                        $item_query = "INSERT INTO purchase_order_items (po_id, item_id, quantity_ordered, unit_price) 
+                                      VALUES (?, ?, ?, ?)";
+                        $item_stmt = $conn->prepare($item_query);
+                        $item_stmt->bind_param("iiid", $po_id, $item_id, $quantity, $unit_price);
+                        
+                        if (!$item_stmt->execute()) {
+                            throw new Exception('Failed to add item: ' . $item_stmt->error);
+                        }
+                    }
+                }
+            }
             
             $conn->commit();
             
@@ -80,7 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             exit;
         }
         
-        // UPDATE PURCHASE ORDER
+        // UPDATE PURCHASE ORDER (INCLUDES RECEIVED STATUS)
         elseif ($_POST['action'] === 'update_po') {
             $po_id = (int)$_POST['po_id'];
             $supplier_name = $_POST['supplier_name'];
@@ -102,6 +131,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
             }
             
+            // Get current PO status before update
+            $status_query = "SELECT po_status FROM purchase_orders WHERE po_id = ?";
+            $status_stmt = $conn->prepare($status_query);
+            $status_stmt->bind_param("i", $po_id);
+            $status_stmt->execute();
+            $status_result = $status_stmt->get_result();
+            $current_po = $status_result->fetch_assoc();
+            $old_status = $current_po['po_status'];
+            
+            // Update the purchase order
             $update_query = "UPDATE purchase_orders 
                            SET supplier_name = ?, order_date = ?, expected_delivery = ?, total_amount = ?, po_status = ?, updated_at = NOW() 
                            WHERE po_id = ?";
@@ -109,14 +148,76 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $update_stmt->bind_param("sssdsi", $supplier_name, $order_date, $expected_delivery, $total_amount, $po_status, $po_id);
             
             if (!$update_stmt->execute()) {
-                throw new Exception('Failed to update purchase order');
+                throw new Exception('Failed to update purchase order: ' . $update_stmt->error);
+            }
+            
+            // If status changed to 'received', update inventory
+            if ($po_status === 'received' && $old_status !== 'received') {
+                // Get all items from this PO
+                $items_query = "SELECT poi.item_id, poi.quantity_ordered, poi.unit_price, i.item_name 
+                               FROM purchase_order_items poi
+                               JOIN items i ON poi.item_id = i.item_id
+                               WHERE poi.po_id = ?";
+                $items_stmt = $conn->prepare($items_query);
+                $items_stmt->bind_param("i", $po_id);
+                $items_stmt->execute();
+                $items_result = $items_stmt->get_result();
+                
+                while ($item = $items_result->fetch_assoc()) {
+                    $item_id = $item['item_id'];
+                    $quantity = $item['quantity_ordered'];
+                    
+                    // Check if inventory record exists for this branch and item
+                    $inv_query = "SELECT inventory_id, quantity_on_hand FROM inventory WHERE branch_id = ? AND item_id = ?";
+                    $inv_stmt = $conn->prepare($inv_query);
+                    $inv_stmt->bind_param("ii", $branch_id, $item_id);
+                    $inv_stmt->execute();
+                    $inv_result = $inv_stmt->get_result();
+                    
+                    if ($inv_result->num_rows > 0) {
+                        // Update existing inventory
+                        $inv_row = $inv_result->fetch_assoc();
+                        $new_quantity = $inv_row['quantity_on_hand'] + $quantity;
+                        
+                        $update_inv_query = "UPDATE inventory 
+                                           SET quantity_on_hand = ?, last_updated_by = ?, updated_at = NOW() 
+                                           WHERE inventory_id = ?";
+                        $update_inv_stmt = $conn->prepare($update_inv_query);
+                        $update_inv_stmt->bind_param("iii", $new_quantity, $user_id, $inv_row['inventory_id']);
+                        
+                        if (!$update_inv_stmt->execute()) {
+                            throw new Exception('Failed to update inventory for item: ' . $item['item_name']);
+                        }
+                    } else {
+                        // Create new inventory record
+                        $insert_inv_query = "INSERT INTO inventory (branch_id, item_id, quantity_on_hand, quantity_reserved, last_updated_by, updated_at) 
+                                           VALUES (?, ?, ?, 0, ?, NOW())";
+                        $insert_inv_stmt = $conn->prepare($insert_inv_query);
+                        $insert_inv_stmt->bind_param("iiii", $branch_id, $item_id, $quantity, $user_id);
+                        
+                        if (!$insert_inv_stmt->execute()) {
+                            throw new Exception('Failed to create inventory record for item: ' . $item['item_name']);
+                        }
+                    }
+                    
+                    // Record inventory transaction
+                    $trans_query = "INSERT INTO inventory_transactions 
+                                   (branch_id, item_id, transaction_type, quantity_changed, reference_type, reference_id, created_by, created_at) 
+                                   VALUES (?, ?, 'in', ?, 'purchase_order', ?, ?, NOW())";
+                    $trans_stmt = $conn->prepare($trans_query);
+                    $trans_stmt->bind_param("iiiii", $branch_id, $item_id, $quantity, $po_id, $user_id);
+                    
+                    if (!$trans_stmt->execute()) {
+                        throw new Exception('Failed to record inventory transaction for item: ' . $item['item_name']);
+                    }
+                }
             }
             
             $conn->commit();
             
             echo json_encode([
                 'success' => true,
-                'message' => 'Purchase order updated successfully'
+                'message' => 'Purchase order updated successfully' . ($po_status === 'received' ? ' and inventory updated' : '')
             ]);
             exit;
         }
@@ -138,6 +239,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
             }
             
+            // Check if PO is already received - cannot delete received POs
+            $status_query = "SELECT po_status FROM purchase_orders WHERE po_id = ?";
+            $status_stmt = $conn->prepare($status_query);
+            $status_stmt->bind_param("i", $po_id);
+            $status_stmt->execute();
+            $status_result = $status_stmt->get_result();
+            $po_data = $status_result->fetch_assoc();
+            
+            if ($po_data['po_status'] === 'received') {
+                throw new Exception('Cannot delete a received purchase order');
+            }
+            
             // Delete order items first
             $delete_items_query = "DELETE FROM purchase_order_items WHERE po_id = ?";
             $delete_items_stmt = $conn->prepare($delete_items_query);
@@ -150,7 +263,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $delete_order_stmt->bind_param("i", $po_id);
             
             if (!$delete_order_stmt->execute()) {
-                throw new Exception('Failed to delete purchase order');
+                throw new Exception('Failed to delete purchase order: ' . $delete_order_stmt->error);
             }
             
             $conn->commit();
@@ -171,10 +284,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 SELECT 
                     po.*,
                     b.branch_name,
+                    CONCAT(u.first_name, ' ', u.last_name) as created_by_name,
                     COUNT(poi.po_item_id) as total_items,
-                    SUM(poi.quantity_ordered) as total_quantity
+                    IFNULL(SUM(poi.quantity_ordered), 0) as total_quantity
                 FROM purchase_orders po
                 LEFT JOIN branches b ON po.branch_id = b.branch_id
+                LEFT JOIN users u ON po.created_by = u.user_id
                 LEFT JOIN purchase_order_items poi ON po.po_id = poi.po_id
                 WHERE po.po_id = ?
             ";
@@ -203,6 +318,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     FROM purchase_order_items poi
                     JOIN items i ON poi.item_id = i.item_id
                     WHERE poi.po_id = ?
+                    ORDER BY poi.po_item_id
                 ";
                 $items_stmt = $conn->prepare($items_query);
                 $items_stmt->bind_param("i", $po_id);
@@ -241,13 +357,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
             }
             
-            $insert_query = "INSERT INTO purchase_order_items (po_id, item_id, quantity_ordered, unit_price, created_at) 
-                           VALUES (?, ?, ?, ?, NOW())";
+            // Check if PO is already received - cannot add items to received POs
+            $status_query = "SELECT po_status FROM purchase_orders WHERE po_id = ?";
+            $status_stmt = $conn->prepare($status_query);
+            $status_stmt->bind_param("i", $po_id);
+            $status_stmt->execute();
+            $status_result = $status_stmt->get_result();
+            $po_data = $status_result->fetch_assoc();
+            
+            if ($po_data['po_status'] === 'received') {
+                throw new Exception('Cannot add items to a received purchase order');
+            }
+            
+            $insert_query = "INSERT INTO purchase_order_items (po_id, item_id, quantity_ordered, unit_price) 
+                           VALUES (?, ?, ?, ?)";
             $insert_stmt = $conn->prepare($insert_query);
             $insert_stmt->bind_param("iiid", $po_id, $item_id, $quantity_ordered, $unit_price);
             
             if (!$insert_stmt->execute()) {
-                throw new Exception('Failed to add item to purchase order');
+                throw new Exception('Failed to add item to purchase order: ' . $insert_stmt->error);
             }
             
             // Update PO total amount
@@ -285,12 +413,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
             }
             
+            // Check if PO is already received - cannot delete items from received POs
+            $status_query = "SELECT po_status FROM purchase_orders WHERE po_id = ?";
+            $status_stmt = $conn->prepare($status_query);
+            $status_stmt->bind_param("i", $po_id);
+            $status_stmt->execute();
+            $status_result = $status_stmt->get_result();
+            $po_data = $status_result->fetch_assoc();
+            
+            if ($po_data['po_status'] === 'received') {
+                throw new Exception('Cannot delete items from a received purchase order');
+            }
+            
             $delete_query = "DELETE FROM purchase_order_items WHERE po_item_id = ?";
             $delete_stmt = $conn->prepare($delete_query);
             $delete_stmt->bind_param("i", $po_item_id);
             
             if (!$delete_stmt->execute()) {
-                throw new Exception('Failed to delete item');
+                throw new Exception('Failed to delete item: ' . $delete_stmt->error);
             }
             
             // Update PO total amount
@@ -333,11 +473,14 @@ $po_query = "
         po.branch_id,
         po.created_at,
         po.updated_at,
+        po.created_by,
         b.branch_name,
+        CONCAT(u.first_name, ' ', u.last_name) as created_by_name,
         COUNT(poi.po_item_id) as total_items,
         IFNULL(SUM(poi.quantity_ordered), 0) as total_quantity
     FROM purchase_orders po
     LEFT JOIN branches b ON po.branch_id = b.branch_id
+    LEFT JOIN users u ON po.created_by = u.user_id
     LEFT JOIN purchase_order_items poi ON po.po_id = poi.po_id
     WHERE 1=1
     $po_branch_condition
@@ -345,16 +488,38 @@ $po_query = "
     ORDER BY po.created_at DESC, po.po_id DESC
 ";
 $po_result = $conn->query($po_query);
-$purchase_orders = $po_result->fetch_all(MYSQLI_ASSOC);
 
-// FETCH ALL ITEMS FOR DROPDOWN - BRANCH SPECIFIC
-$items_query = "SELECT item_id, item_code, item_name, unit_price, unit_type, stock 
-                FROM items 
-                WHERE status = 'active' 
-                $items_branch_condition 
-                ORDER BY item_name";
+if (!$po_result) {
+    $purchase_orders = [];
+    error_log("PO Query Error: " . $conn->error);
+} else {
+    $purchase_orders = $po_result->fetch_all(MYSQLI_ASSOC);
+}
+
+// FETCH ALL ITEMS FOR DROPDOWN - BRANCH SPECIFIC WITH ALL PRICE COLUMNS
+$items_query = "SELECT 
+    item_id, 
+    item_code, 
+    item_name, 
+    unit_type,
+    unit_price as price_piece,
+    price_case,
+    price_inner_pack,
+    price_box,
+    price_carton,
+    stock 
+FROM items 
+WHERE status = 'active' 
+$items_branch_condition 
+ORDER BY item_name";
 $items_result = $conn->query($items_query);
-$items_list = $items_result->fetch_all(MYSQLI_ASSOC);
+
+if (!$items_result) {
+    $items_list = [];
+    error_log("Items Query Error: " . $conn->error);
+} else {
+    $items_list = $items_result->fetch_all(MYSQLI_ASSOC);
+}
 
 // CALCULATE STATISTICS FROM REAL DATA (branch-specific)
 $total_po = count($purchase_orders);
@@ -368,7 +533,7 @@ $cancelled_po = count(array_filter($purchase_orders, fn($po) => $po['po_status']
 $statTotalPO = $total_po;
 $statProcessingPO = $submitted_po + $approved_po;
 $statDeliveredPO = $received_po;
-$statReturnedPO = 0;
+$statReturnedPO = $cancelled_po;
 
 // Get unique suppliers for filter - branch specific (only if column exists)
 $suppliers_query = "SELECT DISTINCT supplier_name FROM purchase_orders 
@@ -381,7 +546,7 @@ if ($po_branch_column_exists && !$view_all_branches) {
 
 $suppliers_query .= " ORDER BY supplier_name";
 $suppliers_result = $conn->query($suppliers_query);
-$suppliers = $suppliers_result->fetch_all(MYSQLI_ASSOC);
+$suppliers = $suppliers_result ? $suppliers_result->fetch_all(MYSQLI_ASSOC) : [];
 
 // Helper function for PO status badge
 function getPOStatusClass($status) {
@@ -535,7 +700,7 @@ function formatDateTime($dateStr) {
             font-size: 14px;
         }
         
-        /* Table wrapper - adds margins on both sides */
+        /* Table wrapper */
         .table-wrapper {
             margin: 0 0 30px 0;
             width: 100%;
@@ -558,7 +723,7 @@ function formatDateTime($dateStr) {
             table-layout: fixed;
         }
         
-        /* Column width definitions - CHECKBOX COLUMN REMOVED */
+        /* Column width definitions */
         .col-po { width: 11%; }
         .col-supplier { width: 13%; }
         .col-date { width: 10%; }
@@ -733,6 +898,135 @@ function formatDateTime($dateStr) {
             color: #212529;
         }
         
+        /* Items table styling */
+        .items-table {
+            font-size: 13px;
+        }
+        
+        .items-table th {
+            background-color: #e9ecef;
+            font-weight: 600;
+        }
+        
+        /* New PO items section */
+        .po-items-section {
+            margin-top: 20px;
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 15px;
+            background-color: #f8f9fa;
+        }
+        
+        .po-item-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 10px;
+            background-color: white;
+            border-radius: 4px;
+            border: 1px solid #dee2e6;
+            flex-wrap: wrap;
+        }
+        
+        .po-item-row .item-number {
+            flex: 0 0 40px;
+            font-weight: 600;
+            color: #0d6efd;
+            text-align: center;
+            font-size: 14px;
+        }
+        
+        .po-item-row .item-select {
+            flex: 3;
+            min-width: 200px;
+        }
+        
+        .po-item-row .unit-select {
+            flex: 1.5;
+            min-width: 120px;
+        }
+        
+        .po-item-row .quantity-container {
+            flex: 1.5;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            min-width: 120px;
+        }
+        
+        .po-item-row .quantity-container .item-quantity {
+            width: 70px;
+            text-align: center;
+            padding: 6px 4px;
+            -moz-appearance: textfield;
+        }
+        
+        .po-item-row .quantity-container .item-quantity::-webkit-outer-spin-button,
+        .po-item-row .quantity-container .item-quantity::-webkit-inner-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        
+        .po-item-row .quantity-container .quantity-btn {
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 16px;
+            border: 1px solid #ced4da;
+            background-color: #f8f9fa;
+            cursor: pointer;
+        }
+        
+        .po-item-row .quantity-container .quantity-btn:hover {
+            background-color: #e9ecef;
+        }
+        
+        .po-item-row .quantity-container .quantity-btn:active {
+            background-color: #dee2e6;
+        }
+        
+        .po-item-row .unit-price-display {
+            flex: 1;
+            min-width: 100px;
+            padding: 8px;
+            background-color: #e9ecef;
+            border-radius: 4px;
+            font-weight: 600;
+            text-align: right;
+        }
+        
+        .po-item-row .item-subtotal {
+            flex: 1;
+            min-width: 100px;
+            padding: 8px;
+            background-color: #d1e7dd;
+            border-radius: 4px;
+            font-weight: 600;
+            color: #0a3622;
+            text-align: right;
+        }
+        
+        .remove-item-btn {
+            flex: 0 0 40px;
+        }
+        
+        /* Item count badge */
+        .item-count-badge {
+            display: inline-block;
+            background-color: #0d6efd;
+            color: white;
+            border-radius: 20px;
+            padding: 2px 10px;
+            font-size: 12px;
+            font-weight: 500;
+            margin-left: 10px;
+        }
+        
         /* Text alignment utilities */
         .text-center {
             text-align: center;
@@ -815,7 +1109,7 @@ function formatDateTime($dateStr) {
                     <li class="nav-item">
                         <a class="nav-link" href="drivers.php">
                             <i class="bi bi-truck"></i>
-                            <span class="nav-text">Drivers</span>
+                            <span class="nav-text">Users</span>
                         </a>
                     </li>
                     <li class="nav-item">
@@ -856,7 +1150,6 @@ function formatDateTime($dateStr) {
                         <h2>Purchase Orders</h2>
                         <p id="dashboardSubtitle">
                             Manage and track all purchase orders
-                            
                         </p>
                     </div>
                 </div>
@@ -902,7 +1195,7 @@ function formatDateTime($dateStr) {
                     </div>
                 <?php endif; ?>
 
-                <!-- Stats Section - WITH PROPER ICONS -->
+                <!-- Stats Section -->
                 <div class="stats-row">
                     <div class="stat-card total">
                         <div class="stat-icon">
@@ -936,11 +1229,11 @@ function formatDateTime($dateStr) {
                     </div>
                     <div class="stat-card rejected">
                         <div class="stat-icon">
-                            <i class="bi bi-arrow-return-left"></i>
+                            <i class="bi bi-x-circle"></i>
                         </div>
                         <div class="stat-content">
                             <div class="stat-value" id="returnedPO"><?= $statReturnedPO ?></div>
-                            <div class="stat-label">Returned</div>
+                            <div class="stat-label">Cancelled</div>
                         </div>
                     </div>
                 </div>
@@ -991,8 +1284,15 @@ function formatDateTime($dateStr) {
                         $branches = array_unique(array_column($purchase_orders, 'branch_id'));
                         foreach ($branches as $bid):
                             if (!empty($bid)):
+                                $branch_name = '';
+                                foreach ($purchase_orders as $po) {
+                                    if ($po['branch_id'] == $bid && !empty($po['branch_name'])) {
+                                        $branch_name = $po['branch_name'];
+                                        break;
+                                    }
+                                }
                         ?>
-                        <option value="<?= $bid ?>">Branch <?= $bid ?></option>
+                        <option value="<?= $bid ?>"><?= htmlspecialchars($branch_name ?: 'Branch ' . $bid) ?></option>
                         <?php 
                             endif;
                         endforeach; 
@@ -1007,7 +1307,7 @@ function formatDateTime($dateStr) {
                     
                     <div class="filter-buttons">
                         <button class="btn btn-outline-success" onclick="exportToExcel()">
-                            <i class="bi bi-file-earmark-excel me-1"></i> Export to Excel
+                            <i class="bi bi-file-earmark-excel me-1"></i> Export
                         </button>
                         <button class="btn btn-primary" onclick="showNewPOModal()">
                             <i class="bi bi-plus-circle me-1"></i> New PO
@@ -1015,7 +1315,7 @@ function formatDateTime($dateStr) {
                     </div>
                 </div>
 
-                <!-- Table Container - WITHOUT CHECKBOX COLUMN -->
+                <!-- Table Container -->
                 <div class="table-wrapper">
                     <div class="table-container">
                         <table class="table po-table" id="poTable">
@@ -1074,7 +1374,7 @@ function formatDateTime($dateStr) {
                                                 </span>
                                             </td>
                                         <?php endif; ?>
-                                        <td class="col-items"><?= $po['total_items'] ?? 0 ?></td>
+                                        <td class="col-items"><?= number_format($po['total_items'] ?? 0) ?></td>
                                         <td class="col-qty"><?= number_format($po['total_quantity'] ?? 0) ?></td>
                                         <td class="col-amount">₱<?= number_format($po['total_amount'] ?? 0, 2) ?></td>
                                         <td class="col-status">
@@ -1123,7 +1423,7 @@ function formatDateTime($dateStr) {
 
     <!-- NEW PO MODAL -->
     <div class="modal fade" id="newPOModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
+        <div class="modal-dialog modal-xl">
             <div class="modal-content">
                 <div class="modal-header bg-primary text-white">
                     <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>Create New Purchase Order</h5>
@@ -1159,9 +1459,44 @@ function formatDateTime($dateStr) {
                                 <label for="expectedDelivery" class="form-label">Expected Delivery</label>
                                 <input type="date" class="form-control" id="expectedDelivery">
                             </div>
-                            <div class="col-md-6">
-                                <label for="poTotalAmount" class="form-label">Total Amount *</label>
-                                <input type="number" class="form-control" id="poTotalAmount" min="0" step="0.01" value="0" required>
+                        </div>
+                        
+                        <!-- Items Section -->
+                        <div class="po-items-section mt-4">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h5 class="mb-0">
+                                    <i class="bi bi-box-seam me-2"></i>Order Items
+                                    <span class="item-count-badge" id="itemCount">0</span>
+                                </h5>
+                                <button type="button" class="btn btn-sm btn-success" onclick="addItemRow()">
+                                    <i class="bi bi-plus-circle"></i> Add Item
+                                </button>
+                            </div>
+                            
+                            <div id="itemsContainer">
+                                <!-- Item rows will be added here dynamically -->
+                            </div>
+                            
+                            <div class="row mt-3">
+                                <div class="col-md-6 offset-md-6">
+                                    <div class="card bg-light">
+                                        <div class="card-body">
+                                            <div class="d-flex justify-content-between">
+                                                <span class="fw-bold">Total Amount:</span>
+                                                <span class="fw-bold fs-5" id="totalAmountDisplay">₱0.00</span>
+                                            </div>
+                                            <div class="d-flex justify-content-between mt-2 text-muted">
+                                                <span>Total Items:</span>
+                                                <span id="totalItemsDisplay">0</span>
+                                            </div>
+                                            <div class="d-flex justify-content-between text-muted">
+                                                <span>Total Quantity:</span>
+                                                <span id="totalQuantityDisplay">0</span>
+                                            </div>
+                                            <input type="hidden" id="totalAmount" name="total_amount" value="0">
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
                         </div>
                         
@@ -1171,11 +1506,6 @@ function formatDateTime($dateStr) {
                                 No items available for your branch. You can still create the PO and add items later.
                             </div>
                         <?php endif; ?>
-                        
-                        <div class="alert alert-info mt-3">
-                            <i class="bi bi-info-circle me-2"></i>
-                            You can add items to this purchase order after creation.
-                        </div>
                     </form>
                 </div>
                 <div class="modal-footer">
@@ -1188,7 +1518,7 @@ function formatDateTime($dateStr) {
 
     <!-- VIEW PO MODAL -->
     <div class="modal fade" id="viewPOModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
+        <div class="modal-dialog modal-xl">
             <div class="modal-content">
                 <div class="modal-header bg-info text-white">
                     <h5 class="modal-title"><i class="bi bi-eye me-2"></i>Purchase Order Details</h5>
@@ -1274,6 +1604,60 @@ function formatDateTime($dateStr) {
         </div>
     </div>
 
+    <!-- ADD ITEM MODAL -->
+    <div class="modal fade" id="addItemModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>Add Item to PO</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="addItemForm">
+                        <input type="hidden" id="addItemPOId">
+                        
+                        <div class="mb-3">
+                            <label for="itemSelect" class="form-label">Select Item *</label>
+                            <select class="form-select" id="itemSelect" required>
+                                <option value="">-- Select Item --</option>
+                                <?php foreach ($items_list as $item): ?>
+                                <option value="<?= $item['item_id'] ?>" 
+                                        data-price-piece="<?= $item['price_piece'] ?>"
+                                        data-price-case="<?= $item['price_case'] ?? 0 ?>"
+                                        data-price-inner="<?= $item['price_inner_pack'] ?? 0 ?>"
+                                        data-price-box="<?= $item['price_box'] ?? 0 ?>"
+                                        data-price-carton="<?= $item['price_carton'] ?? 0 ?>"
+                                        data-code="<?= htmlspecialchars($item['item_code']) ?>"
+                                        data-stock="<?= $item['stock'] ?>">
+                                    <?= htmlspecialchars($item['item_code'] . ' - ' . $item['item_name']) ?>
+                                </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="itemQuantity" class="form-label">Quantity *</label>
+                            <input type="number" class="form-control" id="itemQuantity" min="1" value="1" required>
+                        </div>
+                        
+                        <div class="mb-3">
+                            <label for="itemUnitPrice" class="form-label">Unit Price (₱) *</label>
+                            <input type="number" class="form-control" id="itemUnitPrice" min="0" step="0.01" required>
+                        </div>
+                        
+                        <div class="alert alert-info" id="itemSubtotal" style="display: none;">
+                            Subtotal: ₱<span id="subtotalAmount">0.00</span>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-success" onclick="addItemToPO()">Add Item</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- DELETE CONFIRMATION MODAL -->
     <div class="modal fade" id="deletePOModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
@@ -1298,6 +1682,26 @@ function formatDateTime($dateStr) {
         </div>
     </div>
 
+    <!-- DELETE ITEM CONFIRMATION MODAL -->
+    <div class="modal fade" id="deleteItemModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title"><i class="bi bi-trash me-2"></i>Confirm Delete Item</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to remove this item from the purchase order?</p>
+                    <p class="fw-bold" id="deleteItemName"></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" onclick="confirmDeleteItem()">Delete Item</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- jQuery and Select2 JS -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
@@ -1307,6 +1711,9 @@ function formatDateTime($dateStr) {
     <script>
     // ========== GLOBAL VARIABLES ==========
     let currentPOId = null;
+    let currentItemId = null;
+    let currentPOData = null;
+    let itemCounter = 0;
     let itemsList = <?= json_encode($items_list) ?>;
     const branchId = <?php echo $branch_id; ?>;
     const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
@@ -1369,6 +1776,261 @@ function formatDateTime($dateStr) {
         });
     }
 
+    // ========== ITEM MANAGEMENT FUNCTIONS ==========
+    function addItemRow() {
+        if (itemsList.length === 0) {
+            Swal.fire('Warning', 'No items available to add', 'warning');
+            return;
+        }
+        
+        itemCounter++;
+        const container = document.getElementById('itemsContainer');
+        const itemId = `item_${itemCounter}`;
+        
+        let options = '<option value="">-- Select Item --</option>';
+        itemsList.forEach(item => {
+            options += `<option value="${item.item_id}" 
+                data-price-piece="${item.price_piece}"
+                data-price-case="${item.price_case || 0}"
+                data-price-inner="${item.price_inner_pack || 0}"
+                data-price-box="${item.price_box || 0}"
+                data-price-carton="${item.price_carton || 0}"
+                data-code="${item.item_code}" 
+                data-name="${item.item_name}">
+                ${item.item_code} - ${item.item_name}
+            </option>`;
+        });
+        
+        const itemRow = document.createElement('div');
+        itemRow.className = 'po-item-row';
+        itemRow.id = itemId;
+        itemRow.innerHTML = `
+            <div class="item-number">#${itemCounter}</div>
+            <select class="form-select item-select" onchange="updateItemDetails(this)" required>
+                ${options}
+            </select>
+            <select class="form-select unit-select" onchange="updateUnitPrice(this)" style="flex: 1.5;">
+                <option value="piece">Piece (pc)</option>
+                <option value="case">Case (cs)</option>
+                <option value="inner-pack">Inner Pack (ip)</option>
+                <option value="box">Box (bx)</option>
+                <option value="carton">Carton (ctn)</option>
+            </select>
+            <div class="quantity-container">
+                <button type="button" class="btn btn-sm btn-outline-secondary quantity-btn" onclick="decrementQuantity(this)">-</button>
+                <input type="number" class="form-control item-quantity" min="1" value="1" onchange="updateItemSubtotal(this)" required>
+                <button type="button" class="btn btn-sm btn-outline-secondary quantity-btn" onclick="incrementQuantity(this)">+</button>
+            </div>
+            <div class="unit-price-display">
+                ₱<span class="price-value">0.00</span>
+            </div>
+            <div class="item-subtotal">
+                ₱0.00
+            </div>
+            <button type="button" class="btn btn-sm btn-outline-danger remove-item-btn" onclick="removeItemRow(this)">
+                <i class="bi bi-trash"></i>
+            </button>
+        `;
+        
+        container.appendChild(itemRow);
+        
+        // Initialize Select2 for this row
+        $(`#${itemId} .item-select`).select2({
+            dropdownParent: $('#newPOModal'),
+            width: '100%',
+            templateResult: formatItemOption,
+            templateSelection: formatItemSelection
+        });
+        
+        updateItemCount();
+    }
+    
+    // Format item options in Select2
+    function formatItemOption(item) {
+        if (!item.id) return item.text;
+        
+        const element = $(item.element);
+        const itemName = element.text();
+        const prices = [];
+        
+        const pricePiece = parseFloat(element.data('price-piece')) || 0;
+        const priceCase = parseFloat(element.data('price-case')) || 0;
+        const priceInner = parseFloat(element.data('price-inner')) || 0;
+        const priceBox = parseFloat(element.data('price-box')) || 0;
+        const priceCarton = parseFloat(element.data('price-carton')) || 0;
+        
+        if (pricePiece > 0) prices.push(`Pc: ₱${pricePiece.toFixed(2)}`);
+        if (priceCase > 0) prices.push(`Cs: ₱${priceCase.toFixed(2)}`);
+        if (priceInner > 0) prices.push(`Ip: ₱${priceInner.toFixed(2)}`);
+        if (priceBox > 0) prices.push(`Bx: ₱${priceBox.toFixed(2)}`);
+        if (priceCarton > 0) prices.push(`Ctn: ₱${priceCarton.toFixed(2)}`);
+        
+        return $('<div><strong>' + itemName + '</strong><br><small class="text-muted">' + prices.join(' | ') + '</small></div>');
+    }
+
+    function formatItemSelection(item) {
+        return item.text.split(' - ')[1] || item.text;
+    }
+
+    function updateItemDetails(select) {
+        const row = select.closest('.po-item-row');
+        const selected = select.options[select.selectedIndex];
+        
+        // Store all price data in the row's dataset
+        row.dataset.pricePiece = selected.dataset.pricePiece || 0;
+        row.dataset.priceCase = selected.dataset.priceCase || 0;
+        row.dataset.priceInner = selected.dataset.priceInner || 0;
+        row.dataset.priceBox = selected.dataset.priceBox || 0;
+        row.dataset.priceCarton = selected.dataset.priceCarton || 0;
+        
+        // Update unit price based on selected unit
+        updateUnitPrice(row.querySelector('.unit-select'));
+    }
+
+    function updateUnitPrice(select) {
+        const row = select.closest('.po-item-row');
+        const unit = select.value;
+        let price = 0;
+        
+        // Get price based on selected unit
+        switch(unit) {
+            case 'piece':
+                price = parseFloat(row.dataset.pricePiece) || 0;
+                break;
+            case 'case':
+                price = parseFloat(row.dataset.priceCase) || 0;
+                break;
+            case 'inner-pack':
+                price = parseFloat(row.dataset.priceInner) || 0;
+                break;
+            case 'box':
+                price = parseFloat(row.dataset.priceBox) || 0;
+                break;
+            case 'carton':
+                price = parseFloat(row.dataset.priceCarton) || 0;
+                break;
+        }
+        
+        // Store selected unit and price for later use
+        row.dataset.selectedUnit = unit;
+        row.dataset.unitPrice = price;
+        
+        // Display the unit price
+        const priceDisplay = row.querySelector('.price-value');
+        if (priceDisplay) {
+            priceDisplay.textContent = price.toFixed(2);
+        }
+        
+        updateItemSubtotal(row.querySelector('.item-quantity'));
+    }
+    
+    // Increment quantity
+    function incrementQuantity(button) {
+        const container = button.closest('.quantity-container');
+        const input = container.querySelector('.item-quantity');
+        const currentValue = parseInt(input.value) || 1;
+        input.value = currentValue + 1;
+        updateItemSubtotal(input);
+    }
+
+    // Decrement quantity
+    function decrementQuantity(button) {
+        const container = button.closest('.quantity-container');
+        const input = container.querySelector('.item-quantity');
+        const currentValue = parseInt(input.value) || 1;
+        if (currentValue > 1) {
+            input.value = currentValue - 1;
+            updateItemSubtotal(input);
+        }
+    }
+    
+    function updateItemSubtotal(element) {
+        const row = element.closest('.po-item-row');
+        const quantity = parseFloat(row.querySelector('.item-quantity').value) || 0;
+        const unitPrice = parseFloat(row.dataset.unitPrice) || 0;
+        const subtotal = quantity * unitPrice;
+        
+        row.querySelector('.item-subtotal').textContent = `₱${subtotal.toFixed(2)}`;
+        
+        updateTotalAmount();
+    }
+    
+    function removeItemRow(button) {
+        const row = button.closest('.po-item-row');
+        
+        // Destroy Select2 instance before removing
+        const select = row.querySelector('.item-select');
+        if (select) {
+            $(select).select2('destroy');
+        }
+        
+        row.remove();
+        updateTotalAmount();
+        updateItemCount();
+        
+        // Renumber remaining items
+        const rows = document.querySelectorAll('.po-item-row');
+        rows.forEach((row, index) => {
+            const numberDiv = row.querySelector('.item-number');
+            if (numberDiv) {
+                numberDiv.textContent = `#${index + 1}`;
+            }
+        });
+    }
+    
+    function updateItemCount() {
+        const rows = document.querySelectorAll('.po-item-row');
+        const count = rows.length;
+        document.getElementById('itemCount').textContent = count;
+    }
+    
+    function updateTotalAmount() {
+        const rows = document.querySelectorAll('.po-item-row');
+        let total = 0;
+        let totalQty = 0;
+        let validItems = 0;
+        
+        rows.forEach(row => {
+            const select = row.querySelector('.item-select');
+            if (select && select.value) {
+                validItems++;
+                const quantity = parseFloat(row.querySelector('.item-quantity').value) || 0;
+                const unitPrice = parseFloat(row.dataset.unitPrice) || 0;
+                total += quantity * unitPrice;
+                totalQty += quantity;
+            }
+        });
+        
+        document.getElementById('totalAmountDisplay').textContent = `₱${total.toFixed(2)}`;
+        document.getElementById('totalAmount').value = total.toFixed(2);
+        document.getElementById('totalItemsDisplay').textContent = validItems;
+        document.getElementById('totalQuantityDisplay').textContent = totalQty;
+    }
+    
+    function getItemsData() {
+        const rows = document.querySelectorAll('.po-item-row');
+        const items = [];
+        
+        rows.forEach(row => {
+            const select = row.querySelector('.item-select');
+            const unitSelect = row.querySelector('.unit-select');
+            if (select && select.value) {
+                const quantity = parseInt(row.querySelector('.item-quantity').value) || 0;
+                const unitPrice = parseFloat(row.dataset.unitPrice) || 0;
+                const unit = row.dataset.selectedUnit || 'piece';
+                
+                items.push({
+                    item_id: select.value,
+                    quantity: quantity,
+                    unit: unit,
+                    unit_price: unitPrice
+                });
+            }
+        });
+        
+        return items;
+    }
+
     // ========== PURCHASE ORDER FUNCTIONS ==========
     document.addEventListener('DOMContentLoaded', function() {
         console.log("Purchase Orders - Live Database Mode");
@@ -1383,6 +2045,28 @@ function formatDateTime($dateStr) {
         const today = new Date();
         const formattedDate = today.toISOString().slice(0, 10);
         document.getElementById('orderDate').value = formattedDate;
+        
+        // Initialize Select2 for item dropdown if it exists
+        if (document.getElementById('itemSelect')) {
+            $('#itemSelect').select2({
+                dropdownParent: $('#addItemModal'),
+                width: '100%'
+            });
+        }
+        
+        // Item selection change handler
+        $('#itemSelect').on('change', function() {
+            const selected = $(this).find('option:selected');
+            const pricePiece = selected.data('price-piece');
+            if (pricePiece) {
+                document.getElementById('itemUnitPrice').value = pricePiece;
+                calculateSubtotal();
+            }
+        });
+        
+        // Quantity change handler
+        document.getElementById('itemQuantity')?.addEventListener('input', calculateSubtotal);
+        document.getElementById('itemUnitPrice')?.addEventListener('input', calculateSubtotal);
         
         // Mobile menu toggle
         document.getElementById('mobileMenuBtn').addEventListener('click', function() {
@@ -1452,6 +2136,15 @@ function formatDateTime($dateStr) {
             }
         });
     });
+
+    // Calculate subtotal
+    function calculateSubtotal() {
+        const quantity = parseFloat(document.getElementById('itemQuantity')?.value) || 0;
+        const price = parseFloat(document.getElementById('itemUnitPrice')?.value) || 0;
+        const subtotal = quantity * price;
+        document.getElementById('subtotalAmount').textContent = subtotal.toFixed(2);
+        document.getElementById('itemSubtotal').style.display = 'block';
+    }
 
     // Filter table function
     function filterTable() {
@@ -1525,11 +2218,29 @@ function formatDateTime($dateStr) {
         // Reset form
         document.getElementById('newPOForm').reset();
         
+        // Clear items container and destroy any Select2 instances
+        const itemsContainer = document.getElementById('itemsContainer');
+        const oldSelects = itemsContainer.querySelectorAll('.item-select');
+        oldSelects.forEach(select => {
+            if (select) {
+                $(select).select2('destroy');
+            }
+        });
+        itemsContainer.innerHTML = '';
+        itemCounter = 0;
+        
         // Set default date
         const today = new Date();
         const formattedDate = today.toISOString().slice(0, 10);
         document.getElementById('orderDate').value = formattedDate;
-        document.getElementById('poTotalAmount').value = 0;
+        
+        // Add at least one item row if items are available
+        <?php if (!empty($items_list)): ?>
+        addItemRow();
+        <?php endif; ?>
+        
+        updateItemCount();
+        updateTotalAmount();
         
         new bootstrap.Modal(document.getElementById('newPOModal')).show();
     }
@@ -1539,8 +2250,7 @@ function formatDateTime($dateStr) {
         const supplierName = document.getElementById('supplierName').value;
         const orderDate = document.getElementById('orderDate').value;
         const expectedDelivery = document.getElementById('expectedDelivery').value;
-        const totalAmount = document.getElementById('poTotalAmount').value;
-        const poStatus = document.getElementById('poStatus').value;
+        const items = getItemsData();
         
         if (!supplierName) {
             Swal.fire('Warning', 'Supplier Name is required', 'warning');
@@ -1552,10 +2262,16 @@ function formatDateTime($dateStr) {
             return;
         }
         
-        if (!totalAmount || totalAmount < 0) {
-            Swal.fire('Warning', 'Valid Total Amount is required', 'warning');
+        if (items.length === 0) {
+            Swal.fire('Warning', 'At least one item is required', 'warning');
             return;
         }
+        
+        // Calculate total from items
+        let totalAmount = 0;
+        items.forEach(item => {
+            totalAmount += item.quantity * item.unit_price;
+        });
         
         showLoading();
         
@@ -1564,8 +2280,9 @@ function formatDateTime($dateStr) {
         formData.append('supplier_name', supplierName);
         formData.append('order_date', orderDate);
         formData.append('expected_delivery', expectedDelivery);
-        formData.append('total_amount', totalAmount);
-        formData.append('po_status', poStatus);
+        formData.append('total_amount', totalAmount.toFixed(2));
+        formData.append('po_status', document.getElementById('poStatus').value);
+        formData.append('items', JSON.stringify(items));
         
         fetch('purchase_order.php', {
             method: 'POST',
@@ -1615,10 +2332,14 @@ function formatDateTime($dateStr) {
             if (data.success) {
                 const po = data.po;
                 const items = data.items || [];
+                currentPOData = po;
+                currentPOId = id;
                 
                 // Format dates
-                const orderDate = po.order_date ? new Date(po.order_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A';
-                const expectedDate = po.expected_delivery ? new Date(po.expected_delivery).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : 'N/A';
+                const orderDate = po.order_date ? new Date(po.order_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A';
+                const expectedDate = po.expected_delivery ? new Date(po.expected_delivery).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A';
+                const createdDate = po.created_at ? new Date(po.created_at).toLocaleString() : 'N/A';
+                const updatedDate = po.updated_at ? new Date(po.updated_at).toLocaleString() : 'N/A';
                 
                 let branchHtml = '';
                 if (po.branch_name) {
@@ -1633,18 +2354,78 @@ function formatDateTime($dateStr) {
                 // Build items table
                 let itemsHtml = '';
                 if (items.length > 0) {
-                    itemsHtml = '<h6 class="mt-4 mb-3">Order Items</h6><div class="table-responsive"><table class="table table-sm table-bordered"><thead><tr><th>Item Code</th><th>Item Name</th><th>Quantity</th><th>Unit Price</th><th>Subtotal</th></tr></thead><tbody>';
-                    items.forEach(item => {
+                    itemsHtml = `
+                        <div class="d-flex justify-content-between align-items-center mt-4 mb-3">
+                            <h6 class="fw-bold mb-0"><i class="bi bi-box-seam"></i> Order Items <span class="item-count-badge">${items.length}</span></h6>
+                            ${po.po_status !== 'received' && po.po_status !== 'cancelled' ? 
+                                '<button class="btn btn-sm btn-success" onclick="showAddItemModal(' + po.po_id + ')"><i class="bi bi-plus-circle"></i> Add Item</button>' : ''}
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered items-table">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Item Code</th>
+                                        <th>Item Name</th>
+                                        <th class="text-center">Quantity</th>
+                                        <th class="text-end">Unit Price</th>
+                                        <th class="text-end">Subtotal</th>
+                                        ${po.po_status !== 'received' && po.po_status !== 'cancelled' ? '<th class="text-center">Action</th>' : ''}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                    `;
+                    
+                    let totalQty = 0;
+                    let totalAmount = 0;
+                    
+                    items.forEach((item, index) => {
                         const subtotal = item.quantity_ordered * item.unit_price;
+                        totalQty += item.quantity_ordered;
+                        totalAmount += subtotal;
+                        
                         itemsHtml += `<tr>
-                            <td>${item.item_code}</td>
-                            <td>${item.item_name}</td>
+                            <td>${index + 1}</td>
+                            <td>${item.item_code || 'N/A'}</td>
+                            <td>${item.item_name || 'N/A'}</td>
                             <td class="text-center">${item.quantity_ordered}</td>
                             <td class="text-end">₱${Number(item.unit_price).toFixed(2)}</td>
                             <td class="text-end">₱${Number(subtotal).toFixed(2)}</td>
+                            ${po.po_status !== 'received' && po.po_status !== 'cancelled' ? 
+                                `<td class="text-center">
+                                    <button class="btn btn-sm btn-outline-danger" onclick="deleteItem(${item.po_item_id}, ${po.po_id}, '${item.item_name}')">
+                                        <i class="bi bi-trash"></i>
+                                    </button>
+                                </td>` : ''}
                         </tr>`;
                     });
-                    itemsHtml += '</tbody></table></div>';
+                    
+                    itemsHtml += `
+                                </tbody>
+                                <tfoot class="table-secondary">
+                                    <tr>
+                                        <th colspan="3" class="text-end">Totals:</th>
+                                        <th class="text-center">${totalQty}</th>
+                                        <th></th>
+                                        <th class="text-end">₱${Number(totalAmount).toFixed(2)}</th>
+                                        ${po.po_status !== 'received' && po.po_status !== 'cancelled' ? '<th></th>' : ''}
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    `;
+                } else {
+                    itemsHtml = `
+                        <div class="d-flex justify-content-between align-items-center mt-4 mb-3">
+                            <h6 class="fw-bold mb-0"><i class="bi bi-box-seam"></i> Order Items</h6>
+                            ${po.po_status !== 'received' && po.po_status !== 'cancelled' ? 
+                                '<button class="btn btn-sm btn-success" onclick="showAddItemModal(' + po.po_id + ')"><i class="bi bi-plus-circle"></i> Add Item</button>' : ''}
+                        </div>
+                        <div class="alert alert-info">
+                            <i class="bi bi-info-circle me-2"></i>
+                            No items added to this purchase order yet.
+                        </div>
+                    `;
                 }
                 
                 const content = document.getElementById('poDetailsContent');
@@ -1652,7 +2433,7 @@ function formatDateTime($dateStr) {
                     <div class="row">
                         <div class="col-md-6">
                             <div class="po-details-card">
-                                <h6 class="fw-bold mb-3">Purchase Order Information</h6>
+                                <h6 class="fw-bold mb-3"><i class="bi bi-receipt"></i> Purchase Order Information</h6>
                                 <table class="table table-sm table-borderless">
                                     <tr>
                                         <td width="40%" class="detail-label">PO Number:</td>
@@ -1680,7 +2461,7 @@ function formatDateTime($dateStr) {
                         </div>
                         <div class="col-md-6">
                             <div class="po-details-card">
-                                <h6 class="fw-bold mb-3">Order Summary</h6>
+                                <h6 class="fw-bold mb-3"><i class="bi bi-bar-chart"></i> Order Summary</h6>
                                 <table class="table table-sm table-borderless">
                                     <tr>
                                         <td width="40%" class="detail-label">Total Items:</td>
@@ -1695,12 +2476,16 @@ function formatDateTime($dateStr) {
                                         <td class="fw-bold fs-5">₱${Number(po.total_amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td>
                                     </tr>
                                     <tr>
+                                        <td class="detail-label">Created By:</td>
+                                        <td>${po.created_by_name || 'N/A'}</td>
+                                    </tr>
+                                    <tr>
                                         <td class="detail-label">Created At:</td>
-                                        <td>${po.created_at ? new Date(po.created_at).toLocaleString() : 'N/A'}</td>
+                                        <td>${createdDate}</td>
                                     </tr>
                                     <tr>
                                         <td class="detail-label">Last Updated:</td>
-                                        <td>${po.updated_at ? new Date(po.updated_at).toLocaleString() : 'N/A'}</td>
+                                        <td>${updatedDate}</td>
                                     </tr>
                                 </table>
                             </div>
@@ -1708,8 +2493,6 @@ function formatDateTime($dateStr) {
                     </div>
                     ${itemsHtml}
                 `;
-                
-                currentPOId = id;
                 
                 // Show/hide edit button based on status
                 const editBtn = document.getElementById('editFromViewBtn');
@@ -1849,6 +2632,126 @@ function formatDateTime($dateStr) {
         });
     }
 
+    // Show Add Item Modal
+    function showAddItemModal(poId) {
+        document.getElementById('addItemPOId').value = poId;
+        document.getElementById('addItemForm').reset();
+        document.getElementById('itemSubtotal').style.display = 'none';
+        
+        // Reset Select2
+        $('#itemSelect').val(null).trigger('change');
+        
+        new bootstrap.Modal(document.getElementById('addItemModal')).show();
+    }
+
+    // Add Item to PO
+    function addItemToPO() {
+        const poId = document.getElementById('addItemPOId').value;
+        const itemId = document.getElementById('itemSelect').value;
+        const quantity = document.getElementById('itemQuantity').value;
+        const unitPrice = document.getElementById('itemUnitPrice').value;
+        
+        if (!itemId) {
+            Swal.fire('Warning', 'Please select an item', 'warning');
+            return;
+        }
+        
+        if (!quantity || quantity <= 0) {
+            Swal.fire('Warning', 'Please enter a valid quantity', 'warning');
+            return;
+        }
+        
+        if (!unitPrice || unitPrice <= 0) {
+            Swal.fire('Warning', 'Please enter a valid unit price', 'warning');
+            return;
+        }
+        
+        showLoading();
+        
+        const formData = new FormData();
+        formData.append('action', 'add_po_item');
+        formData.append('po_id', poId);
+        formData.append('item_id', itemId);
+        formData.append('quantity_ordered', quantity);
+        formData.append('unit_price', unitPrice);
+        
+        fetch('purchase_order.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            Swal.close();
+            
+            if (data.success) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Success!',
+                    text: data.message,
+                    timer: 2000,
+                    showConfirmButton: false
+                }).then(() => {
+                    bootstrap.Modal.getInstance(document.getElementById('addItemModal')).hide();
+                    // Refresh the view modal
+                    viewPO(poId);
+                });
+            } else {
+                Swal.fire('Error', data.message, 'error');
+            }
+        })
+        .catch(error => {
+            Swal.close();
+            Swal.fire('Error', 'An error occurred while adding item', 'error');
+        });
+    }
+
+    // Delete Item
+    function deleteItem(itemId, poId, itemName) {
+        currentItemId = itemId;
+        currentPOId = poId;
+        document.getElementById('deleteItemName').textContent = itemName;
+        new bootstrap.Modal(document.getElementById('deleteItemModal')).show();
+    }
+
+    // Confirm Delete Item
+    function confirmDeleteItem() {
+        showLoading();
+        
+        const formData = new FormData();
+        formData.append('action', 'delete_po_item');
+        formData.append('po_item_id', currentItemId);
+        formData.append('po_id', currentPOId);
+        
+        fetch('purchase_order.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            Swal.close();
+            
+            if (data.success) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Deleted!',
+                    text: data.message,
+                    timer: 2000,
+                    showConfirmButton: false
+                }).then(() => {
+                    bootstrap.Modal.getInstance(document.getElementById('deleteItemModal')).hide();
+                    // Refresh the view modal
+                    viewPO(currentPOId);
+                });
+            } else {
+                Swal.fire('Error', data.message, 'error');
+            }
+        })
+        .catch(error => {
+            Swal.close();
+            Swal.fire('Error', 'An error occurred while deleting item', 'error');
+        });
+    }
+
     // Delete Purchase Order
     function deletePO(id) {
         const row = document.querySelector(`.po-row[data-id="${id}"]`);
@@ -1916,6 +2819,10 @@ function formatDateTime($dateStr) {
                         .po-details-card { background-color: #f8f9fa; border-radius: 8px; padding: 20px; margin-bottom: 20px; }
                         .detail-label { font-size: 12px; color: #6c757d; }
                         .detail-value { font-size: 16px; font-weight: 600; }
+                        .items-table { font-size: 13px; }
+                        @media print {
+                            .btn { display: none; }
+                        }
                     </style>
                 </head>
                 <body>

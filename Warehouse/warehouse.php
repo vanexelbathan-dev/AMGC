@@ -172,9 +172,6 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                     <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
                     <div class="user-details-sidebar">
                         <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-                        <?php if (!$view_all_branches): ?>
-                            <span class="user-branch-sidebar"><i class="bi bi-building"></i> <?php echo htmlspecialchars($branch_name); ?></span>
-                        <?php endif; ?>
                     </div>
                 </div>
                 <button class="logout-btn-sidebar" onclick="logout()">

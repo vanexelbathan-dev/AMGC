@@ -19,6 +19,38 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
     $items_branch_column_exists = true;
 }
 
+// Check if price columns exist
+$price_case_exists = false;
+$check_price_case = $conn->query("SHOW COLUMNS FROM items LIKE 'price_case'");
+if ($check_price_case && $check_price_case->num_rows > 0) {
+    $price_case_exists = true;
+}
+
+$price_inner_exists = false;
+$check_price_inner = $conn->query("SHOW COLUMNS FROM items LIKE 'price_inner_pack'");
+if ($check_price_inner && $check_price_inner->num_rows > 0) {
+    $price_inner_exists = true;
+}
+
+$price_box_exists = false;
+$check_price_box = $conn->query("SHOW COLUMNS FROM items LIKE 'price_box'");
+if ($check_price_box && $check_price_box->num_rows > 0) {
+    $price_box_exists = true;
+}
+
+$price_carton_exists = false;
+$check_price_carton = $conn->query("SHOW COLUMNS FROM items LIKE 'price_carton'");
+if ($check_price_carton && $check_price_carton->num_rows > 0) {
+    $price_carton_exists = true;
+}
+
+// Check if inventory_transactions table exists
+$inventory_transactions_exists = false;
+$check_inv_trans = $conn->query("SHOW TABLES LIKE 'inventory_transactions'");
+if ($check_inv_trans && $check_inv_trans->num_rows > 0) {
+    $inventory_transactions_exists = true;
+}
+
 // Function to generate unique item code
 function generateUniqueItemCode($conn) {
     // Try ITEM format first (ITEM001, ITEM002, etc.)
@@ -65,7 +97,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $category = !empty($_POST['category']) ? trim($_POST['category']) : null;
             $stock = (int)$_POST['stock'];
             $unit_type = $_POST['unit_type'] ?? 'piece';
-            $unit_price = 0.00; // Default for warehouse
+            $unit_price = 0.00; // Default for warehouse (prices set by sales/admin)
             $reorder_level = (int)$_POST['reorder_level'];
             $status = 'active';
             
@@ -82,13 +114,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception('Reorder level cannot be negative');
             }
             
-            // Insert with branch_id if column exists
+            // Insert with branch_id if column exists and price columns
             if ($items_branch_column_exists) {
-                $stmt = $conn->prepare("INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, reorder_level, status, branch_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
-                $stmt->bind_param("ssssisdisi", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status, $branch_id);
+                if ($price_case_exists) {
+                    $stmt = $conn->prepare("INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, price_case, price_inner_pack, price_box, price_carton, reorder_level, status, branch_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
+                    $stmt->bind_param("ssssisdddddisi", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $unit_price * 12, $unit_price * 6, $unit_price * 24, $unit_price * 48, $reorder_level, $status, $branch_id);
+                } else {
+                    $stmt = $conn->prepare("INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, reorder_level, status, branch_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
+                    $stmt->bind_param("ssssisdisi", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status, $branch_id);
+                }
             } else {
-                $stmt = $conn->prepare("INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, reorder_level, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
-                $stmt->bind_param("ssssisdis", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status);
+                if ($price_case_exists) {
+                    $stmt = $conn->prepare("INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, price_case, price_inner_pack, price_box, price_carton, reorder_level, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
+                    $stmt->bind_param("ssssisdddddis", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $unit_price * 12, $unit_price * 6, $unit_price * 24, $unit_price * 48, $reorder_level, $status);
+                } else {
+                    $stmt = $conn->prepare("INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, reorder_level, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
+                    $stmt->bind_param("ssssisdis", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status);
+                }
             }
             
             if (!$stmt->execute()) {
@@ -96,6 +138,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
             
             $item_id = $conn->insert_id;
+            
+            // Record inventory transaction if adding initial stock and table exists
+            if ($stock > 0 && $inventory_transactions_exists) {
+                $trans_query = "INSERT INTO inventory_transactions 
+                               (branch_id, item_id, transaction_type, quantity_changed, reference_type, reference_id, created_by, created_at) 
+                               VALUES (?, ?, 'in', ?, 'initial_stock', ?, ?, NOW())";
+                $trans_stmt = $conn->prepare($trans_query);
+                $trans_stmt->bind_param("iiiii", $branch_id, $item_id, $stock, $item_id, $user_id);
+                $trans_stmt->execute();
+            }
+            
             $conn->commit();
             
             $response['success'] = true;
@@ -140,6 +193,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception('Reorder level cannot be negative');
             }
             
+            // Get old stock to check for changes
+            $stock_query = "SELECT stock FROM items WHERE item_id = ?";
+            $stock_stmt = $conn->prepare($stock_query);
+            $stock_stmt->bind_param("i", $item_id);
+            $stock_stmt->execute();
+            $result = $stock_stmt->get_result();
+            $old_stock = $result->fetch_assoc()['stock'];
+            
             // Check if item exists
             $check = $conn->prepare("SELECT item_id FROM items WHERE item_id = ?");
             $check->bind_param("i", $item_id);
@@ -154,6 +215,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             if (!$stmt->execute()) {
                 throw new Exception('Failed to update item: ' . $stmt->error);
+            }
+            
+            // Record inventory transaction if stock changed and table exists
+            if ($stock != $old_stock && $inventory_transactions_exists) {
+                $quantity_changed = $stock - $old_stock;
+                $transaction_type = $quantity_changed > 0 ? 'in' : 'out';
+                $quantity_changed = abs($quantity_changed);
+                
+                $trans_query = "INSERT INTO inventory_transactions 
+                               (branch_id, item_id, transaction_type, quantity_changed, reference_type, reference_id, created_by, created_at) 
+                               VALUES (?, ?, ?, ?, 'stock_adjustment', ?, ?, NOW())";
+                $trans_stmt = $conn->prepare($trans_query);
+                $trans_stmt->bind_param("iiiiii", $branch_id, $item_id, $transaction_type, $quantity_changed, $item_id, $user_id);
+                $trans_stmt->execute();
             }
             
             $conn->commit();
@@ -187,9 +262,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         exit;
     }
+    
+    // Get inventory transactions
+    if (isset($_POST['get_transactions']) && $inventory_transactions_exists) {
+        $item_id = (int)$_POST['item_id'];
+        
+        $trans_query = "SELECT * FROM inventory_transactions 
+                        WHERE item_id = ? 
+                        ORDER BY created_at DESC 
+                        LIMIT 50";
+        $trans_stmt = $conn->prepare($trans_query);
+        $trans_stmt->bind_param("i", $item_id);
+        $trans_stmt->execute();
+        $trans_result = $trans_stmt->get_result();
+        $transactions = $trans_result->fetch_all(MYSQLI_ASSOC);
+        
+        echo json_encode(['success' => true, 'transactions' => $transactions]);
+        exit;
+    }
 }
 
-// Determine branch filter condition for statistics - FIXED: Use items.branch_id to avoid ambiguity
+// Determine branch filter condition for statistics
 $branch_condition = "";
 if ($items_branch_column_exists && !$view_all_branches) {
     $branch_condition = "AND items.branch_id = $branch_id";
@@ -208,9 +301,9 @@ $current_stock_query = "SELECT SUM(stock) as current_stock FROM items WHERE stat
 $result = $conn->query($current_stock_query);
 $stats['current_stock'] = $result->fetch_assoc()['current_stock'] ?? 0;
 
-// Low Stock Items
+// Low Stock Items (stock <= reorder_level and stock > 0)
 $low_stock_query = "SELECT COUNT(*) as count FROM items 
-                   WHERE stock <= reorder_level AND status = 'active' $branch_condition";
+                   WHERE stock <= reorder_level AND stock > 0 AND status = 'active' $branch_condition";
 $result = $conn->query($low_stock_query);
 $stats['low_stock'] = $result->fetch_assoc()['count'] ?? 0;
 
@@ -220,7 +313,7 @@ $out_of_stock_query = "SELECT COUNT(*) as count FROM items
 $result = $conn->query($out_of_stock_query);
 $stats['out_of_stock'] = $result->fetch_assoc()['count'] ?? 0;
 
-// Get inventory items with branch info - FIXED: Use items.branch_id in WHERE clause
+// Get inventory items with branch info
 $inventory_query = "
     SELECT 
         i.item_id, 
@@ -231,6 +324,11 @@ $inventory_query = "
         i.reorder_level, 
         i.status, 
         i.unit_type, 
+        i.unit_price,
+        i.price_case,
+        i.price_inner_pack,
+        i.price_box,
+        i.price_carton,
         i.description, 
         i.branch_id,
         b.branch_name
@@ -238,7 +336,7 @@ $inventory_query = "
     LEFT JOIN branches b ON i.branch_id = b.branch_id
     WHERE i.status = 'active'";
 
-// Add branch filter if needed - FIXED: Use i.branch_id to avoid ambiguity
+// Add branch filter if needed
 if ($items_branch_column_exists && !$view_all_branches) {
     $inventory_query .= " AND i.branch_id = $branch_id";
 }
@@ -251,11 +349,11 @@ if (!$items_result) {
 }
 $items = $items_result->fetch_all(MYSQLI_ASSOC);
 
-// Get unique categories for filter - FIXED: Use i.branch_id in WHERE clause
+// Get unique categories for filter
 $categories_query = "
     SELECT DISTINCT category 
     FROM items 
-    WHERE category IS NOT NULL AND category != ''";
+    WHERE category IS NOT NULL AND category != '' AND status = 'active'";
     
 if ($items_branch_column_exists && !$view_all_branches) {
     $categories_query .= " AND branch_id = $branch_id";
@@ -264,6 +362,9 @@ $categories_query .= " ORDER BY category";
 
 $categories_result = $conn->query($categories_query);
 $categories = $categories_result->fetch_all(MYSQLI_ASSOC);
+
+// Get price columns info for UI
+$price_columns_available = $price_case_exists || $price_inner_exists || $price_box_exists || $price_carton_exists;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -498,7 +599,12 @@ $categories = $categories_result->fetch_all(MYSQLI_ASSOC);
                                             <button class="btn-action btn-edit" onclick="editItem(<?php echo $row['item_id']; ?>)" title="Edit">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
+                                            <?php if ($inventory_transactions_exists): ?>
+                                            <button class="btn-action btn-history" onclick="viewTransactions(<?php echo $row['item_id']; ?>)" title="Transactions">
+                                                <i class="bi bi-clock-history"></i>
+                                            </button>
                                             </div>
+                                            <?php endif; ?>
                                         </td>
                                     </tr>
                                     <?php
@@ -571,6 +677,13 @@ $categories = $categories_result->fetch_all(MYSQLI_ASSOC);
                             <label class="form-label">Description</label>
                             <textarea class="form-control" name="description" placeholder="Item description (optional)" rows="3"></textarea>
                         </div>
+                        
+                        <?php if ($price_columns_available): ?>
+                        <div class="alert alert-light">
+                            <i class="bi bi-tag"></i> 
+                            <small>Price columns are available for multi-unit pricing. Please contact sales/admin to set prices.</small>
+                        </div>
+                        <?php endif; ?>
                     </form>
                 </div>
                 <div class="modal-footer">
@@ -613,6 +726,26 @@ $categories = $categories_result->fetch_all(MYSQLI_ASSOC);
             </div>
         </div>
     </div>
+
+    <!-- Transaction History Modal -->
+    <?php if ($inventory_transactions_exists): ?>
+    <div class="modal fade" id="transactionModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Transaction History</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="transactionContent">
+                    <!-- Content will be loaded by JavaScript -->
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endif; ?>
 
     <!-- JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -804,6 +937,32 @@ $categories = $categories_result->fetch_all(MYSQLI_ASSOC);
                     const statusClass = item.status === 'active' ? 'success' : 
                                        item.status === 'inactive' ? 'secondary' : 'danger';
                     
+                    // Build price info if available
+                    let priceHtml = '';
+                    if (item.price_case || item.price_inner_pack || item.price_box || item.price_carton) {
+                        priceHtml = `
+                            <div class="row mt-3">
+                                <div class="col-12">
+                                    <h6 class="fw-bold">Multi-Unit Pricing</h6>
+                                    <table class="table table-sm table-bordered">
+                                        <thead class="table-light">
+                                            <tr>
+                                                <th>Unit Type</th>
+                                                <th>Price</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            ${item.price_case ? `<tr><td>Case</td><td>₱${Number(item.price_case).toFixed(2)}</td></tr>` : ''}
+                                            ${item.price_inner_pack ? `<tr><td>Inner Pack</td><td>₱${Number(item.price_inner_pack).toFixed(2)}</td></tr>` : ''}
+                                            ${item.price_box ? `<tr><td>Box</td><td>₱${Number(item.price_box).toFixed(2)}</td></tr>` : ''}
+                                            ${item.price_carton ? `<tr><td>Carton</td><td>₱${Number(item.price_carton).toFixed(2)}</td></tr>` : ''}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        `;
+                    }
+                    
                     const content = `
                         <div class="row">
                             <div class="col-md-6">
@@ -861,12 +1020,97 @@ $categories = $categories_result->fetch_all(MYSQLI_ASSOC);
                                 </table>
                             </div>
                         </div>
+                        ${priceHtml}
                     `;
                     
                     document.getElementById('itemDetailsContent').innerHTML = content;
                     new bootstrap.Modal(document.getElementById('viewItemModal')).show();
                 } else {
                     Swal.fire('Error', 'Failed to load item details', 'error');
+                }
+            })
+            .catch(error => {
+                Swal.close();
+                Swal.fire('Error', 'An error occurred', 'error');
+                console.error('Error:', error);
+            });
+        }
+
+        // View transaction history
+        function viewTransactions(itemId) {
+            <?php if (!$inventory_transactions_exists): ?>
+            Swal.fire('Info', 'Transaction history is not available', 'info');
+            return;
+            <?php endif; ?>
+            
+            Swal.fire({
+                title: 'Loading...',
+                text: 'Please wait',
+                allowOutsideClick: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
+            
+            const formData = new FormData();
+            formData.append('get_transactions', '1');
+            formData.append('item_id', itemId);
+            
+            fetch(window.location.href, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                Swal.close();
+                
+                if (data.success) {
+                    let transactionsHtml = '';
+                    
+                    if (data.transactions && data.transactions.length > 0) {
+                        transactionsHtml = `
+                            <div class="table-responsive">
+                                <table class="table table-sm table-bordered">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Date/Time</th>
+                                            <th>Type</th>
+                                            <th>Quantity</th>
+                                            <th>Reference</th>
+                                            <th>Reference ID</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                        `;
+                        
+                        data.transactions.forEach(trans => {
+                            const transTypeClass = trans.transaction_type === 'in' ? 'text-success' : 'text-danger';
+                            const transTypeIcon = trans.transaction_type === 'in' ? '↓' : '↑';
+                            
+                            transactionsHtml += `
+                                <tr>
+                                    <td>${new Date(trans.created_at).toLocaleString()}</td>
+                                    <td class="${transTypeClass}">${transTypeIcon} ${trans.transaction_type.toUpperCase()}</td>
+                                    <td class="${transTypeClass}">${trans.quantity_changed}</td>
+                                    <td>${trans.reference_type || 'N/A'}</td>
+                                    <td>${trans.reference_id || 'N/A'}</td>
+                                </tr>
+                            `;
+                        });
+                        
+                        transactionsHtml += `
+                                    </tbody>
+                                </table>
+                            </div>
+                        `;
+                    } else {
+                        transactionsHtml = '<div class="alert alert-info">No transaction history found for this item.</div>';
+                    }
+                    
+                    document.getElementById('transactionContent').innerHTML = transactionsHtml;
+                    new bootstrap.Modal(document.getElementById('transactionModal')).show();
+                } else {
+                    Swal.fire('Error', data.message || 'Failed to load transactions', 'error');
                 }
             })
             .catch(error => {
@@ -969,6 +1213,14 @@ $categories = $categories_result->fetch_all(MYSQLI_ASSOC);
                             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
                             <button type="button" class="btn btn-primary" onclick="submitEditForm()">Update Item</button>
                         `;
+                    } else {
+                        const footer = document.createElement('div');
+                        footer.className = 'modal-footer';
+                        footer.innerHTML = `
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                            <button type="button" class="btn btn-primary" onclick="submitEditForm()">Update Item</button>
+                        `;
+                        document.querySelector('#editInventoryModal .modal-content').appendChild(footer);
                     }
                 } else {
                     Swal.fire('Error', 'Failed to load item details', 'error');

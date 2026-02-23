@@ -43,6 +43,13 @@ if ($check_trip_picklist && $check_trip_picklist->num_rows > 0) {
     $trip_has_picklist_id = true;
 }
 
+// Check if inventory_transactions table exists
+$inventory_transactions_exists = false;
+$check_inv_trans = $conn->query("SHOW TABLES LIKE 'inventory_transactions'");
+if ($check_inv_trans && $check_inv_trans->num_rows > 0) {
+    $inventory_transactions_exists = true;
+}
+
 // Determine branch filter condition
 $branch_condition = "";
 if ($so_branch_column_exists && !$view_all_branches) {
@@ -146,7 +153,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $invoice_id = $conn->insert_id;
                 }
                 
-                // 3. CREATE TRIP TICKET - FIXED with driver_id
+                // 3. CREATE TRIP TICKET
                 // First, get an available driver for this branch
                 $driver_query = "SELECT driver_id FROM drivers WHERE branch_id = ? AND status = 'active' LIMIT 1";
                 $driver_stmt = $conn->prepare($driver_query);
@@ -176,8 +183,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $branch_to_use = ($so_branch_column_exists && !$view_all_branches) ? $branch_id : $order_info['branch_id'];
                 $trip_date = date('Y-m-d');
                 
-                // Base required fields for trip_tickets from your database
-                // From your structure: trip_number, driver_id, branch_id, trip_date, trip_status, created_by, created_at
+                // Base required fields for trip_tickets
                 $trip_fields = "trip_number, driver_id, branch_id, trip_date, trip_status, created_by, created_at";
                 $trip_values = "?, ?, ?, ?, 'planned', ?, NOW()";
                 $trip_types = "siisi"; // string, int, int, string, int
@@ -208,11 +214,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     throw new Exception('Failed to create trip ticket: ' . $trip_ticket_stmt->error);
                 }
                 
+                // 4. DEDUCT INVENTORY WHEN ORDER IS CONFIRMED
+                $items_query = "SELECT item_id, quantity_ordered FROM sales_order_items WHERE so_id = ?";
+                $items_stmt = $conn->prepare($items_query);
+                $items_stmt->bind_param("i", $so_id);
+                $items_stmt->execute();
+                $items_result = $items_stmt->get_result();
+                
+                while ($item = $items_result->fetch_assoc()) {
+                    $item_id = $item['item_id'];
+                    $quantity = $item['quantity_ordered'];
+                    
+                    // Check current stock
+                    $stock_query = "SELECT stock FROM items WHERE item_id = ?";
+                    $stock_stmt = $conn->prepare($stock_query);
+                    $stock_stmt->bind_param("i", $item_id);
+                    $stock_stmt->execute();
+                    $stock_result = $stock_stmt->get_result();
+                    $current_stock = $stock_result->fetch_assoc()['stock'];
+                    
+                    if ($current_stock < $quantity) {
+                        throw new Exception("Insufficient stock for item ID: $item_id. Available: $current_stock, Required: $quantity");
+                    }
+                    
+                    // Update stock
+                    $new_stock = $current_stock - $quantity;
+                    $update_stock_query = "UPDATE items SET stock = ?, updated_at = NOW() WHERE item_id = ?";
+                    $update_stock_stmt = $conn->prepare($update_stock_query);
+                    $update_stock_stmt->bind_param("ii", $new_stock, $item_id);
+                    
+                    if (!$update_stock_stmt->execute()) {
+                        throw new Exception("Failed to update stock for item ID: $item_id");
+                    }
+                    
+                    // Record inventory transaction if table exists
+                    if ($inventory_transactions_exists) {
+                        $trans_query = "INSERT INTO inventory_transactions 
+                                       (branch_id, item_id, transaction_type, quantity_changed, reference_type, reference_id, created_by, created_at) 
+                                       VALUES (?, ?, 'out', ?, 'sales_order', ?, ?, NOW())";
+                        $trans_stmt = $conn->prepare($trans_query);
+                        $trans_stmt->bind_param("iiiii", $branch_id, $item_id, $quantity, $so_id, $user_id);
+                        $trans_stmt->execute();
+                    }
+                }
+                
                 $conn->commit();
                 
                 $response = [
                     'success' => true,
-                    'message' => 'Order confirmed successfully! Pick List and Trip Ticket have been generated.',
+                    'message' => 'Order confirmed successfully! Pick List and Trip Ticket have been generated. Inventory has been updated.',
                     'generated_docs' => [
                         'picklist' => $pick_list_number,
                         'trip_ticket' => $trip_ticket_number,
@@ -221,7 +271,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 ];
                 
                 if ($invoice_so_column_exists) {
-                    $response['message'] = 'Order confirmed successfully! Pick List, Invoice, and Trip Ticket have been generated.';
+                    $response['message'] = 'Order confirmed successfully! Pick List, Invoice, and Trip Ticket have been generated. Inventory has been updated.';
                     $response['generated_docs']['invoice'] = $invoice_number;
                 }
                 
@@ -360,6 +410,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         i.item_code,
                         i.item_name,
                         i.unit_type,
+                        i.price_case,
+                        i.price_inner_pack,
+                        i.price_box,
+                        i.price_carton,
                         i.branch_id as item_branch_id
                     FROM sales_order_items soi
                     JOIN items i ON soi.item_id = i.item_id
@@ -524,6 +578,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 echo json_encode([
                     'success' => false,
                     'message' => 'Failed to update invoice status'
+                ]);
+            }
+            exit;
+        }
+        
+        // CHECK STOCK AVAILABILITY
+        elseif ($_POST['action'] === 'check_stock') {
+            $so_id = (int)$_POST['so_id'];
+            
+            $items_query = "
+                SELECT 
+                    soi.item_id,
+                    soi.quantity_ordered,
+                    i.item_code,
+                    i.item_name,
+                    i.stock as available_stock
+                FROM sales_order_items soi
+                JOIN items i ON soi.item_id = i.item_id
+                WHERE soi.so_id = ?
+            ";
+            $items_stmt = $conn->prepare($items_query);
+            $items_stmt->bind_param("i", $so_id);
+            $items_stmt->execute();
+            $items = $items_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            
+            $insufficient_items = [];
+            foreach ($items as $item) {
+                if ($item['available_stock'] < $item['quantity_ordered']) {
+                    $insufficient_items[] = [
+                        'item_code' => $item['item_code'],
+                        'item_name' => $item['item_name'],
+                        'required' => $item['quantity_ordered'],
+                        'available' => $item['available_stock']
+                    ];
+                }
+            }
+            
+            if (empty($insufficient_items)) {
+                echo json_encode([
+                    'success' => true,
+                    'message' => 'Stock is sufficient',
+                    'sufficient' => true
+                ]);
+            } else {
+                echo json_encode([
+                    'success' => true,
+                    'message' => 'Some items have insufficient stock',
+                    'sufficient' => false,
+                    'insufficient_items' => $insufficient_items
                 ]);
             }
             exit;
@@ -842,6 +945,21 @@ function formatDateTime($dateStr) {
             border-radius: 5px;
             overflow-x: auto;
         }
+        .stock-warning {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 10px 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+        }
+        .stock-warning ul {
+            margin-top: 5px;
+            margin-bottom: 0;
+        }
+        .stock-warning li {
+            color: #856404;
+            font-size: 0.9rem;
+        }
     </style>
 </head>
 <body>
@@ -893,7 +1011,7 @@ function formatDateTime($dateStr) {
                     <li class="nav-item">
                         <a class="nav-link" href="drivers.php">
                             <i class="bi bi-truck"></i>
-                            <span class="nav-text">Drivers</span>
+                            <span class="nav-text">Users</span>
                         </a>
                     </li>
                     <li class="nav-item">
@@ -929,7 +1047,7 @@ function formatDateTime($dateStr) {
                     </button>
                     
                     <div class="page-title">
-                        <h2></i>Sales Orders</h2>
+                        <h2>Sales Orders</h2>
                         <p id="dashboardSubtitle">
                             Manage and track all sales orders
                         </p>
@@ -1007,7 +1125,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                         No sales orders found for your branch.
                     </div>
                 <?php endif; ?>
-
+                
                 <!-- Quick Stats -->
                 <div class="row g-3 mb-4">
                     <div class="col-md-3">
@@ -1260,9 +1378,9 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                 <label for="editOrderStatus" class="form-label">Order Status *</label>
                                 <select class="form-select" id="editOrderStatus" required>
                                     <option value="pending">Pending</option>
-                                    <option value="confirmed">Confirm Order (Generate Documents)</option>
+                                    <option value="confirmed">Confirm Order (Generate Documents & Deduct Stock)</option>
                                 </select>
-                                <small class="text-muted">Confirming will generate Pick List and Trip Ticket</small>
+                                <small class="text-muted">Confirming will generate Pick List, Trip Ticket, and deduct inventory</small>
                             </div>
                             <div class="col-md-4">
                                 <label for="editTotalItems" class="form-label">Items</label>
@@ -1277,11 +1395,16 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                 <input type="number" class="form-control" id="editTotalAmount" step="0.01" min="0" required>
                             </div>
                         </div>
+                        
+                        <div class="alert alert-info mt-3" id="stockCheckMessage" style="display: none;">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <span id="stockCheckText"></span>
+                        </div>
                     </form>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="updateOrder()">Update Order</button>
+                    <button type="button" class="btn btn-primary" onclick="updateOrder()" id="updateOrderBtn">Update Order</button>
                 </div>
             </div>
         </div>
@@ -1327,6 +1450,26 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                     <button type="button" class="btn btn-primary" onclick="executePrint()">
                         <i class="bi bi-printer"></i> Print
                     </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- STOCK WARNING MODAL -->
+    <div class="modal fade" id="stockWarningModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title"><i class="bi bi-exclamation-triangle me-2"></i>Insufficient Stock</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>The following items have insufficient stock:</p>
+                    <div id="insufficientStockList"></div>
+                    <p class="mt-3">Please update inventory or adjust quantities before confirming this order.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
         </div>
@@ -1436,6 +1579,49 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             });
         });
     });
+
+    // ========== CHECK STOCK FUNCTION ==========
+    function checkStockBeforeConfirm(soId) {
+        showLoading();
+        
+        const formData = new FormData();
+        formData.append('action', 'check_stock');
+        formData.append('so_id', soId);
+        
+        return fetch('sales_order.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            Swal.close();
+            
+            if (data.success) {
+                if (data.sufficient) {
+                    document.getElementById('stockCheckMessage').style.display = 'block';
+                    document.getElementById('stockCheckText').innerHTML = '<i class="bi bi-check-circle-fill text-success"></i> Stock is sufficient for all items.';
+                    return true;
+                } else {
+                    // Show insufficient stock warning
+                    let html = '<ul class="list-group">';
+                    data.insufficient_items.forEach(item => {
+                        html += `<li class="list-group-item list-group-item-warning">
+                            <strong>${item.item_code}</strong> - ${item.item_name}<br>
+                            Required: ${item.required}, Available: ${item.available}
+                        </li>`;
+                    });
+                    html += '</ul>';
+                    
+                    document.getElementById('insufficientStockList').innerHTML = html;
+                    new bootstrap.Modal(document.getElementById('stockWarningModal')).show();
+                    return false;
+                }
+            } else {
+                Swal.fire('Error', data.message, 'error');
+                return false;
+            }
+        });
+    }
 
     // ========== VIEW ORDER ==========
     function viewOrder(id) {
@@ -1628,6 +1814,10 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 document.getElementById('editTotalAmount').value = order.total_amount;
                 
                 currentOrderId = id;
+                
+                // Hide stock message initially
+                document.getElementById('stockCheckMessage').style.display = 'none';
+                
                 new bootstrap.Modal(document.getElementById('editOrderModal')).show();
             } else {
                 Swal.fire('Error', data.message, 'error');
@@ -1656,6 +1846,19 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             return;
         }
         
+        // If confirming order, check stock first
+        if (orderStatus === 'confirmed') {
+            checkStockBeforeConfirm(orderId).then(proceed => {
+                if (proceed) {
+                    proceedWithUpdate(orderId, orderDate, orderStatus, totalAmount);
+                }
+            });
+        } else {
+            proceedWithUpdate(orderId, orderDate, orderStatus, totalAmount);
+        }
+    }
+
+    function proceedWithUpdate(orderId, orderDate, orderStatus, totalAmount) {
         showLoading();
         
         const formData = new FormData();

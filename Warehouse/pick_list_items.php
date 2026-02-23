@@ -43,11 +43,43 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
     $items_branch_column_exists = true;
 }
 
+// Check if price columns exist in items table
+$price_case_exists = false;
+$check_price_case = $conn->query("SHOW COLUMNS FROM items LIKE 'price_case'");
+if ($check_price_case && $check_price_case->num_rows > 0) {
+    $price_case_exists = true;
+}
+
+$price_inner_exists = false;
+$check_price_inner = $conn->query("SHOW COLUMNS FROM items LIKE 'price_inner_pack'");
+if ($check_price_inner && $check_price_inner->num_rows > 0) {
+    $price_inner_exists = true;
+}
+
+$price_box_exists = false;
+$check_price_box = $conn->query("SHOW COLUMNS FROM items LIKE 'price_box'");
+if ($check_price_box && $check_price_box->num_rows > 0) {
+    $price_box_exists = true;
+}
+
+$price_carton_exists = false;
+$check_price_carton = $conn->query("SHOW COLUMNS FROM items LIKE 'price_carton'");
+if ($check_price_carton && $check_price_carton->num_rows > 0) {
+    $price_carton_exists = true;
+}
+
 // Check if deliveries table exists
 $deliveries_table_exists = false;
 $check_deliveries = $conn->query("SHOW TABLES LIKE 'deliveries'");
 if ($check_deliveries && $check_deliveries->num_rows > 0) {
     $deliveries_table_exists = true;
+}
+
+// Check if inventory_transactions table exists
+$inventory_transactions_exists = false;
+$check_inv_trans = $conn->query("SHOW TABLES LIKE 'inventory_transactions'");
+if ($check_inv_trans && $check_inv_trans->num_rows > 0) {
+    $inventory_transactions_exists = true;
 }
 
 // Function to create delivery records for completed pick list
@@ -184,6 +216,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             $update_stmt->execute();
                             $update_stmt->close();
                         }
+                        
+                        // Record inventory transaction if table exists
+                        if ($inventory_transactions_exists) {
+                            $trans_query = "INSERT INTO inventory_transactions 
+                                           (branch_id, item_id, transaction_type, quantity_changed, reference_type, reference_id, created_by, created_at) 
+                                           VALUES (?, ?, 'reserve', ?, 'pick_list', ?, ?, NOW())";
+                            $trans_stmt = $conn->prepare($trans_query);
+                            $trans_stmt->bind_param("iiiii", $branch_id, $item_id, $quantity_to_pick, $pick_list_id, $user_id);
+                            $trans_stmt->execute();
+                            $trans_stmt->close();
+                        }
                     }
                     
                     $branch_stmt->close();
@@ -208,9 +251,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     $pick_notes = isset($_POST['pick_notes']) ? $_POST['pick_notes'] : '';
     
     $get_query = "SELECT pli.quantity_to_pick, pli.quantity_picked as old_quantity, pli.pick_list_id, pli.item_id, 
-                         pl.branch_id, pl.so_id
+                         pl.branch_id, pl.so_id, i.unit_price, i.price_case, i.price_inner_pack, i.price_box, i.price_carton
                   FROM pick_list_items pli
                   JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
+                  JOIN items i ON pli.item_id = i.item_id
                   WHERE pli.pick_item_id = ?";
     $stmt = $conn->prepare($get_query);
     $stmt->bind_param("i", $pick_item_id);
@@ -262,6 +306,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     $update_items_stmt->bind_param("iii", $quantity_difference, $item['item_id'], $quantity_difference);
                     $update_items_stmt->execute();
                     $update_items_stmt->close();
+                    
+                    // Record inventory transaction if table exists
+                    if ($inventory_transactions_exists) {
+                        $trans_query = "INSERT INTO inventory_transactions 
+                                       (branch_id, item_id, transaction_type, quantity_changed, reference_type, reference_id, created_by, created_at) 
+                                       VALUES (?, ?, 'out', ?, 'pick_list', ?, ?, NOW())";
+                        $trans_stmt = $conn->prepare($trans_query);
+                        $trans_stmt->bind_param("iiiii", $item['branch_id'], $item['item_id'], $quantity_difference, $item['pick_list_id'], $user_id);
+                        $trans_stmt->execute();
+                        $trans_stmt->close();
+                    }
                 } else {
                     // Less items picked, increase reserved (return to reserved)
                     $quantity_difference_abs = abs($quantity_difference);
@@ -279,6 +334,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     $update_items_stmt->bind_param("ii", $quantity_difference_abs, $item['item_id']);
                     $update_items_stmt->execute();
                     $update_items_stmt->close();
+                    
+                    // Record inventory transaction if table exists
+                    if ($inventory_transactions_exists) {
+                        $trans_query = "INSERT INTO inventory_transactions 
+                                       (branch_id, item_id, transaction_type, quantity_changed, reference_type, reference_id, created_by, created_at) 
+                                       VALUES (?, ?, 'in', ?, 'pick_list_return', ?, ?, NOW())";
+                        $trans_stmt = $conn->prepare($trans_query);
+                        $trans_stmt->bind_param("iiiii", $item['branch_id'], $item['item_id'], $quantity_difference_abs, $item['pick_list_id'], $user_id);
+                        $trans_stmt->execute();
+                        $trans_stmt->close();
+                    }
                 }
             }
             
@@ -499,23 +565,6 @@ function formatLocation($row) {
         
         .branch-indicator i {
             margin-right: 5px;
-        }
-        
-        /* Driver badge styling */
-        .driver-badge {
-            display: inline-block;
-            padding: 4px 10px;
-            background-color: #e8f4fd;
-            color: #084298;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
-            border-left: 3px solid #0d6efd;
-        }
-        
-        .driver-badge i {
-            margin-right: 4px;
-            color: #0d6efd;
         }
         
         .table td {
@@ -890,7 +939,7 @@ function formatLocation($row) {
                             <select class="form-select" id="driverFilter">
                                 <option value="">All Drivers</option>
                                 <?php
-                                // Get all drivers from branch 1 (or current branch if not viewing all)
+                                // Get all drivers from current branch
                                 $drivers_filter_query = "SELECT driver_id, driver_name, vehicle_plate_number 
                                                         FROM drivers 
                                                         WHERE status = 'active'";
@@ -900,8 +949,7 @@ function formatLocation($row) {
                                     $driver_stmt = $conn->prepare($drivers_filter_query . " ORDER BY driver_name");
                                     $driver_stmt->bind_param("i", $user_branch_id);
                                 } else {
-                                    // For all branches view, show drivers from branch 1 as requested
-                                    $drivers_filter_query .= " AND branch_id = 1 ORDER BY driver_name";
+                                    $drivers_filter_query .= " ORDER BY driver_name";
                                     $driver_stmt = $conn->prepare($drivers_filter_query);
                                 }
                                 
@@ -951,7 +999,7 @@ function formatLocation($row) {
                         </thead>
                         <tbody>
                             <?php
-                            // FIXED: Removed the subquery that was causing the error
+                            // Get pick list items with all necessary data
                             $pick_list_items_query = "SELECT 
                                 pli.pick_item_id,
                                 pli.pick_list_id,
@@ -962,14 +1010,22 @@ function formatLocation($row) {
                                 pl.pick_list_number, 
                                 pl.pick_status as pick_list_status,
                                 pl.branch_id,
+                                pl.so_id,
                                 b.branch_name,
                                 i.item_name, 
                                 i.item_code,
+                                i.unit_price,
+                                i.price_case,
+                                i.price_inner_pack,
+                                i.price_box,
+                                i.price_carton,
                                 d.driver_id,
                                 d.driver_name,
                                 d.vehicle_plate_number,
                                 so.order_status,
                                 so.so_number,
+                                so.total_amount,
+                                c.customer_name,
                                 c.latitude as customer_latitude,
                                 c.longitude as customer_longitude,
                                 c.full_address as customer_address,
@@ -1023,14 +1079,6 @@ function formatLocation($row) {
                                         $status_group = 'completed';
                                     }
                                     
-                                    if ($status_group != $current_status_group) {
-                                        $current_status_group = $status_group;
-                                        if ($status_group == 'pending') {
-                                            echo '<tr class="status-group-header pending"><td colspan="' . ($view_all_branches ? 9 : 8) . '"><i class="bi bi-hourglass-split"></i> PENDING ITEMS</td></tr>';
-                                        } elseif ($status_group == 'completed') {
-                                            echo '<tr class="status-group-header completed"><td colspan="' . ($view_all_branches ? 9 : 8) . '"><i class="bi bi-check-circle"></i> COMPLETED ITEMS</td></tr>';
-                                        }
-                                    }
                                     ?>
                                     <tr data-order-status="<?php echo $row['order_status'] ?? ''; ?>"
                                         data-driver-id="<?php echo $row['driver_id'] ?? ''; ?>"
@@ -1050,42 +1098,25 @@ function formatLocation($row) {
                                         <td>
                                             <div class="fw-semibold"><?php echo htmlspecialchars($row['item_name']); ?></div>
                                             <small class="text-muted"><?php echo htmlspecialchars($row['item_code']); ?></small>
+                                            <?php if (!empty($row['notes'])): ?>
+                                                <br><small class="text-info"><i class="bi bi-info-circle"></i> <?php echo htmlspecialchars(substr($row['notes'], 0, 30)) . (strlen($row['notes']) > 30 ? '...' : ''); ?></small>
+                                            <?php endif; ?>
                                         </td>
                                         <td class="text-center"><?php echo number_format($row['quantity_to_pick']); ?></td>
                                         <td class="text-center"><?php echo number_format($row['quantity_picked']); ?></td>
                                         <td>
                                             <?php if (!empty($row['driver_name'])): ?>
-                                                <span class="driver-badge">
-                                                    <i class="bi bi-truck"></i>
                                                     <?php echo htmlspecialchars($row['driver_name']); ?>
                                                 </span>
+                                                <?php if (!empty($row['vehicle_plate_number'])): ?>
+                                                    <br><small class="text-muted"><?php echo htmlspecialchars($row['vehicle_plate_number']); ?></small>
+                                                <?php endif; ?>
                                             <?php else: ?>
                                                 <span class="text-muted">—</span>
                                             <?php endif; ?>
                                         </td>
                                         <td style="max-width: 250px;">
-                                            <?php if ($has_coordinates): ?>
-                                                <span class="coordinate-badge">
-                                                    <i class="bi bi-geo-alt-fill"></i> 
-                                                    <?php echo number_format($row['customer_latitude'], 6); ?>, <?php echo number_format($row['customer_longitude'], 6); ?>
-                                                </span>
-                                                <br>
-                                                <a href="https://www.google.com/maps?q=<?php echo $row['customer_latitude']; ?>,<?php echo $row['customer_longitude']; ?>" target="_blank" class="map-link">
-                                                    <i class="bi bi-box-arrow-up-right"></i> View Map
-                                                </a>
-                                            <?php endif; ?>
-                                            
-                                            <?php if ($has_address): ?>
-                                                <?php if ($has_coordinates): ?><br><?php endif; ?>
-                                                <span class="address-text" title="<?php echo htmlspecialchars($row['customer_address']); ?>">
-                                                    <i class="bi bi-pin-map-fill"></i> 
-                                                    <?php echo htmlspecialchars(substr($row['customer_address'], 0, 40)) . (strlen($row['customer_address']) > 40 ? '...' : ''); ?>
-                                                </span>
-                                            <?php endif; ?>
-                                            
-                                            <?php if (!$has_coordinates && !$has_address): ?>
-                                                <span class="text-muted fst-italic">—</span>
-                                            <?php endif; ?>
+                                            <?php echo formatLocation($row); ?>
                                         </td>
                                         <td>
                                             <?php if (!empty($row['order_status'])): ?>
@@ -1232,6 +1263,13 @@ function formatLocation($row) {
                             <i class="bi bi-info-circle me-2"></i>
                             <small>Customer delivery location will be automatically associated through the sales order.</small>
                         </div>
+                        
+                        <?php if ($price_case_exists || $price_inner_exists || $price_box_exists || $price_carton_exists): ?>
+                        <div class="alert alert-light mt-2">
+                            <i class="bi bi-tag"></i> 
+                            <small>Multi-unit pricing is available for this item (Case, Inner Pack, Box, Carton).</small>
+                        </div>
+                        <?php endif; ?>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -1348,6 +1386,13 @@ function formatLocation($row) {
                                 <input type="date" class="form-control" name="pick_date" value="<?php echo date('Y-m-d'); ?>">
                             </div>
                         </div>
+                        
+                        <?php if ($deliveries_table_exists): ?>
+                        <div class="alert alert-success mt-3">
+                            <i class="bi bi-truck"></i>
+                            <small>Delivery records will be automatically created when pick list is completed.</small>
+                        </div>
+                        <?php endif; ?>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -1447,10 +1492,20 @@ function formatLocation($row) {
                         </div>
                         
                         <!-- Auto-create delivery notification -->
+                        <?php if ($deliveries_table_exists): ?>
                         <div class="alert alert-success mt-3" id="deliveryNotice" style="display: none;">
                             <i class="bi bi-check-circle-fill me-2"></i>
                             When all items are picked, a delivery record will be automatically created for the assigned driver.
                         </div>
+                        <?php endif; ?>
+                        
+                        <!-- Price information (if available) -->
+                        <?php if ($price_case_exists || $price_inner_exists || $price_box_exists || $price_carton_exists): ?>
+                        <div class="alert alert-light mt-2">
+                            <i class="bi bi-tag"></i> 
+                            <small>Multi-unit pricing is configured for this item.</small>
+                        </div>
+                        <?php endif; ?>
                     </div>
 
                     <!-- Action Buttons -->
