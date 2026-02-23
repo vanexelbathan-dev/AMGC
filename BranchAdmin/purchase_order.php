@@ -1109,7 +1109,7 @@ function formatDateTime($dateStr) {
                     <li class="nav-item">
                         <a class="nav-link" href="drivers.php">
                             <i class="bi bi-truck"></i>
-                            <span class="nav-text">Drivers</span>
+                            <span class="nav-text">Users</span>
                         </a>
                     </li>
                     <li class="nav-item">

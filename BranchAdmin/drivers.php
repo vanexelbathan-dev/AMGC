@@ -1,5 +1,16 @@
 <?php
-// drivers.php
+// users.php (formerly drivers.php)
+
+// Turn off error display completely for AJAX requests
+if (isset($_POST['action'])) {
+    ini_set('display_errors', 0);
+    error_reporting(0);
+} else {
+    // Only enable error display for normal page load
+    ini_set('display_errors', 1);
+    error_reporting(E_ALL);
+}
+
 require_once '../config/database.php';
 require_once '../config/session_handler.php';
 
@@ -19,461 +30,423 @@ if ($check_column && $check_column->num_rows > 0) {
 
 // Determine branch filter condition
 $branch_condition = "";
-if ($drivers_branch_column_exists && !$view_all_branches) {
-    $branch_condition = "AND d.branch_id = $branch_id";
+if (!$view_all_branches) {
+    $branch_condition = "AND u.branch_id = $branch_id";
 }
 
 // ========== HANDLE AJAX REQUESTS ==========
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    header('Content-Type: application/json');
+    // Clear any output buffers to prevent HTML contamination
+    while (ob_get_level()) {
+        ob_end_clean();
+    }
+    
+    // Start fresh output buffer for AJAX response
+    ob_start();
+    
+    header('Content-Type: application/json; charset=utf-8');
+    header('Cache-Control: no-cache, no-store, must-revalidate');
+    
+    $response = ['success' => false, 'message' => ''];
     
     try {
         $conn->begin_transaction();
         
         // ADD DRIVER WITH USER ACCOUNT
         if ($_POST['action'] === 'add_driver') {
-            // Driver information
-            $driver_name = $_POST['driver_name'];
-            $license_number = $_POST['license_number'];
+            // Get and sanitize inputs
+            $driver_name = trim($_POST['driver_name'] ?? '');
+            $license_number = trim($_POST['license_number'] ?? '');
             $license_expiry = !empty($_POST['license_expiry']) ? $_POST['license_expiry'] : null;
-            $contact_number = !empty($_POST['contact_number']) ? $_POST['contact_number'] : null;
-            $vehicle_type = !empty($_POST['vehicle_type']) ? $_POST['vehicle_type'] : null;
-            $vehicle_plate_number = !empty($_POST['vehicle_plate_number']) ? $_POST['vehicle_plate_number'] : null;
+            $contact_number = !empty($_POST['contact_number']) ? trim($_POST['contact_number']) : null;
+            $vehicle_type = !empty($_POST['vehicle_type']) ? trim($_POST['vehicle_type']) : null;
+            $vehicle_plate_number = !empty($_POST['vehicle_plate_number']) ? trim($_POST['vehicle_plate_number']) : null;
             $status = $_POST['status'] ?? 'active';
             
             // User account information
-            $email = $_POST['email'] ?? '';
+            $email = trim($_POST['email'] ?? '');
             $password = $_POST['password'] ?? '';
-            $first_name = $_POST['first_name'] ?? '';
-            $last_name = $_POST['last_name'] ?? '';
+            $first_name = trim($_POST['first_name'] ?? '');
+            $last_name = trim($_POST['last_name'] ?? '');
             
             // Validate required fields
-            if (empty($driver_name)) {
-                throw new Exception('Driver Name is required');
-            }
-            
-            if (empty($license_number)) {
-                throw new Exception('License Number is required');
-            }
-            
-            if (empty($email)) {
-                throw new Exception('Email is required');
-            }
-            
-            if (empty($password)) {
-                throw new Exception('Password is required');
-            }
-            
-            if (strlen($password) < 6) {
-                throw new Exception('Password must be at least 6 characters long');
-            }
-            
-            if (empty($first_name)) {
-                throw new Exception('First Name is required');
-            }
-            
-            if (empty($last_name)) {
-                throw new Exception('Last Name is required');
-            }
+            if (empty($driver_name)) throw new Exception('Driver Name is required');
+            if (empty($license_number)) throw new Exception('License Number is required');
+            if (empty($email)) throw new Exception('Email is required');
+            if (empty($password)) throw new Exception('Password is required');
+            if (strlen($password) < 6) throw new Exception('Password must be at least 6 characters long');
+            if (empty($first_name)) throw new Exception('First Name is required');
+            if (empty($last_name)) throw new Exception('Last Name is required');
             
             // Check if email already exists
-            $check_email_query = "SELECT user_id FROM users WHERE email = ?";
-            $check_email_stmt = $conn->prepare($check_email_query);
-            $check_email_stmt->bind_param("s", $email);
-            $check_email_stmt->execute();
-            $check_email_result = $check_email_stmt->get_result();
-            
-            if ($check_email_result->num_rows > 0) {
+            $check_email = $conn->prepare("SELECT user_id FROM users WHERE email = ?");
+            $check_email->bind_param("s", $email);
+            $check_email->execute();
+            if ($check_email->get_result()->num_rows > 0) {
                 throw new Exception('Email already exists in the system');
             }
             
             // Check if license number already exists
-            $check_license_query = "SELECT driver_id FROM drivers WHERE license_number = ?";
-            $check_license_stmt = $conn->prepare($check_license_query);
-            $check_license_stmt->bind_param("s", $license_number);
-            $check_license_stmt->execute();
-            $check_license_result = $check_license_stmt->get_result();
-            
-            if ($check_license_result->num_rows > 0) {
+            $check_license = $conn->prepare("SELECT driver_id FROM drivers WHERE license_number = ?");
+            $check_license->bind_param("s", $license_number);
+            $check_license->execute();
+            if ($check_license->get_result()->num_rows > 0) {
                 throw new Exception('License number already exists');
             }
             
             // Insert driver
-            if ($drivers_branch_column_exists) {
-                $insert_driver_query = "INSERT INTO drivers (driver_name, license_number, license_expiry, contact_number, vehicle_type, vehicle_plate_number, status, branch_id, created_at, updated_at) 
-                                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
-                $insert_driver_stmt = $conn->prepare($insert_driver_query);
-                $insert_driver_stmt->bind_param("sssssssi", $driver_name, $license_number, $license_expiry, $contact_number, $vehicle_type, $vehicle_plate_number, $status, $branch_id);
-            } else {
-                $insert_driver_query = "INSERT INTO drivers (driver_name, license_number, license_expiry, contact_number, vehicle_type, vehicle_plate_number, status, created_at, updated_at) 
-                                       VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
-                $insert_driver_stmt = $conn->prepare($insert_driver_query);
-                $insert_driver_stmt->bind_param("sssssss", $driver_name, $license_number, $license_expiry, $contact_number, $vehicle_type, $vehicle_plate_number, $status);
-            }
+            $insert_driver = $conn->prepare("INSERT INTO drivers (driver_name, license_number, license_expiry, contact_number, vehicle_type, vehicle_plate_number, status, branch_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
+            $insert_driver->bind_param("sssssssi", $driver_name, $license_number, $license_expiry, $contact_number, $vehicle_type, $vehicle_plate_number, $status, $branch_id);
             
-            if (!$insert_driver_stmt->execute()) {
-                throw new Exception('Failed to add driver: ' . $insert_driver_stmt->error);
+            if (!$insert_driver->execute()) {
+                throw new Exception('Failed to add driver: ' . $insert_driver->error);
             }
             
             $driver_id = $conn->insert_id;
             
             // Hash the password
             $password_hash = password_hash($password, PASSWORD_DEFAULT);
-            $user_role_db = 'delivery'; // Default role for drivers
             
-            // Insert user account
-            $insert_user_query = "INSERT INTO users (email, password_hash, first_name, last_name, role, branch_id, driver_id, status, created_at, updated_at) 
-                                 VALUES (?, ?, ?, ?, ?, ?, ?, 'active', NOW(), NOW())";
-            $insert_user_stmt = $conn->prepare($insert_user_query);
-            $insert_user_stmt->bind_param("sssssii", $email, $password_hash, $first_name, $last_name, $user_role_db, $branch_id, $driver_id);
+            // Insert user account - has 7 placeholders: email, password_hash, first_name, last_name, branch_id, driver_id, contact_number
+            $insert_user = $conn->prepare("INSERT INTO users (email, password_hash, first_name, last_name, role, branch_id, driver_id, contact_number, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'delivery', ?, ?, ?, 'active', NOW(), NOW())");
+            $insert_user->bind_param("ssssiss", $email, $password_hash, $first_name, $last_name, $branch_id, $driver_id, $contact_number);
             
-            if (!$insert_user_stmt->execute()) {
-                // If user creation fails, rollback driver insertion
-                throw new Exception('Failed to create user account: ' . $insert_user_stmt->error);
+            if (!$insert_user->execute()) {
+                throw new Exception('Failed to create user account: ' . $insert_user->error);
             }
             
             $conn->commit();
-            
-            echo json_encode([
-                'success' => true,
-                'message' => 'Driver and user account created successfully',
-                'driver_id' => $driver_id
-            ]);
-            exit;
+            $response = ['success' => true, 'message' => 'Driver and user account created successfully'];
         }
         
-        // UPDATE DRIVER AND USER ACCOUNT
-        elseif ($_POST['action'] === 'update_driver') {
-            $driver_id = (int)$_POST['driver_id'];
+        // ADD WAREHOUSE STAFF
+        elseif ($_POST['action'] === 'add_warehouse') {
+            // Get branch_id from session
+            $branch_id = (int)$_SESSION['branch_id'];
             
-            // Driver information
-            $driver_name = $_POST['driver_name'];
-            $license_number = $_POST['license_number'];
-            $license_expiry = !empty($_POST['license_expiry']) ? $_POST['license_expiry'] : null;
-            $contact_number = !empty($_POST['contact_number']) ? $_POST['contact_number'] : null;
-            $vehicle_type = !empty($_POST['vehicle_type']) ? $_POST['vehicle_type'] : null;
-            $vehicle_plate_number = !empty($_POST['vehicle_plate_number']) ? $_POST['vehicle_plate_number'] : null;
+            $email = trim($_POST['email'] ?? '');
+            $password = $_POST['password'] ?? '';
+            $first_name = trim($_POST['first_name'] ?? '');
+            $last_name = trim($_POST['last_name'] ?? '');
+            $category = !empty($_POST['category']) ? trim($_POST['category']) : null;
+            $contact_number = !empty($_POST['contact_number']) ? trim($_POST['contact_number']) : null;
             $status = $_POST['status'] ?? 'active';
             
-            // User account information
-            $email = $_POST['email'] ?? '';
+            // Validate
+            if (empty($email)) throw new Exception('Email is required');
+            if (empty($password)) throw new Exception('Password is required');
+            if (strlen($password) < 6) throw new Exception('Password must be at least 6 characters');
+            if (empty($first_name)) throw new Exception('First Name is required');
+            if (empty($last_name)) throw new Exception('Last Name is required');
+            
+            // Check email
+            $check_email = $conn->prepare("SELECT user_id FROM users WHERE email = ?");
+            $check_email->bind_param("s", $email);
+            $check_email->execute();
+            if ($check_email->get_result()->num_rows > 0) {
+                throw new Exception('Email already exists');
+            }
+            
+            $password_hash = password_hash($password, PASSWORD_DEFAULT);
+            
+            // Insert warehouse staff - has 8 placeholders: email, password_hash, first_name, last_name, branch_id, category, contact_number, status
+            $insert_user = $conn->prepare("INSERT INTO users (email, password_hash, first_name, last_name, role, branch_id, category, contact_number, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'warehouse', ?, ?, ?, ?, NOW(), NOW())");
+            $insert_user->bind_param("ssssisss", $email, $password_hash, $first_name, $last_name, $branch_id, $category, $contact_number, $status);
+            
+            if (!$insert_user->execute()) {
+                throw new Exception('Failed to create warehouse staff: ' . $insert_user->error);
+            }
+            
+            $conn->commit();
+            $response = ['success' => true, 'message' => 'Warehouse staff created successfully'];
+        }
+        
+        // ADD SALES AGENT
+        elseif ($_POST['action'] === 'add_sales') {
+            // Get branch_id from session
+            $branch_id = (int)$_SESSION['branch_id'];
+            
+            $email = trim($_POST['email'] ?? '');
+            $password = $_POST['password'] ?? '';
+            $first_name = trim($_POST['first_name'] ?? '');
+            $last_name = trim($_POST['last_name'] ?? '');
+            $contact_number = !empty($_POST['contact_number']) ? trim($_POST['contact_number']) : null;
+            $status = $_POST['status'] ?? 'active';
+            
+            // Validate
+            if (empty($email)) throw new Exception('Email is required');
+            if (empty($password)) throw new Exception('Password is required');
+            if (strlen($password) < 6) throw new Exception('Password must be at least 6 characters');
+            if (empty($first_name)) throw new Exception('First Name is required');
+            if (empty($last_name)) throw new Exception('Last Name is required');
+            
+            // Check email
+            $check_email = $conn->prepare("SELECT user_id FROM users WHERE email = ?");
+            $check_email->bind_param("s", $email);
+            $check_email->execute();
+            if ($check_email->get_result()->num_rows > 0) {
+                throw new Exception('Email already exists');
+            }
+            
+            $password_hash = password_hash($password, PASSWORD_DEFAULT);
+            
+            // Insert sales agent - has 7 placeholders: email, password_hash, first_name, last_name, branch_id, contact_number, status
+            $insert_user = $conn->prepare("INSERT INTO users (email, password_hash, first_name, last_name, role, branch_id, contact_number, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'sales', ?, ?, ?, NOW(), NOW())");
+            $insert_user->bind_param("ssssiss", $email, $password_hash, $first_name, $last_name, $branch_id, $contact_number, $status);
+            
+            if (!$insert_user->execute()) {
+                throw new Exception('Failed to create sales agent: ' . $insert_user->error);
+            }
+            
+            $conn->commit();
+            $response = ['success' => true, 'message' => 'Sales agent created successfully'];
+        }
+        
+        // UPDATE USER
+        elseif ($_POST['action'] === 'update_user') {
+            $user_id = (int)$_POST['user_id'];
+            $user_role_type = $_POST['user_role_type'];
+            
+            // Common fields
+            $email = trim($_POST['email'] ?? '');
             $password = !empty($_POST['password']) ? $_POST['password'] : null;
-            $first_name = $_POST['first_name'] ?? '';
-            $last_name = $_POST['last_name'] ?? '';
+            $first_name = trim($_POST['first_name'] ?? '');
+            $last_name = trim($_POST['last_name'] ?? '');
+            $contact_number = !empty($_POST['contact_number']) ? trim($_POST['contact_number']) : null;
+            $status = $_POST['status'] ?? 'active';
             
-            // Validate required fields
-            if (empty($driver_name)) {
-                throw new Exception('Driver Name is required');
+            // Validate
+            if (empty($email)) throw new Exception('Email is required');
+            if (!filter_var($email, FILTER_VALIDATE_EMAIL)) throw new Exception('Invalid email format');
+            if (empty($first_name)) throw new Exception('First Name is required');
+            if (empty($last_name)) throw new Exception('Last Name is required');
+            if ($password && strlen($password) < 6) throw new Exception('Password must be at least 6 characters');
+            
+            // Check if email is already used by another user
+            $check_email = $conn->prepare("SELECT user_id FROM users WHERE email = ? AND user_id != ?");
+            $check_email->bind_param("si", $email, $user_id);
+            $check_email->execute();
+            if ($check_email->get_result()->num_rows > 0) {
+                throw new Exception('Email is already in use by another user');
             }
             
-            if (empty($license_number)) {
-                throw new Exception('License Number is required');
-            }
-            
-            if (empty($email)) {
-                throw new Exception('Email is required');
-            }
-            
-            if (empty($first_name)) {
-                throw new Exception('First Name is required');
-            }
-            
-            if (empty($last_name)) {
-                throw new Exception('Last Name is required');
-            }
-            
-            if ($password && strlen($password) < 6) {
-                throw new Exception('Password must be at least 6 characters long');
-            }
-            
-            // Verify driver belongs to user's branch
-            if ($drivers_branch_column_exists && !$view_all_branches) {
-                $check_query = "SELECT driver_id FROM drivers WHERE driver_id = ? AND branch_id = ?";
-                $check_stmt = $conn->prepare($check_query);
-                $check_stmt->bind_param("ii", $driver_id, $branch_id);
-                $check_stmt->execute();
-                $check_result = $check_stmt->get_result();
+            // Update driver if applicable
+            if ($user_role_type === 'driver') {
+                $driver_id = (int)$_POST['driver_id'];
+                $driver_name = trim($_POST['driver_name']);
+                $license_number = trim($_POST['license_number']);
+                $license_expiry = !empty($_POST['license_expiry']) ? $_POST['license_expiry'] : null;
+                $vehicle_type = !empty($_POST['vehicle_type']) ? trim($_POST['vehicle_type']) : null;
+                $vehicle_plate_number = !empty($_POST['vehicle_plate_number']) ? trim($_POST['vehicle_plate_number']) : null;
+                $driver_status = $_POST['driver_status'] ?? $status;
                 
-                if ($check_result->num_rows === 0) {
-                    throw new Exception('Driver not found or access denied');
+                $update_driver = $conn->prepare("UPDATE drivers SET driver_name = ?, license_number = ?, license_expiry = ?, contact_number = ?, vehicle_type = ?, vehicle_plate_number = ?, status = ?, updated_at = NOW() WHERE driver_id = ?");
+                $update_driver->bind_param("sssssssi", $driver_name, $license_number, $license_expiry, $contact_number, $vehicle_type, $vehicle_plate_number, $driver_status, $driver_id);
+                
+                if (!$update_driver->execute()) {
+                    throw new Exception('Failed to update driver: ' . $update_driver->error);
                 }
             }
             
-            // Check if license number already exists for another driver
-            $check_license_query = "SELECT driver_id FROM drivers WHERE license_number = ? AND driver_id != ?";
-            $check_license_stmt = $conn->prepare($check_license_query);
-            $check_license_stmt->bind_param("si", $license_number, $driver_id);
-            $check_license_stmt->execute();
-            $check_license_result = $check_license_stmt->get_result();
-            
-            if ($check_license_result->num_rows > 0) {
-                throw new Exception('License number already exists for another driver');
-            }
-            
-            // Check if email already exists for another user
-            $check_email_query = "SELECT user_id FROM users WHERE email = ? AND driver_id != ?";
-            $check_email_stmt = $conn->prepare($check_email_query);
-            $check_email_stmt->bind_param("si", $email, $driver_id);
-            $check_email_stmt->execute();
-            $check_email_result = $check_email_stmt->get_result();
-            
-            if ($check_email_result->num_rows > 0) {
-                throw new Exception('Email already exists for another user');
-            }
-            
-            // Update driver
-            $update_driver_query = "UPDATE drivers 
-                                   SET driver_name = ?, license_number = ?, license_expiry = ?, contact_number = ?, vehicle_type = ?, vehicle_plate_number = ?, status = ?, updated_at = NOW() 
-                                   WHERE driver_id = ?";
-            $update_driver_stmt = $conn->prepare($update_driver_query);
-            $update_driver_stmt->bind_param("sssssssi", $driver_name, $license_number, $license_expiry, $contact_number, $vehicle_type, $vehicle_plate_number, $status, $driver_id);
-            
-            if (!$update_driver_stmt->execute()) {
-                throw new Exception('Failed to update driver: ' . $update_driver_stmt->error);
-            }
-            
-            // Check if user exists for this driver
-            $check_user_query = "SELECT user_id FROM users WHERE driver_id = ?";
-            $check_user_stmt = $conn->prepare($check_user_query);
-            $check_user_stmt->bind_param("i", $driver_id);
-            $check_user_stmt->execute();
-            $check_user_result = $check_user_stmt->get_result();
-            
-            if ($check_user_result->num_rows > 0) {
-                // Update existing user
-                $user = $check_user_result->fetch_assoc();
-                
-                if ($password) {
-                    // Update with new password
-                    $password_hash = password_hash($password, PASSWORD_DEFAULT);
-                    $update_user_query = "UPDATE users 
-                                         SET email = ?, first_name = ?, last_name = ?, password_hash = ?, updated_at = NOW() 
-                                         WHERE user_id = ?";
-                    $update_user_stmt = $conn->prepare($update_user_query);
-                    $update_user_stmt->bind_param("ssssi", $email, $first_name, $last_name, $password_hash, $user['user_id']);
-                } else {
-                    // Update without password
-                    $update_user_query = "UPDATE users 
-                                         SET email = ?, first_name = ?, last_name = ?, updated_at = NOW() 
-                                         WHERE user_id = ?";
-                    $update_user_stmt = $conn->prepare($update_user_query);
-                    $update_user_stmt->bind_param("sssi", $email, $first_name, $last_name, $user['user_id']);
-                }
-                
-                if (!$update_user_stmt->execute()) {
-                    throw new Exception('Failed to update user account: ' . $update_user_stmt->error);
-                }
-            } else {
-                // Create new user account if it doesn't exist
-                // Generate a random password if not provided
-                if (!$password) {
-                    $temp_password = bin2hex(random_bytes(4)); // 8 character random password
-                    $password = $temp_password;
-                }
-                
+            // Update user with email
+            if ($password) {
                 $password_hash = password_hash($password, PASSWORD_DEFAULT);
-                $user_role_db = 'delivery';
                 
-                $insert_user_query = "INSERT INTO users (email, password_hash, first_name, last_name, role, branch_id, driver_id, status, created_at, updated_at) 
-                                     VALUES (?, ?, ?, ?, ?, ?, ?, 'active', NOW(), NOW())";
-                $insert_user_stmt = $conn->prepare($insert_user_query);
-                $insert_user_stmt->bind_param("sssssii", $email, $password_hash, $first_name, $last_name, $user_role_db, $branch_id, $driver_id);
-                
-                if (!$insert_user_stmt->execute()) {
-                    throw new Exception('Failed to create user account: ' . $insert_user_stmt->error);
+                if ($user_role_type === 'warehouse') {
+                    $category = !empty($_POST['category']) ? trim($_POST['category']) : null;
+                    $update_user = $conn->prepare("UPDATE users SET email = ?, first_name = ?, last_name = ?, contact_number = ?, category = ?, password_hash = ?, status = ?, updated_at = NOW() WHERE user_id = ?");
+                    $update_user->bind_param("ssssssi", $email, $first_name, $last_name, $contact_number, $category, $password_hash, $status, $user_id);
+                } else {
+                    $update_user = $conn->prepare("UPDATE users SET email = ?, first_name = ?, last_name = ?, contact_number = ?, password_hash = ?, status = ?, updated_at = NOW() WHERE user_id = ?");
+                    $update_user->bind_param("sssssssi", $email, $first_name, $last_name, $contact_number, $password_hash, $status, $user_id);
                 }
+            } else {
+                if ($user_role_type === 'warehouse') {
+                    $category = !empty($_POST['category']) ? trim($_POST['category']) : null;
+                    $update_user = $conn->prepare("UPDATE users SET email = ?, first_name = ?, last_name = ?, contact_number = ?, category = ?, status = ?, updated_at = NOW() WHERE user_id = ?");
+                    $update_user->bind_param("ssssssi", $email, $first_name, $last_name, $contact_number, $category, $status, $user_id);
+                } else {
+                    $update_user = $conn->prepare("UPDATE users SET email = ?, first_name = ?, last_name = ?, contact_number = ?, status = ?, updated_at = NOW() WHERE user_id = ?");
+                    $update_user->bind_param("sssssi", $email, $first_name, $last_name, $contact_number, $status, $user_id);
+                }
+            }
+            
+            if (!$update_user->execute()) {
+                throw new Exception('Failed to update user: ' . $update_user->error);
             }
             
             $conn->commit();
-            
-            echo json_encode([
-                'success' => true,
-                'message' => 'Driver and user account updated successfully'
-            ]);
-            exit;
+            $response = ['success' => true, 'message' => 'User updated successfully'];
         }
         
-        // DELETE DRIVER
-        elseif ($_POST['action'] === 'delete_driver') {
-            $driver_id = (int)$_POST['driver_id'];
+        // DELETE USER (Hard Delete)
+        elseif ($_POST['action'] === 'delete_user') {
+            $user_id = (int)$_POST['user_id'];
             
-            // Verify driver belongs to user's branch
-            if ($drivers_branch_column_exists && !$view_all_branches) {
-                $check_query = "SELECT driver_id FROM drivers WHERE driver_id = ? AND branch_id = ?";
-                $check_stmt = $conn->prepare($check_query);
-                $check_stmt->bind_param("ii", $driver_id, $branch_id);
-                $check_stmt->execute();
-                $check_result = $check_stmt->get_result();
+            // Get user details first to check if they have a driver_id
+            $get_user = $conn->prepare("SELECT driver_id FROM users WHERE user_id = ?");
+            $get_user->bind_param("i", $user_id);
+            $get_user->execute();
+            $user_data = $get_user->get_result()->fetch_assoc();
+            $driver_id = $user_data['driver_id'] ?? null;
+            
+            // Delete from drivers table if they have a driver_id
+            if ($driver_id) {
+                $delete_driver = $conn->prepare("DELETE FROM drivers WHERE driver_id = ?");
+                $delete_driver->bind_param("i", $driver_id);
                 
-                if ($check_result->num_rows === 0) {
-                    throw new Exception('Driver not found or access denied');
+                if (!$delete_driver->execute()) {
+                    throw new Exception('Failed to delete driver record: ' . $delete_driver->error);
                 }
             }
             
-            // First, update the associated user account
-            $update_user_query = "UPDATE users SET driver_id = NULL, status = 'inactive' WHERE driver_id = ?";
-            $update_user_stmt = $conn->prepare($update_user_query);
-            $update_user_stmt->bind_param("i", $driver_id);
-            $update_user_stmt->execute();
+            // Delete the user from database
+            $delete_user = $conn->prepare("DELETE FROM users WHERE user_id = ?");
+            $delete_user->bind_param("i", $user_id);
             
-            // Check if driver is used in any pick lists or trip tickets
-            $check_picklist_query = "SELECT COUNT(*) as count FROM pick_lists WHERE driver_id = ?";
-            $check_picklist_stmt = $conn->prepare($check_picklist_query);
-            $check_picklist_stmt->bind_param("i", $driver_id);
-            $check_picklist_stmt->execute();
-            $picklist_count = $check_picklist_stmt->get_result()->fetch_assoc()['count'];
-            
-            $check_trip_query = "SELECT COUNT(*) as count FROM trip_tickets WHERE driver_id = ?";
-            $check_trip_stmt = $conn->prepare($check_trip_query);
-            $check_trip_stmt->bind_param("i", $driver_id);
-            $check_trip_stmt->execute();
-            $trip_count = $check_trip_stmt->get_result()->fetch_assoc()['count'];
-            
-            if ($picklist_count > 0 || $trip_count > 0) {
-                // Soft delete - just update status to inactive
-                $update_driver_query = "UPDATE drivers SET status = 'inactive', updated_at = NOW() WHERE driver_id = ?";
-                $update_driver_stmt = $conn->prepare($update_driver_query);
-                $update_driver_stmt->bind_param("i", $driver_id);
-                $update_driver_stmt->execute();
-                
-                $message = 'Driver and associated user marked as inactive (used in existing transactions)';
-            } else {
-                // Hard delete if not used
-                $delete_driver_query = "DELETE FROM drivers WHERE driver_id = ?";
-                $delete_driver_stmt = $conn->prepare($delete_driver_query);
-                $delete_driver_stmt->bind_param("i", $driver_id);
-                
-                if (!$delete_driver_stmt->execute()) {
-                    throw new Exception('Failed to delete driver');
-                }
-                
-                $message = 'Driver and associated user deleted successfully';
+            if (!$delete_user->execute()) {
+                throw new Exception('Failed to delete user: ' . $delete_user->error);
             }
             
             $conn->commit();
-            
-            echo json_encode([
-                'success' => true,
-                'message' => $message
-            ]);
-            exit;
+            $response = ['success' => true, 'message' => 'User and associated records permanently deleted from database'];
         }
         
-        // GET DRIVER DETAILS
-        elseif ($_POST['action'] === 'get_driver') {
-            $driver_id = (int)$_POST['driver_id'];
+        // GET USER DETAILS
+        elseif ($_POST['action'] === 'get_user') {
+            $user_id = (int)$_POST['user_id'];
             
-            // Build query with user info
-            $query = "
-                SELECT 
-                    d.*,
-                    u.user_id,
-                    u.email,
-                    u.first_name,
-                    u.last_name,
-                    u.role as user_role,
-                    u.status as user_status
-                FROM drivers d
-                LEFT JOIN users u ON d.driver_id = u.driver_id
-                WHERE d.driver_id = ?
-            ";
+            $query = "SELECT u.*, d.driver_id, d.driver_name, d.license_number, d.license_expiry, d.vehicle_type, d.vehicle_plate_number, d.status as driver_status 
+                     FROM users u 
+                     LEFT JOIN drivers d ON u.driver_id = d.driver_id 
+                     WHERE u.user_id = ?";
             
-            if ($drivers_branch_column_exists && !$view_all_branches) {
-                $query .= " AND d.branch_id = ?";
+            if (!$view_all_branches) {
+                $query .= " AND u.branch_id = ?";
                 $stmt = $conn->prepare($query);
-                $stmt->bind_param("ii", $driver_id, $branch_id);
+                $stmt->bind_param("ii", $user_id, $branch_id);
             } else {
                 $stmt = $conn->prepare($query);
-                $stmt->bind_param("i", $driver_id);
+                $stmt->bind_param("i", $user_id);
             }
             
             $stmt->execute();
-            $result = $stmt->get_result();
-            $driver = $result->fetch_assoc();
+            $user = $stmt->get_result()->fetch_assoc();
             
-            if ($driver) {
-                echo json_encode([
-                    'success' => true,
-                    'driver' => $driver
-                ]);
+            if ($user) {
+                $response = ['success' => true, 'user' => $user];
             } else {
-                throw new Exception('Driver not found or access denied');
+                throw new Exception('User not found');
             }
-            exit;
         }
+        
+        // Send success response
+        http_response_code(200);
+        $json_response = json_encode($response, JSON_UNESCAPED_SLASHES);
+        if ($json_response === false) {
+            $json_response = json_encode(['success' => false, 'message' => 'JSON encoding error']);
+        }
+        ob_end_clean();
+        echo $json_response;
+        exit;
         
     } catch (Exception $e) {
         $conn->rollback();
-        echo json_encode([
-            'success' => false,
+        // Log the error to a file
+        error_log("User Management Error: " . $e->getMessage());
+        error_log("POST Data: " . print_r($_POST, true));
+        
+        // Send error response
+        http_response_code(400);
+        $json_response = json_encode([
+            'success' => false, 
             'message' => $e->getMessage()
-        ]);
+        ], JSON_UNESCAPED_SLASHES);
+        ob_end_clean();
+        echo $json_response;
         exit;
     }
 }
 
-// FETCH DRIVERS FROM DATABASE WITH USER INFO
-$drivers_query = "
+// FETCH ALL USERS - This part only runs for normal page load, not for AJAX requests
+$users_query = "
     SELECT 
-        d.driver_id,
-        d.driver_name,
-        d.license_number,
-        d.license_expiry,
-        d.contact_number,
-        d.vehicle_type,
-        d.vehicle_plate_number,
-        d.status as driver_status,
-        d.branch_id,
-        d.created_at,
-        d.updated_at,
         u.user_id,
         u.email,
         u.first_name,
         u.last_name,
+        CONCAT(u.first_name, ' ', u.last_name) as full_name,
+        u.role,
+        u.branch_id,
         u.status as user_status,
-        CONCAT(u.first_name, ' ', u.last_name) as user_full_name
-    FROM drivers d
-    LEFT JOIN users u ON d.driver_id = u.driver_id
-    WHERE 1=1
+        u.created_at,
+        u.contact_number,
+        u.category,
+        d.driver_id,
+        d.driver_name,
+        d.license_number,
+        d.license_expiry,
+        d.vehicle_type,
+        d.vehicle_plate_number,
+        d.status as driver_status,
+        b.branch_name
+    FROM users u
+    LEFT JOIN drivers d ON u.driver_id = d.driver_id
+    LEFT JOIN branches b ON u.branch_id = b.branch_id
+    WHERE u.role IN ('delivery', 'warehouse', 'sales') AND u.status = 'active'
     $branch_condition
-    ORDER BY d.driver_name ASC
+    ORDER BY 
+        CASE 
+            WHEN u.role = 'delivery' THEN 1
+            WHEN u.role = 'warehouse' THEN 2
+            WHEN u.role = 'sales' THEN 3
+        END,
+        u.first_name ASC
 ";
 
-$drivers_result = $conn->query($drivers_query);
-if (!$drivers_result) {
+$users_result = $conn->query($users_query);
+if (!$users_result) {
     die("Query failed: " . $conn->error);
 }
-$drivers = $drivers_result->fetch_all(MYSQLI_ASSOC);
+$users = $users_result->fetch_all(MYSQLI_ASSOC);
 
-// CALCULATE STATISTICS
+// Group users by role
+$drivers = array_filter($users, function($u) { return $u['role'] === 'delivery'; });
+$warehouse_staff = array_filter($users, function($u) { return $u['role'] === 'warehouse'; });
+$sales_agents = array_filter($users, function($u) { return $u['role'] === 'sales'; });
+
+// Statistics
+$total_users = count($users);
 $total_drivers = count($drivers);
-$active_drivers = count(array_filter($drivers, fn($d) => $d['driver_status'] === 'active'));
-$inactive_drivers = count(array_filter($drivers, fn($d) => $d['driver_status'] === 'inactive'));
-$on_leave_drivers = count(array_filter($drivers, fn($d) => $d['driver_status'] === 'on-leave'));
-
-// STAT CARD VALUES
-$statTotalDrivers = $total_drivers;
-$statActiveDrivers = $active_drivers;
-$statInactiveDrivers = $inactive_drivers;
-$statOnLeaveDrivers = $on_leave_drivers;
+$total_warehouse = count($warehouse_staff);
+$total_sales = count($sales_agents);
+$active_users = count(array_filter($users, function($u) { return $u['user_status'] === 'active'; }));
 
 // Helper functions
-function getDriverStatusClass($status) {
-    return match($status) {
-        'active' => 'bg-success',
-        'inactive' => 'bg-secondary',
-        'on-leave' => 'bg-warning text-dark',
-        default => 'bg-secondary'
-    };
+function getUserRoleBadge($role) {
+    switch($role) {
+        case 'delivery':
+            return 'bg-primary';
+        case 'warehouse':
+            return 'bg-success';
+        case 'sales':
+            return 'bg-warning text-dark';
+        default:
+            return 'bg-secondary';
+    }
 }
 
-function getDriverStatusText($status) {
-    return match($status) {
-        'active' => 'Active',
-        'inactive' => 'Inactive',
-        'on-leave' => 'On Leave',
-        default => ucfirst($status)
-    };
+function getUserRoleText($role) {
+    switch($role) {
+        case 'delivery':
+            return 'Driver';
+        case 'warehouse':
+            return 'Warehouse';
+        case 'sales':
+            return 'Sales Agent';
+        default:
+            return ucfirst($role);
+    }
 }
 
 function getUserStatusClass($status) {
@@ -485,19 +458,13 @@ function formatDate($dateStr) {
     $date = new DateTime($dateStr);
     return $date->format('M d, Y');
 }
-
-function formatDateTime($dateStr) {
-    if (!$dateStr) return '';
-    $date = new DateTime($dateStr);
-    return $date->format('M d, Y h:i A');
-}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Driver Management - Branch Admin</title>
+    <title>User Management - Branch Admin</title>
     <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
     <link rel="shortcut icon" href="../Pictures/favicon.ico" />
@@ -525,90 +492,91 @@ function formatDateTime($dateStr) {
             margin-left: 5px;
         }
         
-        /* Alert for missing branch column */
-        .alert-info {
-            background-color: #d1ecf1;
-            border-color: #bee5eb;
-            color: #0c5460;
-        }
-        
-        .alert-info code {
-            background-color: #f8f9fa;
-            padding: 2px 4px;
-            border-radius: 4px;
-            color: #c7254e;
-        }
-        
         /* Table styles */
-        .driver-table {
+        .user-table {
             width: 100%;
             border-collapse: collapse;
             margin-bottom: 20px;
+            table-layout: fixed;
         }
         
-        .driver-table thead th {
+        .user-table thead th {
             background-color: #f8f9fa;
             font-weight: 600;
             font-size: 13px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
             color: #495057;
-            padding: 14px 12px;
+            padding: 14px 8px;
             border-bottom: 2px solid #dee2e6;
             white-space: nowrap;
             vertical-align: middle;
-            text-align: left;
+            text-align: center;
         }
         
-        .driver-table tbody td {
-            padding: 14px 12px;
+        .user-table tbody td {
+            padding: 12px 8px;
             vertical-align: middle;
             border-bottom: 1px solid #e9ecef;
             font-size: 13px;
+            text-align: center;
+            word-wrap: break-word;
         }
         
-        .driver-table tbody tr:hover {
+        .user-table tbody td:first-child {
+            text-align: left;
+        }
+        
+        .user-table tbody tr:hover {
             background-color: #f8f9fa;
         }
         
+        /* Role-specific row styling */
+        .role-delivery {
+            border-left: 4px solid #0d6efd;
+        }
+        
+        .role-warehouse {
+            border-left: 4px solid #198754;
+        }
+        
+        .role-sales {
+            border-left: 4px solid #ffc107;
+        }
+        
         /* Column widths */
-        .col-name { width: 15%; }
-        .col-license { width: 12%; }
-        .col-contact { width: 12%; }
-        .col-vehicle { width: 15%; }
+        .col-name { width: 18%; }
+        .col-role { width: 10%; }
+        .col-details { width: 22%; }
         .col-status { width: 10%; }
-        <?php if ($drivers_branch_column_exists && $view_all_branches): ?>
         .col-branch { width: 8%; }
-        <?php endif; ?>
-        .col-user { width: 15%; }
-        .col-actions { width: 13%; text-align: center; }
+        .col-actions { width: 18%; }
         
         .status-badge {
             display: inline-block;
-            padding: 5px 12px;
-            font-size: 12px;
+            padding: 4px 8px;
+            font-size: 11px;
             font-weight: 500;
             border-radius: 20px;
             text-align: center;
-            min-width: 85px;
-            white-space: nowrap;
+            min-width: 70px;
         }
         
         .status-active { background-color: #d4edda; color: #155724; }
         .status-inactive { background-color: #f8d7da; color: #721c24; }
-        .status-on-leave { background-color: #fff3cd; color: #856404; }
         
-        .user-badge {
-            background-color: #e7f1ff;
-            color: #0d6efd;
-            padding: 4px 8px;
-            border-radius: 20px;
-            font-size: 11px;
+        .role-badge {
             display: inline-block;
+            padding: 4px 8px;
+            font-size: 11px;
+            font-weight: 600;
+            border-radius: 20px;
+            text-align: center;
+            min-width: 90px;
         }
         
-        .user-badge i {
-            margin-right: 3px;
+        .role-badge i {
+            margin-right: 4px;
         }
         
         .empty-state-table {
@@ -711,34 +679,82 @@ function formatDateTime($dateStr) {
             gap: 5px;
             justify-content: center;
             align-items: center;
+            flex-wrap: nowrap;
         }
         
         .table-btn {
             background: none;
             border: none;
-            padding: 6px;
+            padding: 6px 8px;
             border-radius: 4px;
             transition: all 0.2s;
             display: inline-flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 12px;
+            white-space: nowrap;
+        }
+        
+        .table-btn i {
+            margin-right: 3px;
         }
         
         .table-btn:hover {
             background-color: #e9ecef;
         }
         
-        .license-expiry-warning {
-            font-size: 11px;
+        .btn-view { 
+            color: #0d6efd;
+            border: 1px solid #0d6efd;
+        }
+        .btn-edit { 
+            color: #198754;
+            border: 1px solid #198754;
+        }
+        .btn-delete { 
             color: #dc3545;
-            margin-top: 2px;
+            border: 1px solid #dc3545;
         }
         
-        .license-expiry-ok {
-            font-size: 11px;
-            color: #28a745;
+        .btn-view:hover { 
+            background-color: #0d6efd;
+            color: white;
+        }
+        .btn-edit:hover { 
+            background-color: #198754;
+            color: white;
+        }
+        .btn-delete:hover { 
+            background-color: #dc3545;
+            color: white;
+        }
+        
+        /* Add User Buttons */
+        .add-user-buttons {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .btn-add-driver {
+            background-color: #0d6efd;
+            color: white;
+            font-size: 13px;
+            padding: 8px 12px;
+        }
+        
+        .btn-add-warehouse {
+            background-color: #198754;
+            color: white;
+            font-size: 13px;
+            padding: 8px 12px;
+        }
+        
+        .btn-add-sales {
+            background-color: #ffc107;
+            color: #212529;
+            font-size: 13px;
+            padding: 8px 12px;
         }
         
         /* Modal styling */
@@ -749,7 +765,7 @@ function formatDateTime($dateStr) {
         }
         
         .detail-value {
-            font-size: 16px;
+            font-size: 14px;
             font-weight: 600;
             color: #212529;
         }
@@ -760,10 +776,6 @@ function formatDateTime($dateStr) {
             padding: 10px;
             font-size: 12px;
             margin-top: 5px;
-        }
-        
-        .password-note i {
-            color: #856404;
         }
         
         .form-section {
@@ -781,10 +793,33 @@ function formatDateTime($dateStr) {
             border-bottom: 2px solid #0d6efd;
             padding-bottom: 5px;
         }
+        
+        /* Details text alignment */
+        .details-text {
+            font-size: 12px;
+            line-height: 1.4;
+            text-align: left;
+            display: inline-block;
+        }
+        
+        .details-text i {
+            width: 16px;
+            margin-right: 4px;
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 1200px) {
+            .add-user-buttons {
+                flex-wrap: wrap;
+            }
+            
+            .action-buttons {
+                flex-wrap: wrap;
+            }
+        }
     </style>
 </head>
 <body>
-    <!-- MAIN APPLICATION -->
     <div id="appPage">
         <!-- Sidebar -->
         <div class="sidebar" id="sidebar">
@@ -831,9 +866,9 @@ function formatDateTime($dateStr) {
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link active" href="drivers.php">
-                            <i class="bi bi-truck"></i>
-                            <span class="nav-text">Drivers</span>
+                        <a class="nav-link active" href="users.php">
+                            <i class="bi bi-people"></i>
+                            <span class="nav-text">Users</span>
                         </a>
                     </li>
                     <li class="nav-item">
@@ -864,7 +899,6 @@ function formatDateTime($dateStr) {
 
         <!-- Main Content -->
         <div class="main-content" id="mainContent">
-            <!-- DRIVER MANAGEMENT CONTENT -->
             <div id="dashboardContent" class="page-content active">
                 <!-- Navbar Top -->
                 <div class="navbar-top">
@@ -872,197 +906,174 @@ function formatDateTime($dateStr) {
                         <i class="bi bi-list"></i>
                     </button>
                     <div class="page-title">
-                        <h2><i class="bi bi-truck me-2"></i>Driver Management</h2>
+                        <h2><i class="bi bi-people me-2"></i>User Management</h2>
                         <p id="dashboardSubtitle">
-                            Manage drivers and their user accounts
-                            <?php if ($drivers_branch_column_exists && !$view_all_branches): ?>
+                            Manage all users in your branch - Drivers, Warehouse Staff, and Sales Agents
+                            <?php if (!$view_all_branches): ?>
                                 for your branch
                             <?php endif; ?>
                         </p>
                     </div>
                 </div>
 
-                <!-- Branch Info Alerts -->
-                <?php if (!$drivers_branch_column_exists): ?>
-                    <div class="alert alert-info alert-dismissible fade show" role="alert">
-                        <i class="bi bi-info-circle"></i> 
-                        <strong>Branch filtering for drivers not yet set up.</strong> Please run this SQL in phpMyAdmin:
-                        <br><br>
-                        <code>ALTER TABLE drivers ADD COLUMN branch_id INT NULL;</code>
-                        <br>
-                        <code>ALTER TABLE drivers ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
-                        <br><br>
-                        <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('drivers')">
-                            <i class="bi bi-files"></i> Copy SQL
-                        </button>
-                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                    </div>
-                <?php endif; ?>
-
-                <!-- No Drivers Warning -->
-                <?php if (empty($drivers) && $drivers_branch_column_exists && !$view_all_branches): ?>
-                    <div class="alert alert-warning">
-                        <i class="bi bi-exclamation-triangle"></i> 
-                        No drivers found for your branch. Click "Add Driver" to create one.
-                    </div>
-                <?php endif; ?>
-
                 <!-- Stats Cards -->
                 <div class="row g-3 mb-4">
                     <div class="col-md-3 col-6">
                         <div class="stat-card total">
                             <i class="bi bi-people stat-icon"></i>
-                            <div class="stat-value"><?= $statTotalDrivers ?></div>
-                            <div class="stat-label">Total Drivers</div>
-                            <?php if ($drivers_branch_column_exists && !$view_all_branches): ?>
-                                <small class="d-block text-white-50">Your Branch</small>
-                            <?php endif; ?>
+                            <div class="stat-value"><?= $total_users ?></div>
+                            <div class="stat-label">Total Users</div>
                         </div>
                     </div>
                     <div class="col-md-3 col-6">
-                        <div class="stat-card complete">
-                            <i class="bi bi-check-circle stat-icon"></i>
-                            <div class="stat-value"><?= $statActiveDrivers ?></div>
-                            <div class="stat-label">Active</div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #0d6efd, #0b5ed7);">
+                            <i class="bi bi-truck stat-icon"></i>
+                            <div class="stat-value"><?= $total_drivers ?></div>
+                            <div class="stat-label">Drivers</div>
                         </div>
                     </div>
                     <div class="col-md-3 col-6">
-                        <div class="stat-card pending">
-                            <i class="bi bi-clock-history stat-icon"></i>
-                            <div class="stat-value"><?= $statOnLeaveDrivers ?></div>
-                            <div class="stat-label">On Leave</div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #198754, #157347);">
+                            <i class="bi bi-building stat-icon"></i>
+                            <div class="stat-value"><?= $total_warehouse ?></div>
+                            <div class="stat-label">Warehouse</div>
                         </div>
                     </div>
                     <div class="col-md-3 col-6">
-                        <div class="stat-card rejected">
-                            <i class="bi bi-x-circle stat-icon"></i>
-                            <div class="stat-value"><?= $statInactiveDrivers ?></div>
-                            <div class="stat-label">Inactive</div>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #ffc107, #ffb300);">
+                            <i class="bi bi-graph-up stat-icon"></i>
+                            <div class="stat-value"><?= $total_sales ?></div>
+                            <div class="stat-label">Sales Agents</div>
                         </div>
                     </div>
                 </div>
 
-                <!-- FILTER SECTION -->
+                <!-- FILTER SECTION AND ADD BUTTONS -->
                 <div class="filter-section">
                     <div class="filter-controls">
                         <div class="filter-dropdowns">
+                            <!-- User Type Filter -->
+                            <div class="filter-dropdown">
+                                <select class="form-select" id="userTypeFilter" onchange="filterUsers()">
+                                    <option value="all">All Users</option>
+                                    <option value="delivery">Drivers Only</option>
+                                    <option value="warehouse">Warehouse Only</option>
+                                    <option value="sales">Sales Agents Only</option>
+                                </select>
+                            </div>
+                            
                             <!-- Status Filter -->
                             <div class="filter-dropdown">
-                                <select class="form-select" id="statusFilter" onchange="filterDrivers()">
+                                <select class="form-select" id="statusFilter" onchange="filterUsers()">
                                     <option value="all">All Status</option>
-                                    <option value="active">Active</option>
-                                    <option value="inactive">Inactive</option>
-                                    <option value="on-leave">On Leave</option>
+                                    <option value="active">Active Only</option>
+                                    <option value="inactive">Inactive Only</option>
                                 </select>
                             </div>
                             
                             <!-- Search Box -->
                             <div class="search-box">
                                 <i class="bi bi-search"></i>
-                                <input type="text" id="searchInput" placeholder="Search by name, license, email..." onkeyup="filterDrivers()">
+                                <input type="text" id="searchInput" placeholder="Search by name, email, role..." onkeyup="filterUsers()">
                             </div>
                         </div>
                     </div>
                     
                     <div class="filter-actions">
-                        <button class="btn btn-outline-success" onclick="exportToExcel()">
+                        <button class="btn btn-outline-success me-2" onclick="exportToExcel()">
                             <i class="bi bi-file-earmark-excel me-1"></i> Export
                         </button>
-                        <button class="btn btn-primary" onclick="showAddDriverModal()">
-                            <i class="bi bi-plus-circle me-1"></i> Add Driver
-                        </button>
+                        
+                        <div class="add-user-buttons">
+                            <button class="btn btn-add-driver" onclick="showAddDriverModal()">
+                                <i class="bi bi-truck me-1"></i> Add Driver
+                            </button>
+                            <button class="btn btn-add-warehouse" onclick="showAddWarehouseModal()">
+                                <i class="bi bi-building me-1"></i> Add Warehouse
+                            </button>
+                            <button class="btn btn-add-sales" onclick="showAddSalesModal()">
+                                <i class="bi bi-graph-up me-1"></i> Add Sales
+                            </button>
+                        </div>
                     </div>
                 </div>
 
-                <!-- DRIVERS TABLE -->
+                <!-- USERS TABLE -->
                 <div class="table-responsive">
-                    <table class="table driver-table" id="driversTable">
+                    <table class="table user-table" id="usersTable">
                         <thead>
                             <tr>
-                                <th class="col-name">DRIVER NAME</th>
-                                <th class="col-license">LICENSE #</th>
-                                <th class="col-license">EXPIRY</th>
-                                <th class="col-contact">CONTACT</th>
-                                <th class="col-vehicle">VEHICLE</th>
+                                <th class="col-name">NAME</th>
+                                <th class="col-role">ROLE</th>
+                                <th class="col-details">DETAILS</th>
                                 <th class="col-status">STATUS</th>
-                                <?php if ($drivers_branch_column_exists && $view_all_branches): ?>
+                                <?php if ($view_all_branches): ?>
                                     <th class="col-branch">BRANCH</th>
                                 <?php endif; ?>
-                                <th class="col-user">USER ACCOUNT</th>
                                 <th class="col-actions">ACTIONS</th>
                             </tr>
                         </thead>
-                        <tbody id="driversTableBody">
-                            <?php if (empty($drivers)): ?>
+                        <tbody id="usersTableBody">
+                            <?php if (empty($users)): ?>
                             <tr>
-                                <td colspan="<?= ($drivers_branch_column_exists && $view_all_branches) ? '9' : '8' ?>" class="empty-state-table">
-                                    <i class="bi bi-truck"></i>
-                                    <h5>No Drivers Found</h5>
-                                    <p class="text-muted">Click "Add Driver" to create a new driver with user account.</p>
-                                    <button class="btn btn-primary mt-2" onclick="showAddDriverModal()">
-                                        <i class="bi bi-plus-circle me-1"></i> Add Driver
-                                    </button>
+                                <td colspan="<?= $view_all_branches ? '7' : '6' ?>" class="empty-state-table">
+                                    <i class="bi bi-people"></i>
+                                    <h5>No Users Found</h5>
+                                    <p class="text-muted">Click one of the "Add" buttons above to create users.</p>
                                 </td>
                             </tr>
                             <?php else: ?>
-                                <?php foreach ($drivers as $driver): 
-                                    // Check license expiry
-                                    $license_expiry = $driver['license_expiry'] ? new DateTime($driver['license_expiry']) : null;
-                                    $today = new DateTime();
-                                    $days_to_expiry = $license_expiry ? $today->diff($license_expiry)->days : null;
-                                    $expiry_warning = $license_expiry && $license_expiry < $today ? 'expired' : ($days_to_expiry && $days_to_expiry <= 30 ? 'warning' : 'ok');
-                                ?>
-                                <tr class="driver-row" 
-                                    data-id="<?= $driver['driver_id'] ?>"
-                                    data-name="<?= htmlspecialchars($driver['driver_name']) ?>"
-                                    data-license="<?= htmlspecialchars($driver['license_number']) ?>"
-                                    data-status="<?= $driver['driver_status'] ?>">
-                                    <td class="col-name">
-                                        <strong><?= htmlspecialchars($driver['driver_name']) ?></strong>
+                                <?php foreach ($users as $user): ?>
+                                <tr class="user-row role-<?= $user['role'] ?>" 
+                                    data-id="<?= $user['user_id'] ?>"
+                                    data-role="<?= $user['role'] ?>"
+                                    data-status="<?= $user['user_status'] ?>">
+                                    <td class="col-name text-start">
+                                        <strong><?= htmlspecialchars($user['full_name']) ?></strong>
+                                        <br>
+                                        <small class="text-muted"><?= htmlspecialchars($user['email']) ?></small>
                                     </td>
-                                    <td class="col-license"><?= htmlspecialchars($driver['license_number']) ?></td>
-                                    <td class="col-license">
-                                        <?= formatDate($driver['license_expiry']) ?>
-                                        <?php if ($expiry_warning == 'expired'): ?>
-                                            <span class="license-expiry-warning"><i class="bi bi-exclamation-triangle"></i> Expired</span>
-                                        <?php elseif ($expiry_warning == 'warning'): ?>
-                                            <span class="license-expiry-warning"><i class="bi bi-clock"></i> <?= $days_to_expiry ?> days</span>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td class="col-contact"><?= htmlspecialchars($driver['contact_number'] ?? 'N/A') ?></td>
-                                    <td class="col-vehicle">
-                                        <?= htmlspecialchars($driver['vehicle_type'] ?? 'N/A') ?>
-                                        <small class="d-block text-muted"><?= htmlspecialchars($driver['vehicle_plate_number'] ?? '') ?></small>
-                                    </td>
-                                    <td class="col-status">
-                                        <span class="status-badge <?= getDriverStatusClass($driver['driver_status']) ?>">
-                                            <?= getDriverStatusText($driver['driver_status']) ?>
+                                    <td class="col-role">
+                                        <span class="role-badge <?= getUserRoleBadge($user['role']) ?>">
+                                            <i class="bi <?= $user['role'] === 'delivery' ? 'bi-truck' : ($user['role'] === 'warehouse' ? 'bi-building' : 'bi-graph-up') ?>"></i>
+                                            <?= getUserRoleText($user['role']) ?>
                                         </span>
                                     </td>
-                                    <?php if ($drivers_branch_column_exists && $view_all_branches): ?>
+                                    <td class="col-details">
+                                        <div class="details-text">
+                                        <?php if ($user['role'] === 'delivery'): ?>
+                                            <i class="bi bi-card-text"></i> License: <?= htmlspecialchars($user['license_number'] ?? 'N/A') ?><br>
+                                            <i class="bi bi-calendar"></i> Exp: <?= formatDate($user['license_expiry']) ?><br>
+                                            <i class="bi bi-truck"></i> <?= htmlspecialchars($user['vehicle_type'] ?? 'N/A') ?>
+                                        <?php elseif ($user['role'] === 'warehouse'): ?>
+                                            <i class="bi bi-briefcase"></i> Category: <?= htmlspecialchars($user['category'] ?? 'General') ?><br>
+                                            <i class="bi bi-telephone"></i> Contact: <?= htmlspecialchars($user['contact_number'] ?? 'N/A') ?>
+                                        <?php elseif ($user['role'] === 'sales'): ?>
+                                            <i class="bi bi-briefcase"></i> Position: Sales Agent<br>
+                                            <i class="bi bi-telephone"></i> Contact: <?= htmlspecialchars($user['contact_number'] ?? 'N/A') ?>
+                                        <?php endif; ?>
+                                        </div>
+                                    </td>
+                                    <td class="col-status">
+                                        <span class="status-badge <?= getUserStatusClass($user['user_status']) ?>">
+                                            <?= ucfirst($user['user_status']) ?>
+                                        </span>
+                                    </td>
+                                    <?php if ($view_all_branches): ?>
                                         <td class="col-branch">
-                                            <span class="badge bg-info">Branch <?= $driver['branch_id'] ?? 'N/A' ?></span>
+                                            <span class="badge bg-info"><?= htmlspecialchars($user['branch_name'] ?? 'Branch '.$user['branch_id']) ?></span>
                                         </td>
                                     <?php endif; ?>
-                                    <td class="col-user">
-                                        <?php if ($driver['user_id']): ?>
-                                            <span> 
-                                                <?= htmlspecialchars($driver['email']) ?>
-                                            </span>
-                                        <?php else: ?>
-                                            <span class="text-muted fst-italic">No account</span>
-                                        <?php endif; ?>
-                                    </td>
                                     <td class="col-actions">
                                         <div class="action-buttons">
-                                            <button class="btn-action btn-view" onclick="viewDriver(<?= $driver['driver_id'] ?>)" title="View">
-                                                <i class="bi bi-eye"></i>
+                                            <button class="table-btn btn-view" onclick="viewUser(<?= $user['user_id'] ?>)" title="View">
+                                                <i class="bi bi-eye"></i> View
                                             </button>
-                                            <button class="btn-action btn-edit" onclick="editDriver(<?= $driver['driver_id'] ?>)" title="Edit">
-                                                <i class="bi bi-pencil"></i>
+                                            <button class="table-btn btn-edit" onclick="editUser(<?= $user['user_id'] ?>)" title="Edit">
+                                                <i class="bi bi-pencil"></i> Edit
                                             </button>
-                                            <button class="btn-action btn-delete" onclick="deleteDriver(<?= $driver['driver_id'] ?>)" title="Delete">
-                                                <i class="bi bi-trash"></i>
+                                            <button class="table-btn btn-delete" onclick="deleteUser(<?= $user['user_id'] ?>, '<?= $user['role'] ?>', <?= $user['driver_id'] ?? 'null' ?>)" title="Delete">
+                                                <i class="bi bi-trash"></i> Delete
                                             </button>
                                         </div>
                                     </td>
@@ -1076,24 +1087,18 @@ function formatDateTime($dateStr) {
         </div>
     </div>
 
-    <!-- ADD/EDIT DRIVER MODAL (Combined Form) -->
+    <!-- ADD/EDIT DRIVER MODAL -->
     <div class="modal fade" id="driverModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
-                <div class="modal-header bg-primary text-white">
-                    <h5 class="modal-title" id="driverModalTitle"><i class="bi bi-plus-circle me-2"></i>Add New Driver</h5>
+                <div class="modal-header" style="background-color: #0d6efd; color: white;">
+                    <h5 class="modal-title"><i class="bi bi-truck me-2"></i><span id="driverModalTitle">Add New Driver</span></h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     <form id="driverForm" onsubmit="return false;">
                         <input type="hidden" id="driverId" name="driver_id">
-                        
-                        <?php if ($drivers_branch_column_exists && !$view_all_branches): ?>
-                            <div class="alert alert-info mb-3">
-                                <i class="bi bi-info-circle"></i>
-                                Adding driver to your branch (Branch ID: <?= $branch_id ?>)
-                            </div>
-                        <?php endif; ?>
+                        <input type="hidden" id="driverUserId" name="user_id">
                         
                         <!-- Driver Information Section -->
                         <div class="form-section">
@@ -1134,11 +1139,10 @@ function formatDateTime($dateStr) {
                                     <input type="text" class="form-control" id="vehiclePlate" name="vehicle_plate_number" placeholder="ABC-1234">
                                 </div>
                                 <div class="col-md-6">
-                                    <label for="driverStatus" class="form-label">Driver Status</label>
+                                    <label for="driverStatus" class="form-label">Status</label>
                                     <select class="form-select" id="driverStatus" name="status">
                                         <option value="active">Active</option>
                                         <option value="inactive">Inactive</option>
-                                        <option value="on-leave">On Leave</option>
                                     </select>
                                 </div>
                             </div>
@@ -1147,37 +1151,26 @@ function formatDateTime($dateStr) {
                         <!-- User Account Section -->
                         <div class="form-section">
                             <div class="form-section-title">
-                                <i class="bi bi-person-circle me-2"></i>User Account (for Login)
-                            </div>
-                            <div class="alert alert-info mb-3">
-                                <i class="bi bi-info-circle"></i>
-                                This user account will be used by the driver to log in to the system. Password will be securely hashed.
+                                <i class="bi bi-person-circle me-2"></i>User Account
                             </div>
                             <div class="row g-3">
                                 <div class="col-md-6">
-                                    <label for="firstName" class="form-label">First Name *</label>
-                                    <input type="text" class="form-control" id="firstName" name="first_name" required>
+                                    <label for="driverFirstName" class="form-label">First Name *</label>
+                                    <input type="text" class="form-control" id="driverFirstName" name="first_name" required>
                                 </div>
                                 <div class="col-md-6">
-                                    <label for="lastName" class="form-label">Last Name *</label>
-                                    <input type="text" class="form-control" id="lastName" name="last_name" required>
+                                    <label for="driverLastName" class="form-label">Last Name *</label>
+                                    <input type="text" class="form-control" id="driverLastName" name="last_name" required>
                                 </div>
                                 <div class="col-md-6">
-                                    <label for="email" class="form-label">Email Address *</label>
-                                    <input type="email" class="form-control" id="email" name="email" required>
+                                    <label for="driverEmail" class="form-label">Email Address *</label>
+                                    <input type="email" class="form-control" id="driverEmail" name="email" required>
                                 </div>
-                                <div class="col-md-6" id="passwordField">
-                                    <label for="password" class="form-label">Password *</label>
-                                    <input type="password" class="form-control" id="password" name="password" minlength="6">
-                                    <div class="password-note">
-                                        <i class="bi bi-exclamation-triangle"></i>
-                                        Password will be securely hashed. Minimum 6 characters.
-                                    </div>
-                                </div>
-                                <div class="col-12" id="passwordEditNote" style="display: none;">
-                                    <div class="password-note">
-                                        <i class="bi bi-info-circle"></i>
-                                        Leave password blank to keep current password when editing.
+                                <div class="col-md-6">
+                                    <label for="driverPassword" class="form-label">Password</label>
+                                    <input type="password" class="form-control" id="driverPassword" name="password" minlength="6">
+                                    <div class="password-note" id="driverPasswordNote">
+                                        <i class="bi bi-info-circle"></i> Required for new users. Leave blank to keep current password when editing.
                                     </div>
                                 </div>
                             </div>
@@ -1192,46 +1185,175 @@ function formatDateTime($dateStr) {
         </div>
     </div>
 
-    <!-- VIEW DRIVER MODAL -->
-    <div class="modal fade" id="viewDriverModal" tabindex="-1" aria-hidden="true">
+    <!-- ADD/EDIT WAREHOUSE MODAL -->
+    <div class="modal fade" id="warehouseModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
-                <div class="modal-header bg-info text-white">
-                    <h5 class="modal-title"><i class="bi bi-eye me-2"></i>Driver Details</h5>
+                <div class="modal-header" style="background-color: #198754; color: white;">
+                    <h5 class="modal-title"><i class="bi bi-building me-2"></i><span id="warehouseModalTitle">Add Warehouse Staff</span></h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <div class="row" id="viewDriverContent">
-                        <!-- Content populated by JavaScript -->
-                    </div>
+                    <form id="warehouseForm" onsubmit="return false;">
+                        <input type="hidden" id="warehouseId" name="user_id">
+                        
+                        <div class="form-section">
+                            <div class="form-section-title">
+                                <i class="bi bi-person-badge me-2"></i>Staff Information
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label for="warehouseFirstName" class="form-label">First Name *</label>
+                                    <input type="text" class="form-control" id="warehouseFirstName" name="first_name" required>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="warehouseLastName" class="form-label">Last Name *</label>
+                                    <input type="text" class="form-control" id="warehouseLastName" name="last_name" required>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="warehouseEmail" class="form-label">Email Address *</label>
+                                    <input type="email" class="form-control" id="warehouseEmail" name="email" required>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="warehousePassword" class="form-label">Password</label>
+                                    <input type="password" class="form-control" id="warehousePassword" name="password" minlength="6">
+                                    <div class="password-note" id="warehousePasswordNote">
+                                        <i class="bi bi-info-circle"></i> Required for new users. Leave blank to keep current password when editing.
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="warehouseCategory" class="form-label">Category</label>
+                                    <select class="form-select" id="warehouseCategory" name="category">
+                                        <option value="">Select Category</option>
+                                        <option value="Oil">Oil</option>
+                                        <option value="Cement">Cement</option>
+                                        <option value="General">General</option>
+                                        <option value="Lubricants">Lubricants</option>
+                                        <option value="Chemicals">Chemicals</option>
+                                        <option value="Tools">Tools</option>
+                                        <option value="Equipment">Equipment</option>
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="warehouseContact" class="form-label">Contact Number</label>
+                                    <input type="text" class="form-control" id="warehouseContact" name="contact_number" placeholder="09-1234-5678">
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="warehouseStatus" class="form-label">Status</label>
+                                    <select class="form-select" id="warehouseStatus" name="status">
+                                        <option value="active">Active</option>
+                                        <option value="inactive">Inactive</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-success" onclick="saveWarehouse()">Save Warehouse Staff</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ADD/EDIT SALES MODAL -->
+    <div class="modal fade" id="salesModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header" style="background-color: #ffc107; color: #212529;">
+                    <h5 class="modal-title"><i class="bi bi-graph-up me-2"></i><span id="salesModalTitle">Add Sales Agent</span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="salesForm" onsubmit="return false;">
+                        <input type="hidden" id="salesId" name="user_id">
+                        
+                        <div class="form-section">
+                            <div class="form-section-title">
+                                <i class="bi bi-person-workspace me-2"></i>Agent Information
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label for="salesFirstName" class="form-label">First Name *</label>
+                                    <input type="text" class="form-control" id="salesFirstName" name="first_name" required>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="salesLastName" class="form-label">Last Name *</label>
+                                    <input type="text" class="form-control" id="salesLastName" name="last_name" required>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="salesEmail" class="form-label">Email Address *</label>
+                                    <input type="email" class="form-control" id="salesEmail" name="email" required>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="salesPassword" class="form-label">Password</label>
+                                    <input type="password" class="form-control" id="salesPassword" name="password" minlength="6">
+                                    <div class="password-note" id="salesPasswordNote">
+                                        <i class="bi bi-info-circle"></i> Required for new users. Leave blank to keep current password when editing.
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="salesContact" class="form-label">Contact Number</label>
+                                    <input type="text" class="form-control" id="salesContact" name="contact_number" placeholder="09-1234-5678">
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="salesStatus" class="form-label">Status</label>
+                                    <select class="form-select" id="salesStatus" name="status">
+                                        <option value="active">Active</option>
+                                        <option value="inactive">Inactive</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn" style="background-color: #ffc107; color: #212529;" onclick="saveSales()">Save Sales Agent</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- VIEW USER MODAL -->
+    <div class="modal fade" id="viewUserModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-info text-white">
+                    <h5 class="modal-title"><i class="bi bi-eye me-2"></i>User Details</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row" id="viewUserContent"></div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button type="button" class="btn btn-warning" onclick="editFromView()">Edit Driver</button>
+                    <button type="button" class="btn btn-warning" onclick="editFromView()">Edit User</button>
                 </div>
             </div>
         </div>
     </div>
 
     <!-- DELETE CONFIRMATION MODAL -->
-    <div class="modal fade" id="deleteDriverModal" tabindex="-1" aria-hidden="true">
+    <div class="modal fade" id="deleteUserModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header bg-danger text-white">
-                    <h5 class="modal-title"><i class="bi bi-trash me-2"></i>Confirm Delete</h5>
+                    <h5 class="modal-title"><i class="bi bi-trash me-2"></i>Confirm Deactivate</h5>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <p>Are you sure you want to delete this driver?</p>
-                    <p class="fw-bold" id="deleteDriverName"></p>
+                    <p>Are you sure you want to deactivate this user?</p>
+                    <p class="fw-bold" id="deleteUserName"></p>
                     <div class="alert alert-warning">
                         <i class="bi bi-exclamation-triangle me-2"></i>
-                        The associated user account will also be deactivated or deleted.
+                        This action will deactivate the user. They will no longer be able to log in.
                     </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-danger" onclick="confirmDeleteDriver()">Delete Driver</button>
+                    <button type="button" class="btn btn-danger" onclick="confirmDeleteUser()">Deactivate User</button>
                 </div>
             </div>
         </div>
@@ -1242,10 +1364,11 @@ function formatDateTime($dateStr) {
     
     <script>
     // ========== GLOBAL VARIABLES ==========
+    let currentUserId = null;
+    let currentUserRole = null;
     let currentDriverId = null;
     const branchId = <?php echo $branch_id; ?>;
     const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
-    const driversBranchColumnExists = <?php echo $drivers_branch_column_exists ? 'true' : 'false'; ?>;
     
     // ========== SIDEBAR FUNCTIONS ==========
     function toggleSidebar() {
@@ -1305,18 +1428,12 @@ function formatDateTime($dateStr) {
 
     // ========== DOM READY ==========
     document.addEventListener('DOMContentLoaded', function() {
-        console.log("Driver Management with User Accounts - Combined Form");
-        console.log("Branch ID:", branchId);
-        console.log("View All Branches:", viewAllBranches);
-        
         initializeSidebar();
         
         // Mobile menu toggle
         document.getElementById('mobileMenuBtn').addEventListener('click', function() {
             const sidebar = document.getElementById('sidebar');
-            const isMobile = window.innerWidth <= 992;
-            
-            if (isMobile) {
+            if (window.innerWidth <= 992) {
                 sidebar.classList.toggle('active');
                 if (!document.querySelector('.sidebar-overlay')) {
                     const overlay = document.createElement('div');
@@ -1344,84 +1461,60 @@ function formatDateTime($dateStr) {
             });
         });
 
-        document.addEventListener('click', function(event) {
-            const sidebar = document.getElementById('sidebar');
-            const mobileBtn = document.getElementById('mobileMenuBtn');
-            const overlay = document.querySelector('.sidebar-overlay');
-            const isMobile = window.innerWidth <= 992;
-            
-            if (isMobile && sidebar.classList.contains('active') && 
-                !sidebar.contains(event.target) && 
-                !mobileBtn.contains(event.target) &&
-                !overlay?.contains(event.target)) {
-                closeMobileSidebar();
-            }
-        });
-
         // Fix modal backdrop issue
-        const modals = ['driverModal', 'viewDriverModal', 'deleteDriverModal'];
+        const modals = ['driverModal', 'warehouseModal', 'salesModal', 'viewUserModal', 'deleteUserModal'];
         modals.forEach(modalId => {
             const modal = document.getElementById(modalId);
             if (modal) {
                 modal.addEventListener('hidden.bs.modal', function () {
                     const backdrop = document.querySelector('.modal-backdrop');
-                    if (backdrop) {
-                        backdrop.remove();
-                    }
+                    if (backdrop) backdrop.remove();
                     document.body.classList.remove('modal-open');
                     document.body.style.removeProperty('padding-right');
                     document.body.style.removeProperty('overflow');
                 });
             }
         });
+
+        // Set default license expiry
+        const today = new Date();
+        const oneYearFromNow = new Date(today);
+        oneYearFromNow.setFullYear(today.getFullYear() + 1);
+        if (document.getElementById('licenseExpiry')) {
+            document.getElementById('licenseExpiry').value = oneYearFromNow.toISOString().split('T')[0];
+        }
     });
 
     // ========== FILTER FUNCTIONS ==========
-    function filterDrivers() {
-        const statusFilter = document.getElementById('statusFilter').value;
-        const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+    function filterUsers() {
+        const userType = document.getElementById('userTypeFilter').value;
+        const status = document.getElementById('statusFilter').value;
+        const search = document.getElementById('searchInput').value.toLowerCase();
         
-        const rows = document.querySelectorAll('.driver-row');
-        let visibleCount = 0;
-        
-        rows.forEach(row => {
-            let showRow = true;
+        document.querySelectorAll('.user-row').forEach(row => {
+            let show = true;
             
-            // Status filter
-            if (statusFilter !== 'all') {
-                const rowStatus = row.dataset.status;
-                if (rowStatus !== statusFilter) showRow = false;
+            if (userType !== 'all' && row.dataset.role !== userType) show = false;
+            if (show && status !== 'all' && row.dataset.status !== status) show = false;
+            
+            if (show && search) {
+                const text = row.innerText.toLowerCase();
+                show = text.includes(search);
             }
             
-            // Search filter
-            if (showRow && searchTerm !== '') {
-                const name = row.dataset.name?.toLowerCase() || '';
-                const license = row.dataset.license?.toLowerCase() || '';
-                const rowText = row.innerText.toLowerCase();
-                
-                if (!name.includes(searchTerm) && !license.includes(searchTerm) && !rowText.includes(searchTerm)) {
-                    showRow = false;
-                }
-            }
-            
-            row.style.display = showRow ? '' : 'none';
-            if (showRow) visibleCount++;
+            row.style.display = show ? '' : 'none';
         });
     }
 
     // ========== MODAL FUNCTIONS ==========
     function showAddDriverModal() {
-        document.getElementById('driverModalTitle').innerHTML = '<i class="bi bi-plus-circle me-2"></i>Add New Driver';
         document.getElementById('driverForm').reset();
         document.getElementById('driverId').value = '';
-        document.getElementById('driverStatus').value = 'active';
+        document.getElementById('driverUserId').value = '';
+        document.getElementById('driverModalTitle').textContent = 'Add New Driver';
+        document.getElementById('driverPassword').required = true;
+        document.getElementById('driverPasswordNote').innerHTML = '<i class="bi bi-info-circle"></i> Required for new users.';
         
-        // Show password field for new driver
-        document.getElementById('passwordField').style.display = 'block';
-        document.getElementById('password').required = true;
-        document.getElementById('passwordEditNote').style.display = 'none';
-        
-        // Set default license expiry to 1 year from now
         const today = new Date();
         const oneYearFromNow = new Date(today);
         oneYearFromNow.setFullYear(today.getFullYear() + 1);
@@ -1430,126 +1523,108 @@ function formatDateTime($dateStr) {
         new bootstrap.Modal(document.getElementById('driverModal')).show();
     }
 
-    function viewDriver(id) {
+    function showAddWarehouseModal() {
+        document.getElementById('warehouseForm').reset();
+        document.getElementById('warehouseId').value = '';
+        document.getElementById('warehouseModalTitle').textContent = 'Add Warehouse Staff';
+        document.getElementById('warehousePassword').required = true;
+        document.getElementById('warehousePasswordNote').innerHTML = '<i class="bi bi-info-circle"></i> Required for new users.';
+        
+        new bootstrap.Modal(document.getElementById('warehouseModal')).show();
+    }
+
+    function showAddSalesModal() {
+        document.getElementById('salesForm').reset();
+        document.getElementById('salesId').value = '';
+        document.getElementById('salesModalTitle').textContent = 'Add Sales Agent';
+        document.getElementById('salesPassword').required = true;
+        document.getElementById('salesPasswordNote').innerHTML = '<i class="bi bi-info-circle"></i> Required for new users.';
+        
+        new bootstrap.Modal(document.getElementById('salesModal')).show();
+    }
+
+    function viewUser(id) {
         showLoading();
         
         const formData = new FormData();
-        formData.append('action', 'get_driver');
-        formData.append('driver_id', id);
+        formData.append('action', 'get_user');
+        formData.append('user_id', id);
         
-        fetch('drivers.php', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
+        fetch('drivers.php', { method: 'POST', body: formData })
+        .then(res => res.json())
         .then(data => {
             Swal.close();
             
             if (data.success) {
-                const driver = data.driver;
+                const u = data.user;
+                currentUserId = u.user_id;
+                currentUserRole = u.role;
                 
-                const expiryDate = driver.license_expiry ? new Date(driver.license_expiry).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'Not set';
-                const createdDate = driver.created_at ? new Date(driver.created_at).toLocaleString() : 'N/A';
+                const created = u.created_at ? new Date(u.created_at).toLocaleString() : 'N/A';
+                let html = '';
                 
-                let branchHtml = '';
-                if (driversBranchColumnExists && driver.branch_id) {
-                    branchHtml = `
-                        <tr>
-                            <td class="detail-label">Branch:</td>
-                            <td><span class="badge bg-info">Branch ${driver.branch_id}</span></td>
-                        </tr>
+                if (u.role === 'delivery') {
+                    html = `
+                        <div class="col-md-6">
+                            <div class="form-section">
+                                <h6 class="fw-bold mb-3">Driver Information</h6>
+                                <table class="table table-sm">
+                                    <tr><td>Driver Name:</td><td class="fw-bold">${u.driver_name || u.full_name}</td></tr>
+                                    <tr><td>License:</td><td>${u.license_number || 'N/A'}</td></tr>
+                                    <tr><td>Expiry:</td><td>${u.license_expiry ? new Date(u.license_expiry).toLocaleDateString() : 'Not set'}</td></tr>
+                                    <tr><td>Vehicle:</td><td>${u.vehicle_type || 'Not specified'}</td></tr>
+                                    <tr><td>Plate:</td><td>${u.vehicle_plate_number || 'Not specified'}</td></tr>
+                                </table>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="form-section">
+                                <h6 class="fw-bold mb-3">User Account</h6>
+                                <table class="table table-sm">
+                                    <tr><td>Name:</td><td>${u.first_name} ${u.last_name}</td></tr>
+                                    <tr><td>Email:</td><td>${u.email}</td></tr>
+                                    <tr><td>Contact:</td><td>${u.contact_number || 'Not provided'}</td></tr>
+                                    <tr><td>Status:</td><td><span class="badge ${u.status === 'active' ? 'bg-success' : 'bg-secondary'}">${u.status}</span></td></tr>
+                                    <tr><td>Created:</td><td>${created}</td></tr>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+                } else if (u.role === 'warehouse') {
+                    html = `
+                        <div class="col-md-12">
+                            <div class="form-section">
+                                <h6 class="fw-bold mb-3">Warehouse Staff Information</h6>
+                                <table class="table table-sm">
+                                    <tr><td>Name:</td><td class="fw-bold">${u.first_name} ${u.last_name}</td></tr>
+                                    <tr><td>Email:</td><td>${u.email}</td></tr>
+                                    <tr><td>Category:</td><td>${u.category || 'General'}</td></tr>
+                                    <tr><td>Contact:</td><td>${u.contact_number || 'Not provided'}</td></tr>
+                                    <tr><td>Status:</td><td><span class="badge ${u.status === 'active' ? 'bg-success' : 'bg-secondary'}">${u.status}</span></td></tr>
+                                    <tr><td>Created:</td><td>${created}</td></tr>
+                                </table>
+                            </div>
+                        </div>
+                    `;
+                } else if (u.role === 'sales') {
+                    html = `
+                        <div class="col-md-12">
+                            <div class="form-section">
+                                <h6 class="fw-bold mb-3">Sales Agent Information</h6>
+                                <table class="table table-sm">
+                                    <tr><td>Name:</td><td class="fw-bold">${u.first_name} ${u.last_name}</td></tr>
+                                    <tr><td>Email:</td><td>${u.email}</td></tr>
+                                    <tr><td>Contact:</td><td>${u.contact_number || 'Not provided'}</td></tr>
+                                    <tr><td>Status:</td><td><span class="badge ${u.status === 'active' ? 'bg-success' : 'bg-secondary'}">${u.status}</span></td></tr>
+                                    <tr><td>Created:</td><td>${created}</td></tr>
+                                </table>
+                            </div>
+                        </div>
                     `;
                 }
                 
-                let userHtml = '';
-                if (driver.user_id) {
-                    userHtml = `
-                        <tr>
-                            <td class="detail-label">User Account:</td>
-                            <td>
-                                <span class="user-badge">
-                                    <i class="bi bi-person-check"></i> ${driver.email}
-                                </span>
-                                <br>
-                                <small>${driver.first_name} ${driver.last_name}</small>
-                                <br>
-                                <span class="badge ${driver.user_status === 'active' ? 'bg-success' : 'bg-secondary'}">${driver.user_status}</span>
-                                <br>
-                                <small class="text-muted">Role: ${driver.user_role}</small>
-                            </td>
-                        </tr>
-                    `;
-                } else {
-                    userHtml = `
-                        <tr>
-                            <td class="detail-label">User Account:</td>
-                            <td><span class="text-muted fst-italic">No user account</span></td>
-                        </tr>
-                    `;
-                }
-                
-                const content = document.getElementById('viewDriverContent');
-                content.innerHTML = `
-                    <div class="col-md-6">
-                        <div class="form-section">
-                            <div class="form-section-title">
-                                <i class="bi bi-truck me-2"></i>Driver Information
-                            </div>
-                            <table class="table table-sm table-borderless">
-                                <tr>
-                                    <td width="40%" class="detail-label">Driver Name:</td>
-                                    <td class="fw-bold">${driver.driver_name}</td>
-                                </tr>
-                                <tr>
-                                    <td class="detail-label">License Number:</td>
-                                    <td>${driver.license_number}</td>
-                                </tr>
-                                <tr>
-                                    <td class="detail-label">License Expiry:</td>
-                                    <td>${expiryDate}</td>
-                                </tr>
-                                <tr>
-                                    <td class="detail-label">Contact Number:</td>
-                                    <td>${driver.contact_number || 'Not provided'}</td>
-                                </tr>
-                                <tr>
-                                    <td class="detail-label">Vehicle Type:</td>
-                                    <td>${driver.vehicle_type || 'Not specified'}</td>
-                                </tr>
-                                <tr>
-                                    <td class="detail-label">Plate Number:</td>
-                                    <td>${driver.vehicle_plate_number || 'Not specified'}</td>
-                                </tr>
-                                <tr>
-                                    <td class="detail-label">Driver Status:</td>
-                                    <td>
-                                        <span class="status-badge ${getStatusClass(driver.status)}">
-                                            ${getStatusText(driver.status)}
-                                        </span>
-                                    </td>
-                                </tr>
-                                ${branchHtml}
-                            </table>
-                        </div>
-                    </div>
-                    <div class="col-md-6">
-                        <div class="form-section">
-                            <div class="form-section-title">
-                                <i class="bi bi-person-circle me-2"></i>User Account
-                            </div>
-                            <table class="table table-sm table-borderless">
-                                ${userHtml}
-                                <tr>
-                                    <td class="detail-label">Created:</td>
-                                    <td>${createdDate}</td>
-                                </tr>
-                            </table>
-                        </div>
-                    </div>
-                `;
-                
-                currentDriverId = id;
-                new bootstrap.Modal(document.getElementById('viewDriverModal')).show();
+                document.getElementById('viewUserContent').innerHTML = html;
+                new bootstrap.Modal(document.getElementById('viewUserModal')).show();
             } else {
                 Swal.fire('Error', data.message, 'error');
             }
@@ -1557,59 +1632,85 @@ function formatDateTime($dateStr) {
         .catch(error => {
             Swal.close();
             console.error('Error:', error);
-            Swal.fire('Error', 'An error occurred while fetching driver details', 'error');
+            Swal.fire('Error', 'An error occurred: ' + error.message, 'error');
         });
     }
 
     function editFromView() {
-        bootstrap.Modal.getInstance(document.getElementById('viewDriverModal')).hide();
-        setTimeout(() => {
-            editDriver(currentDriverId);
-        }, 300);
+        bootstrap.Modal.getInstance(document.getElementById('viewUserModal')).hide();
+        setTimeout(() => editUser(currentUserId), 300);
     }
 
-    function editDriver(id) {
+    function editUser(id) {
         showLoading();
         
         const formData = new FormData();
-        formData.append('action', 'get_driver');
-        formData.append('driver_id', id);
+        formData.append('action', 'get_user');
+        formData.append('user_id', id);
         
-        fetch('drivers.php', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
+        fetch('drivers.php', { method: 'POST', body: formData })
+        .then(res => res.json())
         .then(data => {
             Swal.close();
             
             if (data.success) {
-                const driver = data.driver;
+                const u = data.user;
+                currentUserId = u.user_id;
+                currentUserRole = u.role;
+                currentDriverId = u.driver_id;
                 
-                document.getElementById('driverModalTitle').innerHTML = '<i class="bi bi-pencil me-2"></i>Edit Driver';
-                document.getElementById('driverId').value = driver.driver_id;
-                
-                // Driver fields
-                document.getElementById('driverName').value = driver.driver_name || '';
-                document.getElementById('licenseNumber').value = driver.license_number || '';
-                document.getElementById('licenseExpiry').value = driver.license_expiry || '';
-                document.getElementById('contactNumber').value = driver.contact_number || '';
-                document.getElementById('vehicleType').value = driver.vehicle_type || '';
-                document.getElementById('vehiclePlate').value = driver.vehicle_plate_number || '';
-                document.getElementById('driverStatus').value = driver.status || 'active';
-                
-                // User account fields
-                document.getElementById('firstName').value = driver.first_name || '';
-                document.getElementById('lastName').value = driver.last_name || '';
-                document.getElementById('email').value = driver.email || '';
-                
-                // Hide password field for edit (optional)
-                document.getElementById('passwordField').style.display = 'none';
-                document.getElementById('password').required = false;
-                document.getElementById('passwordEditNote').style.display = 'block';
-                
-                currentDriverId = id;
-                new bootstrap.Modal(document.getElementById('driverModal')).show();
+                if (u.role === 'delivery') {
+                    document.getElementById('driverModalTitle').textContent = 'Edit Driver';
+                    document.getElementById('driverId').value = u.driver_id || '';
+                    document.getElementById('driverUserId').value = u.user_id;
+                    document.getElementById('driverName').value = u.driver_name || '';
+                    document.getElementById('licenseNumber').value = u.license_number || '';
+                    document.getElementById('licenseExpiry').value = u.license_expiry || '';
+                    document.getElementById('contactNumber').value = u.contact_number || '';
+                    document.getElementById('vehicleType').value = u.vehicle_type || '';
+                    document.getElementById('vehiclePlate').value = u.vehicle_plate_number || '';
+                    document.getElementById('driverStatus').value = u.status || 'active';
+                    document.getElementById('driverFirstName').value = u.first_name || '';
+                    document.getElementById('driverLastName').value = u.last_name || '';
+                    document.getElementById('driverEmail').value = u.email || '';
+                    
+                    document.getElementById('driverPassword').required = false;
+                    document.getElementById('driverPassword').value = '';
+                    document.getElementById('driverPasswordNote').innerHTML = '<i class="bi bi-info-circle"></i> Leave blank to keep current password.';
+                    
+                    new bootstrap.Modal(document.getElementById('driverModal')).show();
+                    
+                } else if (u.role === 'warehouse') {
+                    document.getElementById('warehouseModalTitle').textContent = 'Edit Warehouse Staff';
+                    document.getElementById('warehouseId').value = u.user_id;
+                    document.getElementById('warehouseFirstName').value = u.first_name || '';
+                    document.getElementById('warehouseLastName').value = u.last_name || '';
+                    document.getElementById('warehouseEmail').value = u.email || '';
+                    document.getElementById('warehouseCategory').value = u.category || '';
+                    document.getElementById('warehouseContact').value = u.contact_number || '';
+                    document.getElementById('warehouseStatus').value = u.status || 'active';
+                    
+                    document.getElementById('warehousePassword').required = false;
+                    document.getElementById('warehousePassword').value = '';
+                    document.getElementById('warehousePasswordNote').innerHTML = '<i class="bi bi-info-circle"></i> Leave blank to keep current password.';
+                    
+                    new bootstrap.Modal(document.getElementById('warehouseModal')).show();
+                    
+                } else if (u.role === 'sales') {
+                    document.getElementById('salesModalTitle').textContent = 'Edit Sales Agent';
+                    document.getElementById('salesId').value = u.user_id;
+                    document.getElementById('salesFirstName').value = u.first_name || '';
+                    document.getElementById('salesLastName').value = u.last_name || '';
+                    document.getElementById('salesEmail').value = u.email || '';
+                    document.getElementById('salesContact').value = u.contact_number || '';
+                    document.getElementById('salesStatus').value = u.status || 'active';
+                    
+                    document.getElementById('salesPassword').required = false;
+                    document.getElementById('salesPassword').value = '';
+                    document.getElementById('salesPasswordNote').innerHTML = '<i class="bi bi-info-circle"></i> Leave blank to keep current password.';
+                    
+                    new bootstrap.Modal(document.getElementById('salesModal')).show();
+                }
             } else {
                 Swal.fire('Error', data.message, 'error');
             }
@@ -1617,95 +1718,57 @@ function formatDateTime($dateStr) {
         .catch(error => {
             Swal.close();
             console.error('Error:', error);
-            Swal.fire('Error', 'An error occurred while fetching driver details', 'error');
+            Swal.fire('Error', 'An error occurred: ' + error.message, 'error');
         });
     }
 
+    // ========== SAVE FUNCTIONS ==========
     function saveDriver() {
-        // Validate required fields
+        const driverId = document.getElementById('driverId').value;
         const driverName = document.getElementById('driverName').value.trim();
         const licenseNumber = document.getElementById('licenseNumber').value.trim();
-        const firstName = document.getElementById('firstName').value.trim();
-        const lastName = document.getElementById('lastName').value.trim();
-        const email = document.getElementById('email').value.trim();
-        const driverId = document.getElementById('driverId').value;
+        const firstName = document.getElementById('driverFirstName').value.trim();
+        const lastName = document.getElementById('driverLastName').value.trim();
+        const email = document.getElementById('driverEmail').value.trim();
+        const password = document.getElementById('driverPassword').value;
         
-        if (!driverName) {
-            Swal.fire('Warning', 'Driver Name is required', 'warning');
-            return;
+        if (!driverName) return Swal.fire('Warning', 'Driver Name is required', 'warning');
+        if (!licenseNumber) return Swal.fire('Warning', 'License Number is required', 'warning');
+        if (!firstName) return Swal.fire('Warning', 'First Name is required', 'warning');
+        if (!lastName) return Swal.fire('Warning', 'Last Name is required', 'warning');
+        if (!email) return Swal.fire('Warning', 'Email is required', 'warning');
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return Swal.fire('Warning', 'Invalid email format', 'warning');
         }
         
-        if (!licenseNumber) {
-            Swal.fire('Warning', 'License Number is required', 'warning');
-            return;
+        if (!driverId && !password) {
+            return Swal.fire('Warning', 'Password is required for new users', 'warning');
         }
-        
-        if (!firstName) {
-            Swal.fire('Warning', 'First Name is required for user account', 'warning');
-            return;
-        }
-        
-        if (!lastName) {
-            Swal.fire('Warning', 'Last Name is required for user account', 'warning');
-            return;
-        }
-        
-        if (!email) {
-            Swal.fire('Warning', 'Email is required for user account', 'warning');
-            return;
-        }
-        
-        // Validate email format
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(email)) {
-            Swal.fire('Warning', 'Please enter a valid email address', 'warning');
-            return;
-        }
-        
-        // Check password for new driver
-        if (!driverId) {
-            const password = document.getElementById('password').value.trim();
-            if (!password) {
-                Swal.fire('Warning', 'Password is required for new user account', 'warning');
-                return;
-            }
-            
-            if (password.length < 6) {
-                Swal.fire('Warning', 'Password must be at least 6 characters long', 'warning');
-                return;
-            }
+        if (password && password.length < 6) {
+            return Swal.fire('Warning', 'Password must be at least 6 characters', 'warning');
         }
         
         showLoading();
         
         const formData = new FormData(document.getElementById('driverForm'));
-        
         if (driverId) {
-            formData.append('action', 'update_driver');
+            formData.append('action', 'update_user');
+            formData.append('user_role_type', 'driver');
+            formData.append('user_id', currentUserId);
+            formData.append('driver_id', driverId);
+            formData.append('driver_status', document.getElementById('driverStatus').value);
         } else {
             formData.append('action', 'add_driver');
         }
         
-        fetch('drivers.php', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
+        fetch('drivers.php', { method: 'POST', body: formData })
+        .then(res => res.json())
         .then(data => {
             Swal.close();
-            
             if (data.success) {
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Success!',
-                    text: data.message,
-                    timer: 2000,
-                    showConfirmButton: false
-                }).then(() => {
-                    const modal = bootstrap.Modal.getInstance(document.getElementById('driverModal'));
-                    if (modal) {
-                        modal.hide();
-                    }
+                Swal.fire({ icon: 'success', title: 'Success!', text: data.message, timer: 2000, showConfirmButton: false })
+                .then(() => {
+                    bootstrap.Modal.getInstance(document.getElementById('driverModal'))?.hide();
                     location.reload();
                 });
             } else {
@@ -1715,51 +1778,146 @@ function formatDateTime($dateStr) {
         .catch(error => {
             Swal.close();
             console.error('Error:', error);
-            Swal.fire('Error', 'An error occurred while saving driver', 'error');
+            Swal.fire('Error', 'An error occurred: ' + error.message, 'error');
         });
     }
 
-    function deleteDriver(id) {
-        const row = document.querySelector(`.driver-row[data-id="${id}"]`);
-        if (!row) return;
+    function saveWarehouse() {
+        const userId = document.getElementById('warehouseId').value;
+        const firstName = document.getElementById('warehouseFirstName').value.trim();
+        const lastName = document.getElementById('warehouseLastName').value.trim();
+        const email = document.getElementById('warehouseEmail').value.trim();
+        const password = document.getElementById('warehousePassword').value;
         
-        document.getElementById('deleteDriverName').textContent = row.dataset.name;
-        currentDriverId = id;
-        new bootstrap.Modal(document.getElementById('deleteDriverModal')).show();
+        if (!firstName) return Swal.fire('Warning', 'First Name is required', 'warning');
+        if (!lastName) return Swal.fire('Warning', 'Last Name is required', 'warning');
+        if (!email) return Swal.fire('Warning', 'Email is required', 'warning');
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return Swal.fire('Warning', 'Invalid email format', 'warning');
+        }
+        
+        if (!userId && !password) {
+            return Swal.fire('Warning', 'Password is required for new users', 'warning');
+        }
+        if (password && password.length < 6) {
+            return Swal.fire('Warning', 'Password must be at least 6 characters', 'warning');
+        }
+        
+        showLoading();
+        
+        const formData = new FormData(document.getElementById('warehouseForm'));
+        if (userId) {
+            formData.append('action', 'update_user');
+            formData.append('user_role_type', 'warehouse');
+            formData.append('user_id', userId);
+        } else {
+            formData.append('action', 'add_warehouse');
+        }
+        
+        fetch('drivers.php', { method: 'POST', body: formData })
+        .then(res => res.json())
+        .then(data => {
+            Swal.close();
+            if (data.success) {
+                Swal.fire({ icon: 'success', title: 'Success!', text: data.message, timer: 2000, showConfirmButton: false })
+                .then(() => {
+                    bootstrap.Modal.getInstance(document.getElementById('warehouseModal'))?.hide();
+                    location.reload();
+                });
+            } else {
+                Swal.fire('Error', data.message, 'error');
+            }
+        })
+        .catch(error => {
+            Swal.close();
+            console.error('Error:', error);
+            Swal.fire('Error', 'An error occurred: ' + error.message, 'error');
+        });
     }
 
-    function confirmDeleteDriver() {
-        if (!currentDriverId) {
-            Swal.fire('Error', 'No driver selected', 'error');
-            return;
+    function saveSales() {
+        const userId = document.getElementById('salesId').value;
+        const firstName = document.getElementById('salesFirstName').value.trim();
+        const lastName = document.getElementById('salesLastName').value.trim();
+        const email = document.getElementById('salesEmail').value.trim();
+        const password = document.getElementById('salesPassword').value;
+        
+        if (!firstName) return Swal.fire('Warning', 'First Name is required', 'warning');
+        if (!lastName) return Swal.fire('Warning', 'Last Name is required', 'warning');
+        if (!email) return Swal.fire('Warning', 'Email is required', 'warning');
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            return Swal.fire('Warning', 'Invalid email format', 'warning');
+        }
+        
+        if (!userId && !password) {
+            return Swal.fire('Warning', 'Password is required for new users', 'warning');
+        }
+        if (password && password.length < 6) {
+            return Swal.fire('Warning', 'Password must be at least 6 characters', 'warning');
+        }
+        
+        showLoading();
+        
+        const formData = new FormData(document.getElementById('salesForm'));
+        if (userId) {
+            formData.append('action', 'update_user');
+            formData.append('user_role_type', 'sales');
+            formData.append('user_id', userId);
+        } else {
+            formData.append('action', 'add_sales');
+        }
+        
+        fetch('drivers.php', { method: 'POST', body: formData })
+        .then(res => res.json())
+        .then(data => {
+            Swal.close();
+            if (data.success) {
+                Swal.fire({ icon: 'success', title: 'Success!', text: data.message, timer: 2000, showConfirmButton: false })
+                .then(() => {
+                    bootstrap.Modal.getInstance(document.getElementById('salesModal'))?.hide();
+                    location.reload();
+                });
+            } else {
+                Swal.fire('Error', data.message, 'error');
+            }
+        })
+        .catch(error => {
+            Swal.close();
+            console.error('Error:', error);
+            Swal.fire('Error', 'An error occurred: ' + error.message, 'error');
+        });
+    }
+
+    function deleteUser(id, role, driverId) {
+        const row = document.querySelector(`.user-row[data-id="${id}"]`);
+        if (!row) return;
+        
+        document.getElementById('deleteUserName').textContent = row.querySelector('td:first-child strong').textContent;
+        currentUserId = id;
+        currentUserRole = role;
+        currentDriverId = driverId;
+        new bootstrap.Modal(document.getElementById('deleteUserModal')).show();
+    }
+
+    function confirmDeleteUser() {
+        if (!currentUserId) {
+            return Swal.fire('Error', 'No user selected', 'error');
         }
         
         showLoading();
         
         const formData = new FormData();
-        formData.append('action', 'delete_driver');
-        formData.append('driver_id', currentDriverId);
+        formData.append('action', 'delete_user');
+        formData.append('user_id', currentUserId);
         
-        fetch('drivers.php', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
+        fetch('drivers.php', { method: 'POST', body: formData })
+        .then(res => res.json())
         .then(data => {
             Swal.close();
-            
             if (data.success) {
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Deleted!',
-                    text: data.message,
-                    timer: 2000,
-                    showConfirmButton: false
-                }).then(() => {
-                    const modal = bootstrap.Modal.getInstance(document.getElementById('deleteDriverModal'));
-                    if (modal) {
-                        modal.hide();
-                    }
+                Swal.fire({ icon: 'success', title: 'Deactivated!', text: data.message, timer: 2000, showConfirmButton: false })
+                .then(() => {
+                    bootstrap.Modal.getInstance(document.getElementById('deleteUserModal'))?.hide();
                     location.reload();
                 });
             } else {
@@ -1769,162 +1927,48 @@ function formatDateTime($dateStr) {
         .catch(error => {
             Swal.close();
             console.error('Error:', error);
-            Swal.fire('Error', 'An error occurred while deleting driver', 'error');
+            Swal.fire('Error', 'An error occurred: ' + error.message, 'error');
         });
     }
 
     // ========== EXCEL EXPORT ==========
     function exportToExcel() {
-        const rows = document.querySelectorAll('.driver-row:not([style*="display: none"])');
-        if (rows.length === 0) {
-            Swal.fire('Warning', 'No drivers to export', 'warning');
-            return;
+        const rows = document.querySelectorAll('.user-row:not([style*="display: none"])');
+        if (!rows.length) {
+            return Swal.fire('Warning', 'No users to export', 'warning');
         }
         
-        const excelData = [];
-        const headers = [
-            'Driver Name',
-            'License Number',
-            'License Expiry',
-            'Contact Number',
-            'Vehicle Type',
-            'Plate Number',
-            'Driver Status',
-            ...(driversBranchColumnExists && viewAllBranches ? ['Branch'] : []),
-            'Email',
-            'User First Name',
-            'User Last Name',
-            'User Status'
-        ];
-        excelData.push(headers);
-
+        const data = [['Full Name', 'Email', 'Role', 'Details', 'Status']];
+        if (viewAllBranches) data[0].push('Branch');
+        
         rows.forEach(row => {
             const cells = row.querySelectorAll('td');
-            let cellIndex = 0;
-            
-            const name = cells[cellIndex++]?.innerText || '';
-            const license = cells[cellIndex++]?.innerText || '';
-            const expiry = cells[cellIndex++]?.innerText || '';
-            const contact = cells[cellIndex++]?.innerText || '';
-            const vehicle = cells[cellIndex++]?.innerText || '';
-            const status = cells[cellIndex++]?.innerText || '';
-            
-            let branch = '';
-            if (driversBranchColumnExists && viewAllBranches) {
-                branch = cells[cellIndex++]?.innerText || '';
-            }
-            
-            const userCell = cells[cellIndex++]?.innerHTML || '';
-            
-            // Parse user info (simplified)
-            let email = '', userFirstName = '', userLastName = '', userStatus = '';
-            if (userCell.includes('person-check')) {
-                const emailMatch = userCell.match(/>([^<]+)</);
-                if (emailMatch) email = emailMatch[1].trim();
-                
-                const nameMatch = userCell.match(/<small[^>]*>([^<]+)</);
-                if (nameMatch) {
-                    const fullName = nameMatch[1].trim().split(' ');
-                    userFirstName = fullName[0] || '';
-                    userLastName = fullName.slice(1).join(' ') || '';
-                }
-                
-                const statusMatch = userCell.match(/badge[^>]*>([^<]+)</);
-                if (statusMatch) userStatus = statusMatch[1].trim();
-            }
-            
+            let i = 0;
+            const nameCell = cells[i++]?.innerText || '';
+            const nameLines = nameCell.split('\n');
             const rowData = [
-                name,
-                license,
-                expiry,
-                contact,
-                vehicle.split('\n')[0],
-                vehicle.includes('\n') ? vehicle.split('\n')[1] : '',
-                status,
-                ...(driversBranchColumnExists && viewAllBranches ? [branch] : []),
-                email,
-                userFirstName,
-                userLastName,
-                userStatus
+                nameLines[0] || '',
+                nameLines[1]?.trim() || '',
+                cells[i++]?.innerText.trim() || '',
+                cells[i++]?.innerText.replace(/\n/g, ' | ') || '',
+                cells[i++]?.innerText.split('\n')[0] || ''
             ];
-            
-            excelData.push(rowData);
+            if (viewAllBranches) rowData.push(cells[i++]?.innerText || '');
+            data.push(rowData);
         });
-
+        
         const wb = XLSX.utils.book_new();
-        const ws = XLSX.utils.aoa_to_sheet(excelData);
-
-        const colWidths = [
-            { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, 
-            { wch: 15 }, { wch: 12 }, { wch: 10 },
-            ...(driversBranchColumnExists && viewAllBranches ? [{ wch: 12 }] : []),
-            { wch: 25 }, { wch: 15 }, { wch: 15 }, { wch: 12 }
-        ];
-        ws['!cols'] = colWidths;
-
-        XLSX.utils.book_append_sheet(wb, ws, 'Drivers');
-
-        const date = new Date();
-        const dateStr = date.toISOString().slice(0,10).replace(/-/g, '');
-        let filename = `Drivers_${dateStr}`;
-        if (driversBranchColumnExists && !viewAllBranches) {
-            filename += `_Branch_${branchId}`;
-        }
-        filename += '.xlsx';
-
-        XLSX.writeFile(wb, filename);
+        XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(data), 'Users');
+        XLSX.writeFile(wb, `Users_${new Date().toISOString().slice(0,10).replace(/-/g, '')}${!viewAllBranches ? '_Branch_'+branchId : ''}.xlsx`);
         
-        Swal.fire({
-            icon: 'success',
-            title: 'Export Complete',
-            text: 'Drivers exported successfully!',
-            timer: 2000,
-            showConfirmButton: false
-        });
-    }
-
-    // ========== COPY SQL FUNCTION ==========
-    function copySQL(table) {
-        let sql = '';
-        if (table === 'drivers') {
-            sql = "ALTER TABLE drivers ADD COLUMN branch_id INT NULL;\nALTER TABLE drivers ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
-        }
-        
-        navigator.clipboard.writeText(sql).then(() => {
-            Swal.fire({
-                icon: 'success',
-                title: 'Copied!',
-                text: 'SQL copied to clipboard',
-                timer: 1500,
-                showConfirmButton: false
-            });
-        });
-    }
-
-    // ========== HELPER FUNCTIONS ==========
-    function getStatusClass(status) {
-        const classes = {
-            'active': 'bg-success text-white',
-            'inactive': 'bg-secondary text-white',
-            'on-leave': 'bg-warning text-dark'
-        };
-        return classes[status] || 'bg-secondary text-white';
-    }
-
-    function getStatusText(status) {
-        const texts = {
-            'active': 'Active',
-            'inactive': 'Inactive',
-            'on-leave': 'On Leave'
-        };
-        return texts[status] || status;
+        Swal.fire({ icon: 'success', title: 'Export Complete', timer: 1500, showConfirmButton: false });
     }
 
     // ========== LOGOUT ==========
     function logout() {
         Swal.fire({
             title: 'Are you sure?',
-            text: 'You will be logged out of the system',
+            text: 'You will be logged out',
             icon: 'question',
             showCancelButton: true,
             confirmButtonColor: '#0d6efd',
@@ -1942,9 +1986,15 @@ function formatDateTime($dateStr) {
         if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
             e.preventDefault();
             toggleSidebar();
-        } else if (e.ctrlKey && e.key === 'n') {
+        } else if (e.ctrlKey && e.key === '1') {
             e.preventDefault();
             showAddDriverModal();
+        } else if (e.ctrlKey && e.key === '2') {
+            e.preventDefault();
+            showAddWarehouseModal();
+        } else if (e.ctrlKey && e.key === '3') {
+            e.preventDefault();
+            showAddSalesModal();
         } else if (e.ctrlKey && e.key === 'f') {
             e.preventDefault();
             document.getElementById('searchInput').focus();
