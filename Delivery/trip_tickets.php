@@ -832,9 +832,6 @@ function getTripStatusText($status) {
                     <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
                     <div class="user-details-sidebar">
                         <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-                        <?php if ($driver_info): ?>
-                            <span class="user-role-sidebar">Driver: <?php echo htmlspecialchars($driver_info['driver_name']); ?></span>
-                        <?php endif; ?>
                     </div>
                 </div>
                 
@@ -864,37 +861,6 @@ function getTripStatusText($status) {
                 </div>
                 <?php endif; ?>
             </div>
-
-            <!-- Driver Info Card (for delivery role) -->
-            <?php if ($user_role == 'delivery' && $driver_info): ?>
-            <div class="driver-info-card">
-                <div class="row">
-                    <div class="col-md-3">
-                        <h5><i class="bi bi-truck"></i> Your Driver Details</h5>
-                    </div>
-                    <div class="col-md-9">
-                        <div class="row">
-                            <div class="col-md-3">
-                                <div class="info-label">Driver Name</div>
-                                <div class="info-value"><?php echo htmlspecialchars($driver_info['driver_name']); ?></div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="info-label">License</div>
-                                <div class="info-value"><?php echo htmlspecialchars($driver_info['license_number']); ?></div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="info-label">Vehicle</div>
-                                <div class="info-value"><?php echo htmlspecialchars($driver_info['vehicle_type']); ?></div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="info-label">Plate Number</div>
-                                <div class="info-value"><?php echo htmlspecialchars($driver_info['vehicle_plate_number']); ?></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <?php endif; ?>
 
             <!-- Branch Info Alerts -->
             <?php if (!$tt_branch_column_exists): ?>

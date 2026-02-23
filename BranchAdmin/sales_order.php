@@ -761,100 +761,16 @@ function formatDateTime($dateStr) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <!-- Google Fonts - TENOR SANS and ALICE from brand kit -->
+    <link href="https://fonts.googleapis.com/css2?family=Tenor+Sans&family=Alice&display=swap" rel="stylesheet">
     <!-- SheetJS for Excel Export -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <!-- SweetAlert2 -->
     <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     
-    <style media="print">
-        @page {
-            size: A4;
-            margin: 0.5in;
-        }
-        body {
-            background-color: white;
-            font-family: Arial, Helvetica, sans-serif;
-            color: black;
-            margin: 0;
-            padding: 0;
-        }
-        .sidebar, .navbar-top, .footer, .action-buttons, 
-        .btn, .table-header .btn, .form-card, 
-        .mobile-menu-btn, #desktopToggleBtn, .sidebar-footer,
-        .stat-card, .alert, .page-title p, .badge, .branch-badge,
-        .modal, .data-table .table-header button {
-            display: none !important;
-        }
-        .main-content {
-            margin-left: 0 !important;
-            padding: 0 !important;
-            width: 100% !important;
-        }
-        #dashboardContent {
-            display: block !important;
-        }
-        .data-table {
-            box-shadow: none !important;
-            border: 1px solid #ddd !important;
-            padding: 20px !important;
-            margin: 0 !important;
-        }
-        .custom-table {
-            width: 100% !important;
-            border-collapse: collapse !important;
-        }
-        .custom-table th {
-            background-color: #f0f0f0 !important;
-            color: black !important;
-            font-weight: bold !important;
-            border: 1px solid #333 !important;
-            padding: 10px !important;
-        }
-        .custom-table td {
-            border: 1px solid #ddd !important;
-            padding: 8px !important;
-        }
-        .page-title h2 {
-            color: black !important;
-            margin-bottom: 20px !important;
-            display: block !important;
-            font-size: 24px !important;
-        }
-        .page-title h2 i {
-            display: none !important;
-        }
-        .row.g-3.mb-4 {
-            display: none !important;
-        }
-        #dashboardContent:before {
-            content: "AMGC Branch System";
-            display: block;
-            font-size: 28px;
-            font-weight: bold;
-            color: #333;
-            text-align: center;
-            margin-bottom: 20px;
-            border-bottom: 2px solid #333;
-            padding-bottom: 10px;
-        }
-        #dashboardContent:after {
-            content: "Sales Orders Report - " attr(data-print-date);
-            display: block;
-            font-size: 14px;
-            color: #666;
-            text-align: center;
-            margin-bottom: 30px;
-        }
-        .text-end {
-            text-align: right !important;
-        }
-        .text-center {
-            text-align: center !important;
-        }
-    </style>
-    
     <style>
+        /* Regular styles for the UI */
         .branch-badge {
             background-color: #e7f1ff;
             color: #0d6efd;
@@ -960,6 +876,263 @@ function formatDateTime($dateStr) {
             color: #856404;
             font-size: 0.9rem;
         }
+        
+        /* Print styles - only applied when printing the table */
+        @media print {
+            @page {
+                size: landscape;
+                margin: 1cm;
+            }
+            
+            /* Hide all UI elements */
+            .sidebar, .navbar-top, .footer, .action-buttons, 
+            .btn, .table-header .btn, .form-card, 
+            .mobile-menu-btn, #desktopToggleBtn, .sidebar-footer,
+            .stat-card, .alert, .badge:not(.print-badge), .branch-badge,
+            .modal, .data-table .table-header button,
+            .filter-section, .row.g-3.mb-4, #dashboardSubtitle,
+            .db-fix-card, .stock-warning, #dashboardContent .row:first-child,
+            .search-box, select, option, .table-header .d-flex,
+            .data-table .table-header .btn, .page-title p,
+            .modal-backdrop, .modal, .btn-action, .btn-group,
+            .page-title i, .action-buttons, .btn-success, .btn-primary {
+                display: none !important;
+            }
+            
+            /* Show main content */
+            .main-content {
+                margin-left: 0 !important;
+                padding: 0 !important;
+                width: 100% !important;
+            }
+            
+            #dashboardContent {
+                display: block !important;
+                background: white !important;
+                padding: 20px !important;
+            }
+            
+            /* Hide the stats row and other UI elements */
+            #dashboardContent .row:first-of-type,
+            #dashboardContent .form-card,
+            #dashboardContent .alert,
+            #dashboardContent .db-fix-card {
+                display: none !important;
+            }
+            
+            /* Style the page title for print */
+            .page-title {
+                display: block !important;
+                text-align: center !important;
+                margin-bottom: 30px !important;
+                padding-bottom: 10px !important;
+                border-bottom: 3px solid #00A651 !important;
+            }
+            
+            .page-title h2 {
+                font-family: 'Alice', serif !important;
+                font-size: 28px !important;
+                color: #006341 !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                display: block !important;
+            }
+            
+            .page-title h2 i {
+                display: none !important;
+            }
+            
+            /* Add company logo before title */
+            .page-title:before {
+                content: "AMGC";
+                display: block;
+                width: 80px;
+                height: 80px;
+                margin: 0 auto 15px auto;
+                background: linear-gradient(135deg, #006341 0%, #00A651 100%);
+                color: white;
+                border-radius: 50%;
+                border: 3px solid #FFD700;
+                line-height: 80px;
+                text-align: center;
+                font-family: 'Alice', serif;
+                font-size: 24px;
+                font-weight: bold;
+            }
+            
+            /* Style the data table */
+            .data-table {
+                box-shadow: none !important;
+                border: 2px solid #00A651 !important;
+                padding: 0 !important;
+                margin: 0 !important;
+                border-radius: 8px !important;
+                overflow: hidden !important;
+                page-break-inside: avoid !important;
+                background: white !important;
+            }
+            
+            .table-header {
+                background: #006341 !important;
+                color: white !important;
+                padding: 15px 20px !important;
+                border-bottom: 3px solid #FFD700 !important;
+                display: flex !important;
+                align-items: center !important;
+                justify-content: space-between !important;
+                page-break-after: avoid !important;
+            }
+            
+            .table-header h5 {
+                margin: 0 !important;
+                font-family: 'Alice', serif !important;
+                font-size: 20px !important;
+                color: white !important;
+                letter-spacing: 0.5px !important;
+            }
+            
+            .table-container {
+                overflow: visible !important;
+            }
+            
+            .custom-table {
+                width: 100% !important;
+                border-collapse: collapse !important;
+                font-family: 'Tenor Sans', Arial, sans-serif !important;
+                page-break-inside: auto !important;
+                font-size: 11px !important;
+            }
+            
+            .custom-table thead {
+                display: table-header-group !important;
+            }
+            
+            .custom-table tbody {
+                display: table-row-group !important;
+            }
+            
+            .custom-table tr {
+                page-break-inside: avoid !important;
+                page-break-after: auto !important;
+            }
+            
+            .custom-table thead th {
+                background-color: #006341 !important;
+                color: white !important;
+                font-weight: 600 !important;
+                border: 1px solid #006341 !important;
+                padding: 10px 8px !important;
+                font-size: 11px !important;
+                text-transform: uppercase !important;
+                letter-spacing: 0.5px !important;
+                font-family: 'Alice', serif !important;
+                text-align: left !important;
+            }
+            
+            .custom-table tbody td {
+                border: 1px solid #CCCCCC !important;
+                padding: 8px 6px !important;
+                font-size: 10px !important;
+                color: #333333 !important;
+                background: white !important;
+                vertical-align: middle !important;
+            }
+            
+            .custom-table tbody tr:nth-child(even) {
+                background-color: #F9F9F9 !important;
+            }
+            
+            /* Style the amount columns */
+            .custom-table td:nth-child(7) {
+                text-align: right !important;
+                font-weight: 500 !important;
+            }
+            
+            .custom-table td:nth-child(5),
+            .custom-table td:nth-child(6) {
+                text-align: center !important;
+            }
+            
+            /* Style badges for print */
+            .badge {
+                padding: 3px 6px !important;
+                border-radius: 3px !important;
+                font-size: 9px !important;
+                font-weight: normal !important;
+                color: white !important;
+                border: none !important;
+                background-color: #666666 !important;
+                display: inline-block !important;
+            }
+            
+            .badge.bg-warning {
+                background-color: #FFA500 !important;
+            }
+            
+            .badge.bg-success {
+                background-color: #00A651 !important;
+            }
+            
+            .badge.bg-info {
+                background-color: #006341 !important;
+            }
+            
+            .badge.bg-primary {
+                background-color: #006341 !important;
+            }
+            
+            .badge.bg-danger {
+                background-color: #DC3545 !important;
+            }
+            
+            .badge.bg-secondary {
+                background-color: #6C757D !important;
+            }
+            
+            /* Add print date at bottom */
+            #dashboardContent:after {
+                content: "Printed on: " attr(data-print-date);
+                display: block;
+                text-align: right;
+                margin-top: 20px;
+                padding-top: 10px;
+                border-top: 1px dashed #CCCCCC;
+                font-size: 9px;
+                color: #666666;
+                font-family: 'Tenor Sans', Arial, sans-serif;
+            }
+            
+            /* Hide action column */
+            .custom-table th:last-child,
+            .custom-table td:last-child {
+                display: none !important;
+            }
+            
+            /* Adjust column widths for better print layout */
+            .custom-table th:nth-child(1) { width: 12%; } /* Order No. */
+            .custom-table th:nth-child(2) { width: 10%; } /* Date */
+            .custom-table th:nth-child(3) { width: 20%; } /* Customer */
+            .custom-table th:nth-child(4) { width: 5%; }  /* Items */
+            .custom-table th:nth-child(5) { width: 5%; }  /* Qty */
+            .custom-table th:nth-child(6) { width: 12%; } /* Total Amount */
+            .custom-table th:nth-child(7) { width: 10%; } /* Invoice */
+            .custom-table th:nth-child(8) { width: 10%; } /* Payment Status */
+            .custom-table th:nth-child(9) { width: 10%; } /* Order Status */
+            
+            /* Total row at bottom */
+            .table-footer {
+                margin-top: 20px;
+                padding: 10px;
+                background: #F5F5F5;
+                border: 2px solid #00A651;
+                border-radius: 5px;
+                font-family: 'Alice', serif;
+                font-size: 14px;
+                font-weight: bold;
+                color: #006341;
+                text-align: right;
+            }
+        }
     </style>
 </head>
 <body>
@@ -1047,7 +1220,7 @@ function formatDateTime($dateStr) {
                     </button>
                     
                     <div class="page-title">
-                        <h2>Sales Orders</h2>
+                        <h2><i class="bi bi-bag"></i> Sales Orders</h2>
                         <p id="dashboardSubtitle">
                             Manage and track all sales orders
                         </p>
@@ -1215,7 +1388,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                             <?php endif; ?>
                             <span class="text-muted me-2">Total: ₱<?= number_format(array_sum(array_column($sales_orders, 'total_amount')), 2) ?></span>
                             <button class="btn btn-primary" onclick="printReport()">
-                                <i class="bi bi-printer"></i> Print
+                                <i class="bi bi-printer"></i> Print Table
                             </button>
                             <button class="btn btn-success" onclick="exportToExcel()">
                                 <i class="bi bi-file-earmark-excel"></i> Export to Excel
@@ -1300,10 +1473,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                                 <?php if ($order['order_status'] == 'pending'): ?>
                                                     <button class="btn-action btn-edit" onclick="editOrder(<?= $order['so_id'] ?>)" title="Edit">
                                                         <i class="bi bi-pencil"></i>
-                                                    </button>
-                                                <?php elseif (in_array($order['order_status'], ['confirmed', 'processing', 'ready', 'delivered'])): ?>
-                                                    <button class="btn-action btn-print" onclick="printOrder(<?= $order['so_id'] ?>)" title="Print Order">
-                                                        <i class="bi bi-printer"></i>
                                                     </button>
                                                 <?php endif; ?>
                                                 <?php if ($order['order_status'] == 'pending'): ?>
@@ -1434,27 +1603,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         </div>
     </div>
 
-    <!-- PRINT PREVIEW MODAL -->
-    <div class="modal fade" id="printPreviewModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-xl">
-            <div class="modal-content">
-                <div class="modal-header bg-primary text-white">
-                    <h5 class="modal-title"><i class="bi bi-printer me-2"></i>Print Sales Order</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <div id="printPreviewContent" class="print-preview"></div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button type="button" class="btn btn-primary" onclick="executePrint()">
-                        <i class="bi bi-printer"></i> Print
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- STOCK WARNING MODAL -->
     <div class="modal fade" id="stockWarningModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
@@ -1485,7 +1633,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
     const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
     const soBranchColumnExists = <?php echo $so_branch_column_exists ? 'true' : 'false'; ?>;
     const invoiceSoColumnExists = <?php echo $invoice_so_column_exists ? 'true' : 'false'; ?>;
-    
+
     // ========== SIDEBAR FUNCTIONS ==========
     function toggleSidebar() {
         const sidebar = document.getElementById('sidebar');
@@ -1977,184 +2125,21 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
     }
 
     // ========== PRINT FUNCTIONS ==========
+    function printReport() {
+        // Set the print date attribute
+        document.getElementById('dashboardContent').setAttribute('data-print-date', new Date().toLocaleString());
+        
+        // Hide the action column in print by adding a class
+        const table = document.getElementById('salesOrdersTable');
+        const rows = table.querySelectorAll('tr');
+        
+        // Trigger browser print
+        window.print();
+    }
+
     function printOrder(id) {
-        showLoading();
-        
-        const formData = new FormData();
-        formData.append('action', 'print_order');
-        formData.append('so_id', id);
-        
-        fetch('sales_order.php', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            Swal.close();
-            
-            if (data.success) {
-                const order = data.order;
-                const items = data.items;
-                
-                const printContent = generateSalesOrderDocument(order, items);
-                document.getElementById('printPreviewContent').innerHTML = printContent;
-                new bootstrap.Modal(document.getElementById('printPreviewModal')).show();
-            } else {
-                Swal.fire('Error', data.message, 'error');
-            }
-        })
-        .catch(error => {
-            Swal.close();
-            Swal.fire('Error', 'An error occurred', 'error');
-        });
-    }
-
-    function generateSalesOrderDocument(order, items) {
-        const orderDate = new Date(order.order_date);
-        const formattedDate = orderDate.toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        });
-        
-        let itemsHtml = '';
-        let subtotal = 0;
-        
-        items.forEach((item, index) => {
-            const itemSubtotal = item.quantity_ordered * item.unit_price;
-            subtotal += itemSubtotal;
-            
-            itemsHtml += `<tr>
-                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${index + 1}</td>
-                <td style="padding: 8px; border: 1px solid #ddd;">${item.item_code}</td>
-                <td style="padding: 8px; border: 1px solid #ddd;">${item.item_name}</td>
-                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${item.quantity_ordered} ${item.unit_type || ''}</td>
-                <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₱${Number(item.unit_price).toFixed(2)}</td>
-                <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₱${Number(itemSubtotal).toFixed(2)}</td>
-            </tr>`;
-        });
-        
-        const tax = subtotal * 0.12;
-        const total = order.total_amount || (subtotal + tax);
-        
-        return `
-            <div style="font-family: Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 30px; background: white; border: 2px solid #333; border-radius: 8px;">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; padding-bottom: 20px; border-bottom: 2px solid #333;">
-                    <div>
-                        <h1 style="margin: 0; color: #0d6efd; font-size: 28px; font-weight: bold;">AMGC BRANCH SYSTEM</h1>
-                        <p style="margin: 5px 0; color: #666;">Sales Order Document</p>
-                    </div>
-                    <div style="text-align: right;">
-                        <h2 style="margin: 0; font-size: 24px; color: #333;">SALES ORDER</h2>
-                        <p style="margin: 5px 0; font-size: 18px; font-weight: bold;">${order.so_number}</p>
-                    </div>
-                </div>
-                
-                <div style="display: flex; justify-content: space-between; margin-bottom: 30px;">
-                    <div style="width: 48%;">
-                        <div style="background: #f8f9fa; padding: 15px; border-radius: 5px;">
-                            <h4 style="margin-top: 0; margin-bottom: 15px; color: #0d6efd;">From:</h4>
-                            <p style="margin: 5px 0;"><strong>${order.branch_name || 'AMGC Branch'}</strong></p>
-                            <p style="margin: 5px 0;">${order.branch_address || 'Branch Address'}</p>
-                            <p style="margin: 5px 0;">Contact: ${order.branch_contact || 'N/A'}</p>
-                        </div>
-                    </div>
-                    <div style="width: 48%;">
-                        <div style="background: #f8f9fa; padding: 15px; border-radius: 5px;">
-                            <h4 style="margin-top: 0; margin-bottom: 15px; color: #0d6efd;">Bill To:</h4>
-                            <p style="margin: 5px 0;"><strong>${order.customer_name}</strong></p>
-                            <p style="margin: 5px 0;">${order.address || 'Customer Address'}</p>
-                            <p style="margin: 5px 0;">Contact: ${order.contact_number || 'N/A'}</p>
-                        </div>
-                    </div>
-                </div>
-                
-                <div style="display: flex; justify-content: space-between; margin-bottom: 30px; background: #e7f1ff; padding: 15px; border-radius: 5px;">
-                    <div>
-                        <p style="margin: 5px 0;"><strong>Order Date:</strong> ${formattedDate}</p>
-                        <p style="margin: 5px 0;"><strong>Order Status:</strong> ${getStatusText(order.order_status)}</p>
-                    </div>
-                    <div>
-                        <p style="margin: 5px 0;"><strong>Total Items:</strong> ${order.total_items || 0}</p>
-                        <p style="margin: 5px 0;"><strong>Total Quantity:</strong> ${order.total_quantity || 0}</p>
-                    </div>
-                </div>
-                
-                <h4 style="margin-bottom: 15px; color: #0d6efd;">Order Items</h4>
-                <table style="width: 100%; border-collapse: collapse; margin-bottom: 30px;">
-                    <thead>
-                        <tr style="background: #0d6efd; color: white;">
-                            <th style="padding: 12px; border: 1px solid #0d6efd;">#</th>
-                            <th style="padding: 12px; border: 1px solid #0d6efd;">Item Code</th>
-                            <th style="padding: 12px; border: 1px solid #0d6efd;">Description</th>
-                            <th style="padding: 12px; border: 1px solid #0d6efd;">Quantity</th>
-                            <th style="padding: 12px; border: 1px solid #0d6efd;">Unit Price</th>
-                            <th style="padding: 12px; border: 1px solid #0d6efd;">Subtotal</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${itemsHtml}
-                    </tbody>
-                </table>
-                
-                <div style="display: flex; justify-content: flex-end; margin-bottom: 30px;">
-                    <div style="width: 40%;">
-                        <table style="width: 100%; border-collapse: collapse;">
-                            <tr>
-                                <td style="padding: 8px; border: 1px solid #ddd; background: #f8f9fa;"><strong>Subtotal:</strong></td>
-                                <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₱${Number(subtotal).toFixed(2)}</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 8px; border: 1px solid #ddd; background: #f8f9fa;"><strong>VAT (12%):</strong></td>
-                                <td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₱${Number(tax).toFixed(2)}</td>
-                            </tr>
-                            <tr>
-                                <td style="padding: 8px; border: 1px solid #ddd; background: #0d6efd; color: white;"><strong>TOTAL:</strong></td>
-                                <td style="padding: 8px; border: 1px solid #ddd; text-align: right; font-size: 18px; font-weight: bold;">₱${Number(total).toFixed(2)}</td>
-                            </tr>
-                        </table>
-                    </div>
-                </div>
-                
-                <div style="margin-top: 50px; border-top: 2px solid #333; padding-top: 20px; text-align: center;">
-                    <div style="display: flex; justify-content: space-between;">
-                        <div style="width: 45%;">
-                            <p style="border-top: 1px solid #333; padding-top: 10px; margin-top: 30px;"><strong>Prepared by:</strong></p>
-                            <p>${order.branch_name || 'Branch Admin'}</p>
-                        </div>
-                        <div style="width: 45%;">
-                            <p style="border-top: 1px solid #333; padding-top: 10px; margin-top: 30px;"><strong>Received by:</strong></p>
-                            <p>_________________________</p>
-                        </div>
-                    </div>
-                    <p style="margin-top: 30px; color: #666; font-size: 12px;">Generated on: ${new Date().toLocaleString()}</p>
-                </div>
-            </div>
-        `;
-    }
-
-    function executePrint() {
-        const printContent = document.getElementById('printPreviewContent').innerHTML;
-        const printWindow = window.open('', '_blank', 'width=900,height=700');
-        
-        printWindow.document.write(`
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <title>Sales Order</title>
-                <style>
-                    @page { size: A4; margin: 0.5in; }
-                    body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: white; }
-                    @media print { body { padding: 0; } }
-                </style>
-            </head>
-            <body>${printContent}</body>
-            </html>
-        `);
-        
-        printWindow.document.close();
-        setTimeout(() => { printWindow.print(); }, 250);
-        bootstrap.Modal.getInstance(document.getElementById('printPreviewModal')).hide();
+        // For individual order printing, show the modal first
+        viewOrder(id);
     }
 
     // ========== FILTER FUNCTIONS ==========
@@ -2207,13 +2192,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
     }
 
     // ========== EXPORT FUNCTIONS ==========
-    function printReport() {
-        document.getElementById('dashboardContent').setAttribute('data-print-date', new Date().toLocaleString());
-        document.title = 'Sales Orders Report - ' + new Date().toLocaleDateString();
-        window.print();
-        document.title = 'Sales Orders - Branch Admin';
-    }
-
     function exportToExcel() {
         const rows = document.querySelectorAll('.sales-order-row:not([style*="display: none"])');
         if (rows.length === 0) {

@@ -392,6 +392,210 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             margin: 0 auto;
         }
         
+        /* Thermal Paper Receipt - SINGLE RECEIPT, SINGLE PAGE */
+        .thermal-receipt {
+            font-family: 'Courier New', monospace;
+            width: 72mm;
+            margin: 0 auto;
+            padding: 3mm;
+            background: white;
+            color: black;
+            font-size: 11px;
+            line-height: 1.3;
+            box-sizing: border-box;
+            border: 1px solid #ddd;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .receipt-header {
+            text-align: center;
+            margin-bottom: 4px;
+            padding-bottom: 2px;
+            border-bottom: 1px dashed #333;
+        }
+        
+        .receipt-header .company-name {
+            font-size: 16px;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+        
+        .receipt-header .receipt-title {
+            font-size: 12px;
+            font-weight: bold;
+        }
+        
+        .receipt-header .receipt-no {
+            font-size: 10px;
+        }
+        
+        .receipt-info {
+            margin: 4px 0;
+            padding: 4px;
+            background: #f5f5f5;
+            font-size: 10px;
+        }
+        
+        .info-line {
+            display: flex;
+            margin: 2px 0;
+        }
+        
+        .info-label {
+            font-weight: bold;
+            width: 70px;
+            color: #333;
+        }
+        
+        .info-value {
+            flex: 1;
+            text-align: left;
+        }
+        
+        .items-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 4px 0;
+            font-size: 10px;
+        }
+        
+        .items-table th {
+            text-align: left;
+            border-bottom: 1px solid #333;
+            padding: 2px 0;
+        }
+        
+        .items-table td {
+            padding: 2px 0;
+            border-bottom: 1px dotted #999;
+            vertical-align: top;
+        }
+        
+        .items-table .item-name {
+            max-width: 100px;
+            word-wrap: break-word;
+        }
+        
+        .items-table .text-right {
+            text-align: right;
+        }
+        
+        .items-table .text-center {
+            text-align: center;
+        }
+        
+        .receipt-total {
+            margin-top: 4px;
+            padding-top: 2px;
+            border-top: 2px solid #333;
+            text-align: right;
+            font-weight: bold;
+            font-size: 12px;
+        }
+        
+        .receipt-footer {
+            text-align: center;
+            margin-top: 4px;
+            padding-top: 2px;
+            border-top: 1px dashed #333;
+            font-size: 9px;
+            color: #666;
+        }
+        
+        /* Receipt Modal */
+        #receiptModal .modal-dialog {
+            max-width: 500px;
+            margin: 20px auto;
+        }
+        
+        #receiptModal .modal-content {
+            border-radius: 10px;
+            overflow: hidden;
+        }
+        
+        #receiptModal .modal-header {
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        #receiptModal .modal-body {
+            padding: 20px;
+            background: #fff;
+            min-height: 500px;
+            max-height: 700px;
+            overflow-y: auto;
+            display: flex;
+            justify-content: center;
+        }
+        
+        #receiptModal .modal-body::-webkit-scrollbar {
+            width: 8px;
+        }
+        
+        #receiptModal .modal-body::-webkit-scrollbar-track {
+            background: #f1f1f1;
+        }
+        
+        #receiptModal .modal-body::-webkit-scrollbar-thumb {
+            background: #888;
+            border-radius: 4px;
+        }
+        
+        #receiptModal .modal-body::-webkit-scrollbar-thumb:hover {
+            background: #555;
+        }
+        
+        #receiptModal .modal-footer {
+            background: #f8f9fa;
+            border-top: 1px solid #dee2e6;
+        }
+        
+        /* Print styles - SINGLE RECEIPT, SINGLE PAGE, ANY PAPER SIZE */
+        @media print {
+            /* Hide everything except the receipt */
+            body * {
+                visibility: hidden;
+            }
+            
+            #thermalReceipt, #thermalReceipt * {
+                visibility: visible;
+            }
+            
+            #thermalReceipt {
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                background: white;
+                margin: 0;
+                padding: 0;
+            }
+            
+            /* Receipt fixed at 72mm width, auto height */
+            .thermal-receipt {
+                width: 72mm;
+                height: auto;
+                margin: 0 auto;
+                padding: 2mm;
+                background: white;
+                font-family: 'Courier New', monospace;
+                page-break-inside: avoid;
+                page-break-after: avoid;
+                box-sizing: border-box;
+                border: none;
+                box-shadow: none;
+            }
+            
+            /* No fixed page size - let printer handle it */
+            @page {
+                margin: 0;
+            }
+        }
+        
         @media (max-width: 768px) {
             .location-map {
                 height: 300px;
@@ -467,9 +671,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                     <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
                     <div class="user-details-sidebar">
                         <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-                        <?php if ($driver_info): ?>
-                            <span class="user-role-sidebar">Driver: <?php echo htmlspecialchars($driver_info['driver_name']); ?></span>
-                        <?php endif; ?>
                     </div>
                 </div>
                 
@@ -491,71 +692,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                     <p>Manage and track deliveries in progress</p>
                 </div>
             </div>
-
-            <!-- Driver Info Card (for delivery role) -->
-            <?php if ($user_role == 'delivery' && $driver_info): ?>
-            <div class="driver-info-card">
-                <div class="row">
-                    <div class="col-md-3">
-                        <h5><i class="bi bi-truck"></i> Driver Details</h5>
-                    </div>
-                    <div class="col-md-9">
-                        <div class="row">
-                            <div class="col-md-3">
-                                <div class="info-label">Driver Name</div>
-                                <div class="info-value"><?php echo htmlspecialchars($driver_info['driver_name']); ?></div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="info-label">License</div>
-                                <div class="info-value"><?php echo htmlspecialchars($driver_info['license_number']); ?></div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="info-label">Vehicle</div>
-                                <div class="info-value"><?php echo htmlspecialchars($driver_info['vehicle_type']); ?></div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="info-label">Plate Number</div>
-                                <div class="info-value"><?php echo htmlspecialchars($driver_info['vehicle_plate_number']); ?></div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <?php endif; ?>
-
-            <!-- Branch Info Alert (if no branch_id column in deliveries) -->
-            <?php if (!$delivery_branch_column_exists): ?>
-                <div class="alert alert-info alert-dismissible fade show" role="alert">
-                    <i class="bi bi-info-circle"></i> 
-                    <strong>Branch filtering for deliveries not yet set up.</strong> Please run this SQL in phpMyAdmin to enable branch-specific delivery data:
-                    <br><br>
-                    <code>ALTER TABLE deliveries ADD COLUMN branch_id INT NULL;</code>
-                    <br>
-                    <code>ALTER TABLE deliveries ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
-                    <br><br>
-                    <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('deliveries')">
-                        <i class="bi bi-files"></i> Copy SQL
-                    </button>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-            <?php endif; ?>
-
-            <!-- Driver Column Alert (if no driver_id column in deliveries) -->
-            <?php if (isset($driver_column_warning) && $driver_column_warning): ?>
-                <div class="alert alert-info alert-dismissible fade show" role="alert">
-                    <i class="bi bi-info-circle"></i> 
-                    <strong>Driver filtering for deliveries not yet set up.</strong> Please run this SQL in phpMyAdmin to enable driver-specific delivery data:
-                    <br><br>
-                    <code>ALTER TABLE deliveries ADD COLUMN driver_id INT NULL;</code>
-                    <br>
-                    <code>ALTER TABLE deliveries ADD FOREIGN KEY (driver_id) REFERENCES drivers(driver_id);</code>
-                    <br><br>
-                    <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('deliveries_driver')">
-                        <i class="bi bi-files"></i> Copy SQL
-                    </button>
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-            <?php endif; ?>
 
             <!-- Delivery Stats -->
             <div class="row g-3 mb-4 delivery-stats">
@@ -788,6 +924,9 @@ if ($user_role == 'delivery' && $driver_id > 0) {
         </div>
     </div>
 
+    <!-- Hidden thermal receipt container -->
+    <div id="thermalReceipt" style="display: none;"></div>
+
     <!-- View Details Modal (NO MAP) -->
     <div class="modal fade" id="viewDetailsModal" tabindex="-1" aria-labelledby="viewDetailsModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-xl">
@@ -936,24 +1075,24 @@ if ($user_role == 'delivery' && $driver_id > 0) {
         </div>
     </div>
 
-    <!-- Receipt Modal -->
+    <!-- Thermal Receipt Modal -->
     <div class="modal fade" id="receiptModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
+        <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
-                <div class="modal-header py-2">
+                <div class="modal-header">
                     <h5 class="modal-title">
                         <i class="bi bi-receipt me-2"></i>
-                        Delivery Receipt
+                        Receipt Preview
                     </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body p-4" id="receiptContent">
-                    <!-- Receipt content will be loaded here -->
+                <div class="modal-body" id="receiptContent">
+                    <!-- Receipt preview will be loaded here -->
                 </div>
-                <div class="modal-footer py-2">
-                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button type="button" class="btn btn-sm btn-primary" onclick="window.print()">
-                        <i class="bi bi-printer"></i> Print Receipt
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary" onclick="printThermalReceipt()">
+                        <i class="bi bi-printer me-2"></i>Print Receipt
                     </button>
                 </div>
             </div>
@@ -1026,6 +1165,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
         let currentAddress = null;
         let currentPartialDeliveryId = null;
         let currentItems = [];
+        let currentThermalReceipt = '';
 
         // ================= SIDEBAR FUNCTIONS =================
         function toggleSidebar() {
@@ -1420,104 +1560,136 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             modal.show();
         }
 
-        // Show receipt modal
-        function showReceiptModal(deliveryId, soNumber, customerName, address, signedBy, deliveryDate, itemsRaw) {
-            const receiptContent = document.getElementById('receiptContent');
+        // Generate thermal receipt HTML
+        function generateThermalReceipt(deliveryId, soNumber, customerName, address, signedBy, deliveryDate, itemsRaw) {
             const date = new Date(deliveryDate);
             const formattedDate = date.toLocaleString('en-PH', {
                 year: 'numeric',
-                month: 'long',
-                day: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
                 hour: '2-digit',
-                minute: '2-digit'
+                minute: '2-digit',
+                hour12: true
             });
             
             // Parse items
             const items = itemsRaw ? itemsRaw.split('||') : [];
             
+            // Format the current date for receipt
+            const today = new Date();
+            const receiptDate = today.toLocaleDateString('en-PH', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit'
+            });
+            const receiptTime = today.toLocaleTimeString('en-PH', {
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: true
+            });
+            
+            // Receipt number
+            const receiptNumber = 'DR' + today.getFullYear() + 
+                                 String(today.getMonth() + 1).padStart(2, '0') + 
+                                 String(today.getDate()).padStart(2, '0') + 
+                                 String(deliveryId).padStart(4, '0');
+            
             let itemsHtml = '';
             let total = 0;
             
-            items.forEach(item => {
-                const parts = item.split(' x ');
-                if (parts.length === 2) {
-                    const qtyPrice = parts[1].split(' - ₱');
-                    if (qtyPrice.length === 2) {
-                        const qty = parts[0];
-                        const itemName = qtyPrice[0];
-                        const price = parseFloat(qtyPrice[1]);
-                        const subtotal = qty * price;
-                        total += subtotal;
-                        
-                        itemsHtml += `
-                            <tr>
-                                <td>${itemName}</td>
-                                <td class="text-center">${qty}</td>
-                                <td class="text-end">₱${price.toFixed(2)}</td>
-                                <td class="text-end">₱${subtotal.toFixed(2)}</td>
-                            </tr>
-                        `;
+            if (items.length === 0) {
+                itemsHtml = '<tr><td colspan="4" style="text-align: center; padding: 8px;">No items</td></tr>';
+            } else {
+                items.forEach(item => {
+                    const parts = item.split(' x ');
+                    if (parts.length === 2) {
+                        const qtyPrice = parts[1].split(' - ₱');
+                        if (qtyPrice.length === 2) {
+                            const qty = parseInt(parts[0]);
+                            const itemName = qtyPrice[0];
+                            const price = parseFloat(qtyPrice[1]);
+                            const subtotal = qty * price;
+                            total += subtotal;
+                            
+                            itemsHtml += `
+                                <tr>
+                                    <td class="item-name">${itemName}</td>
+                                    <td class="text-center">${qty}</td>
+                                    <td class="text-right">₱${price.toFixed(2)}</td>
+                                    <td class="text-right">₱${subtotal.toFixed(2)}</td>
+                                </tr>
+                            `;
+                        }
                     }
-                }
-            });
+                });
+            }
             
-            receiptContent.innerHTML = `
-                <div class="receipt" style="font-family: 'Courier New', monospace;">
-                    <div class="text-center mb-4">
-                        <h3>AMGC INVENTORY SYSTEM</h3>
-                        <h5>DELIVERY RECEIPT</h5>
-                        <hr>
+            return `
+                <div class="thermal-receipt">
+                    <div class="receipt-header">
+                        <div class="company-name">AMGC</div>
+                        <div class="receipt-title">DELIVERY RECEIPT</div>
+                        <div class="receipt-no">#${receiptNumber}</div>
+                        <div>${receiptDate} ${receiptTime}</div>
                     </div>
                     
-                    <div class="row mb-3">
-                        <div class="col-6">
-                            <strong>Receipt #:</strong> RCP-${deliveryId}-${Date.now()}<br>
-                            <strong>Order #:</strong> ${soNumber}<br>
-                            <strong>Delivery ID:</strong> #${deliveryId}
-                        </div>
-                        <div class="col-6 text-end">
-                            <strong>Date:</strong> ${formattedDate}<br>
-                            <strong>Signed by:</strong> ${signedBy}
-                        </div>
+                    <div class="receipt-info">
+                        <div class="info-line"><span class="info-label">Order:</span><span class="info-value">${soNumber}</span></div>
+                        <div class="info-line"><span class="info-label">Customer:</span><span class="info-value">${customerName}</span></div>
+                        <div class="info-line"><span class="info-label">Address:</span><span class="info-value">${address}</span></div>
+                        <div class="info-line"><span class="info-label">Received:</span><span class="info-value">${signedBy}</span></div>
+                        <div class="info-line"><span class="info-label">Date:</span><span class="info-value">${formattedDate}</span></div>
                     </div>
                     
-                    <div class="mb-3">
-                        <strong>Customer:</strong> ${customerName}<br>
-                        <strong>Address:</strong> ${address}
-                    </div>
-                    
-                    <table class="table table-sm table-bordered">
+                    <table class="items-table">
                         <thead>
                             <tr>
                                 <th>Item</th>
                                 <th class="text-center">Qty</th>
-                                <th class="text-end">Price</th>
-                                <th class="text-end">Subtotal</th>
+                                <th class="text-right">Price</th>
+                                <th class="text-right">Total</th>
                             </tr>
                         </thead>
                         <tbody>
                             ${itemsHtml}
                         </tbody>
-                        <tfoot>
-                            <tr>
-                                <th colspan="3" class="text-end">TOTAL:</th>
-                                <th class="text-end">₱${total.toFixed(2)}</th>
-                            </tr>
-                        </tfoot>
                     </table>
                     
-                    <div class="text-center mt-4">
-                        <p>Thank you for your business!</p>
-                        <p>This serves as your official delivery receipt.</p>
-                        <hr>
-                        <small>Received by: _________________________</small><br>
-                        <small>Date: ______________________________</small>
+                    <div class="receipt-total">
+                        TOTAL: ₱${total.toFixed(2)}
+                    </div>
+                    
+                    <div class="receipt-footer">
+                        *** Thank you! ***
                     </div>
                 </div>
             `;
+        }
+
+        // Show thermal receipt modal
+        function showReceiptModal(deliveryId, soNumber, customerName, address, signedBy, deliveryDate, itemsRaw) {
+            const receiptContent = document.getElementById('receiptContent');
+            
+            currentThermalReceipt = generateThermalReceipt(deliveryId, soNumber, customerName, address, signedBy, deliveryDate, itemsRaw);
+            receiptContent.innerHTML = currentThermalReceipt;
             
             const modal = new bootstrap.Modal(document.getElementById('receiptModal'));
             modal.show();
+        }
+
+        // Print thermal receipt - SINGLE PAGE, ANY PAPER SIZE
+        function printThermalReceipt() {
+            const thermalDiv = document.getElementById('thermalReceipt');
+            thermalDiv.style.display = 'block';
+            thermalDiv.innerHTML = currentThermalReceipt;
+            
+            // Print - no fixed page size
+            window.print();
+            
+            // Clean up
+            setTimeout(() => {
+                thermalDiv.style.display = 'none';
+            }, 100);
         }
 
         // Show location on map (from map icon)
