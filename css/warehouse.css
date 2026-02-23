@@ -1170,6 +1170,17 @@ a:hover {
     background-color: #bbdefb;
     transform: translateY(-2px);
 }
+/* Specific button styles */
+.btn-action.btn-history {
+    background: #f6da3b52;
+    color: #f6a53b;
+    border: 1px solid #f6ca3b;
+}
+
+ .btn-history:hover {
+    background-color: #fbecbb;
+    transform: translateY(-2px);
+}
 .btn-icon.btn-edit {
     background: rgba(59, 130, 246, 0.1);
     color: #3b82f6;

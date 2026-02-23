@@ -386,7 +386,7 @@ if (isset($_GET['pick_item_id'])) {
         <!-- Action Buttons -->
         <div class="row mt-2">
             <div class="col-12 text-end">
-                <button type="button" class="btn btn-primary btn-sm" onclick="window.print()">
+                <button type="button" class="btn btn-outline-primary" onclick="window.print()">
                     <i class="bi bi-printer"></i> Print Details
                 </button>
             </div>

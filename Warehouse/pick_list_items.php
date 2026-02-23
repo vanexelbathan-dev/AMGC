@@ -1133,13 +1133,13 @@ function formatLocation($row) {
                                             </td>
                                         <?php endif; ?>
                                         <td class="text-center">
-                                            <div class="btn-group btn-group-sm" role="group">
-                                                <button class="btn btn-outline-info" data-bs-toggle="modal" data-bs-target="#viewItemModal" 
+                                            <div class="action-buttons">
+                                                <button class="btn-action btn-view" data-bs-toggle="modal" data-bs-target="#viewItemModal" 
                                                         onclick="loadPickItemDetails(<?php echo $row['pick_item_id']; ?>)" title="View Details">
                                                     <i class="bi bi-eye"></i>
                                                 </button>
                                                 <?php if (!isset($row['order_status']) || ($row['order_status'] != 'delivered' && $row['order_status'] != 'cancelled')): ?>
-                                                <button class="btn btn-outline-warning" data-bs-toggle="modal" data-bs-target="#updatePickModal"
+                                                <button class="btn-action btn-edit" data-bs-toggle="modal" data-bs-target="#updatePickModal"
                                                         onclick="setUpdatePickItem(
                                                             <?php echo $row['pick_item_id']; ?>, 
                                                             <?php echo $row['quantity_to_pick']; ?>, 
