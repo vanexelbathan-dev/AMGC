@@ -11,6 +11,7 @@
     --light-color: #f9fafb;
     --sidebar-width: 260px;
     --sidebar-collapsed-width: 75px;
+    --card-header-color: #048964;  /* Added for easy color management */
 }
 
 * {
@@ -1139,28 +1140,51 @@ a:hover {
     display: flex;
     gap: 0.5rem;
 }
-
-.btn-icon {
-    width: 32px;
-    height: 32px;
+.btn-action {
+    width: 36px;
+    height: 36px;
     border-radius: 8px;
-    display: flex;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    border: none;
-    transition: all 0.3s;
+    transition: all 0.2s;
+    border: 1px solid transparent;
 }
 
-.btn-icon.btn-view {
-    background: rgba(16, 185, 129, 0.1);
-    color: var(--primary-green);
+/* Action buttons container */
+.action-buttons {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: center;
+    align-items: center;
 }
 
+/* Specific button styles */
+.btn-action.btn-view {
+    background: #3b83f61e;
+    color: #3b82f6;
+    border: 1px solid #3b82f6;
+}
+
+ .btn-view:hover {
+    background-color: #bbdefb;
+    transform: translateY(-2px);
+}
 .btn-icon.btn-edit {
     background: rgba(59, 130, 246, 0.1);
     color: #3b82f6;
 }
 
+
+.btn-action.btn-edit{
+    background-color: #f3e5f5;
+    color: #7b1fa2;
+    border-color: #e1bee7;
+}
+.btn-action.btn-edit:hover{
+    background-color: #e1bee7;
+    transform: translateY(-2px);
+}
 .btn-icon.btn-delete {
     background: rgba(239, 68, 68, 0.1);
     color: #ef4444;
@@ -2551,4 +2575,573 @@ a:hover {
 .custom-table tbody tr:last-child td,
 .compact-table tbody tr:last-child td {
     border-bottom: none !important;
+}
+/* Modal Header - Green Gradient */
+.modal-header {
+    background: linear-gradient(135deg, var(--dark-green) 0%, var(--primary-green) 100%) !important;
+    color: white !important;
+    border-bottom: none !important;
+    padding: 1.5rem 2rem !important;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Decorative pattern */
+.modal-header::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -10%;
+    width: 200px;
+    height: 200px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    pointer-events: none;
+}
+
+.modal-header .modal-title {
+    font-weight: 700 !important;
+    font-size: 1.3rem !important;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    position: relative;
+    z-index: 2;
+    color: white !important;
+}
+
+.modal-header .modal-title i {
+    font-size: 1.5rem;
+    color: white;
+    background: rgba(255, 255, 255, 0.2);
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal-header .btn-close {
+    filter: brightness(0) invert(1);
+    opacity: 0.9;
+    transition: all 0.3s ease;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background-color: rgba(255, 255, 255, 0.15);
+    padding: 8px;
+}
+
+.modal-header .btn-close:hover {
+    opacity: 1;
+    transform: rotate(90deg);
+}
+
+/* Modal Content */
+.modal-content {
+    border: none !important;
+    border-radius: 24px !important;
+    overflow: hidden;
+    box-shadow: 0 25px 50px -12px rgba(4, 120, 87, 0.3) !important;
+    background: linear-gradient(135deg, #f9fefc 0%, #f0fdf4 100%);
+}
+
+/* Modal Body */
+.modal-body {
+    padding: 1.5rem !important;
+    background: transparent;
+    max-height: 70vh;
+    overflow-y: auto;
+}
+
+/* Custom Scrollbar for Modal Body */
+.modal-body::-webkit-scrollbar {
+    width: 6px;
+}
+
+.modal-body::-webkit-scrollbar-track {
+    background: var(--light-green);
+    border-radius: 10px;
+}
+
+.modal-body::-webkit-scrollbar-thumb {
+    background: var(--primary-green);
+    border-radius: 10px;
+}
+
+.modal-body::-webkit-scrollbar-thumb:hover {
+    background: var(--dark-green);
+}
+
+/* Detail Section (for grouping form fields) - GREEN THEMED */
+.detail-section {
+    background: white;
+    border-radius: 20px;
+    padding: 1.5rem;
+    border: 1px solid var(--light-green);
+    box-shadow: 0 4px 12px rgba(4, 120, 87, 0.05);
+    margin-bottom: 1rem;
+}
+
+.section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 2px solid var(--light-green);
+}
+
+.section-header i {
+    font-size: 1.2rem;
+    color: var(--dark-green);
+    background: var(--light-green);
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.section-header h6 {
+    font-weight: 700 !important;
+    color: var(--dark-green) !important;
+    margin: 0;
+    font-size: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Form Labels - GREEN */
+.form-label {
+    font-weight: 600 !important;
+    color: var(--dark-green) !important;
+    font-size: 0.85rem !important;
+    margin-bottom: 0.5rem !important;
+}
+
+/* Form Controls - GREEN BORDERS */
+.form-control, .form-select {
+    border: 2px solid var(--light-green) !important;
+    border-radius: 12px !important;
+    padding: 0.65rem 1rem !important;
+    font-size: 0.95rem !important;
+    transition: all 0.3s !important;
+    background: white !important;
+    color: var(--dark-color) !important;
+}
+
+.form-control:focus, .form-select:focus {
+    border-color: var(--primary-green) !important;
+    box-shadow: 0 0 0 4px rgba(68, 211, 78, 0.1) !important;
+    outline: none !important;
+}
+
+/* Input Group - GREEN */
+.input-group-text {
+    border: 2px solid var(--light-green) !important;
+    border-right: none !important;
+    border-radius: 12px 0 0 12px !important;
+    background: var(--light-green) !important;
+    color: var(--dark-green) !important;
+}
+
+.input-group .form-control {
+    border-left: none !important;
+}
+
+/* Alerts - GREEN THEMED */
+.alert-success {
+    background: var(--light-green) !important;
+    border: 1px solid var(--primary-green) !important;
+    color: var(--dark-green) !important;
+    border-radius: 12px !important;
+}
+
+.alert-warning {
+    background: rgba(245, 158, 11, 0.1) !important;
+    border: 1px solid #fbbf24 !important;
+    color: #b45309 !important;
+    border-radius: 12px !important;
+}
+
+.alert-info {
+    background: rgba(34, 211, 238, 0.1) !important;
+    border: 1px solid #22d3ee !important;
+    color: #0e7490 !important;
+    border-radius: 12px !important;
+}
+
+/* Quick Pick Buttons - GREEN */
+.btn-outline-primary {
+    color: var(--dark-green) !important;
+    border-color: var(--primary-green) !important;
+    background: white !important;
+}
+
+.btn-outline-primary:hover {
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green)) !important;
+    color: white !important;
+    border-color: transparent !important;
+}
+
+.btn-outline-primary:active {
+    background: var(--dark-green) !important;
+    color: white !important;
+}
+
+/* Card in Modal - GREEN */
+.modal .card {
+    border: 1px solid var(--light-green) !important;
+    border-radius: 16px !important;
+    box-shadow: 0 4px 12px rgba(4, 120, 87, 0.05) !important;
+    background: white !important;
+}
+
+.modal .card.bg-light {
+    background: var(--light-green) !important;
+}
+
+.modal .card .text-muted {
+    color: var(--dark-green) !important;
+    opacity: 0.7;
+}
+
+/* Progress Bar - GREEN */
+.progress {
+    background-color: var(--light-green) !important;
+    border-radius: 10px !important;
+}
+
+.progress-bar {
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green)) !important;
+    border-radius: 10px !important;
+    font-weight: 600;
+    font-size: 0.8rem;
+    color: white;
+}
+
+.progress-bar.bg-success {
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green)) !important;
+}
+
+/* Modal Footer - GREEN ACCENT */
+.modal-footer {
+    border-top: 2px solid var(--light-green) !important;
+    padding: 1.25rem 1.5rem !important;
+    background: white;
+}
+
+.modal-footer .btn {
+    padding: 0.6rem 1.5rem;
+    border-radius: 50px !important;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+.modal-footer .btn-secondary {
+    background: white !important;
+    border: 2px solid var(--light-green) !important;
+    color: var(--dark-green) !important;
+}
+
+.modal-footer .btn-secondary:hover {
+    background: var(--light-green) !important;
+    border-color: var(--primary-green) !important;
+    color: var(--dark-green) !important;
+}
+
+.modal-footer .btn-primary {
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green)) !important;
+    border: none !important;
+    color: white !important;
+}
+
+.modal-footer .btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(4, 120, 87, 0.3) !important;
+}
+
+.modal-footer .btn-success {
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green)) !important;
+    border: none !important;
+    color: white !important;
+}
+
+.modal-footer .btn-success:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(4, 120, 87, 0.3) !important;
+}
+
+.modal-footer .btn-warning {
+    background: linear-gradient(135deg, #f59e0b, #fbbf24) !important;
+    border: none !important;
+    color: white !important;
+}
+
+.modal-footer .btn-warning:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(245, 158, 11, 0.3) !important;
+}
+
+/* Item Summary Info - GREEN */
+#itemSummaryInfo.alert-info {
+    background: var(--light-green) !important;
+    border: 1px solid var(--primary-green) !important;
+    color: var(--dark-green) !important;
+}
+
+#itemSummaryInfo i {
+    color: var(--dark-green) !important;
+}
+
+/* Quantity Display - GREEN */
+#update_quantity_to_pick {
+    color: var(--dark-green) !important;
+    font-weight: 700;
+}
+
+#previously_picked {
+    color: var(--primary-green) !important;
+    font-weight: 700;
+}
+
+/* Form Text - GREEN TINT */
+.form-text {
+    color: var(--dark-green) !important;
+    opacity: 0.7;
+    font-size: 0.8rem !important;
+    margin-top: 0.3rem !important;
+}
+
+/* Textarea - GREEN BORDER */
+textarea.form-control {
+    border: 2px solid var(--light-green) !important;
+}
+
+textarea.form-control:focus {
+    border-color: var(--primary-green) !important;
+}
+
+/* Select Options - GREEN THEME */
+select.form-select option {
+    background: white;
+    color: var(--dark-color);
+}
+
+select.form-select option:hover {
+    background: var(--light-green) !important;
+}
+
+/* Checkbox and Radio - GREEN */
+.form-check-input:checked {
+    background-color: var(--primary-green) !important;
+    border-color: var(--primary-green) !important;
+}
+
+.form-check-input:focus {
+    border-color: var(--primary-green) !important;
+    box-shadow: 0 0 0 0.25rem rgba(68, 211, 78, 0.25) !important;
+}
+
+/* Links inside modal - GREEN */
+.modal-body a {
+    color: var(--dark-green) !important;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.modal-body a:hover {
+    color: var(--primary-green) !important;
+    text-decoration: underline;
+}
+
+/* Badges inside modal - GREEN THEMED */
+.modal .badge {
+    padding: 0.4rem 1rem !important;
+    border-radius: 50px !important;
+    font-weight: 600 !important;
+}
+
+.modal .badge.bg-success {
+    background: var(--light-green) !important;
+    color: var(--dark-green) !important;
+    border: 1px solid var(--primary-green) !important;
+}
+
+.modal .badge.bg-warning {
+    background: rgba(245, 158, 11, 0.15) !important;
+    color: #f59e0b !important;
+    border: 1px solid #fbbf24 !important;
+}
+
+/* Loading spinner - GREEN */
+.modal .spinner-border {
+    color: var(--primary-green) !important;
+}
+
+/* Table inside modal - GREEN THEMED - UPDATED TO FIX COLOR ISSUE */
+.modal .table,
+.modal .compact-table,
+.modal .custom-table {
+    border: 1px solid var(--light-green) !important;
+    border-radius: 12px !important;
+    overflow: hidden;
+}
+
+/* Force override for all modal table headers */
+.modal .table thead,
+.modal .compact-table thead,
+.modal .custom-table thead,
+.modal .table thead tr,
+.modal .compact-table thead tr,
+.modal .custom-table thead tr {
+    background: var(--card-header-color, #048964) !important;
+    background-image: none !important;
+    color: white !important;
+}
+
+.modal .table thead th,
+.modal .compact-table thead th,
+.modal .custom-table thead th {
+    background: transparent !important;
+    color: white !important;
+    border: none !important;
+    font-weight: 600;
+}
+
+.modal .table tbody tr,
+.modal .compact-table tbody tr,
+.modal .custom-table tbody tr {
+    border-bottom: 1px solid var(--light-green) !important;
+}
+
+.modal .table tbody tr:hover,
+.modal .compact-table tbody tr:hover,
+.modal .custom-table tbody tr:hover {
+    background: var(--light-green) !important;
+}
+
+.modal .table tbody td,
+.modal .compact-table tbody td,
+.modal .custom-table tbody td {
+    color: var(--dark-color) !important;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .modal-header {
+        padding: 1.2rem 1.5rem !important;
+    }
+    
+    .modal-header .modal-title {
+        font-size: 1.1rem !important;
+    }
+    
+    .modal-header .modal-title i {
+        font-size: 1.3rem;
+        width: 34px;
+        height: 34px;
+    }
+    
+    .modal-body {
+        padding: 1.2rem !important;
+    }
+    
+    .detail-section {
+        padding: 1.2rem;
+    }
+    
+    .section-header h6 {
+        font-size: 0.9rem !important;
+    }
+    
+    .form-label {
+        font-size: 0.8rem !important;
+    }
+    
+    .form-control, .form-select {
+        padding: 0.5rem 0.75rem !important;
+        font-size: 0.9rem !important;
+    }
+    
+    .modal-footer .btn {
+        padding: 0.5rem 1.2rem;
+        font-size: 0.85rem;
+    }
+}
+
+@media (max-width: 576px) {
+    .modal-dialog {
+        margin: 0.5rem;
+    }
+    
+    .modal-header {
+        padding: 1rem !important;
+    }
+    
+    .modal-header .modal-title {
+        font-size: 1rem !important;
+    }
+    
+    .modal-header .modal-title i {
+        font-size: 1.2rem;
+        width: 30px;
+        height: 30px;
+    }
+    
+    .modal-body {
+        padding: 1rem !important;
+    }
+    
+    .detail-section {
+        padding: 1rem;
+    }
+    
+    .btn-group {
+        flex-wrap: wrap;
+    }
+    
+    .btn-group .btn {
+        flex: 1 1 auto;
+        margin-bottom: 5px;
+    }
+    
+    .modal-footer {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .modal-footer .btn {
+        width: 100%;
+        margin: 0 !important;
+    }
+}
+
+/* Hover effects for interactive elements */
+.modal .btn:not(.btn-secondary):hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(4, 120, 87, 0.2);
+}
+
+/* Focus states */
+.modal .form-control:focus,
+.modal .form-select:focus,
+.modal .btn:focus {
+    box-shadow: 0 0 0 4px rgba(68, 211, 78, 0.2) !important;
+}
+
+/* Placeholder text color */
+.modal ::placeholder {
+    color: #9ca3af !important;
+    opacity: 0.7;
+}
+
+/* Disabled state */
+.modal .form-control:disabled,
+.modal .form-select:disabled {
+    background: var(--light-green) !important;
+    opacity: 0.5;
 }

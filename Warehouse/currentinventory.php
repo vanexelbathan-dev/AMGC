@@ -283,17 +283,6 @@ $categories = $categories_result->fetch_all(MYSQLI_ASSOC);
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <!-- SweetAlert2 -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <style>
-        .branch-badge {
-            background-color: #e7f1ff;
-            color: #0d6efd;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            margin-left: 5px;
-        }
-    </style>
 </head>
 <body>
     <!-- MAIN APPLICATION -->
@@ -502,12 +491,14 @@ $categories = $categories_result->fetch_all(MYSQLI_ASSOC);
                                         <td><?php echo number_format($row['reorder_level']); ?></td>
                                         <td><span class="badge <?php echo $status_badge; ?>"><?php echo $status_text; ?></span></td>
                                         <td>
-                                            <button class="btn btn-sm btn-outline-primary" onclick="viewItem(<?php echo $row['item_id']; ?>)" title="View">
+                                            <div class="action-buttons">
+                                            <button class="btn-action btn-view" onclick="viewItem(<?php echo $row['item_id']; ?>)" title="View">
                                                 <i class="bi bi-eye"></i>
                                             </button>
-                                            <button class="btn btn-sm btn-outline-warning" onclick="editItem(<?php echo $row['item_id']; ?>)" title="Edit">
+                                            <button class="btn-action btn-edit" onclick="editItem(<?php echo $row['item_id']; ?>)" title="Edit">
                                                 <i class="bi bi-pencil"></i>
                                             </button>
+                                            </div>
                                         </td>
                                     </tr>
                                     <?php

@@ -124,7 +124,7 @@ if (isset($_GET['pick_item_id'])) {
             <!-- Item Information Column -->
             <div class="col-md-6">
                 <div class="card mb-3">
-                    <div class="card-header bg-light">
+                    <div class="card-header">
                         <h6 class="mb-0"><i class="bi bi-box me-2"></i>Item Information</h6>
                     </div>
                     <div class="card-body py-2">
@@ -153,7 +153,7 @@ if (isset($_GET['pick_item_id'])) {
             <!-- Pick Details Column -->
             <div class="col-md-6">
                 <div class="card mb-3">
-                    <div class="card-header bg-light">
+                    <div class="card-header">
                         <h6 class="mb-0"><i class="bi bi-clipboard-check me-2"></i>Pick Details</h6>
                     </div>
                     <div class="card-body py-2">
@@ -191,7 +191,7 @@ if (isset($_GET['pick_item_id'])) {
         <div class="row">
             <div class="col-12">
                 <div class="card mb-3">
-                    <div class="card-header bg-light">
+                    <div class="card-header">
                         <h6 class="mb-0"><i class="bi bi-cart me-2"></i>Sales Order Information</h6>
                     </div>
                     <div class="card-body">
@@ -249,128 +249,140 @@ if (isset($_GET['pick_item_id'])) {
         </div>
         
         <!-- Driver Information Section -->
-        <div class="row">
-            <div class="col-12">
-                <div class="card mb-3 <?php echo empty($row['driver_name']) ? 'border-warning' : 'border-primary'; ?>">
-                    <div class="card-header <?php echo empty($row['driver_name']) ? 'bg-warning bg-opacity-10' : 'bg-primary bg-opacity-10'; ?>">
-                        <h6 class="mb-0">
-                            <i class="bi bi-truck me-2"></i>Assigned Driver
-                            <?php if (empty($row['driver_name'])): ?>
-                                <span class="badge bg-warning ms-2">Not Assigned</span>
-                            <?php else: ?>
-                                <span class="badge bg-primary ms-2">Assigned</span>
-                            <?php endif; ?>
-                        </h6>
+<div class="row">
+    <div class="col-12">
+        <div class="card mb-3">
+            <div class="card-header" style="background: linear-gradient(135deg, var(--dark-green), var(--primary-green));">
+                <h6 class="mb-0 text-white">
+                    <i class="bi bi-truck me-2 text-white"></i>Assigned Driver
+                    <?php if (empty($row['driver_name'])): ?>
+                        <span class="badge bg-warning ms-2">Not Assigned</span>
+                    <?php else: ?>
+                        <span class="badge bg-light text-dark ms-2">Assigned</span>
+                    <?php endif; ?>
+                </h6>
+            </div>
+            <div class="card-body">
+                <?php if (!empty($row['driver_name'])): ?>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <table class="table table-sm table-borderless mb-0">
+                                <tr>
+                                    <td width="40%"><strong>Driver Name:</strong></td>
+                                    <td>
+                                        <span class="fw-bold"><?php echo htmlspecialchars($row['driver_name']); ?></span>
+                                        <?php if (!empty($row['license_number'])): ?>
+                                            <br><small class="text-muted">License: <?php echo htmlspecialchars($row['license_number']); ?></small>
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Contact Number:</strong></td>
+                                    <td>
+                                        <?php if (!empty($row['contact_number'])): ?>
+                                            <i class="bi bi-telephone me-1" style="color: var(--primary-green);"></i>
+                                            <?php echo htmlspecialchars($row['contact_number']); ?>
+                                        <?php else: ?>
+                                            N/A
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <table class="table table-sm table-borderless mb-0">
+                                <tr>
+                                    <td width="40%"><strong>Vehicle Type:</strong></td>
+                                    <td><?php echo htmlspecialchars($row['vehicle_type'] ?? 'N/A'); ?></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Plate Number:</strong></td>
+                                    <td>
+                                        <span class="badge" style="background: var(--light-green); color: var(--dark-green);">
+                                            <i class="bi bi-car-front me-1"></i>
+                                            <?php echo htmlspecialchars($row['vehicle_plate_number'] ?? 'N/A'); ?>
+                                        </span>
+                                    </td>
+                                </tr>
+                            </table>
+                        </div>
                     </div>
-                    <div class="card-body">
-                        <?php if (!empty($row['driver_name'])): ?>
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <table class="table table-sm table-borderless mb-0">
-                                        <tr>
-                                            <td width="40%"><strong>Driver Name:</strong></td>
-                                            <td>
-                                                <span class="fw-bold"><?php echo htmlspecialchars($row['driver_name']); ?></span>
-                                                <?php if (!empty($row['license_number'])): ?>
-                                                    <br><small class="text-muted">License: <?php echo htmlspecialchars($row['license_number']); ?></small>
-                                                <?php endif; ?>
-                                            </td>
-                                        </tr>
-                                        <tr>
-                                            <td><strong>Contact Number:</strong></td>
-                                            <td>
-                                                <?php if (!empty($row['contact_number'])): ?>
-                                                    <i class="bi bi-telephone me-1"></i><?php echo htmlspecialchars($row['contact_number']); ?>
-                                                <?php else: ?>
-                                                    N/A
-                                                <?php endif; ?>
-                                            </td>
-                                        </tr>
-                                    </table>
-                                </div>
-                                <div class="col-md-6">
-                                    <table class="table table-sm table-borderless mb-0">
-                                        <tr>
-                                            <td width="40%"><strong>Vehicle Type:</strong></td>
-                                            <td><?php echo htmlspecialchars($row['vehicle_type'] ?? 'N/A'); ?></td>
-                                        </tr>
-                                        <tr>
-                                            <td><strong>Plate Number:</strong></td>
-                                            <td>
-                                                <span class="badge bg-secondary">
-                                                    <i class="bi bi-car-front me-1"></i>
-                                                    <?php echo htmlspecialchars($row['vehicle_plate_number'] ?? 'N/A'); ?>
-                                                </span>
-                                            </td>
-                                        </tr>
-                                    </table>
-                                </div>
-                            </div>
-                        <?php else: ?>
-                            <div class="text-center py-3">
-                                <i class="bi bi-exclamation-circle text-warning me-2" style="font-size: 1.2rem;"></i>
-                                <span class="fw-bold">No driver assigned to this pick list yet.</span>
-                                <br>
-                                <small class="text-muted">A driver can be assigned by editing the pick list in the Branch Admin panel.</small>
-                            </div>
-                        <?php endif; ?>
+                <?php else: ?>
+                    <div class="text-center py-4">
+                        <i class="bi bi-exclamation-circle text-warning me-2" style="font-size: 2rem;"></i>
+                        <p class="mb-1 fw-bold">No driver assigned to this pick list yet.</p>
+                        <small class="text-muted">A driver can be assigned by editing the pick list in the Branch Admin panel.</small>
                     </div>
-                </div>
+                <?php endif; ?>
             </div>
         </div>
+    </div>
+</div>
         
-        <!-- Progress Section -->
-        <div class="row">
-            <div class="col-12">
-                <div class="card mb-3">
-                    <div class="card-header bg-light">
-                        <h6 class="mb-0"><i class="bi bi-graph-up me-2"></i>Pick Progress</h6>
-                    </div>
-                    <div class="card-body">
-                        <div class="progress mb-2" style="height: 25px;">
-                            <div class="progress-bar bg-<?php echo $status_badge; ?> progress-bar-striped" 
-                                 role="progressbar" 
-                                 style="width: <?php echo $completion; ?>%"
-                                 aria-valuenow="<?php echo $completion; ?>" 
-                                 aria-valuemin="0" 
-                                 aria-valuemax="100">
-                                <?php echo $completion; ?>%
-                            </div>
-                        </div>
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <span class="badge bg-light text-dark p-2">
-                                    <i class="bi bi-box"></i> Picked: <strong><?php echo $row['quantity_picked']; ?></strong>
-                                </span>
-                            </div>
-                            <div>
-                                <span class="badge bg-light text-dark p-2">
-                                    <i class="bi bi-box-seam"></i> Total: <strong><?php echo $row['quantity_to_pick']; ?></strong>
-                                </span>
-                            </div>
-                            <div>
-                                <span class="badge bg-<?php echo $status_badge; ?> p-2">
-                                    <i class="bi bi-check-circle"></i> <?php echo $completion; ?>% Complete
-                                </span>
-                            </div>
-                        </div>
-                        
-                        <?php if ($row['order_status'] == 'delivered'): ?>
-                            <div class="alert alert-success mt-3 mb-0">
-                                <i class="bi bi-check-circle-fill me-2"></i>
-                                This sales order has been marked as <strong>Delivered</strong>.
-                            </div>
-                        <?php elseif ($row['order_status'] == 'cancelled'): ?>
-                            <div class="alert alert-danger mt-3 mb-0">
-                                <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                                This sales order has been <strong>Cancelled</strong>.
-                            </div>
-                        <?php endif; ?>
+       <!-- Progress Section -->
+<div class="row">
+    <div class="col-12">
+        <div class="card mb-3">
+            <div class="card-header">
+                <h6 class="mb-0"><i class="bi bi-graph-up me-2"></i>Pick Progress</h6>
+            </div>
+            <div class="card-body">
+                <!-- Progress Bar -->
+                <div class="progress mb-3" style="height: 25px;">
+                    <div class="progress-bar bg-<?php echo $status_badge; ?> progress-bar-striped" 
+                         role="progressbar" 
+                         style="width: <?php echo $completion; ?>%"
+                         aria-valuenow="<?php echo $completion; ?>" 
+                         aria-valuemin="0" 
+                         aria-valuemax="100">
+                        <?php echo $completion; ?>%
                     </div>
                 </div>
+                
+                <!-- Responsive Progress Stats Badges -->
+                    <div class="row g-2 justify-content-center">
+                        <div class="col-6 col-md-5">
+                            <div class="progress-stat-card">
+                                <div class="d-flex flex-column align-items-center">
+                                    <span class="progress-stat-label">Picked</span>
+                                    <span class="progress-stat-value" style="color: var(--primary-green);"><?php echo number_format($row['quantity_picked']); ?></span>
+                                    <small class="text-muted">units</small>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-6 col-md-5">
+                            <div class="progress-stat-card">
+                                <div class="d-flex flex-column align-items-center">
+                                    <span class="progress-stat-label">Total</span>
+                                    <span class="progress-stat-value"><?php echo number_format($row['quantity_to_pick']); ?></span>
+                                    <small class="text-muted">units</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                
+                <!-- Completion Badge -->
+                <div class="text-center mt-3">
+                    <span class="badge bg-<?php echo $status_badge; ?> p-2" style="font-size: 0.9rem;">
+                        <i class="bi bi-check-circle me-1"></i> <?php echo $completion; ?>% Complete
+                    </span>
+                </div>
+                
+                <?php if ($row['order_status'] == 'delivered'): ?>
+                    <div class="alert alert-success mt-3 mb-0">
+                        <i class="bi bi-check-circle-fill me-2"></i>
+                        This sales order has been marked as <strong>Delivered</strong>.
+                    </div>
+                <?php elseif ($row['order_status'] == 'cancelled'): ?>
+                    <div class="alert alert-danger mt-3 mb-0">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                        This sales order has been <strong>Cancelled</strong>.
+                    </div>
+                <?php endif; ?>
             </div>
         </div>
-        
+    </div>
+</div>
         <!-- Action Buttons -->
         <div class="row mt-2">
             <div class="col-12 text-end">
@@ -409,6 +421,131 @@ if (isset($_GET['pick_item_id'])) {
                 font-weight: 500;
                 padding: 6px 10px;
             }
+            /* Responsive stat cards for progress section */
+.stat-card-responsive {
+    background: white;
+    border: 1px solid var(--light-green);
+    border-radius: 16px;
+    padding: 15px 10px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    height: 100%;
+    transition: all 0.3s ease;
+    box-shadow: 0 2px 8px rgba(4, 120, 87, 0.05);
+}
+
+.stat-card-responsive:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 16px rgba(4, 120, 87, 0.1);
+    border-color: var(--primary-green);
+}
+
+.stat-icon-wrapper {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 10px;
+}
+
+.stat-icon-wrapper i {
+    font-size: 1.5rem;
+}
+
+.stat-content {
+    width: 100%;
+}
+
+.stat-label-responsive {
+    display: block;
+    font-size: 0.7rem;
+    color: #6b7280;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+}
+
+.stat-value-responsive {
+    display: block;
+    font-size: 1.3rem;
+    font-weight: 700;
+    line-height: 1.2;
+}
+
+/* Mobile responsiveness */
+@media (max-width: 576px) {
+    .stat-icon-wrapper {
+        width: 36px;
+        height: 36px;
+    }
+    
+    .stat-icon-wrapper i {
+        font-size: 1.2rem;
+    }
+    
+    .stat-value-responsive {
+        font-size: 1.1rem;
+    }
+    
+    .stat-label-responsive {
+        font-size: 0.65rem;
+    }
+    
+    .stat-card-responsive {
+        padding: 10px 5px;
+    }
+}
+
+/* Tablet responsiveness */
+@media (min-width: 577px) and (max-width: 768px) {
+    .stat-value-responsive {
+        font-size: 1.2rem;
+    }
+    
+    .stat-icon-wrapper {
+        width: 42px;
+        height: 42px;
+    }
+}
+
+/* Very small screens */
+@media (max-width: 400px) {
+    .row.g-2 {
+        margin-left: -3px;
+        margin-right: -3px;
+    }
+    
+    .row.g-2 > [class*="col-"] {
+        padding-left: 3px;
+        padding-right: 3px;
+    }
+    
+    .stat-card-responsive {
+        padding: 8px 3px;
+    }
+    
+    .stat-icon-wrapper {
+        width: 32px;
+        height: 32px;
+        margin-bottom: 6px;
+    }
+    
+    .stat-icon-wrapper i {
+        font-size: 1rem;
+    }
+    
+    .stat-value-responsive {
+        font-size: 1rem;
+    }
+    
+    .stat-label-responsive {
+        font-size: 0.6rem;
+    }
+}
         </style>
         
         <script>

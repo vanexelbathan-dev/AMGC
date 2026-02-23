@@ -68,68 +68,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <style>
-        /* Branch indicator */
-        .branch-indicator {
-            display: inline-block;
-            padding: 4px 12px;
-            background-color: #e7f5ff;
-            color: #0d6efd;
-            border-radius: 20px;
-            font-size: 13px;
-            font-weight: 500;
-            margin-left: 10px;
-        }
-        
-        .branch-indicator i {
-            margin-right: 5px;
-        }
-        
-        /* User branch in sidebar */
-        .user-branch-sidebar {
-            font-size: 11px;
-            color: #aaa;
-            display: block;
-            margin-top: 2px;
-        }
-        
-        /* Stat cards */
-        .stat-card {
-            background: white;
-            border-radius: 12px;
-            padding: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-            display: flex;
-            align-items: center;
-            transition: transform 0.2s;
-            border-left: 4px solid;
-        }
-        
-        .stat-card:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-        }
-        
-        .stat-card.inventory { border-left-color: #0d6efd; }
-        .stat-card.stock { border-left-color: #198754; }
-        .stat-card.delivery { border-left-color: #fd7e14; }
-        .stat-card.pending { border-left-color: #ffc107; }
-        
-        .stat-icon {
-            font-size: 2.5rem;
-            margin-right: 15px;
-            color: #6c757d;
-        }
-        
-        .stat-value {
-            font-size: 1.8rem;
-            font-weight: 600;
-            line-height: 1.2;
-        }
-        
-        .stat-label {
-            font-size: 0.9rem;
-            color: #6c757d;
-        }
+
         
         /* Mobile responsive */
         @media (max-width: 768px) {
@@ -181,47 +120,6 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
             .stat-label {
                 font-size: 0.75rem;
             }
-        }
-        
-        /* Card headers */
-        .card-header {
-            background-color: #f8f9fa;
-            font-weight: 600;
-            padding: 12px 16px;
-        }
-        
-        .card-header i {
-            color: #0d6efd;
-        }
-        
-        /* Table styles */
-        .table th {
-            font-weight: 600;
-            color: #495057;
-            font-size: 0.85rem;
-        }
-        
-        .table td {
-            vertical-align: middle;
-        }
-        
-        /* Badge styles */
-        .badge {
-            font-weight: 500;
-            padding: 6px 10px;
-        }
-        
-        /* Alert styles */
-        .alert-warning {
-            background-color: #fff3cd;
-            border-color: #ffecb5;
-            color: #856404;
-        }
-        
-        .alert-success {
-            background-color: #d1e7dd;
-            border-color: #badbcc;
-            color: #0a3622;
         }
     </style>
 </head>
@@ -298,7 +196,6 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                         <i></i>Warehouse Dashboard
                         <?php if (!$view_all_branches && $user_branch_id > 0): ?>
                             <span class="branch-indicator">
-                                <i class="bi bi-building"></i> <?php echo htmlspecialchars($branch_name); ?>
                             </span>
                         <?php endif; ?>
                     </h2>

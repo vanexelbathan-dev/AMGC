@@ -57,60 +57,6 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <style>
-        /* Branch indicator */
-        .branch-indicator {
-            display: inline-block;
-            padding: 4px 12px;
-            background-color: #e7f5ff;
-            color: #0d6efd;
-            border-radius: 20px;
-            font-size: 13px;
-            font-weight: 500;
-            margin-left: 10px;
-        }
-        
-        .branch-indicator i {
-            margin-right: 5px;
-        }
-        
-        /* User branch in sidebar */
-        .user-branch-sidebar {
-            font-size: 11px;
-            color: #aaa;
-            display: block;
-            margin-top: 2px;
-        }
-        
-        /* Stat cards */
-        .stat-card {
-            background: white;
-            border-radius: 12px;
-            padding: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-            display: flex;
-            align-items: center;
-            transition: transform 0.2s;
-            border-left: 4px solid;
-        }
-        
-        
-        .stat-icon {
-            font-size: 2.5rem;
-            margin-right: 15px;
-            color: #6c757d;
-        }
-        
-        .stat-value {
-            font-size: 1.8rem;
-            font-weight: 600;
-            line-height: 1.2;
-        }
-        
-        .stat-label {
-            font-size: 0.9rem;
-            color: #6c757d;
-        }
-        
         /* Mobile responsive */
         @media (max-width: 768px) {
             .stat-card {
@@ -422,9 +368,9 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                         <td><?php echo $row['branch_name'] ?? 'N/A'; ?></td>
                                         <td><span class="badge <?php echo $status_badge; ?>"><?php echo ucfirst(str_replace('-', ' ', $row['status'])); ?></span></td>
                                         <td>
-                                            <button class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#viewDriverModal" 
+                                            <button class="btn-action btn-view" data-bs-toggle="modal" data-bs-target="#viewDriverModal" 
                                                     onclick="loadDriverDetails('<?php echo $row['driver_id']; ?>')">
-                                                <i class="bi bi-eye"></i> View
+                                                <i class="bi bi-eye"></i>
                                             </button>
                                         </td>
                                     </tr>
