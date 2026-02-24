@@ -296,7 +296,7 @@ if (isset($_GET['ajax']) && isset($_GET['id'])) {
                     <li class="nav-item">
                         <a class="nav-link" href="drivers.php">
                             <i class="bi bi-person-badge"></i>
-                            <span class="nav-text">Drivers</span>
+                            <span class="nav-text">User Management</span>
                         </a>
                     </li>
                     <li class="nav-item">
