@@ -502,11 +502,6 @@ $success = '';
                     <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
                     <div class="user-details-sidebar">
                         <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-                        <span class="user-role-sidebar">
-                            <?php echo htmlspecialchars(ucfirst($user_role)); ?>
-                            <?php if ($branch_column_exists): ?>
-                            <?php endif; ?>
-                        </span>
                     </div>
                 </div>
                 <button class="logout-btn-sidebar" onclick="logout()">

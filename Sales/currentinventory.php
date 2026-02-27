@@ -129,7 +129,6 @@ foreach ($inventory_items as $item) {
                 <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
                 <div class="user-details-sidebar">
                     <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-                    <span class="user-role-sidebar"><?php echo htmlspecialchars(ucfirst($user_role)); ?></span>
                 </div>
             </div>
                 

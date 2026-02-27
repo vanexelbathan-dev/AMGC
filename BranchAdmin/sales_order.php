@@ -466,7 +466,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             exit;
         }
         
-        // PRINT SALES ORDER
+        // PRINT SALES ORDER - Add this new action for single order printing
         elseif ($_POST['action'] === 'print_order') {
             $so_id = (int)$_POST['so_id'];
             
@@ -480,11 +480,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     b.branch_name,
                     b.address as branch_address,
                     b.contact_number as branch_contact,
+                    u.first_name,
+                    u.last_name,
                     COUNT(soi.so_item_id) as total_items,
                     SUM(soi.quantity_ordered) as total_quantity
                 FROM sales_orders so
                 JOIN customers c ON so.customer_id = c.customer_id
                 LEFT JOIN branches b ON so.branch_id = b.branch_id
+                LEFT JOIN users u ON so.created_by = u.user_id
                 LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
                 WHERE so.so_id = ?
                 GROUP BY so.so_id
@@ -654,12 +657,15 @@ $sales_query = "
         c.customer_name,
         c.customer_id,
         b.branch_name,
+        u.first_name,
+        u.last_name,
         COUNT(soi.so_item_id) as total_items,
         SUM(soi.quantity_ordered) as total_quantity,
         " . ($invoice_so_column_exists ? "inv.invoice_number, inv.status as invoice_status" : "NULL as invoice_number, NULL as invoice_status") . "
     FROM sales_orders so
     JOIN customers c ON so.customer_id = c.customer_id
     LEFT JOIN branches b ON so.branch_id = b.branch_id
+    LEFT JOIN users u ON so.created_by = u.user_id
     LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
     " . ($invoice_so_column_exists ? "LEFT JOIN invoices inv ON so.so_id = inv.so_id" : "") . "
     WHERE 1=1
@@ -691,6 +697,14 @@ $statCompletedOrders = $delivered_orders;
 $customers_query = "SELECT customer_id, customer_name FROM customers WHERE status = 'active' $customers_branch_condition ORDER BY customer_name";
 $customers_result = $conn->query($customers_query);
 $customers = $customers_result->fetch_all(MYSQLI_ASSOC);
+
+// Get base64 encoded logo for printing
+$logo_path = '../Pictures/amgc3DLogo.png';
+$logo_base64 = '';
+if (file_exists($logo_path)) {
+    $image_data = file_get_contents($logo_path);
+    $logo_base64 = 'data:image/png;base64,' . base64_encode($image_data);
+}
 
 // Helper function for order status badge
 function getOrderStatusBadge($status) {
@@ -768,8 +782,22 @@ function formatDateTime($dateStr) {
     <!-- SweetAlert2 -->
     <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <!-- jQuery for AJAX -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     
     <style>
+        /* Brand Colors */
+        :root {
+            --green: #2E7D32;
+            --green-haze: #1B5E20;
+            --deep-sea: #0D4C14;
+            --forest-green: #1B4D1F;
+            --yellow: #FFC107;
+            --white: #FFFFFF;
+            --light-gray: #F5F5F5;
+            --black: #212121;
+        }
+
         /* Regular styles for the UI */
         .branch-badge {
             background-color: #e7f1ff;
@@ -877,11 +905,72 @@ function formatDateTime($dateStr) {
             font-size: 0.9rem;
         }
         
-        /* Print styles - only applied when printing the table */
+        /* Action Buttons Styling */
+        .action-buttons {
+            display: flex;
+            gap: 5px;
+        }
+        
+        .btn-action {
+            width: 36px;
+            height: 36px;
+            border-radius: 8px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s;
+            border: 1px solid transparent;
+        }
+        
+        .btn-view {
+            background-color: #e3f2fd;
+            color: #1976d2;
+            border-color: #bbdefb;
+        }
+        
+        .btn-view:hover {
+            background-color: #bbdefb;
+            transform: translateY(-2px);
+        }
+        
+        .btn-edit {
+            background-color: #fff3e0;
+            color: #f57c00;
+            border-color: #ffe0b2;
+        }
+        
+        .btn-edit:hover {
+            background-color: #ffe0b2;
+            transform: translateY(-2px);
+        }
+        
+        .btn-delete {
+            background-color: #ffebee;
+            color: #d32f2f;
+            border-color: #ffcdd2;
+        }
+        
+        .btn-delete:hover {
+            background-color: #ffcdd2;
+            transform: translateY(-2px);
+        }
+        
+        .btn-print {
+            background-color: #e8f5e9;
+            color: var(--green);
+            border-color: #c8e6c9;
+        }
+        
+        .btn-print:hover {
+            background-color: #c8e6c9;
+            transform: translateY(-2px);
+        }
+        
+        /* Enhanced Print Styles with Brand Colors */
         @media print {
             @page {
                 size: landscape;
-                margin: 1cm;
+                margin: 0.75in;
             }
             
             /* Hide all UI elements */
@@ -895,211 +984,217 @@ function formatDateTime($dateStr) {
             .search-box, select, option, .table-header .d-flex,
             .data-table .table-header .btn, .page-title p,
             .modal-backdrop, .modal, .btn-action, .btn-group,
-            .page-title i, .action-buttons, .btn-success, .btn-primary {
+            .page-title i, .action-buttons, .btn-success, .btn-primary,
+            .no-print {
                 display: none !important;
             }
             
             /* Show main content */
             .main-content {
                 margin-left: 0 !important;
-                padding: 0 !important;
+                padding: 20px !important;
                 width: 100% !important;
             }
             
             #dashboardContent {
                 display: block !important;
-                background: white !important;
+                background: var(--white) !important;
                 padding: 20px !important;
             }
             
-            /* Hide the stats row and other UI elements */
-            #dashboardContent .row:first-of-type,
-            #dashboardContent .form-card,
-            #dashboardContent .alert,
-            #dashboardContent .db-fix-card {
-                display: none !important;
+            /* Print Container */
+            .print-container {
+                max-width: 100%;
+                margin: 0 auto;
+                font-family: 'Tenor Sans', sans-serif;
             }
             
-            /* Style the page title for print */
-            .page-title {
-                display: block !important;
-                text-align: center !important;
-                margin-bottom: 30px !important;
-                padding-bottom: 10px !important;
-                border-bottom: 3px solid #00A651 !important;
+            /* Print Header with Logo */
+            .print-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                margin-bottom: 30px;
+                padding-bottom: 20px;
+                border-bottom: 3px solid var(--deep-sea);
             }
             
-            .page-title h2 {
-                font-family: 'Alice', serif !important;
-                font-size: 28px !important;
-                color: #006341 !important;
-                margin: 0 !important;
-                padding: 0 !important;
-                display: block !important;
+            .logo-section {
+                display: flex;
+                align-items: center;
+                gap: 15px;
             }
             
-            .page-title h2 i {
-                display: none !important;
-            }
-            
-            /* Add company logo before title */
-            .page-title:before {
-                content: "AMGC";
-                display: block;
+            .company-logo {
                 width: 80px;
-                height: 80px;
-                margin: 0 auto 15px auto;
-                background: linear-gradient(135deg, #006341 0%, #00A651 100%);
-                color: white;
-                border-radius: 50%;
-                border: 3px solid #FFD700;
-                line-height: 80px;
-                text-align: center;
+                height: auto;
+            }
+            
+            .company-info h1 {
+                font-family: 'Alice', serif;
+                font-size: 28px;
+                color: var(--deep-sea);
+                margin: 0 0 5px 0;
+                letter-spacing: 1px;
+            }
+            
+            .company-info p {
+                font-family: 'Tenor Sans', sans-serif;
+                font-size: 12px;
+                color: var(--forest-green);
+                margin: 0;
+                line-height: 1.5;
+            }
+            
+            .report-title {
+                text-align: right;
+            }
+            
+            .report-title h2 {
                 font-family: 'Alice', serif;
                 font-size: 24px;
+                color: var(--green-haze);
+                margin: 0 0 5px 0;
+            }
+            
+            .report-title .date-info {
+                font-family: 'Tenor Sans', sans-serif;
+                font-size: 11px;
+                color: var(--forest-green);
+            }
+            
+            /* Summary Box */
+            .summary-box {
+                background: linear-gradient(135deg, var(--light-gray) 0%, var(--white) 100%);
+                border: 2px solid var(--green);
+                border-radius: 10px;
+                padding: 20px;
+                margin-bottom: 30px;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            }
+            
+            .summary-item {
+                text-align: center;
+                flex: 1;
+                border-right: 2px solid var(--green-haze);
+            }
+            
+            .summary-item:last-child {
+                border-right: none;
+            }
+            
+            .summary-label {
+                font-family: 'Tenor Sans', sans-serif;
+                font-size: 11px;
+                text-transform: uppercase;
+                color: var(--deep-sea);
+                margin-bottom: 5px;
                 font-weight: bold;
             }
             
-            /* Style the data table */
-            .data-table {
-                box-shadow: none !important;
-                border: 2px solid #00A651 !important;
-                padding: 0 !important;
-                margin: 0 !important;
-                border-radius: 8px !important;
-                overflow: hidden !important;
-                page-break-inside: avoid !important;
-                background: white !important;
+            .summary-value {
+                font-family: 'Alice', serif;
+                font-size: 18px;
+                color: var(--forest-green);
+                font-weight: bold;
             }
             
-            .table-header {
-                background: #006341 !important;
-                color: white !important;
-                padding: 15px 20px !important;
-                border-bottom: 3px solid #FFD700 !important;
-                display: flex !important;
-                align-items: center !important;
-                justify-content: space-between !important;
-                page-break-after: avoid !important;
+            /* Table Styles */
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                margin: 20px 0;
+                font-family: 'Tenor Sans', sans-serif;
             }
             
-            .table-header h5 {
-                margin: 0 !important;
-                font-family: 'Alice', serif !important;
-                font-size: 20px !important;
-                color: white !important;
-                letter-spacing: 0.5px !important;
+            th {
+                background: var(--deep-sea);
+                color: var(--white);
+                font-family: 'Alice', serif;
+                font-size: 13px;
+                padding: 12px;
+                text-align: left;
+                border: 1px solid var(--forest-green);
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
             }
             
-            .table-container {
-                overflow: visible !important;
+            td {
+                padding: 10px;
+                border: 1px solid var(--green-haze);
+                font-size: 12px;
+                color: var(--black);
             }
             
-            .custom-table {
-                width: 100% !important;
-                border-collapse: collapse !important;
-                font-family: 'Tenor Sans', Arial, sans-serif !important;
-                page-break-inside: auto !important;
-                font-size: 11px !important;
+            tr:nth-child(even) {
+                background-color: var(--light-gray);
             }
             
-            .custom-table thead {
-                display: table-header-group !important;
+            tr:hover {
+                background-color: rgba(46, 125, 50, 0.05);
             }
             
-            .custom-table tbody {
-                display: table-row-group !important;
+            .total-row {
+                background: linear-gradient(135deg, var(--green) 0%, var(--deep-sea) 100%) !important;
+                color: var(--white);
             }
             
-            .custom-table tr {
-                page-break-inside: avoid !important;
-                page-break-after: auto !important;
+            .total-row td {
+                color: var(--white);
+                font-family: 'Alice', serif;
+                font-size: 14px;
+                font-weight: bold;
+                border: 1px solid var(--forest-green);
             }
             
-            .custom-table thead th {
-                background-color: #006341 !important;
-                color: white !important;
-                font-weight: 600 !important;
-                border: 1px solid #006341 !important;
-                padding: 10px 8px !important;
-                font-size: 11px !important;
-                text-transform: uppercase !important;
-                letter-spacing: 0.5px !important;
-                font-family: 'Alice', serif !important;
-                text-align: left !important;
+            .status-badge-print {
+                background-color: var(--yellow);
+                color: var(--black);
+                padding: 3px 10px;
+                border-radius: 15px;
+                font-size: 11px;
+                font-family: 'Tenor Sans', sans-serif;
+                font-weight: bold;
+                display: inline-block;
             }
             
-            .custom-table tbody td {
-                border: 1px solid #CCCCCC !important;
-                padding: 8px 6px !important;
-                font-size: 10px !important;
-                color: #333333 !important;
-                background: white !important;
-                vertical-align: middle !important;
+            .branch-badge-print {
+                background-color: var(--green);
+                color: var(--white);
+                padding: 3px 10px;
+                border-radius: 15px;
+                font-size: 11px;
+                font-family: 'Tenor Sans', sans-serif;
+                display: inline-block;
             }
             
-            .custom-table tbody tr:nth-child(even) {
-                background-color: #F9F9F9 !important;
+            /* Print Footer */
+            .print-footer {
+                margin-top: 40px;
+                padding-top: 20px;
+                border-top: 2px solid var(--deep-sea);
+                display: flex;
+                justify-content: space-between;
+                font-family: 'Tenor Sans', sans-serif;
+                font-size: 11px;
+                color: var(--forest-green);
             }
             
-            /* Style the amount columns */
-            .custom-table td:nth-child(7) {
-                text-align: right !important;
-                font-weight: 500 !important;
+            .signature-line {
+                width: 200px;
+                border-bottom: 1px solid var(--deep-sea);
+                margin-top: 5px;
             }
             
-            .custom-table td:nth-child(5),
-            .custom-table td:nth-child(6) {
-                text-align: center !important;
+            .prepared-by {
+                text-align: left;
             }
             
-            /* Style badges for print */
-            .badge {
-                padding: 3px 6px !important;
-                border-radius: 3px !important;
-                font-size: 9px !important;
-                font-weight: normal !important;
-                color: white !important;
-                border: none !important;
-                background-color: #666666 !important;
-                display: inline-block !important;
-            }
-            
-            .badge.bg-warning {
-                background-color: #FFA500 !important;
-            }
-            
-            .badge.bg-success {
-                background-color: #00A651 !important;
-            }
-            
-            .badge.bg-info {
-                background-color: #006341 !important;
-            }
-            
-            .badge.bg-primary {
-                background-color: #006341 !important;
-            }
-            
-            .badge.bg-danger {
-                background-color: #DC3545 !important;
-            }
-            
-            .badge.bg-secondary {
-                background-color: #6C757D !important;
-            }
-            
-            /* Add print date at bottom */
-            #dashboardContent:after {
-                content: "Printed on: " attr(data-print-date);
-                display: block;
+            .generated-info {
                 text-align: right;
-                margin-top: 20px;
-                padding-top: 10px;
-                border-top: 1px dashed #CCCCCC;
-                font-size: 9px;
-                color: #666666;
-                font-family: 'Tenor Sans', Arial, sans-serif;
             }
             
             /* Hide action column */
@@ -1112,25 +1207,33 @@ function formatDateTime($dateStr) {
             .custom-table th:nth-child(1) { width: 12%; } /* Order No. */
             .custom-table th:nth-child(2) { width: 10%; } /* Date */
             .custom-table th:nth-child(3) { width: 20%; } /* Customer */
+            <?php if ($so_branch_column_exists && $view_all_branches): ?>
+            .custom-table th:nth-child(4) { width: 10%; } /* Branch */
+            .custom-table th:nth-child(5) { width: 5%; }  /* Items */
+            .custom-table th:nth-child(6) { width: 5%; }  /* Qty */
+            .custom-table th:nth-child(7) { width: 12%; } /* Total Amount */
+            .custom-table th:nth-child(8) { width: 10%; } /* Invoice */
+            .custom-table th:nth-child(9) { width: 10%; } /* Payment Status */
+            .custom-table th:nth-child(10) { width: 10%; } /* Order Status */
+            <?php else: ?>
             .custom-table th:nth-child(4) { width: 5%; }  /* Items */
             .custom-table th:nth-child(5) { width: 5%; }  /* Qty */
             .custom-table th:nth-child(6) { width: 12%; } /* Total Amount */
             .custom-table th:nth-child(7) { width: 10%; } /* Invoice */
             .custom-table th:nth-child(8) { width: 10%; } /* Payment Status */
             .custom-table th:nth-child(9) { width: 10%; } /* Order Status */
+            <?php endif; ?>
             
-            /* Total row at bottom */
-            .table-footer {
-                margin-top: 20px;
-                padding: 10px;
-                background: #F5F5F5;
-                border: 2px solid #00A651;
-                border-radius: 5px;
-                font-family: 'Alice', serif;
-                font-size: 14px;
-                font-weight: bold;
-                color: #006341;
-                text-align: right;
+            /* Amount column alignment */
+            td:nth-child(<?php echo ($so_branch_column_exists && $view_all_branches) ? '7' : '6'; ?>) {
+                text-align: right !important;
+                font-weight: 500;
+            }
+            
+            /* Center align items and qty columns */
+            td:nth-child(<?php echo ($so_branch_column_exists && $view_all_branches) ? '5' : '4'; ?>),
+            td:nth-child(<?php echo ($so_branch_column_exists && $view_all_branches) ? '6' : '5'; ?>) {
+                text-align: center !important;
             }
         }
     </style>
@@ -1138,7 +1241,7 @@ function formatDateTime($dateStr) {
 <body>
     <div id="appPage">
         <!-- Sidebar -->
-        <div class="sidebar" id="sidebar">
+        <div class="sidebar no-print" id="sidebar">
             <div class="sidebar-header">
                 <h3>
                     <button class="desktop-toggle-btn" id="desktopToggleBtn">
@@ -1213,14 +1316,14 @@ function formatDateTime($dateStr) {
 
         <!-- Main Content -->
         <div class="main-content" id="mainContent">
-            <div id="dashboardContent" class="page-content active" data-print-date="<?php echo date('F d, Y H:i:s'); ?>">
-                <div class="navbar-top">
+            <div id="dashboardContent" class="page-content active">
+                <div class="navbar-top no-print">
                     <button class="mobile-menu-btn" id="mobileMenuBtn">
                         <i class="bi bi-list"></i>
                     </button>
                     
                     <div class="page-title">
-                        <h2><i class="bi bi-bag"></i> Sales Orders</h2>
+                        <h2>Sales Orders</h2>
                         <p id="dashboardSubtitle">
                             Manage and track all sales orders
                         </p>
@@ -1229,7 +1332,7 @@ function formatDateTime($dateStr) {
 
                 <!-- Database Fix Alert - Only show if invoice_so_column doesn't exist -->
                 <?php if (!$invoice_so_column_exists): ?>
-                <div class="db-fix-card">
+                <div class="db-fix-card no-print">
                     <div class="d-flex align-items-center mb-3">
                         <i class="bi bi-database fs-1 me-3 text-warning"></i>
                         <div>
@@ -1260,7 +1363,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
 
                 <!-- Branch Info Alerts -->
                 <?php if (!$so_branch_column_exists): ?>
-                    <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    <div class="alert alert-info alert-dismissible fade show no-print" role="alert">
                         <i class="bi bi-info-circle"></i> 
                         <strong>Branch filtering for sales orders not yet set up.</strong> Run this SQL:
                         <br><br>
@@ -1276,7 +1379,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 <?php endif; ?>
 
                 <?php if (!$customers_branch_column_exists): ?>
-                    <div class="alert alert-info alert-dismissible fade show" role="alert">
+                    <div class="alert alert-info alert-dismissible fade show no-print" role="alert">
                         <i class="bi bi-info-circle"></i> 
                         <strong>Branch filtering for customers not yet set up.</strong> Run this SQL:
                         <br><br>
@@ -1293,14 +1396,14 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
 
                 <!-- No Orders Warning -->
                 <?php if (empty($sales_orders) && $so_branch_column_exists && !$view_all_branches): ?>
-                    <div class="alert alert-warning">
+                    <div class="alert alert-warning no-print">
                         <i class="bi bi-exclamation-triangle"></i> 
                         No sales orders found for your branch.
                     </div>
                 <?php endif; ?>
                 
                 <!-- Quick Stats -->
-                <div class="row g-3 mb-4">
+                <div class="row g-3 mb-4 no-print">
                     <div class="col-md-3">
                         <div class="stat-card total">
                             <i class="bi bi-cart-check stat-icon"></i>
@@ -1342,7 +1445,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 </div>
 
                 <!-- Search and Filter -->
-                <div class="row g-3 mb-4">
+                <div class="row g-3 mb-4 no-print">
                     <div class="col-12">
                         <div class="form-card">
                             <div class="row g-3">
@@ -1378,21 +1481,28 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                     </div>
                 </div>
 
+                <!-- Action Buttons -->
+                <div class="mb-3 d-flex gap-2 no-print">
+                    <button class="btn btn-primary" onclick="printAllOrders()">
+                        <i class="bi bi-printer"></i> Print All Orders
+                    </button>
+                    <button class="btn btn-success" onclick="exportToExcel()">
+                        <i class="bi bi-file-earmark-excel"></i> Export to Excel
+                    </button>
+                    <button class="btn btn-info" onclick="refreshOrders()">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                    </button>
+                </div>
+
                 <!-- Sales Orders Table -->
                 <div class="data-table">
-                    <div class="table-header d-flex justify-content-between align-items-center">
+                    <div class="table-header d-flex justify-content-between align-items-center no-print">
                         <h5 class="mb-0">Sales Orders</h5>
                         <div class="d-flex gap-2 align-items-center">
                             <?php if ($so_branch_column_exists && $view_all_branches): ?>
                                 <span class="badge bg-success">All Branches</span>
                             <?php endif; ?>
                             <span class="text-muted me-2">Total: ₱<?= number_format(array_sum(array_column($sales_orders, 'total_amount')), 2) ?></span>
-                            <button class="btn btn-primary" onclick="printReport()">
-                                <i class="bi bi-printer"></i> Print Table
-                            </button>
-                            <button class="btn btn-success" onclick="exportToExcel()">
-                                <i class="bi bi-file-earmark-excel"></i> Export to Excel
-                            </button>
                         </div>
                     </div>
                     <div class="table-container">
@@ -1411,7 +1521,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                     <th>Invoice</th>
                                     <th>Payment Status</th>
                                     <th>Order Status</th>
-                                    <th>Actions</th>
+                                    <th class="no-print">Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="salesOrdersTableBody">
@@ -1465,17 +1575,18 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                                 <?= getOrderStatusText($order['order_status']) ?>
                                             </span>
                                         </td>
-                                        <td>
+                                        <td class="no-print">
                                             <div class="action-buttons">
                                                 <button class="btn-action btn-view" onclick="viewOrder(<?= $order['so_id'] ?>)" title="View">
                                                     <i class="bi bi-eye"></i>
+                                                </button>
+                                                <button class="btn-action btn-print" onclick="printSingleOrder(<?= $order['so_id'] ?>)" title="Print Order">
+                                                    <i class="bi bi-printer"></i>
                                                 </button>
                                                 <?php if ($order['order_status'] == 'pending'): ?>
                                                     <button class="btn-action btn-edit" onclick="editOrder(<?= $order['so_id'] ?>)" title="Edit">
                                                         <i class="bi bi-pencil"></i>
                                                     </button>
-                                                <?php endif; ?>
-                                                <?php if ($order['order_status'] == 'pending'): ?>
                                                     <button class="btn-action btn-delete" onclick="deleteOrder(<?= $order['so_id'] ?>)" title="Delete">
                                                         <i class="bi bi-trash"></i>
                                                     </button>
@@ -1493,8 +1604,11 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         </div>
     </div>
 
+    <!-- PRINT CONTAINER - Hidden for print generation -->
+    <div id="printContainer" style="display: none;"></div>
+
     <!-- VIEW ORDER MODAL -->
-    <div class="modal fade" id="viewOrderModal" tabindex="-1" aria-hidden="true">
+    <div class="modal fade no-print" id="viewOrderModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header bg-info text-white">
@@ -1516,7 +1630,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
     </div>
 
     <!-- EDIT ORDER MODAL -->
-    <div class="modal fade" id="editOrderModal" tabindex="-1" aria-hidden="true">
+    <div class="modal fade no-print" id="editOrderModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header bg-warning text-dark">
@@ -1580,7 +1694,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
     </div>
 
     <!-- DELETE CONFIRMATION MODAL -->
-    <div class="modal fade" id="deleteOrderModal" tabindex="-1" aria-hidden="true">
+    <div class="modal fade no-print" id="deleteOrderModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header bg-danger text-white">
@@ -1604,7 +1718,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
     </div>
 
     <!-- STOCK WARNING MODAL -->
-    <div class="modal fade" id="stockWarningModal" tabindex="-1" aria-hidden="true">
+    <div class="modal fade no-print" id="stockWarningModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header bg-warning text-dark">
@@ -1633,6 +1747,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
     const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
     const soBranchColumnExists = <?php echo $so_branch_column_exists ? 'true' : 'false'; ?>;
     const invoiceSoColumnExists = <?php echo $invoice_so_column_exists ? 'true' : 'false'; ?>;
+    const logoBase64 = '<?php echo $logo_base64; ?>';
 
     // ========== SIDEBAR FUNCTIONS ==========
     function toggleSidebar() {
@@ -1726,7 +1841,55 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 if (window.innerWidth <= 992) closeMobileSidebar();
             });
         });
+
+        // Close sidebar when clicking outside on mobile
+        document.addEventListener('click', function(event) {
+            const sidebar = document.getElementById('sidebar');
+            const mobileBtn = document.getElementById('mobileMenuBtn');
+            const overlay = document.querySelector('.sidebar-overlay');
+            const isMobile = window.innerWidth <= 992;
+            
+            if (isMobile && sidebar && sidebar.classList.contains('active') && 
+                !sidebar.contains(event.target) && 
+                (!mobileBtn || !mobileBtn.contains(event.target)) &&
+                (!overlay || !overlay.contains(event.target))) {
+                closeMobileSidebar();
+            }
+        });
+
+        // Add resize event listener
+        window.addEventListener('resize', handleSidebarResize);
     });
+
+    function handleSidebarResize() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.querySelector('.sidebar-overlay');
+        
+        if (window.innerWidth > 992) {
+            if (overlay) {
+                overlay.remove();
+            }
+            sidebar.classList.remove('active');
+            
+            const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+            if (savedCollapsed === 'true') {
+                sidebar.classList.add('collapsed');
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'none';
+                });
+            } else {
+                sidebar.classList.remove('collapsed');
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'inline-block';
+                });
+            }
+        } else {
+            sidebar.classList.remove('collapsed');
+            document.querySelectorAll('.nav-text').forEach(text => {
+                text.style.display = 'inline-block';
+            });
+        }
+    }
 
     // ========== CHECK STOCK FUNCTION ==========
     function checkStockBeforeConfirm(soId) {
@@ -2125,21 +2288,816 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
     }
 
     // ========== PRINT FUNCTIONS ==========
-    function printReport() {
-        // Set the print date attribute
-        document.getElementById('dashboardContent').setAttribute('data-print-date', new Date().toLocaleString());
+    
+    // Print All Orders
+    function printAllOrders() {
+        const rows = document.querySelectorAll('.sales-order-row');
+        const visibleRows = [];
         
-        // Hide the action column in print by adding a class
-        const table = document.getElementById('salesOrdersTable');
-        const rows = table.querySelectorAll('tr');
+        rows.forEach(row => {
+            if (row.style.display !== 'none') {
+                visibleRows.push(row);
+            }
+        });
         
-        // Trigger browser print
-        window.print();
+        if (visibleRows.length === 0) {
+            Swal.fire('Warning', 'No orders to print', 'warning');
+            return;
+        }
+        
+        // Show loading on button
+        const printBtn = document.querySelector('.btn-primary[onclick="printAllOrders()"]');
+        if (printBtn) {
+            const originalText = printBtn.innerHTML;
+            printBtn.innerHTML = '<i class="bi bi-printer"></i> Printing...';
+            printBtn.disabled = true;
+            
+            setTimeout(() => {
+                printBtn.innerHTML = originalText;
+                printBtn.disabled = false;
+            }, 3000);
+        }
+        
+        // Create iframe for printing
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'absolute';
+        iframe.style.width = '0';
+        iframe.style.height = '0';
+        iframe.style.border = 'none';
+        iframe.style.top = '-9999px';
+        iframe.style.left = '-9999px';
+        document.body.appendChild(iframe);
+        
+        // Generate HTML content with brand colors and logo
+        const htmlContent = generateAllOrdersHTML(visibleRows);
+        
+        // Write to iframe and print
+        const iframeDoc = iframe.contentWindow.document;
+        iframeDoc.open();
+        iframeDoc.write(htmlContent);
+        iframeDoc.close();
+        
+        // Auto print after load
+        iframe.contentWindow.focus();
+        setTimeout(() => {
+            iframe.contentWindow.print();
+            // Remove iframe after print
+            setTimeout(() => {
+                document.body.removeChild(iframe);
+            }, 100);
+        }, 250);
     }
 
+    // Print Single Order
+    function printSingleOrder(orderId) {
+        currentOrderId = orderId;
+        
+        // Show loading on button
+        const printBtn = event ? event.target.closest('button') : null;
+        if (printBtn) {
+            const originalHTML = printBtn.innerHTML;
+            printBtn.innerHTML = '<i class="bi bi-printer"></i>';
+            printBtn.disabled = true;
+            
+            setTimeout(() => {
+                printBtn.innerHTML = originalHTML;
+                printBtn.disabled = false;
+            }, 3000);
+        }
+        
+        // Get order details
+        const formData = new FormData();
+        formData.append('action', 'print_order');
+        formData.append('so_id', orderId);
+        
+        fetch('sales_order.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const order = data.order;
+                const items = data.items;
+                
+                // Create iframe for printing
+                const iframe = document.createElement('iframe');
+                iframe.style.position = 'absolute';
+                iframe.style.width = '0';
+                iframe.style.height = '0';
+                iframe.style.border = 'none';
+                iframe.style.top = '-9999px';
+                iframe.style.left = '-9999px';
+                document.body.appendChild(iframe);
+                
+                // Generate HTML content with brand colors and logo
+                const htmlContent = generateSingleOrderHTML(order, items);
+                
+                // Write to iframe and print
+                const iframeDoc = iframe.contentWindow.document;
+                iframeDoc.open();
+                iframeDoc.write(htmlContent);
+                iframeDoc.close();
+                
+                // Auto print after load
+                iframe.contentWindow.focus();
+                setTimeout(() => {
+                    iframe.contentWindow.print();
+                    // Remove iframe after print
+                    setTimeout(() => {
+                        document.body.removeChild(iframe);
+                    }, 100);
+                }, 250);
+            } else {
+                Swal.fire('Error', 'Failed to load order details', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            Swal.fire('Error', 'Network error: ' + error.message, 'error');
+        });
+    }
+
+    // Print from View Modal
     function printOrder(id) {
-        // For individual order printing, show the modal first
-        viewOrder(id);
+        printSingleOrder(id);
+        const modal = bootstrap.Modal.getInstance(document.getElementById('viewOrderModal'));
+        if (modal) modal.hide();
+    }
+
+    // Generate HTML for all orders
+    function generateAllOrdersHTML(rows) {
+        let tableRows = '';
+        let totalAmount = 0;
+        
+        rows.forEach(row => {
+            const cells = row.querySelectorAll('td');
+            const hasBranchColumn = soBranchColumnExists && viewAllBranches;
+            
+            let orderNumber = cells[0].textContent.trim();
+            let date = cells[1].textContent.trim();
+            let customer = cells[2].textContent.trim();
+            let branch = '';
+            let items = '';
+            let qty = '';
+            let amount = '';
+            let invoice = '';
+            let payment = '';
+            let status = '';
+            
+            if (hasBranchColumn) {
+                branch = cells[3].textContent.trim();
+                items = cells[4].textContent.trim();
+                qty = cells[5].textContent.trim();
+                amount = cells[6].textContent.trim();
+                invoice = cells[7].textContent.trim();
+                payment = cells[8].textContent.trim();
+                status = cells[9].textContent.trim();
+            } else {
+                items = cells[3].textContent.trim();
+                qty = cells[4].textContent.trim();
+                amount = cells[5].textContent.trim();
+                invoice = cells[6].textContent.trim();
+                payment = cells[7].textContent.trim();
+                status = cells[8].textContent.trim();
+            }
+            
+            const amountValue = parseFloat(amount.replace('₱', '').replace(',', '')) || 0;
+            totalAmount += amountValue;
+            
+            tableRows += '<tr>';
+            tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze);">${orderNumber}</td>`;
+            tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze);">${date}</td>`;
+            tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze);">${customer}</td>`;
+            if (hasBranchColumn) {
+                tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze);"><span class="branch-badge-print">${branch}</span></td>`;
+            }
+            tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze); text-align: center;">${items}</td>`;
+            tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze); text-align: center;">${qty}</td>`;
+            tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze); text-align: right;">${amount}</td>`;
+            tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze);">${invoice}</td>`;
+            tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze);">${payment}</td>`;
+            tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze);"><span class="status-badge-print">${status}</span></td>`;
+            tableRows += '</tr>';
+        });
+        
+        const currentDate = new Date();
+        const formattedDate = currentDate.toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+        });
+        const formattedTime = currentDate.toLocaleTimeString('en-US', { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        });
+        
+        const columnCount = soBranchColumnExists && viewAllBranches ? 10 : 9;
+        const totalColspan = soBranchColumnExists && viewAllBranches ? 6 : 5;
+        
+        return `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Sales Orders Report</title>
+                <link href="https://fonts.googleapis.com/css2?family=Tenor+Sans&family=Alice&display=swap" rel="stylesheet">
+                <style>
+                    :root {
+                        --green: #2E7D32;
+                        --green-haze: #1B5E20;
+                        --deep-sea: #0D4C14;
+                        --forest-green: #1B4D1F;
+                        --yellow: #FFC107;
+                        --white: #FFFFFF;
+                        --light-gray: #F5F5F5;
+                        --black: #212121;
+                    }
+                    
+                    @page {
+                        size: landscape;
+                        margin: 0.5in;
+                    }
+                    
+                    body {
+                        font-family: 'Tenor Sans', sans-serif;
+                        margin: 0;
+                        padding: 20px;
+                        color: var(--black);
+                        background-color: var(--white);
+                    }
+                    
+                    .print-container {
+                        max-width: 100%;
+                        margin: 0 auto;
+                    }
+                    
+                    .print-header {
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        margin-bottom: 30px;
+                        padding-bottom: 20px;
+                        border-bottom: 3px solid var(--deep-sea);
+                    }
+                    
+                    .logo-section {
+                        display: flex;
+                        align-items: center;
+                        gap: 15px;
+                    }
+                    
+                    .company-logo {
+                        width: 70px;
+                        height: auto;
+                    }
+                    
+                    .company-info h1 {
+                        font-family: 'Alice', serif;
+                        font-size: 26px;
+                        color: var(--deep-sea);
+                        margin: 0 0 5px 0;
+                    }
+                    
+                    .company-info p {
+                        font-family: 'Tenor Sans', sans-serif;
+                        font-size: 11px;
+                        color: var(--forest-green);
+                        margin: 0;
+                    }
+                    
+                    .report-title {
+                        text-align: right;
+                    }
+                    
+                    .report-title h2 {
+                        font-family: 'Alice', serif;
+                        font-size: 22px;
+                        color: var(--green-haze);
+                        margin: 0 0 5px 0;
+                    }
+                    
+                    .report-title .date-info {
+                        font-family: 'Tenor Sans', sans-serif;
+                        font-size: 10px;
+                        color: var(--forest-green);
+                    }
+                    
+                    .summary-box {
+                        background: linear-gradient(135deg, var(--light-gray) 0%, var(--white) 100%);
+                        border: 2px solid var(--green);
+                        border-radius: 10px;
+                        padding: 15px;
+                        margin-bottom: 25px;
+                        display: flex;
+                        justify-content: space-between;
+                        align-items: center;
+                    }
+                    
+                    .summary-item {
+                        text-align: center;
+                        flex: 1;
+                        border-right: 2px solid var(--green-haze);
+                    }
+                    
+                    .summary-item:last-child {
+                        border-right: none;
+                    }
+                    
+                    .summary-label {
+                        font-family: 'Tenor Sans', sans-serif;
+                        font-size: 10px;
+                        text-transform: uppercase;
+                        color: var(--deep-sea);
+                        margin-bottom: 5px;
+                        font-weight: bold;
+                    }
+                    
+                    .summary-value {
+                        font-family: 'Alice', serif;
+                        font-size: 16px;
+                        color: var(--forest-green);
+                        font-weight: bold;
+                    }
+                    
+                    table {
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin: 20px 0;
+                        font-size: 10px;
+                    }
+                    
+                    th {
+                        background: var(--deep-sea);
+                        color: var(--white);
+                        font-family: 'Alice', serif;
+                        font-size: 11px;
+                        padding: 10px;
+                        text-align: left;
+                        border: 1px solid var(--forest-green);
+                    }
+                    
+                    td {
+                        padding: 8px;
+                        border: 1px solid var(--green-haze);
+                        font-size: 10px;
+                    }
+                    
+                    tr:nth-child(even) {
+                        background-color: var(--light-gray);
+                    }
+                    
+                    .total-row {
+                        background: linear-gradient(135deg, var(--green) 0%, var(--deep-sea) 100%);
+                        color: var(--white);
+                        font-family: 'Alice', serif;
+                        font-size: 12px;
+                        font-weight: bold;
+                    }
+                    
+                    .total-row td {
+                        color: var(--white);
+                        border: 1px solid var(--forest-green);
+                    }
+                    
+                    .status-badge-print {
+                        background-color: var(--yellow);
+                        color: var(--black);
+                        padding: 3px 8px;
+                        border-radius: 15px;
+                        font-size: 9px;
+                        font-weight: bold;
+                        display: inline-block;
+                    }
+                    
+                    .branch-badge-print {
+                        background-color: var(--green);
+                        color: var(--white);
+                        padding: 3px 8px;
+                        border-radius: 15px;
+                        font-size: 9px;
+                        display: inline-block;
+                    }
+                    
+                    .print-footer {
+                        margin-top: 30px;
+                        padding-top: 15px;
+                        border-top: 2px solid var(--deep-sea);
+                        display: flex;
+                        justify-content: space-between;
+                        font-family: 'Tenor Sans', sans-serif;
+                        font-size: 10px;
+                        color: var(--forest-green);
+                    }
+                    
+                    .signature-line {
+                        width: 150px;
+                        border-bottom: 1px solid var(--deep-sea);
+                        margin-top: 5px;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="print-container">
+                    <div class="print-header">
+                        <div class="logo-section">
+                            <img src="${logoBase64}" alt="AMGC Logo" class="company-logo">
+                            <div class="company-info">
+                                <h1>AMGC</h1>
+                                <p>Quality Products, Quality Service</p>
+                            </div>
+                        </div>
+                        <div class="report-title">
+                            <h2>SALES ORDERS REPORT</h2>
+                            <div class="date-info">${formattedDate} | ${formattedTime}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="summary-box">
+                        <div class="summary-item">
+                            <div class="summary-label">Total Orders</div>
+                            <div class="summary-value">${rows.length}</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-label">Total Amount</div>
+                            <div class="summary-value">₱${totalAmount.toFixed(2)}</div>
+                        </div>
+                        <div class="summary-item">
+                            <div class="summary-label">Branch</div>
+                            <div class="summary-value">${!viewAllBranches && branchId > 0 ? `Branch ${branchId}` : 'All Branches'}</div>
+                        </div>
+                    </div>
+                    
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Order #</th>
+                                <th>Date</th>
+                                <th>Customer</th>
+                                ${soBranchColumnExists && viewAllBranches ? '<th>Branch</th>' : ''}
+                                <th style="text-align: center;">Items</th>
+                                <th style="text-align: center;">Qty</th>
+                                <th style="text-align: right;">Amount</th>
+                                <th>Invoice</th>
+                                <th>Payment</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRows}
+                            <tr class="total-row">
+                                <td colspan="${totalColspan}" style="text-align: right;">GRAND TOTAL</td>
+                                <td style="text-align: right;">₱${totalAmount.toFixed(2)}</td>
+                                <td colspan="${soBranchColumnExists && viewAllBranches ? '3' : '2'}"></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    
+                    <div class="print-footer">
+                        <div class="prepared-by">
+                            <div>Prepared by:</div>
+                            <div class="signature-line"></div>
+                            <div style="margin-top: 5px;">${document.querySelector('.user-name-sidebar')?.textContent || 'Branch Admin'}</div>
+                        </div>
+                        <div class="generated-info">
+                            <div>Generated on:</div>
+                            <div>${formattedDate} at ${formattedTime}</div>
+                        </div>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
+    }
+
+    // Generate HTML for single order
+    function generateSingleOrderHTML(order, items) {
+        let itemsHtml = '';
+        
+        if (items && items.length > 0) {
+            itemsHtml = items.map(item => {
+                const subtotal = item.quantity_ordered * item.unit_price;
+                return `
+                    <tr>
+                        <td style="padding: 8px; border: 1px solid var(--green-haze);">${item.item_name}<br><small style="color: var(--forest-green);">${item.item_code}</small></td>
+                        <td style="padding: 8px; border: 1px solid var(--green-haze); text-align: center;">${item.quantity_ordered}</td>
+                        <td style="padding: 8px; border: 1px solid var(--green-haze); text-align: right;">₱${parseFloat(item.unit_price).toFixed(2)}</td>
+                        <td style="padding: 8px; border: 1px solid var(--green-haze); text-align: right;">₱${parseFloat(subtotal).toFixed(2)}</td>
+                    </tr>
+                `;
+            }).join('');
+        }
+        
+        const createdByName = order.first_name ? `${order.first_name} ${order.last_name || ''}` : 'Branch Admin';
+        const currentDate = new Date();
+        const formattedDate = currentDate.toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+        });
+        const formattedTime = currentDate.toLocaleTimeString('en-US', { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+        });
+        
+        const orderDate = new Date(order.order_date);
+        const orderDateFormatted = orderDate.toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+        });
+        
+        return `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Order #${order.so_number}</title>
+                <link href="https://fonts.googleapis.com/css2?family=Tenor+Sans&family=Alice&display=swap" rel="stylesheet">
+                <style>
+                    :root {
+                        --green: #2E7D32;
+                        --green-haze: #1B5E20;
+                        --deep-sea: #0D4C14;
+                        --forest-green: #1B4D1F;
+                        --yellow: #FFC107;
+                        --white: #FFFFFF;
+                        --light-gray: #F5F5F5;
+                        --black: #212121;
+                    }
+                    
+                    @page {
+                        size: portrait;
+                        margin: 0.75in;
+                    }
+                    
+                    body {
+                        font-family: 'Tenor Sans', sans-serif;
+                        margin: 0;
+                        padding: 20px;
+                        color: var(--black);
+                        background-color: var(--white);
+                    }
+                    
+                    .print-container {
+                        max-width: 800px;
+                        margin: 0 auto;
+                    }
+                    
+                    .print-header {
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        margin-bottom: 30px;
+                        padding-bottom: 20px;
+                        border-bottom: 3px solid var(--deep-sea);
+                    }
+                    
+                    .logo-section {
+                        display: flex;
+                        align-items: center;
+                        gap: 15px;
+                    }
+                    
+                    .company-logo {
+                        width: 80px;
+                        height: auto;
+                    }
+                    
+                    .company-info h1 {
+                        font-family: 'Alice', serif;
+                        font-size: 28px;
+                        color: var(--deep-sea);
+                        margin: 0 0 5px 0;
+                        letter-spacing: 1px;
+                    }
+                    
+                    .company-info p {
+                        font-family: 'Tenor Sans', sans-serif;
+                        font-size: 12px;
+                        color: var(--forest-green);
+                        margin: 0;
+                        line-height: 1.5;
+                    }
+                    
+                    .report-title {
+                        text-align: right;
+                    }
+                    
+                    .report-title h2 {
+                        font-family: 'Alice', serif;
+                        font-size: 24px;
+                        color: var(--green-haze);
+                        margin: 0 0 5px 0;
+                    }
+                    
+                    .report-title .date-info {
+                        font-family: 'Tenor Sans', sans-serif;
+                        font-size: 11px;
+                        color: var(--forest-green);
+                    }
+                    
+                    .customer-section {
+                        background: linear-gradient(135deg, var(--light-gray) 0%, var(--white) 100%);
+                        border: 2px solid var(--green);
+                        border-radius: 10px;
+                        padding: 20px;
+                        margin-bottom: 30px;
+                    }
+                    
+                    .section-title {
+                        font-family: 'Alice', serif;
+                        font-size: 18px;
+                        color: var(--deep-sea);
+                        margin-bottom: 15px;
+                        border-bottom: 2px solid var(--green-haze);
+                        padding-bottom: 5px;
+                    }
+                    
+                    .info-row {
+                        display: flex;
+                        margin-bottom: 8px;
+                        font-size: 13px;
+                    }
+                    
+                    .info-label {
+                        width: 120px;
+                        font-weight: bold;
+                        color: var(--forest-green);
+                    }
+                    
+                    .info-value {
+                        flex: 1;
+                        color: var(--black);
+                    }
+                    
+                    table {
+                        width: 100%;
+                        border-collapse: collapse;
+                        margin: 20px 0;
+                    }
+                    
+                    th {
+                        background: var(--deep-sea);
+                        color: var(--white);
+                        font-family: 'Alice', serif;
+                        font-size: 13px;
+                        padding: 10px;
+                        text-align: left;
+                        border: 1px solid var(--forest-green);
+                    }
+                    
+                    td {
+                        padding: 8px;
+                        border: 1px solid var(--green-haze);
+                        font-size: 12px;
+                    }
+                    
+                    tr:nth-child(even) {
+                        background-color: var(--light-gray);
+                    }
+                    
+                    .total-row {
+                        background: linear-gradient(135deg, var(--green) 0%, var(--deep-sea) 100%);
+                        color: var(--white);
+                        font-family: 'Alice', serif;
+                        font-size: 14px;
+                        font-weight: bold;
+                    }
+                    
+                    .total-row td {
+                        color: var(--white);
+                        border: 1px solid var(--forest-green);
+                    }
+                    
+                    .status-badge {
+                        background-color: var(--yellow);
+                        color: var(--black);
+                        padding: 5px 15px;
+                        border-radius: 20px;
+                        font-size: 12px;
+                        font-weight: bold;
+                        display: inline-block;
+                    }
+                    
+                    .print-footer {
+                        margin-top: 40px;
+                        padding-top: 20px;
+                        border-top: 2px solid var(--deep-sea);
+                        display: flex;
+                        justify-content: space-between;
+                        font-family: 'Tenor Sans', sans-serif;
+                        font-size: 11px;
+                        color: var(--forest-green);
+                    }
+                    
+                    .signature-line {
+                        width: 200px;
+                        border-bottom: 1px solid var(--deep-sea);
+                        margin-top: 5px;
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="print-container">
+                    <div class="print-header">
+                        <div class="logo-section">
+                            <img src="${logoBase64}" alt="AMGC Logo" class="company-logo">
+                            <div class="company-info">
+                                <h1>AMGC</h1>
+                                <p>Quality Products, Quality Service</p>
+                            </div>
+                        </div>
+                        <div class="report-title">
+                            <h2>SALES ORDER</h2>
+                            <div class="date-info">${formattedDate} | ${formattedTime}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="customer-section">
+                        <div class="section-title">Order Information</div>
+                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
+                            <div class="info-row">
+                                <span class="info-label">Order Number:</span>
+                                <span class="info-value"><strong>${order.so_number}</strong></span>
+                            </div>
+                            <div class="info-row">
+                                <span class="info-label">Status:</span>
+                                <span class="info-value"><span class="status-badge">${order.order_status}</span></span>
+                            </div>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Order Date:</span>
+                            <span class="info-value">${orderDateFormatted}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Created By:</span>
+                            <span class="info-value">${createdByName}</span>
+                        </div>
+                        ${order.branch_name ? `
+                        <div class="info-row">
+                            <span class="info-label">Branch:</span>
+                            <span class="info-value">${order.branch_name}</span>
+                        </div>
+                        ` : ''}
+                    </div>
+                    
+                    <div class="customer-section">
+                        <div class="section-title">Customer Information</div>
+                        <div class="info-row">
+                            <span class="info-label">Name:</span>
+                            <span class="info-value">${order.customer_name}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Email:</span>
+                            <span class="info-value">${order.email || 'N/A'}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Phone:</span>
+                            <span class="info-value">${order.contact_number || 'N/A'}</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Address:</span>
+                            <span class="info-value">${order.address || 'N/A'}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="section-title">Order Items</div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Product</th>
+                                <th style="text-align: center;">Qty</th>
+                                <th style="text-align: right;">Unit Price</th>
+                                <th style="text-align: right;">Total</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${itemsHtml}
+                            <tr class="total-row">
+                                <td colspan="3" style="text-align: right;">GRAND TOTAL</td>
+                                <td style="text-align: right;">₱${parseFloat(order.total_amount).toFixed(2)}</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    
+                    <div class="print-footer">
+                        <div class="prepared-by">
+                            <div>Prepared by:</div>
+                            <div class="signature-line"></div>
+                            <div style="margin-top: 5px;">${document.querySelector('.user-name-sidebar')?.textContent || 'Branch Admin'}</div>
+                        </div>
+                        <div class="generated-info">
+                            <div>Generated on:</div>
+                            <div>${formattedDate} at ${formattedTime}</div>
+                        </div>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
     }
 
     // ========== FILTER FUNCTIONS ==========
@@ -2159,6 +3117,11 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             
             row.style.display = matchesSearch && matchesStatus && matchesCustomer ? '' : 'none';
         });
+    }
+
+    // ========== REFRESH ORDERS ==========
+    function refreshOrders() {
+        location.reload();
     }
 
     // ========== UTILITY FUNCTIONS ==========
@@ -2191,7 +3154,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         return texts[status] || status;
     }
 
-    // ========== EXPORT FUNCTIONS ==========
+    // ========== EXPORT TO EXCEL ==========
     function exportToExcel() {
         const rows = document.querySelectorAll('.sales-order-row:not([style*="display: none"])');
         if (rows.length === 0) {
@@ -2204,32 +3167,30 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         excelData.push(headers);
 
         rows.forEach(row => {
-            if (row.style.display !== 'none') {
-                const cells = row.querySelectorAll('td');
-                let cellIndex = 0;
-                
-                const orderNo = cells[cellIndex++]?.innerText || '';
-                const date = cells[cellIndex++]?.innerText || '';
-                const customer = cells[cellIndex++]?.innerText || '';
-                
-                if (soBranchColumnExists && viewAllBranches) cellIndex++;
-                
-                const items = cells[cellIndex++]?.innerText || '0';
-                const qty = cells[cellIndex++]?.innerText || '0';
-                const amount = cells[cellIndex++]?.innerText.replace('₱', '').replace(/,/g, '') || '0';
-                const invoice = cells[cellIndex++]?.innerText || 'No Invoice';
-                const payment = cells[cellIndex++]?.innerText || 'Pending';
-                const orderStatus = cells[cellIndex]?.innerText || '';
-                
-                excelData.push([orderNo, date, customer, items, qty, amount, invoice, payment, orderStatus]);
-            }
+            const cells = row.querySelectorAll('td');
+            let cellIndex = 0;
+            
+            const orderNo = cells[cellIndex++]?.innerText || '';
+            const date = cells[cellIndex++]?.innerText || '';
+            const customer = cells[cellIndex++]?.innerText || '';
+            
+            if (soBranchColumnExists && viewAllBranches) cellIndex++;
+            
+            const items = cells[cellIndex++]?.innerText || '0';
+            const qty = cells[cellIndex++]?.innerText || '0';
+            const amount = cells[cellIndex++]?.innerText.replace('₱', '').replace(/,/g, '') || '0';
+            const invoice = cells[cellIndex++]?.innerText || 'No Invoice';
+            const payment = cells[cellIndex++]?.innerText || 'Pending';
+            const orderStatus = cells[cellIndex]?.innerText || '';
+            
+            excelData.push([orderNo, date, customer, items, qty, amount, invoice, payment, orderStatus]);
         });
 
         const wb = XLSX.utils.book_new();
         const ws = XLSX.utils.aoa_to_sheet(excelData);
         ws['!cols'] = [{ wch: 18 }, { wch: 15 }, { wch: 30 }, { wch: 10 }, { wch: 10 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }];
         XLSX.utils.book_append_sheet(wb, ws, 'Sales Orders');
-        XLSX.writeFile(wb, `Sales_Orders_${new Date().toISOString().slice(0,10).replace(/-/g, '')}.xlsx`);
+        XLSX.writeFile(wb, `Sales_Orders_${new Date().toISOString().slice(0,10).replace(/-/g, '')}.xls`);
         
         Swal.fire({ icon: 'success', title: 'Export Complete', timer: 2000, showConfirmButton: false });
     }
@@ -2270,6 +3231,32 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             }
         });
     }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+        if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
+            e.preventDefault();
+            toggleSidebar();
+        }
+        else if (e.key === 'Escape' && window.innerWidth <= 992) {
+            closeMobileSidebar();
+        }
+        else if (e.ctrlKey && e.key === 'f' && !e.target.matches('input, textarea')) {
+            e.preventDefault();
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput) {
+                searchInput.focus();
+            }
+        }
+        else if (e.ctrlKey && e.key === 'r' && !e.target.matches('input, textarea')) {
+            e.preventDefault();
+            refreshOrders();
+        }
+        else if (e.ctrlKey && e.key === 'p' && !e.target.matches('input, textarea')) {
+            e.preventDefault();
+            printAllOrders();
+        }
+    });
     </script>
 </body>
 </html>
