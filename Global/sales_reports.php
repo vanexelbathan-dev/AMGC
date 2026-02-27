@@ -314,7 +314,6 @@ if (empty($user_initials)) {
                     <div class="user-avatar-sidebar"><?php echo $user_initials; ?></div>
                     <div class="user-details-sidebar">
                         <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-                        <span class="user-role-sidebar"><?php echo htmlspecialchars($user_role); ?></span>
                     </div>
                 </div>
                 

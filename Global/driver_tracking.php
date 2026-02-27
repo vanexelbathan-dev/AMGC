@@ -688,7 +688,6 @@ if (empty($user_initials)) {
                     <div class="user-avatar-sidebar"><?php echo $user_initials; ?></div>
                     <div class="user-details-sidebar">
                         <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-                        <span class="user-role-sidebar"><?php echo htmlspecialchars($user_role); ?></span>
                     </div>
                 </div>
                 
@@ -1463,6 +1462,43 @@ if (empty($user_initials)) {
         
         // Auto-refresh tracking data every 30 seconds
         setInterval(loadTracking, 30000);
+    </script>
+    
+    <!-- Driver Location Tracking Script -->
+    <script src="../js/driver-location-tracker.js"></script>
+    <script>
+        // Initialize real-time driver location tracking
+        document.addEventListener('DOMContentLoaded', function() {
+            // Get current driver ID from URL parameter or data attribute
+            const urlParams = new URLSearchParams(window.location.search);
+            const driverId = urlParams.get('driver_id') || document.getElementById('current_driver_id')?.value;
+            
+            // Initialize geolocation tracking if this is a driver viewing their own location
+            if (driverId && window.driverTracker) {
+                console.log('[v0] Initializing live location tracking for driver:', driverId);
+                
+                // You can customize the update frequency here
+                window.driverTracker.updateInterval = 10000; // Update every 10 seconds
+                
+                // Update the tracking status display periodically
+                setInterval(function() {
+                    const lastLocation = window.driverTracker.getLastLocation();
+                    if (lastLocation) {
+                        // Update any location display on the page
+                        const locationDisplay = document.getElementById('current-location-display');
+                        if (locationDisplay) {
+                            locationDisplay.innerHTML = `
+                                <div class="alert alert-info">
+                                    <i class="bi bi-geo-alt"></i> Live Location: 
+                                    ${lastLocation.latitude.toFixed(6)}, ${lastLocation.longitude.toFixed(6)} 
+                                    (Accuracy: ${Math.round(lastLocation.accuracy)}m)
+                                </div>
+                            `;
+                        }
+                    }
+                }, 5000);
+            }
+        });
     </script>
 </body>
 </html>

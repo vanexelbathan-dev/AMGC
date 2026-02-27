@@ -8,6 +8,30 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
+// Helper function to get branch name
+function getBranchName($conn, $branch_id) {
+    if (!$branch_id) return 'N/A';
+    $sql = "SELECT branch_name FROM branches WHERE branch_id = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("i", $branch_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result->fetch_assoc();
+    return $row['branch_name'] ?? 'Unknown Branch';
+}
+
+// Helper function to get user name
+function getUserName($conn, $user_id) {
+    if (!$user_id) return 'System';
+    $sql = "SELECT CONCAT(first_name, ' ', last_name) as name FROM users WHERE user_id = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("i", $user_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result->fetch_assoc();
+    return $row['name'] ?? 'Unknown User';
+}
+
 // Get filter parameters
 $branch_id = isset($_GET['branch']) ? $_GET['branch'] : '';
 $record_type = isset($_GET['type']) ? $_GET['type'] : '';
@@ -20,35 +44,12 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
     
     $records = [];
 
-    // Helper function to get branch name
-    function getBranchName($conn, $branch_id) {
-        if (!$branch_id) return 'N/A';
-        $sql = "SELECT branch_name FROM branches WHERE branch_id = ?";
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param("i", $branch_id);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $row = $result->fetch_assoc();
-        return $row['branch_name'] ?? 'Unknown Branch';
-    }
-
-    // Helper function to get user name
-    function getUserName($conn, $user_id) {
-        if (!$user_id) return 'N/A';
-        $sql = "SELECT CONCAT(first_name, ' ', last_name) as name FROM users WHERE user_id = ?";
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param("i", $user_id);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $row = $result->fetch_assoc();
-        return $row['name'] ?? 'N/A';
-    }
-
-    // Load Sales Orders
+    // Load Sales Orders (main view)
     if (empty($record_type) || $record_type == 'sales_order') {
-        $sql = "SELECT so.*, b.branch_name 
+        $sql = "SELECT so.*, b.branch_name, c.customer_name
                 FROM sales_orders so
                 LEFT JOIN branches b ON so.branch_id = b.branch_id
+                LEFT JOIN customers c ON so.customer_id = c.customer_id
                 WHERE DATE(so.order_date) BETWEEN ? AND ?";
         $params = [$date_from, $date_to];
         $types = "ss";
@@ -68,7 +69,6 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
         
         while ($row = $result->fetch_assoc()) {
             $branch_name = $row['branch_name'] ?? getBranchName($conn, $row['branch_id']);
-            $manager_name = getUserName($conn, $row['created_by']);
             
             $records[] = [
                 'id' => $row['so_id'],
@@ -76,9 +76,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
                 'record_number' => $row['so_number'],
                 'branch' => $branch_name,
                 'branch_id' => $row['branch_id'],
-                'manager' => $manager_name,
                 'type' => 'Sales Order',
-                'description' => 'Sales Order #' . $row['so_number'],
+                'description' => 'Sales Order #' . $row['so_number'] . ' - ' . ($row['customer_name'] ?? 'Unknown Customer'),
                 'amount' => $row['total_amount'],
                 'date' => $row['order_date'],
                 'status' => $row['order_status']
@@ -110,7 +109,6 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
         
         while ($row = $result->fetch_assoc()) {
             $branch_name = $row['branch_name'] ?? getBranchName($conn, $row['branch_id']);
-            $manager_name = getUserName($conn, $row['created_by']);
             
             $records[] = [
                 'id' => $row['po_id'],
@@ -118,100 +116,11 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
                 'record_number' => $row['po_number'],
                 'branch' => $branch_name,
                 'branch_id' => $row['branch_id'],
-                'manager' => $manager_name,
                 'type' => 'Purchase Order',
                 'description' => 'Purchase Order #' . $row['po_number'] . ($row['supplier_name'] ? ' - ' . $row['supplier_name'] : ''),
                 'amount' => $row['total_amount'],
                 'date' => $row['order_date'],
                 'status' => $row['po_status']
-            ];
-        }
-    }
-
-    // Load Pick Lists
-    if (empty($record_type) || $record_type == 'pick_list') {
-        $sql = "SELECT pl.*, b.branch_name, so.so_number, d.driver_name
-                FROM pick_lists pl
-                LEFT JOIN branches b ON pl.branch_id = b.branch_id
-                LEFT JOIN sales_orders so ON pl.so_id = so.so_id
-                LEFT JOIN drivers d ON pl.driver_id = d.driver_id
-                WHERE DATE(pl.created_at) BETWEEN ? AND ?";
-        $params = [$date_from, $date_to];
-        $types = "ss";
-        
-        if (!empty($branch_id)) {
-            $sql .= " AND pl.branch_id = ?";
-            $params[] = $branch_id;
-            $types .= "i";
-        }
-        
-        $sql .= " ORDER BY pl.created_at DESC LIMIT 500";
-        
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param($types, ...$params);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        
-        while ($row = $result->fetch_assoc()) {
-            $branch_name = $row['branch_name'] ?? getBranchName($conn, $row['branch_id']);
-            $manager_name = $row['driver_name'] ?? 'N/A';
-            
-            $records[] = [
-                'id' => $row['pick_list_id'],
-                'source' => 'pick_lists',
-                'record_number' => $row['pick_list_number'],
-                'branch' => $branch_name,
-                'branch_id' => $row['branch_id'],
-                'manager' => $manager_name,
-                'type' => 'Pick List',
-                'description' => 'Pick List #' . $row['pick_list_number'] . ' for SO #' . ($row['so_number'] ?? 'N/A'),
-                'amount' => 0,
-                'date' => $row['created_at'],
-                'status' => $row['pick_status']
-            ];
-        }
-    }
-
-    // Load RMR Requests
-    if (empty($record_type) || $record_type == 'rmr') {
-        $sql = "SELECT rmr.*, b.branch_name, c.customer_name, i.item_name
-                FROM rmr_requests rmr
-                LEFT JOIN branches b ON rmr.branch_id = b.branch_id
-                LEFT JOIN customers c ON rmr.customer_id = c.customer_id
-                LEFT JOIN items i ON rmr.item_id = i.item_id
-                WHERE DATE(rmr.created_at) BETWEEN ? AND ?";
-        $params = [$date_from, $date_to];
-        $types = "ss";
-        
-        if (!empty($branch_id)) {
-            $sql .= " AND rmr.branch_id = ?";
-            $params[] = $branch_id;
-            $types .= "i";
-        }
-        
-        $sql .= " ORDER BY rmr.created_at DESC LIMIT 500";
-        
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param($types, ...$params);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        
-        while ($row = $result->fetch_assoc()) {
-            $branch_name = $row['branch_name'] ?? getBranchName($conn, $row['branch_id']);
-            $manager_name = getUserName($conn, $row['received_by']);
-            
-            $records[] = [
-                'id' => $row['rmr_id'],
-                'source' => 'rmr_requests',
-                'record_number' => $row['rmr_number'],
-                'branch' => $branch_name,
-                'branch_id' => $row['branch_id'],
-                'manager' => $manager_name,
-                'type' => 'RMR Request',
-                'description' => 'RMR #' . $row['rmr_number'] . ' - ' . ($row['customer_name'] ?? 'Unknown'),
-                'amount' => 0,
-                'date' => $row['created_at'],
-                'status' => $row['rmr_status']
             ];
         }
     }
@@ -228,7 +137,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
     exit;
 }
 
-// Handle AJAX request for record details
+// Handle AJAX request for record details with full transaction history
 if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])) {
     header('Content-Type: application/json');
     
@@ -236,155 +145,410 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
     $source = $_GET['source'];
     $record = null;
 
-    // Get record details based on source
-    switch ($source) {
-        case 'sales_orders':
-            $sql = "SELECT so.*, b.branch_name, c.customer_name,
-                    CONCAT(u.first_name, ' ', u.last_name) as created_by_name
-                    FROM sales_orders so
-                    LEFT JOIN branches b ON so.branch_id = b.branch_id
-                    LEFT JOIN customers c ON so.customer_id = c.customer_id
-                    LEFT JOIN users u ON so.created_by = u.user_id
-                    WHERE so.so_id = ?";
-            $stmt = $conn->prepare($sql);
-            $stmt->bind_param("i", $id);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            
-            if ($row = $result->fetch_assoc()) {
-                // Get items
-                $items_sql = "SELECT soi.*, i.item_name, i.item_code
-                             FROM sales_order_items soi
-                             LEFT JOIN items i ON soi.item_id = i.item_id
-                             WHERE soi.so_id = ?";
-                $items_stmt = $conn->prepare($items_sql);
-                $items_stmt->bind_param("i", $id);
-                $items_stmt->execute();
-                $items_result = $items_stmt->get_result();
-                
-                $items_list = [];
-                while ($item = $items_result->fetch_assoc()) {
-                    $items_list[] = $item['quantity_ordered'] . ' x ' . ($item['item_name'] ?? 'Item #' . $item['item_id']);
+    try {
+        switch ($source) {
+            case 'sales_orders':
+                // Get main Sales Order details
+                $sql = "SELECT so.*, b.branch_name, c.customer_name, c.address, c.phone_number,
+                        CONCAT(u.first_name, ' ', u.last_name) as created_by_name
+                        FROM sales_orders so
+                        LEFT JOIN branches b ON so.branch_id = b.branch_id
+                        LEFT JOIN customers c ON so.customer_id = c.customer_id
+                        LEFT JOIN users u ON so.created_by = u.user_id
+                        WHERE so.so_id = ?";
+                $stmt = $conn->prepare($sql);
+                if (!$stmt) {
+                    throw new Exception('Failed to prepare sales order query: ' . $conn->error);
                 }
+                $stmt->bind_param("i", $id);
+                $stmt->execute();
+                $result = $stmt->get_result();
                 
-                $record = [
-                    'record_number' => $row['so_number'],
-                    'branch' => $row['branch_name'] ?? 'N/A',
-                    'manager' => $row['created_by_name'] ?? 'N/A',
-                    'type' => 'Sales Order',
-                    'description' => 'Sales Order #' . $row['so_number'],
-                    'amount' => $row['total_amount'],
-                    'date' => $row['order_date'],
-                    'status' => $row['order_status'],
-                    'customer' => $row['customer_name'] ?? 'N/A',
-                    'items' => implode(', ', $items_list)
-                ];
-            }
-            break;
-            
-        case 'purchase_orders':
-            $sql = "SELECT po.*, b.branch_name,
-                    CONCAT(u.first_name, ' ', u.last_name) as created_by_name
-                    FROM purchase_orders po
-                    LEFT JOIN branches b ON po.branch_id = b.branch_id
-                    LEFT JOIN users u ON po.created_by = u.user_id
-                    WHERE po.po_id = ?";
-            $stmt = $conn->prepare($sql);
-            $stmt->bind_param("i", $id);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            
-            if ($row = $result->fetch_assoc()) {
-                $record = [
-                    'record_number' => $row['po_number'],
-                    'branch' => $row['branch_name'] ?? 'N/A',
-                    'manager' => $row['created_by_name'] ?? 'N/A',
-                    'type' => 'Purchase Order',
-                    'description' => 'Purchase Order #' . $row['po_number'],
-                    'amount' => $row['total_amount'],
-                    'date' => $row['order_date'],
-                    'status' => $row['po_status'],
-                    'supplier' => $row['supplier_name'] ?? 'N/A',
-                    'expected_delivery' => $row['expected_delivery']
-                ];
-            }
-            break;
-            
-        case 'pick_lists':
-            $sql = "SELECT pl.*, b.branch_name, so.so_number, d.driver_name,
-                    CONCAT(u1.first_name, ' ', u1.last_name) as picked_by_name,
-                    CONCAT(u2.first_name, ' ', u2.last_name) as verified_by_name
-                    FROM pick_lists pl
-                    LEFT JOIN branches b ON pl.branch_id = b.branch_id
-                    LEFT JOIN sales_orders so ON pl.so_id = so.so_id
-                    LEFT JOIN drivers d ON pl.driver_id = d.driver_id
-                    LEFT JOIN users u1 ON pl.picked_by = u1.user_id
-                    LEFT JOIN users u2 ON pl.verified_by = u2.user_id
-                    WHERE pl.pick_list_id = ?";
-            $stmt = $conn->prepare($sql);
-            $stmt->bind_param("i", $id);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            
-            if ($row = $result->fetch_assoc()) {
-                $record = [
-                    'record_number' => $row['pick_list_number'],
-                    'branch' => $row['branch_name'] ?? 'N/A',
-                    'manager' => $row['picked_by_name'] ?? $row['driver_name'] ?? 'N/A',
-                    'type' => 'Pick List',
-                    'description' => 'Pick List #' . $row['pick_list_number'],
-                    'amount' => 0,
-                    'date' => $row['created_at'],
-                    'status' => $row['pick_status'],
-                    'so_number' => $row['so_number'] ?? 'N/A',
-                    'driver' => $row['driver_name'] ?? 'N/A',
-                    'pick_date' => $row['pick_date'],
-                    'verified_by' => $row['verified_by_name'] ?? 'N/A'
-                ];
-            }
-            break;
-            
-        case 'rmr_requests':
-            $sql = "SELECT rmr.*, b.branch_name, c.customer_name, i.item_name, i.item_code,
-                    CONCAT(u.first_name, ' ', u.last_name) as received_by_name,
-                    so.so_number
-                    FROM rmr_requests rmr
-                    LEFT JOIN branches b ON rmr.branch_id = b.branch_id
-                    LEFT JOIN customers c ON rmr.customer_id = c.customer_id
-                    LEFT JOIN items i ON rmr.item_id = i.item_id
-                    LEFT JOIN users u ON rmr.received_by = u.user_id
-                    LEFT JOIN sales_orders so ON rmr.so_id = so.so_id
-                    WHERE rmr.rmr_id = ?";
-            $stmt = $conn->prepare($sql);
-            $stmt->bind_param("i", $id);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            
-            if ($row = $result->fetch_assoc()) {
-                $record = [
-                    'record_number' => $row['rmr_number'],
-                    'branch' => $row['branch_name'] ?? 'N/A',
-                    'manager' => $row['received_by_name'] ?? 'N/A',
-                    'type' => 'RMR Request',
-                    'description' => 'RMR #' . $row['rmr_number'],
-                    'amount' => 0,
-                    'date' => $row['created_at'],
-                    'status' => $row['rmr_status'],
-                    'customer' => $row['customer_name'] ?? 'N/A',
-                    'item' => ($row['item_name'] ?? 'Item #' . $row['item_id']),
-                    'return_quantity' => $row['return_quantity'],
-                    'return_reason' => $row['return_reason'],
-                    'so_number' => $row['so_number'] ?? 'N/A',
-                    'disposition_type' => $row['disposition_type'] ?? 'N/A'
-                ];
-            }
-            break;
-    }
+                if ($row = $result->fetch_assoc()) {
+                    // Get Sales Order Items (line_total is the actual column name)
+                    $items_sql = "SELECT soi.*, i.item_name, i.item_code, i.category
+                                 FROM sales_order_items soi
+                                 LEFT JOIN items i ON soi.item_id = i.item_id
+                                 WHERE soi.so_id = ?";
+                    $items_stmt = $conn->prepare($items_sql);
+                    if ($items_stmt) {
+                        $items_stmt->bind_param("i", $id);
+                        $items_stmt->execute();
+                        $items_result = $items_stmt->get_result();
+                    }
+                    
+                    $items = [];
+                    if (isset($items_result)) {
+                        while ($item = $items_result->fetch_assoc()) {
+                            $items[] = [
+                                'item_name' => $item['item_name'] ?? 'Unknown Item',
+                                'item_code' => $item['item_code'] ?? 'N/A',
+                                'category' => $item['category'] ?? 'N/A',
+                                'quantity' => $item['quantity_ordered'],
+                                'unit_price' => $item['unit_price'],
+                                'total_price' => $item['line_total'] ?? ($item['quantity_ordered'] * $item['unit_price'])
+                            ];
+                        }
+                    }
+                    
+                    // Get related Pick Lists
+                    $pick_lists = [];
+                    $pick_sql = "SELECT pl.*, d.driver_name,
+                                CONCAT(u1.first_name, ' ', u1.last_name) as picked_by_name,
+                                CONCAT(u2.first_name, ' ', u2.last_name) as verified_by_name
+                                FROM pick_lists pl
+                                LEFT JOIN drivers d ON pl.driver_id = d.driver_id
+                                LEFT JOIN users u1 ON pl.picked_by = u1.user_id
+                                LEFT JOIN users u2 ON pl.verified_by = u2.user_id
+                                WHERE pl.so_id = ?
+                                ORDER BY pl.created_at DESC";
+                    $pick_stmt = $conn->prepare($pick_sql);
+                    if ($pick_stmt) {
+                        $pick_stmt->bind_param("i", $id);
+                        $pick_stmt->execute();
+                        $pick_result = $pick_stmt->get_result();
+                        
+                        while ($pick = $pick_result->fetch_assoc()) {
+                            // Get Pick List Items (quantity_to_pick is the actual column)
+                            $pick_items_sql = "SELECT pli.*, i.item_name, i.item_code
+                                             FROM pick_list_items pli
+                                             LEFT JOIN items i ON pli.item_id = i.item_id
+                                             WHERE pli.pick_list_id = ?";
+                            $pick_items_stmt = $conn->prepare($pick_items_sql);
+                            
+                            $pick_items = [];
+                            if ($pick_items_stmt) {
+                                $pick_items_stmt->bind_param("i", $pick['pick_list_id']);
+                                $pick_items_stmt->execute();
+                                $pick_items_result = $pick_items_stmt->get_result();
+                                
+                                while ($pitem = $pick_items_result->fetch_assoc()) {
+                                    $pick_items[] = [
+                                        'item_name' => $pitem['item_name'] ?? 'Unknown',
+                                        'quantity_ordered' => $pitem['quantity_to_pick'],
+                                        'quantity_picked' => $pitem['quantity_picked']
+                                    ];
+                                }
+                            }
+                            
+                            $pick_lists[] = [
+                                'pick_list_id' => $pick['pick_list_id'],
+                                'pick_list_number' => $pick['pick_list_number'],
+                                'status' => $pick['pick_status'],
+                                'created_at' => $pick['created_at'],
+                                'pick_date' => $pick['pick_date'],
+                                'driver_name' => $pick['driver_name'] ?? 'Unassigned',
+                                'picked_by' => $pick['picked_by_name'] ?? 'N/A',
+                                'verified_by' => $pick['verified_by_name'] ?? 'N/A',
+                                'items' => $pick_items
+                            ];
+                        }
+                    }
+                    
+                    // Get related Invoices (no created_by column, status not invoice_status, no paid_at)
+                    $invoices = [];
+                    $inv_sql = "SELECT i.*
+                               FROM invoices i
+                               WHERE i.so_id = ?
+                               ORDER BY i.created_at DESC";
+                    $inv_stmt = $conn->prepare($inv_sql);
+                    if ($inv_stmt) {
+                        $inv_stmt->bind_param("i", $id);
+                        $inv_stmt->execute();
+                        $inv_result = $inv_stmt->get_result();
+                        
+                        while ($inv = $inv_result->fetch_assoc()) {
+                            $invoices[] = [
+                                'invoice_id' => $inv['invoice_id'],
+                                'invoice_number' => $inv['invoice_number'],
+                                'amount' => $inv['total_amount'],
+                                'status' => $inv['status'],
+                                'created_at' => $inv['created_at'],
+                                'due_date' => $inv['due_date'] ?? null,
+                                'paid_at' => null,
+                                'created_by' => 'System'
+                            ];
+                        }
+                    }
+                    
+                    // Get related Trip Tickets (no vehicles table, use driver plate; start_time/end_time not departure/arrival)
+                    $trip_tickets = [];
+                    $trip_sql = "SELECT tt.*, d.driver_name, d.vehicle_plate_number,
+                               CONCAT(u.first_name, ' ', u.last_name) as created_by_name
+                               FROM trip_tickets tt
+                               LEFT JOIN drivers d ON tt.driver_id = d.driver_id
+                               LEFT JOIN users u ON tt.created_by = u.user_id
+                               WHERE tt.so_id = ?
+                               ORDER BY tt.created_at DESC";
+                    $trip_stmt = $conn->prepare($trip_sql);
+                    if ($trip_stmt) {
+                        $trip_stmt->bind_param("i", $id);
+                        $trip_stmt->execute();
+                        $trip_result = $trip_stmt->get_result();
+                        
+                        while ($trip = $trip_result->fetch_assoc()) {
+                            $trip_tickets[] = [
+                                'trip_id' => $trip['trip_id'],
+                                'trip_number' => $trip['trip_number'],
+                                'driver_name' => $trip['driver_name'] ?? 'Unassigned',
+                                'plate_number' => $trip['vehicle_plate_number'] ?? 'N/A',
+                                'departure_time' => $trip['start_time'] ?? $trip['trip_date'],
+                                'arrival_time' => $trip['end_time'],
+                                'status' => $trip['trip_status'],
+                                'route' => $trip['remarks'] ?? 'N/A'
+                            ];
+                        }
+                    }
+                    
+                    // Get Delivery Status (no delivery_number, delivered_at=delivery_date, signed_by, remarks)
+                    $delivery = null;
+                    $del_sql = "SELECT d.*, dr.driver_name
+                              FROM deliveries d
+                              LEFT JOIN drivers dr ON d.driver_id = dr.driver_id
+                              WHERE d.so_id = ?
+                              ORDER BY d.created_at DESC LIMIT 1";
+                    $del_stmt = $conn->prepare($del_sql);
+                    if ($del_stmt) {
+                        $del_stmt->bind_param("i", $id);
+                        $del_stmt->execute();
+                        $del_result = $del_stmt->get_result();
+                        
+                        if ($del_row = $del_result->fetch_assoc()) {
+                            $delivery = [
+                                'delivery_id' => $del_row['delivery_id'],
+                                'delivery_number' => 'DEL-' . $del_row['delivery_id'],
+                                'status' => $del_row['delivery_status'],
+                                'delivered_at' => $del_row['delivery_date'],
+                                'received_by' => $del_row['signed_by'] ?? $del_row['driver_name'] ?? 'N/A',
+                                'recipient_signature' => null,
+                                'delivery_notes' => $del_row['remarks'] ?? ''
+                            ];
+                        }
+                    }
+                    
+                    // Build complete transaction history
+                    $history = [];
+                    
+                    // Order Creation
+                    $history[] = [
+                        'timestamp' => $row['created_at'] ?? $row['order_date'],
+                        'action' => 'Order Created',
+                        'user' => $row['created_by_name'] ?? 'System',
+                        'details' => 'Sales order created'
+                    ];
+                    
+                    // Status change to confirmed/processing (use updated_at as approximation)
+                    if (in_array($row['order_status'], ['confirmed', 'processing', 'ready', 'delivered'])) {
+                        $history[] = [
+                            'timestamp' => $row['updated_at'] ?? $row['order_date'],
+                            'action' => 'Order Confirmed',
+                            'user' => $row['created_by_name'] ?? 'System',
+                            'details' => 'Sales order confirmed for processing'
+                        ];
+                    }
+                    
+                    // Pick List Creation
+                    foreach ($pick_lists as $pick) {
+                        $history[] = [
+                            'timestamp' => $pick['created_at'],
+                            'action' => 'Pick List Created',
+                            'user' => $pick['picked_by'],
+                            'details' => 'Pick List #' . $pick['pick_list_number'] . ' created'
+                        ];
+                        
+                        if ($pick['pick_date'] && $pick['status'] === 'completed') {
+                            $history[] = [
+                                'timestamp' => $pick['pick_date'],
+                                'action' => 'Items Picked',
+                                'user' => $pick['picked_by'],
+                                'details' => 'Items picked and verified'
+                            ];
+                        }
+                    }
+                    
+                    // Invoice Creation
+                    foreach ($invoices as $inv) {
+                        $history[] = [
+                            'timestamp' => $inv['created_at'],
+                            'action' => 'Invoice Generated',
+                            'user' => $inv['created_by'],
+                            'details' => 'Invoice #' . $inv['invoice_number'] . ' generated for P' . number_format($inv['amount'], 2)
+                        ];
+                    }
+                    
+                    // Trip Assignment
+                    foreach ($trip_tickets as $trip) {
+                        $trip_time = $trip['departure_time'] ?? $trip['arrival_time'];
+                        if ($trip_time) {
+                            $history[] = [
+                                'timestamp' => $trip_time,
+                                'action' => 'Trip Assigned',
+                                'user' => 'System',
+                                'details' => 'Trip #' . $trip['trip_number'] . ' assigned to driver ' . $trip['driver_name']
+                            ];
+                        }
+                        
+                        if ($trip['arrival_time']) {
+                            $history[] = [
+                                'timestamp' => $trip['arrival_time'],
+                                'action' => 'Trip Completed',
+                                'user' => 'System',
+                                'details' => 'Trip #' . $trip['trip_number'] . ' completed'
+                            ];
+                        }
+                    }
+                    
+                    // Delivery
+                    if ($delivery) {
+                        if ($delivery['delivered_at']) {
+                            $history[] = [
+                                'timestamp' => $delivery['delivered_at'],
+                                'action' => 'Order Delivered',
+                                'user' => $delivery['received_by'],
+                                'details' => 'Order delivered - signed by ' . $delivery['received_by']
+                            ];
+                        }
+                        if ($delivery['status'] === 'rejected') {
+                            $history[] = [
+                                'timestamp' => $delivery['delivered_at'] ?? date('Y-m-d H:i:s'),
+                                'action' => 'Delivery Rejected',
+                                'user' => $delivery['received_by'],
+                                'details' => 'Delivery was rejected'
+                            ];
+                        }
+                    }
+                    
+                    // Sort history by timestamp
+                    usort($history, function($a, $b) {
+                        $timeA = strtotime($a['timestamp'] ?? '0');
+                        $timeB = strtotime($b['timestamp'] ?? '0');
+                        return $timeA - $timeB;
+                    });
+                    
+                    $record = [
+                        'type' => 'Sales Order',
+                        'record_number' => $row['so_number'],
+                        'branch' => $row['branch_name'] ?? 'N/A',
+                        'customer' => [
+                            'name' => $row['customer_name'] ?? 'N/A',
+                            'address' => $row['address'] ?? 'N/A',
+                            'contact' => $row['phone_number'] ?? 'N/A'
+                        ],
+                        'order_details' => [
+                            'order_date' => $row['order_date'],
+                            'total_amount' => $row['total_amount'],
+                            'status' => $row['order_status'],
+                            'payment_terms' => 'N/A',
+                            'delivery_date' => $row['delivery_date'] ?? null,
+                            'notes' => ''
+                        ],
+                        'items' => $items,
+                        'pick_lists' => $pick_lists,
+                        'invoices' => $invoices,
+                        'trip_tickets' => $trip_tickets,
+                        'delivery' => $delivery,
+                        'history' => $history
+                    ];
+                }
+                break;
 
-    if ($record) {
-        echo json_encode(['success' => true, 'record' => $record]);
-    } else {
-        echo json_encode(['success' => false, 'message' => 'Record not found']);
+            case 'purchase_orders':
+                // Get main Purchase Order details
+                $sql = "SELECT po.*, b.branch_name,
+                        CONCAT(u.first_name, ' ', u.last_name) as created_by_name
+                        FROM purchase_orders po
+                        LEFT JOIN branches b ON po.branch_id = b.branch_id
+                        LEFT JOIN users u ON po.created_by = u.user_id
+                        WHERE po.po_id = ?";
+                $stmt = $conn->prepare($sql);
+                if (!$stmt) {
+                    throw new Exception('Failed to prepare purchase order query: ' . $conn->error);
+                }
+                $stmt->bind_param("i", $id);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                
+                if ($row = $result->fetch_assoc()) {
+                    // Get PO Items
+                    $items_sql = "SELECT poi.*, i.item_name, i.item_code, i.category
+                                 FROM purchase_order_items poi
+                                 LEFT JOIN items i ON poi.item_id = i.item_id
+                                 WHERE poi.po_id = ?";
+                    $items_stmt = $conn->prepare($items_sql);
+                    $items = [];
+                    if ($items_stmt) {
+                        $items_stmt->bind_param("i", $id);
+                        $items_stmt->execute();
+                        $items_result = $items_stmt->get_result();
+                        while ($item = $items_result->fetch_assoc()) {
+                            $items[] = [
+                                'item_name' => $item['item_name'] ?? 'Unknown Item',
+                                'item_code' => $item['item_code'] ?? 'N/A',
+                                'category' => $item['category'] ?? 'N/A',
+                                'quantity' => $item['quantity_ordered'],
+                                'unit_price' => $item['unit_price'],
+                                'total_price' => $item['line_total'] ?? ($item['quantity_ordered'] * $item['unit_price'])
+                            ];
+                        }
+                    }
+
+                    // Build transaction history
+                    $history = [];
+                    $history[] = [
+                        'timestamp' => $row['created_at'] ?? $row['order_date'],
+                        'action' => 'PO Created',
+                        'user' => $row['created_by_name'] ?? 'System',
+                        'details' => 'Purchase order created'
+                    ];
+
+                    if ($row['po_status'] !== 'draft') {
+                        $history[] = [
+                            'timestamp' => $row['updated_at'] ?? $row['order_date'],
+                            'action' => 'PO Submitted',
+                            'user' => $row['created_by_name'] ?? 'System',
+                            'details' => 'Purchase order submitted'
+                        ];
+                    }
+
+                    usort($history, function($a, $b) {
+                        return strtotime($a['timestamp'] ?? '0') - strtotime($b['timestamp'] ?? '0');
+                    });
+
+                    $record = [
+                        'type' => 'Purchase Order',
+                        'record_number' => $row['po_number'],
+                        'branch' => $row['branch_name'] ?? 'N/A',
+                        'customer' => [
+                            'name' => $row['supplier_name'] ?? 'N/A',
+                            'address' => 'N/A',
+                            'contact' => 'N/A'
+                        ],
+                        'order_details' => [
+                            'order_date' => $row['order_date'],
+                            'total_amount' => $row['total_amount'],
+                            'status' => $row['po_status'],
+                            'payment_terms' => 'N/A',
+                            'delivery_date' => $row['expected_delivery'] ?? null,
+                            'notes' => ''
+                        ],
+                        'items' => $items,
+                        'pick_lists' => [],
+                        'invoices' => [],
+                        'trip_tickets' => [],
+                        'delivery' => null,
+                        'history' => $history
+                    ];
+                }
+                break;
+        }
+
+        if ($record) {
+            echo json_encode(['success' => true, 'record' => $record]);
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Record not found']);
+        }
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
     }
     exit;
 }
@@ -448,64 +612,125 @@ if (empty($user_initials)) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <style>
+        /* ===== Modal Shell ===== */
+        #recordModal .modal-content { border:none; border-radius:10px; overflow:hidden; }
+        #recordModal .modal-header { background:#1e293b; color:#fff; padding:14px 20px; border:none; }
+        #recordModal .modal-header .modal-title { font-size:15px; font-weight:600; display:flex; align-items:center; gap:8px; }
+        #recordModal .modal-header .btn-close { filter:invert(1); opacity:.65; }
+        #recordModal .modal-header .btn-close:hover { opacity:1; }
+        #recordModal .modal-body { padding:0; background:#f1f5f9; max-height:78vh; overflow-y:auto; }
+        #recordModal .modal-footer { background:#fff; border-top:1px solid #e2e8f0; padding:10px 20px; }
+
+        /* ===== Summary Bar ===== */
+        .m-summary { background:#fff; padding:16px 20px; border-bottom:1px solid #e2e8f0; display:flex; flex-wrap:wrap; gap:12px 28px; align-items:center; }
+        .m-summary-item { display:flex; flex-direction:column; gap:1px; }
+        .m-summary-lbl { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:#94a3b8; }
+        .m-summary-val { font-size:13px; font-weight:500; color:#1e293b; }
+        .m-summary-val.lg { font-size:17px; font-weight:700; color:#0f172a; }
+
+        /* ===== 2-Column Layout ===== */
+        .m-layout { display:flex; gap:0; }
+        .m-left { flex:1; min-width:0; padding:20px; border-right:1px solid #e2e8f0; }
+        .m-right { width:320px; flex-shrink:0; padding:20px; background:#fff; }
+
+        /* ===== Section heading ===== */
+        .m-section-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:.06em; color:#94a3b8; margin:0 0 10px; display:flex; align-items:center; gap:6px; }
+        .m-section-title:not(:first-child) { margin-top:20px; }
+        .m-section-title i { font-size:13px; }
+
+        /* ===== Card ===== */
+        .m-card { background:#fff; border:1px solid #e2e8f0; border-radius:8px; margin-bottom:14px; overflow:hidden; }
+        .m-card-head { padding:10px 14px; font-size:12px; font-weight:600; color:#334155; background:#f8fafc; border-bottom:1px solid #e2e8f0; display:flex; align-items:center; gap:6px; }
+        .m-card-head i { color:#64748b; font-size:14px; }
+        .m-card-head .pill-right { margin-left:auto; }
+        .m-card-body { padding:14px; }
+
+        /* ===== Info Grid ===== */
+        .m-info { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:10px; }
+        .m-info-lbl { font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#94a3b8; margin-bottom:1px; }
+        .m-info-val { font-size:13px; color:#1e293b; word-break:break-word; }
+
+        /* ===== Status Pill ===== */
+        .s-pill { display:inline-flex; align-items:center; padding:2px 9px; border-radius:20px; font-size:11px; font-weight:600; line-height:1.5; }
+        .s-pill.green  { background:#dcfce7; color:#166534; }
+        .s-pill.yellow { background:#fef9c3; color:#854d0e; }
+        .s-pill.red    { background:#fee2e2; color:#991b1b; }
+        .s-pill.blue   { background:#dbeafe; color:#1e40af; }
+        .s-pill.gray   { background:#f1f5f9; color:#475569; }
+
+        /* ===== Table ===== */
+        .m-tbl { width:100%; border-collapse:collapse; font-size:12px; }
+        .m-tbl thead th { padding:8px 10px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; color:#64748b; background:#f8fafc; border-bottom:1px solid #e2e8f0; text-align:left; white-space:nowrap; }
+        .m-tbl tbody td { padding:8px 10px; color:#334155; border-bottom:1px solid #f1f5f9; vertical-align:middle; }
+        .m-tbl tbody tr:last-child td { border-bottom:none; }
+        .m-tbl tbody tr:hover td { background:#f8fafc; }
+        .m-tbl tfoot td, .m-tbl tfoot th { padding:8px 10px; font-weight:700; color:#0f172a; border-top:2px solid #e2e8f0; }
+
+        /* ===== Timeline ===== */
+        .tl { list-style:none; padding:0; margin:0; position:relative; }
+        .tl::before { content:''; position:absolute; top:6px; bottom:6px; left:11px; width:2px; background:#e2e8f0; border-radius:1px; }
+        .tl-item { position:relative; padding:0 0 18px 36px; }
+        .tl-item:last-child { padding-bottom:0; }
+        .tl-dot { position:absolute; left:4px; top:3px; width:16px; height:16px; border-radius:50%; border:2.5px solid #fff; }
+        .tl-dot.blue   { background:#3b82f6; box-shadow:0 0 0 2px #bfdbfe; }
+        .tl-dot.green  { background:#22c55e; box-shadow:0 0 0 2px #bbf7d0; }
+        .tl-dot.yellow { background:#eab308; box-shadow:0 0 0 2px #fef08a; }
+        .tl-dot.red    { background:#ef4444; box-shadow:0 0 0 2px #fecaca; }
+        .tl-dot.cyan   { background:#06b6d4; box-shadow:0 0 0 2px #a5f3fc; }
+        .tl-dot.gray   { background:#94a3b8; box-shadow:0 0 0 2px #e2e8f0; }
+        .tl-action { font-size:12px; font-weight:600; color:#1e293b; line-height:1.3; }
+        .tl-detail { font-size:11px; color:#64748b; margin-top:1px; }
+        .tl-meta { display:flex; flex-wrap:wrap; gap:6px; margin-top:3px; font-size:10px; color:#94a3b8; }
+        .tl-meta span { display:inline-flex; align-items:center; gap:3px; }
+        .tl-meta i { font-size:10px; }
+
+        /* ===== Empty State ===== */
+        .m-empty { text-align:center; padding:28px 12px; color:#94a3b8; }
+        .m-empty i { font-size:24px; margin-bottom:6px; display:block; }
+        .m-empty p { margin:0; font-size:12px; }
+
+        /* ===== Page-level badges ===== */
+        .status-badge { padding:3px 8px; border-radius:12px; font-size:11px; font-weight:500; }
+        .status-completed,.status-delivered,.status-approved,.status-received { background:#dcfce7; color:#166534; }
+        .status-pending,.status-draft,.status-planned,.status-open,.status-processing { background:#fef9c3; color:#854d0e; }
+        .status-cancelled,.status-rejected { background:#fee2e2; color:#991b1b; }
+
+        /* ===== Responsive ===== */
+        @media(max-width:991px){
+            .m-layout { flex-direction:column; }
+            .m-left { border-right:none; border-bottom:1px solid #e2e8f0; }
+            .m-right { width:100%; }
+        }
+        @media(max-width:768px){
+            .stat-card { padding:12px; min-height:85px; margin-bottom:8px; }
+            .stat-value { font-size:1.5rem; }
+            .stat-label { font-size:.8rem; }
+            .col-md-3 { width:50%; padding-left:8px; padding-right:8px; }
+            #recordModal .modal-dialog { margin:8px; max-width:calc(100% - 16px); }
+            #recordModal .modal-body { max-height:85vh; }
+            .m-summary {
+                display:grid;
+                grid-template-columns:1fr 1fr;
+                gap:10px;
+                padding:14px 16px;
+                align-items:start;
+            }
+            .m-summary-item { text-align:left; }
+            .m-summary-item:last-child { text-align:right; }
+            .m-summary-val.lg { font-size:15px; }
+            .m-left, .m-right { padding:16px; }
+            .m-info { grid-template-columns:1fr 1fr; }
+            .m-tbl { font-size:11px; }
+            .m-tbl thead th, .m-tbl tbody td { padding:6px 8px; }
+            .m-card-body { padding:12px; }
+            .m-section-title { font-size:10px; }
+        }
+        @media(max-width:480px){
+            .m-info { grid-template-columns:1fr; }
+        }
+    </style>
 </head>
-<style>
-     /* Mobile responsive adjustments ONLY */
-        @media (max-width: 768px) {
-            .stat-card {
-                padding: 12px;
-                min-height: 85px;
-                margin-bottom: 8px;
-            }
-            .stat-icon {
-                font-size: 2rem;
-                margin-right: 12px;
-            }
-            .stat-value {
-                font-size: 1.5rem;
-            }
-            .stat-label {
-                font-size: 0.8rem;
-            }
-            .col-md-3 {
-                width: 50%;
-                padding-left: 8px;
-                padding-right: 8px;
-            }
-            .row.g-3 {
-                margin-left: -8px;
-                margin-right: -8px;
-            }
-            .mb-3 {
-                margin-bottom: 8px !important;
-            }
-        }
-        @media (max-width: 576px) {
-            .stat-card {
-                min-height: 80px;
-                padding: 10px;
-            }
-            .stat-icon {
-                font-size: 1.8rem;
-                margin-right: 10px;
-            }
-            .stat-value {
-                font-size: 1.3rem;
-            }
-            .stat-label {
-                font-size: 0.75rem;
-            }
-            .col-md-3 {
-                width: 50%;
-                padding-left: 6px;
-                padding-right: 6px;
-            }
-            .row.g-3 {
-                margin-left: -6px;
-                margin-right: -6px;
-            }
-        }
-</style>
 <body>
     <!-- MAIN APPLICATION -->
     <div id="appPage">
@@ -567,7 +792,6 @@ if (empty($user_initials)) {
                     <div class="user-avatar-sidebar"><?php echo $user_initials; ?></div>
                     <div class="user-details-sidebar">
                         <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-                        <span class="user-role-sidebar"><?php echo htmlspecialchars($user_role); ?></span>
                     </div>
                 </div>
                 
@@ -636,8 +860,6 @@ if (empty($user_initials)) {
                                         <option value="">All Types</option>
                                         <option value="sales_order">Sales Order</option>
                                         <option value="purchase_order">Purchase Order</option>
-                                        <option value="pick_list">Pick List</option>
-                                        <option value="rmr">RMR Request</option>
                                     </select>
                                 </div>
                                 <div class="col-md-3">
@@ -663,7 +885,6 @@ if (empty($user_initials)) {
                                 <tr>
                                     <th style="display: none;">ID</th>
                                     <th>Branch</th>
-                                    <th>Manager</th>
                                     <th>Type</th>
                                     <th>Description</th>
                                     <th>Amount</th>
@@ -674,7 +895,7 @@ if (empty($user_initials)) {
                             </thead>
                             <tbody id="recordsTable">
                                 <tr>
-                                    <td colspan="8" class="text-center py-4">Loading records...</td>
+                                    <td colspan="7" class="text-center py-4">Loading records...</td>
                                 </tr>
                             </tbody>
                         </table>
@@ -684,18 +905,24 @@ if (empty($user_initials)) {
         </div>
     </div>
 
-    <!-- Record Details Modal -->
-    <div class="modal fade" id="recordModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
+    <!-- Transaction Details Modal -->
+    <div class="modal fade" id="recordModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Record Details</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <h5 class="modal-title">
+                        <i class="bi bi-receipt"></i>
+                        <span id="modalTitle">Transaction Details</span>
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body" id="recordDetails">
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <div class="text-center py-5">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2" style="color:#64748b;font-size:14px;">Loading transaction details...</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -857,7 +1084,7 @@ if (empty($user_initials)) {
 
         async function loadRecords() {
             const tbody = document.getElementById('recordsTable');
-            tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading records...</p></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading records...</p></td></tr>';
             
             try {
                 const branch = document.getElementById('branchFilter').value;
@@ -879,11 +1106,11 @@ if (empty($user_initials)) {
                 if (data.success && data.records.length > 0) {
                     displayRecords(data.records);
                 } else {
-                    tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4">No records found</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4">No records found</td></tr>';
                 }
             } catch (error) {
                 console.error('Error loading records:', error);
-                tbody.innerHTML = '<tr><td colspan="8" class="text-center py-4 text-danger">Error loading records</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-4 text-danger">Error loading records</td></tr>';
             }
         }
 
@@ -891,7 +1118,7 @@ if (empty($user_initials)) {
             const tbody = document.getElementById('recordsTable');
             
             tbody.innerHTML = records.map(record => {
-                let statusBadge = 'bg-secondary';
+                let statusClass = '';
                 let statusText = record.status;
                 
                 const completed = ['completed', 'delivered', 'approved', 'received'];
@@ -899,29 +1126,28 @@ if (empty($user_initials)) {
                 const cancelled = ['cancelled', 'rejected'];
                 
                 if (completed.includes(record.status)) {
-                    statusBadge = 'bg-success';
+                    statusClass = 'status-completed';
                 } else if (pending.includes(record.status)) {
-                    statusBadge = 'bg-warning';
+                    statusClass = 'status-pending';
                 } else if (cancelled.includes(record.status)) {
-                    statusBadge = 'bg-danger';
+                    statusClass = 'status-cancelled';
                 }
                 
                 return `
                     <tr>
                         <td style="display: none;">${record.id}</td>
                         <td><strong>${escapeHtml(record.branch)}</strong></td>
-                        <td>${escapeHtml(record.manager || 'N/A')}</td>
                         <td><span class="badge bg-info">${escapeHtml(record.type)}</span></td>
                         <td>${escapeHtml(record.description)}</td>
                         <td>₱${parseFloat(record.amount || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</td>
                         <td>${new Date(record.date).toLocaleDateString()}</td>
                         <td>
-                            <span class="badge ${statusBadge}">
+                            <span class="status-badge ${statusClass}">
                                 ${escapeHtml(statusText)}
                             </span>
                         </td>
                         <td>
-                            <button class="btn-action btn-view" onclick="viewRecord(${record.id}, '${record.source}')">
+                            <button class="btn-action btn-view" onclick="viewTransaction(${record.id}, '${record.source}')" title="View Full Transaction Details">
                                 <i class="bi bi-eye"></i>
                             </button>
                         </td>
@@ -937,110 +1163,235 @@ if (empty($user_initials)) {
             return div.innerHTML;
         }
 
-        function viewRecord(id, source) {
+        function formatDateTime(timestamp) {
+            if (!timestamp) return 'N/A';
+            try {
+                const date = new Date(timestamp);
+                if (isNaN(date.getTime())) return 'N/A';
+                return date.toLocaleString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: true
+                });
+            } catch (e) {
+                return 'N/A';
+            }
+        }
+
+        function viewTransaction(id, source) {
             const modal = new bootstrap.Modal(document.getElementById('recordModal'));
             const details = document.getElementById('recordDetails');
-            details.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading record details...</p></div>';
+            const modalTitle = document.getElementById('modalTitle');
+            
+            modalTitle.textContent = 'Loading Transaction...';
+            details.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading complete transaction details...</p></div>';
             modal.show();
             
             fetch(`branch_records.php?ajax_details=1&id=${id}&source=${source}`)
-                .then(response => response.json())
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
                 .then(data => {
                     if (data.success) {
                         const record = data.record;
-                        let statusBadge = 'bg-secondary';
-                        
-                        const completed = ['completed', 'delivered', 'approved', 'received'];
-                        const pending = ['pending', 'draft', 'planned', 'open', 'processing'];
-                        const cancelled = ['cancelled', 'rejected'];
-                        
-                        if (completed.includes(record.status)) {
-                            statusBadge = 'bg-success';
-                        } else if (pending.includes(record.status)) {
-                            statusBadge = 'bg-warning';
-                        } else if (cancelled.includes(record.status)) {
-                            statusBadge = 'bg-danger';
-                        }
-                        
-                        let additionalDetails = '';
-                        if (record.type === 'Sales Order' && record.items) {
-                            additionalDetails = `
-                                <dt class="col-sm-4">Items:</dt>
-                                <dd class="col-sm-8">${escapeHtml(record.items)}</dd>
-                                <dt class="col-sm-4">Customer:</dt>
-                                <dd class="col-sm-8">${escapeHtml(record.customer || 'N/A')}</dd>
-                            `;
-                        } else if (record.type === 'Purchase Order' && record.supplier) {
-                            additionalDetails = `
-                                <dt class="col-sm-4">Supplier:</dt>
-                                <dd class="col-sm-8">${escapeHtml(record.supplier)}</dd>
-                                <dt class="col-sm-4">Expected Delivery:</dt>
-                                <dd class="col-sm-8">${record.expected_delivery ? new Date(record.expected_delivery).toLocaleDateString() : 'N/A'}</dd>
-                            `;
-                        } else if (record.type === 'RMR Request') {
-                            additionalDetails = `
-                                <dt class="col-sm-4">Customer:</dt>
-                                <dd class="col-sm-8">${escapeHtml(record.customer || 'N/A')}</dd>
-                                <dt class="col-sm-4">Item:</dt>
-                                <dd class="col-sm-8">${escapeHtml(record.item || 'N/A')}</dd>
-                                <dt class="col-sm-4">Return Quantity:</dt>
-                                <dd class="col-sm-8">${record.return_quantity || 0}</dd>
-                                <dt class="col-sm-4">Return Reason:</dt>
-                                <dd class="col-sm-8">${escapeHtml(record.return_reason || 'N/A')}</dd>
-                                <dt class="col-sm-4">SO Number:</dt>
-                                <dd class="col-sm-8">${escapeHtml(record.so_number || 'N/A')}</dd>
-                            `;
-                        } else if (record.type === 'Pick List') {
-                            additionalDetails = `
-                                <dt class="col-sm-4">Sales Order:</dt>
-                                <dd class="col-sm-8">${escapeHtml(record.so_number || 'N/A')}</dd>
-                                <dt class="col-sm-4">Driver:</dt>
-                                <dd class="col-sm-8">${escapeHtml(record.driver || 'N/A')}</dd>
-                                <dt class="col-sm-4">Pick Date:</dt>
-                                <dd class="col-sm-8">${record.pick_date ? new Date(record.pick_date).toLocaleDateString() : 'N/A'}</dd>
-                                <dt class="col-sm-4">Verified By:</dt>
-                                <dd class="col-sm-8">${escapeHtml(record.verified_by || 'N/A')}</dd>
-                            `;
-                        }
-                        
-                        details.innerHTML = `
-                            <dl class="row">
-                                <dt class="col-sm-4">Record Number:</dt>
-                                <dd class="col-sm-8"><strong>${escapeHtml(record.record_number)}</strong></dd>
-                                
-                                <dt class="col-sm-4">Branch:</dt>
-                                <dd class="col-sm-8">${escapeHtml(record.branch)}</dd>
-                                
-                                <dt class="col-sm-4">Manager:</dt>
-                                <dd class="col-sm-8">${escapeHtml(record.manager || 'N/A')}</dd>
-                                
-                                <dt class="col-sm-4">Type:</dt>
-                                <dd class="col-sm-8"><span class="badge bg-info">${escapeHtml(record.type)}</span></dd>
-                                
-                                <dt class="col-sm-4">Description:</dt>
-                                <dd class="col-sm-8">${escapeHtml(record.description)}</dd>
-                                
-                                <dt class="col-sm-4">Amount:</dt>
-                                <dd class="col-sm-8">₱${parseFloat(record.amount || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</dd>
-                                
-                                ${additionalDetails}
-                                
-                                <dt class="col-sm-4">Date Created:</dt>
-                                <dd class="col-sm-8">${new Date(record.date).toLocaleString()}</dd>
-                                
-                                <dt class="col-sm-4">Status:</dt>
-                                <dd class="col-sm-8"><span class="badge ${statusBadge}">${escapeHtml(record.status)}</span></dd>
-                            </dl>
-                        `;
+                        modalTitle.textContent = `Transaction: ${record.record_number}`;
+                        displayFullTransaction(record);
                     } else {
-                        details.innerHTML = '<p class="text-danger">Failed to load record details.</p>';
+                        details.innerHTML = `<p class="text-danger">Failed to load transaction details: ${data.message || 'Unknown error'}</p>`;
                     }
                 })
                 .catch(error => {
-                    console.error('Error loading record details:', error);
-                    details.innerHTML = '<p class="text-danger">Error loading record details.</p>';
+                    console.error('Error loading transaction details:', error);
+                    details.innerHTML = `<p class="text-danger">Error loading transaction details: ${error.message}</p>`;
                 });
         }
+
+        function displayFullTransaction(record) {
+            const el = document.getElementById('recordDetails');
+
+            // helpers
+            function pill(status) {
+                if (!status) return '';
+                const s = status.toLowerCase();
+                let c = 'gray';
+                if (['completed','delivered','approved','received','paid'].includes(s)) c = 'green';
+                else if (['pending','draft','planned','open','processing','in_transit'].includes(s)) c = 'yellow';
+                else if (['cancelled','rejected'].includes(s)) c = 'red';
+                return `<span class="s-pill ${c}">${escapeHtml(status)}</span>`;
+            }
+            function peso(v) { const n = parseFloat(v||0); return 'P' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
+
+            const itemCount   = (record.items||[]).length;
+            const pickCount   = (record.pick_lists||[]).length;
+            const invCount    = (record.invoices||[]).length;
+            const tripCount   = (record.trip_tickets||[]).length;
+            const hasDel      = !!record.delivery;
+            const histCount   = (record.history||[]).length;
+
+            /* ---- LEFT: Details ---- */
+            // Customer
+            let leftHtml = `
+                <div class="m-section-title"><i class="bi bi-person"></i> Customer / Supplier</div>
+                <div class="m-card"><div class="m-card-body">
+                    <div class="m-info">
+                        <div><div class="m-info-lbl">Name</div><div class="m-info-val">${escapeHtml(record.customer.name)}</div></div>
+                        <div><div class="m-info-lbl">Address</div><div class="m-info-val">${escapeHtml(record.customer.address)}</div></div>
+                        <div><div class="m-info-lbl">Contact</div><div class="m-info-val">${escapeHtml(record.customer.contact)}</div></div>
+                    </div>
+                </div></div>`;
+
+            // Order
+            leftHtml += `
+                <div class="m-section-title"><i class="bi bi-file-earmark-text"></i> Order Details</div>
+                <div class="m-card"><div class="m-card-body">
+                    <div class="m-info">
+                        <div><div class="m-info-lbl">Order #</div><div class="m-info-val" style="font-weight:700">${escapeHtml(record.record_number)}</div></div>
+                        <div><div class="m-info-lbl">Branch</div><div class="m-info-val">${escapeHtml(record.branch)}</div></div>
+                        <div><div class="m-info-lbl">Order Date</div><div class="m-info-val">${formatDateTime(record.order_details.order_date)}</div></div>
+                        <div><div class="m-info-lbl">Status</div><div class="m-info-val">${pill(record.order_details.status)}</div></div>
+                        ${record.order_details.delivery_date ? `<div><div class="m-info-lbl">Delivery Date</div><div class="m-info-val">${formatDateTime(record.order_details.delivery_date)}</div></div>` : ''}
+                    </div>
+                </div></div>`;
+
+            // Items
+            if (itemCount > 0) {
+                leftHtml += `
+                    <div class="m-section-title"><i class="bi bi-box-seam"></i> Items (${itemCount})</div>
+                    <div class="m-card"><div class="m-card-body" style="padding:0"><div style="overflow-x:auto">
+                        <table class="m-tbl">
+                            <thead><tr><th>Item</th><th>Code</th><th>Category</th><th style="text-align:right">Qty</th><th style="text-align:right">Price</th><th style="text-align:right">Total</th></tr></thead>
+                            <tbody>${record.items.map(i=>`<tr>
+                                <td>${escapeHtml(i.item_name)}</td>
+                                <td style="color:#64748b">${escapeHtml(i.item_code)}</td>
+                                <td>${escapeHtml(i.category)}</td>
+                                <td style="text-align:right">${i.quantity}</td>
+                                <td style="text-align:right">${peso(i.unit_price)}</td>
+                                <td style="text-align:right;font-weight:600">${peso(i.total_price)}</td>
+                            </tr>`).join('')}</tbody>
+                            <tfoot><tr><th colspan="5" style="text-align:right">Total</th><th style="text-align:right">${peso(record.order_details.total_amount)}</th></tr></tfoot>
+                        </table>
+                    </div></div></div>`;
+            }
+
+            // Pick Lists
+            if (pickCount > 0) {
+                leftHtml += `<div class="m-section-title"><i class="bi bi-clipboard-check"></i> Pick Lists (${pickCount})</div>`;
+                record.pick_lists.forEach(pl => {
+                    leftHtml += `<div class="m-card">
+                        <div class="m-card-head"><i class="bi bi-clipboard-check"></i>${escapeHtml(pl.pick_list_number)}<span class="pill-right">${pill(pl.status)}</span></div>
+                        <div class="m-card-body">
+                            <div class="m-info" style="margin-bottom:10px">
+                                <div><div class="m-info-lbl">Driver</div><div class="m-info-val">${escapeHtml(pl.driver_name)}</div></div>
+                                <div><div class="m-info-lbl">Picked By</div><div class="m-info-val">${escapeHtml(pl.picked_by)}</div></div>
+                                <div><div class="m-info-lbl">Verified By</div><div class="m-info-val">${escapeHtml(pl.verified_by)}</div></div>
+                                <div><div class="m-info-lbl">Pick Date</div><div class="m-info-val">${pl.pick_date?formatDateTime(pl.pick_date):'N/A'}</div></div>
+                            </div>
+                            ${(pl.items||[]).length?`<div style="overflow-x:auto"><table class="m-tbl">
+                                <thead><tr><th>Item</th><th style="text-align:right">To Pick</th><th style="text-align:right">Picked</th></tr></thead>
+                                <tbody>${pl.items.map(pi=>`<tr><td>${escapeHtml(pi.item_name)}</td><td style="text-align:right">${pi.quantity_ordered}</td><td style="text-align:right">${pi.quantity_picked}</td></tr>`).join('')}</tbody>
+                            </table></div>`:''}
+                        </div></div>`;
+                });
+            }
+
+            // Invoices
+            if (invCount > 0) {
+                leftHtml += `
+                    <div class="m-section-title"><i class="bi bi-receipt"></i> Invoices (${invCount})</div>
+                    <div class="m-card"><div class="m-card-body" style="padding:0"><div style="overflow-x:auto">
+                        <table class="m-tbl">
+                            <thead><tr><th>Invoice #</th><th style="text-align:right">Amount</th><th>Status</th><th>Created</th><th>Due Date</th></tr></thead>
+                            <tbody>${record.invoices.map(inv=>`<tr>
+                                <td style="font-weight:600">${escapeHtml(inv.invoice_number)}</td>
+                                <td style="text-align:right">${peso(inv.amount)}</td>
+                                <td>${pill(inv.status)}</td>
+                                <td>${formatDateTime(inv.created_at)}</td>
+                                <td>${inv.due_date?formatDateTime(inv.due_date):'N/A'}</td>
+                            </tr>`).join('')}</tbody>
+                        </table>
+                    </div></div></div>`;
+            }
+
+            // Trip Tickets
+            if (tripCount > 0) {
+                leftHtml += `<div class="m-section-title"><i class="bi bi-truck"></i> Trip Tickets (${tripCount})</div>`;
+                record.trip_tickets.forEach(t => {
+                    leftHtml += `<div class="m-card">
+                        <div class="m-card-head"><i class="bi bi-truck"></i>${escapeHtml(t.trip_number)}<span class="pill-right">${pill(t.status)}</span></div>
+                        <div class="m-card-body"><div class="m-info">
+                            <div><div class="m-info-lbl">Driver</div><div class="m-info-val">${escapeHtml(t.driver_name)}</div></div>
+                            <div><div class="m-info-lbl">Plate #</div><div class="m-info-val">${escapeHtml(t.plate_number)}</div></div>
+                            <div><div class="m-info-lbl">Departure</div><div class="m-info-val">${formatDateTime(t.departure_time)}</div></div>
+                            <div><div class="m-info-lbl">Arrival</div><div class="m-info-val">${t.arrival_time?formatDateTime(t.arrival_time):'N/A'}</div></div>
+                            <div><div class="m-info-lbl">Remarks</div><div class="m-info-val">${escapeHtml(t.route)}</div></div>
+                        </div></div></div>`;
+                });
+            }
+
+            // Delivery
+            if (hasDel) {
+                const d = record.delivery;
+                leftHtml += `
+                    <div class="m-section-title"><i class="bi bi-geo-alt"></i> Delivery</div>
+                    <div class="m-card">
+                        <div class="m-card-head"><i class="bi bi-geo-alt"></i>Delivery<span class="pill-right">${pill(d.status)}</span></div>
+                        <div class="m-card-body"><div class="m-info">
+                            <div><div class="m-info-lbl">Delivery #</div><div class="m-info-val">${escapeHtml(d.delivery_number)}</div></div>
+                            <div><div class="m-info-lbl">Delivered At</div><div class="m-info-val">${d.delivered_at?formatDateTime(d.delivered_at):'N/A'}</div></div>
+                            <div><div class="m-info-lbl">Signed By</div><div class="m-info-val">${escapeHtml(d.received_by)}</div></div>
+                            ${d.delivery_notes?`<div><div class="m-info-lbl">Remarks</div><div class="m-info-val">${escapeHtml(d.delivery_notes)}</div></div>`:''}
+                        </div></div></div>`;
+            }
+
+            /* ---- RIGHT: Transaction History Timeline ---- */
+            let rightHtml = `<div class="m-section-title" style="margin-top:0"><i class="bi bi-clock-history"></i> Transaction History</div>`;
+            if (histCount > 0) {
+                rightHtml += `<ul class="tl">${record.history.map(ev => {
+                    let dot = 'gray';
+                    const a = ev.action;
+                    if (a.includes('Created'))  dot = 'blue';
+                    else if (a.includes('Confirmed')||a.includes('Approved')) dot = 'cyan';
+                    else if (a.includes('Pick')||a.includes('Picked')) dot = 'cyan';
+                    else if (a.includes('Invoice')||a.includes('Payment')) dot = 'green';
+                    else if (a.includes('Trip')||a.includes('Assigned')) dot = 'yellow';
+                    else if (a.includes('Delivered')) dot = 'green';
+                    else if (a.includes('Rejected')) dot = 'red';
+                    else if (a.includes('Submitted')) dot = 'blue';
+                    return `<li class="tl-item">
+                        <div class="tl-dot ${dot}"></div>
+                        <div class="tl-action">${escapeHtml(ev.action)}</div>
+                        <div class="tl-detail">${escapeHtml(ev.details)}</div>
+                        <div class="tl-meta">
+                            <span><i class="bi bi-person-fill"></i>${escapeHtml(ev.user)}</span>
+                            <span><i class="bi bi-clock"></i>${formatDateTime(ev.timestamp)}</span>
+                        </div>
+                    </li>`;
+                }).join('')}</ul>`;
+            } else {
+                rightHtml += `<div class="m-empty"><i class="bi bi-clock"></i><p>No history recorded yet.</p></div>`;
+            }
+
+            /* ---- Assemble ---- */
+            el.innerHTML = `
+                <div class="m-summary">
+                    <div class="m-summary-item"><div class="m-summary-lbl">${escapeHtml(record.type)}</div><div class="m-summary-val" style="font-weight:700">${escapeHtml(record.record_number)}</div></div>
+                    <div class="m-summary-item"><div class="m-summary-lbl">Branch</div><div class="m-summary-val">${escapeHtml(record.branch)}</div></div>
+                    <div class="m-summary-item"><div class="m-summary-lbl">Status</div><div class="m-summary-val">${pill(record.order_details.status)}</div></div>
+                    <div class="m-summary-item" style="margin-left:auto"><div class="m-summary-lbl">Total Amount</div><div class="m-summary-val lg">${peso(record.order_details.total_amount)}</div></div>
+                </div>
+                <div class="m-layout">
+                    <div class="m-left">${leftHtml}</div>
+                    <div class="m-right">${rightHtml}</div>
+                </div>`;
+        }
+
+
 
         document.addEventListener('DOMContentLoaded', function() {
             initializeSidebar();
