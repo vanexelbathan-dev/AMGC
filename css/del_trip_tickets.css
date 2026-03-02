@@ -2497,3 +2497,712 @@ a:hover {
 .compact-table tbody tr:last-child td {
     border-bottom: none !important;
 }
+/* ===== RECORD DETAILS MODAL STYLES - From branch_records.php ===== */
+
+/* Modal Container */
+#viewDetailsModal .modal-content,
+#locationMapModal .modal-content,
+#photoModal .modal-content,
+#deliveryModal .modal-content,
+#partialModal .modal-content,
+#receiptModal .modal-content,
+.modal-content {
+    border: none !important;
+    border-radius: 28px !important;
+    overflow: hidden;
+    box-shadow: 0 30px 60px -15px rgba(4, 120, 87, 0.3) !important;
+    background: linear-gradient(135deg, #f9fefc 0%, #f0fdf4 100%);
+}
+
+/* Modal Header - Green Gradient */
+#viewDetailsModal .modal-header,
+#locationMapModal .modal-header,
+#photoModal .modal-header,
+#deliveryModal .modal-header,
+#partialModal .modal-header,
+#receiptModal .modal-header,
+.modal-header {
+    background: linear-gradient(135deg, #047857 0%, #44D34E 100%) !important;
+    color: white !important;
+    border-bottom: none !important;
+    padding: 1.5rem 2rem !important;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Decorative pattern */
+#viewDetailsModal .modal-header::before,
+#locationMapModal .modal-header::before,
+#photoModal .modal-header::before,
+#deliveryModal .modal-header::before,
+#partialModal .modal-header::before,
+#receiptModal .modal-header::before,
+.modal-header::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -10%;
+    width: 200px;
+    height: 200px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+}
+
+#viewDetailsModal .modal-header .modal-title,
+#locationMapModal .modal-header .modal-title,
+#photoModal .modal-header .modal-title,
+#deliveryModal .modal-header .modal-title,
+#partialModal .modal-header .modal-title,
+#receiptModal .modal-header .modal-title,
+.modal-header .modal-title {
+    font-weight: 700 !important;
+    font-size: 1.5rem !important;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    position: relative;
+    z-index: 2;
+}
+
+#viewDetailsModal .modal-header .modal-title i,
+#locationMapModal .modal-header .modal-title i,
+#photoModal .modal-header .modal-title i,
+#deliveryModal .modal-header .modal-title i,
+#partialModal .modal-header .modal-title i,
+#receiptModal .modal-header .modal-title i,
+.modal-header .modal-title i {
+    font-size: 1.8rem;
+    color: white;
+    background: rgba(255, 255, 255, 0.25);
+    width: 50px;
+    height: 50px;
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#viewDetailsModal .modal-header .btn-close,
+#locationMapModal .modal-header .btn-close,
+#photoModal .modal-header .btn-close,
+#deliveryModal .modal-header .btn-close,
+#partialModal .modal-header .btn-close,
+#receiptModal .modal-header .btn-close,
+.modal-header .btn-close {
+    filter: brightness(0) invert(1);
+    opacity: 0.9;
+    transition: all 0.3s ease;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    background-color: rgba(255, 255, 255, 0.15);
+    padding: 10px;
+}
+
+#viewDetailsModal .modal-header .btn-close:hover,
+#locationMapModal .modal-header .btn-close:hover,
+#photoModal .modal-header .btn-close:hover,
+#deliveryModal .modal-header .btn-close:hover,
+#partialModal .modal-header .btn-close:hover,
+#receiptModal .modal-header .btn-close:hover,
+.modal-header .btn-close:hover {
+    opacity: 1;
+    transform: rotate(90deg);
+}
+
+/* Modal Body */
+#viewDetailsModal .modal-body,
+#locationMapModal .modal-body,
+#photoModal .modal-body,
+#deliveryModal .modal-body,
+#partialModal .modal-body,
+#receiptModal .modal-body,
+.modal-body {
+    padding: 2rem !important;
+    background: transparent;
+    overflow-y: auto !important;
+    max-height: 70vh;
+}
+
+/* Hide scrollbar but keep functionality */
+#viewDetailsModal .modal-body::-webkit-scrollbar,
+#locationMapModal .modal-body::-webkit-scrollbar,
+#photoModal .modal-body::-webkit-scrollbar,
+#deliveryModal .modal-body::-webkit-scrollbar,
+#partialModal .modal-body::-webkit-scrollbar,
+#receiptModal .modal-body::-webkit-scrollbar,
+.modal-body::-webkit-scrollbar {
+    width: 5px;
+}
+
+#viewDetailsModal .modal-body::-webkit-scrollbar-track,
+#locationMapModal .modal-body::-webkit-scrollbar-track,
+#photoModal .modal-body::-webkit-scrollbar-track,
+#deliveryModal .modal-body::-webkit-scrollbar-track,
+#partialModal .modal-body::-webkit-scrollbar-track,
+#receiptModal .modal-body::-webkit-scrollbar-track,
+.modal-body::-webkit-scrollbar-track {
+    background: rgba(68, 211, 78, 0.05);
+    border-radius: 10px;
+}
+
+#viewDetailsModal .modal-body::-webkit-scrollbar-thumb,
+#locationMapModal .modal-body::-webkit-scrollbar-thumb,
+#photoModal .modal-body::-webkit-scrollbar-thumb,
+#deliveryModal .modal-body::-webkit-scrollbar-thumb,
+#partialModal .modal-body::-webkit-scrollbar-thumb,
+#receiptModal .modal-body::-webkit-scrollbar-thumb,
+.modal-body::-webkit-scrollbar-thumb {
+    background: #44D34E;
+    border-radius: 10px;
+}
+
+/* Modal Footer */
+#viewDetailsModal .modal-footer,
+#locationMapModal .modal-footer,
+#photoModal .modal-footer,
+#deliveryModal .modal-footer,
+#partialModal .modal-footer,
+#receiptModal .modal-footer,
+.modal-footer {
+    background: white;
+    border-top: 2px solid rgba(68, 211, 78, 0.15) !important;
+    padding: 1.25rem 2rem !important;
+}
+
+#viewDetailsModal .modal-footer .btn,
+#locationMapModal .modal-footer .btn,
+#photoModal .modal-footer .btn,
+#deliveryModal .modal-footer .btn,
+#partialModal .modal-footer .btn,
+#receiptModal .modal-footer .btn,
+.modal-footer .btn {
+    padding: 0.7rem 2rem;
+    font-weight: 600;
+    border-radius: 50px;
+    font-size: 0.95rem;
+}
+
+#viewDetailsModal .modal-footer .btn-secondary,
+#locationMapModal .modal-footer .btn-secondary,
+#photoModal .modal-footer .btn-secondary,
+#deliveryModal .modal-footer .btn-secondary,
+#partialModal .modal-footer .btn-secondary,
+#receiptModal .modal-footer .btn-secondary,
+.modal-footer .btn-secondary {
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    color: #475569;
+}
+
+#viewDetailsModal .modal-footer .btn-primary,
+#locationMapModal .modal-footer .btn-primary,
+#photoModal .modal-footer .btn-primary,
+#deliveryModal .modal-footer .btn-primary,
+#partialModal .modal-footer .btn-primary,
+#receiptModal .modal-footer .btn-primary,
+.modal-footer .btn-primary {
+    background: linear-gradient(135deg, #047857, #44D34E);
+    border: none;
+    color: white;
+}
+
+/* Location Map Modal Specific */
+#customerLocationMap {
+    height: 400px;
+    width: 100%;
+    border-radius: 20px;
+    margin-bottom: 15px;
+    border: 2px solid rgba(68, 211, 78, 0.2);
+}
+
+.location-info {
+    background: linear-gradient(135deg, #f9fefc 0%, #f0fdf4 100%);
+    border-radius: 20px;
+    padding: 1.5rem;
+    border: 1px solid rgba(68, 211, 78, 0.2);
+}
+
+.location-info h6 {
+    color: #047857;
+    font-weight: 700;
+    margin-bottom: 1rem;
+    font-size: 1.1rem;
+}
+
+.location-info p {
+    margin-bottom: 0.75rem;
+    color: #1e293b;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.location-info p i {
+    color: #44D34E;
+    font-size: 1.1rem;
+}
+
+.coordinates-badge {
+    background: white;
+    color: #047857;
+    padding: 0.4rem 1rem;
+    border-radius: 40px;
+    font-size: 0.9rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    border: 1px solid #44D34E;
+    font-weight: 600;
+}
+
+/* Photo Modal Specific */
+.photo-modal-img {
+    max-width: 100%;
+    max-height: 70vh;
+    border-radius: 20px;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+    border: 3px solid white;
+}
+
+/* Delivery Modal Form */
+#deliveryModal .form-label,
+#partialModal .form-label {
+    font-weight: 600;
+    color: #047857;
+    font-size: 0.9rem;
+    margin-bottom: 0.4rem;
+}
+
+#deliveryModal .form-control,
+#deliveryModal .form-select,
+#partialModal .form-control,
+#partialModal .form-select {
+    border: 2px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 0.75rem 1rem;
+    transition: all 0.3s;
+    background: white;
+}
+
+#deliveryModal .form-control:focus,
+#deliveryModal .form-select:focus,
+#partialModal .form-control:focus,
+#partialModal .form-select:focus {
+    border-color: #44D34E;
+    box-shadow: 0 0 0 3px rgba(68, 211, 78, 0.2);
+    outline: none;
+}
+
+#deliveryModal .alert-info,
+#partialModal .alert-info {
+    background: rgba(68, 211, 78, 0.1);
+    border: 1px solid rgba(68, 211, 78, 0.3);
+    border-radius: 16px;
+    color: #047857;
+    padding: 1rem;
+}
+
+#deliveryModal .form-check-input:checked {
+    background-color: #44D34E;
+    border-color: #44D34E;
+}
+
+#deliveryModal .form-check-label,
+#partialModal .form-check-label {
+    color: #1e293b;
+    font-weight: 500;
+}
+
+/* Receipt Modal Specific */
+#receiptModal .modal-body {
+    display: flex;
+    justify-content: center;
+    background: linear-gradient(135deg, #f9fefc 0%, #f0fdf4 100%);
+}
+
+/* Partial Modal Items List */
+#itemsList {
+    max-height: 200px;
+    overflow-y: auto;
+    border: 2px solid #e2e8f0 !important;
+    border-radius: 16px !important;
+    padding: 0.75rem !important;
+}
+
+#itemsList .form-check {
+    padding: 0.5rem;
+    border-radius: 12px;
+    transition: all 0.2s;
+}
+
+#itemsList .form-check:hover {
+    background: rgba(68, 211, 78, 0.1);
+}
+
+#itemsList .form-check-input:checked {
+    background-color: #44D34E;
+    border-color: #44D34E;
+}
+
+/* ===== DETAIL SECTIONS (for get_delivery_details.php) ===== */
+.detail-section {
+    background: white;
+    border-radius: 24px;
+    padding: 1.8rem;
+    box-shadow: 0 10px 30px -5px rgba(4, 120, 87, 0.1);
+    border: 1px solid rgba(68, 211, 78, 0.2);
+    margin-bottom: 1.5rem;
+}
+
+.section-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 2px solid rgba(68, 211, 78, 0.2);
+}
+
+.section-header i {
+    font-size: 1.3rem;
+    color: #047857;
+    background: rgba(68, 211, 78, 0.1);
+    width: 45px;
+    height: 45px;
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.section-header h6 {
+    font-weight: 700 !important;
+    color: #052A47 !important;
+    margin: 0;
+    font-size: 1.1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.2rem;
+}
+
+.detail-item {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    background: rgba(240, 253, 244, 0.3);
+    padding: 1rem;
+    border-radius: 16px;
+    border: 1px solid rgba(68, 211, 78, 0.1);
+}
+
+.detail-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #047857;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.detail-value {
+    font-size: 1.1rem;
+    font-weight: 700 !important;
+    color: #052A47;
+    background: white;
+    padding: 0.75rem 1rem;
+    border-radius: 12px;
+    border-left: 5px solid #44D34E;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.02);
+    word-break: keep-all;
+    white-space: normal;
+    line-height: 1.4;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.detail-value.reference {
+    font-family: 'Monaco', 'Courier New', monospace;
+    background: #1e293b;
+    color: #bbf7d0;
+    border-left-color: #86efac;
+}
+
+.detail-value.date {
+    font-family: 'Courier New', monospace;
+    background: #f8fafc;
+    border-left-color: #22d3ee;
+}
+
+.detail-value.status {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1.2rem;
+    border-radius: 40px;
+    border-left: none;
+    background: rgba(240, 253, 244, 0.8);
+    border: 1px solid #44D34E;
+    font-weight: 600;
+}
+
+.detail-value.status i {
+    font-size: 0.8rem;
+    color: #44D34E;
+    flex-shrink: 0;
+}
+
+.remarks-container {
+    background: #fefce8;
+    border-radius: 20px;
+    padding: 1.5rem;
+    border-left: 6px solid #fbbf24;
+}
+
+.remarks-text {
+    color: #92400e;
+    font-style: italic;
+    margin: 0;
+    line-height: 1.6;
+    font-size: 1rem;
+}
+
+/* ===== MOBILE RESPONSIVE ===== */
+
+/* Tablet (768px and below) */
+@media (max-width: 768px) {
+    #viewDetailsModal .modal-header,
+    #locationMapModal .modal-header,
+    #photoModal .modal-header,
+    #deliveryModal .modal-header,
+    #partialModal .modal-header,
+    #receiptModal .modal-header,
+    .modal-header {
+        padding: 1.2rem 1.5rem !important;
+    }
+    
+    #viewDetailsModal .modal-header .modal-title,
+    #locationMapModal .modal-header .modal-title,
+    #photoModal .modal-header .modal-title,
+    #deliveryModal .modal-header .modal-title,
+    #partialModal .modal-header .modal-title,
+    #receiptModal .modal-header .modal-title,
+    .modal-header .modal-title {
+        font-size: 1.3rem !important;
+        gap: 0.75rem;
+    }
+    
+    #viewDetailsModal .modal-header .modal-title i,
+    #locationMapModal .modal-header .modal-title i,
+    #photoModal .modal-header .modal-title i,
+    #deliveryModal .modal-header .modal-title i,
+    #partialModal .modal-header .modal-title i,
+    #receiptModal .modal-header .modal-title i,
+    .modal-header .modal-title i {
+        font-size: 1.5rem;
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
+    }
+    
+    #viewDetailsModal .modal-body,
+    #locationMapModal .modal-body,
+    #photoModal .modal-body,
+    #deliveryModal .modal-body,
+    #partialModal .modal-body,
+    #receiptModal .modal-body,
+    .modal-body {
+        padding: 1.5rem !important;
+    }
+    
+    #customerLocationMap {
+        height: 300px;
+    }
+    
+    .location-info {
+        padding: 1.2rem;
+    }
+    
+    .location-info h6 {
+        font-size: 1rem;
+    }
+    
+    .coordinates-badge {
+        font-size: 0.85rem;
+        padding: 0.35rem 0.8rem;
+    }
+    
+    #deliveryModal .form-label,
+    #partialModal .form-label {
+        font-size: 0.85rem;
+    }
+    
+    #deliveryModal .form-control,
+    #deliveryModal .form-select,
+    #partialModal .form-control,
+    #partialModal .form-select {
+        padding: 0.6rem 0.9rem;
+        font-size: 0.9rem;
+    }
+    
+    #viewDetailsModal .modal-footer .btn,
+    #locationMapModal .modal-footer .btn,
+    #photoModal .modal-footer .btn,
+    #deliveryModal .modal-footer .btn,
+    #partialModal .modal-footer .btn,
+    #receiptModal .modal-footer .btn,
+    .modal-footer .btn {
+        font-size: 0.85rem;
+        padding: 0.6rem 1.5rem;
+    }
+    
+    .detail-section {
+        padding: 1.5rem;
+    }
+    
+    .detail-value {
+        font-size: 0.95rem;
+    }
+    
+    .detail-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* Small phones (576px and below) */
+@media (max-width: 576px) {
+    #viewDetailsModal .modal-header,
+    #locationMapModal .modal-header,
+    #photoModal .modal-header,
+    #deliveryModal .modal-header,
+    #partialModal .modal-header,
+    #receiptModal .modal-header,
+    .modal-header {
+        padding: 1rem 1.2rem !important;
+    }
+    
+    #viewDetailsModal .modal-header .modal-title,
+    #locationMapModal .modal-header .modal-title,
+    #photoModal .modal-header .modal-title,
+    #deliveryModal .modal-header .modal-title,
+    #partialModal .modal-header .modal-title,
+    #receiptModal .modal-header .modal-title,
+    .modal-header .modal-title {
+        font-size: 1.1rem !important;
+    }
+    
+    #viewDetailsModal .modal-header .modal-title i,
+    #locationMapModal .modal-header .modal-title i,
+    #photoModal .modal-header .modal-title i,
+    #deliveryModal .modal-header .modal-title i,
+    #partialModal .modal-header .modal-title i,
+    #receiptModal .modal-header .modal-title i,
+    .modal-header .modal-title i {
+        font-size: 1.3rem;
+        width: 36px;
+        height: 36px;
+        border-radius: 12px;
+    }
+    
+    #viewDetailsModal .modal-header .btn-close,
+    #locationMapModal .modal-header .btn-close,
+    #photoModal .modal-header .btn-close,
+    #deliveryModal .modal-header .btn-close,
+    #partialModal .modal-header .btn-close,
+    #receiptModal .modal-header .btn-close,
+    .modal-header .btn-close {
+        width: 34px;
+        height: 34px;
+    }
+    
+    #viewDetailsModal .modal-body,
+    #locationMapModal .modal-body,
+    #photoModal .modal-body,
+    #deliveryModal .modal-body,
+    #partialModal .modal-body,
+    #receiptModal .modal-body,
+    .modal-body {
+        padding: 1.2rem !important;
+    }
+    
+    #customerLocationMap {
+        height: 250px;
+    }
+    
+    .location-info {
+        padding: 1rem;
+    }
+    
+    .location-info h6 {
+        font-size: 0.95rem;
+    }
+    
+    .location-info p {
+        font-size: 0.9rem;
+    }
+    
+    .coordinates-badge {
+        font-size: 0.8rem;
+        padding: 0.3rem 0.7rem;
+    }
+    
+    #deliveryModal .modal-footer,
+    #partialModal .modal-footer,
+    #receiptModal .modal-footer,
+    .modal-footer {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    #deliveryModal .modal-footer .btn,
+    #partialModal .modal-footer .btn,
+    #receiptModal .modal-footer .btn,
+    .modal-footer .btn {
+        width: 100%;
+        margin: 0 !important;
+    }
+    
+    #itemsList .form-check {
+        font-size: 0.85rem;
+    }
+    
+    .detail-section {
+        padding: 1.2rem;
+    }
+    
+    .detail-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .section-header h6 {
+        font-size: 0.9rem;
+    }
+}
+
+/* Very small phones (400px and below) */
+@media (max-width: 400px) {
+    #viewDetailsModal .modal-header .modal-title,
+    #locationMapModal .modal-header .modal-title,
+    #photoModal .modal-header .modal-title,
+    #deliveryModal .modal-header .modal-title,
+    #partialModal .modal-header .modal-title,
+    #receiptModal .modal-header .modal-title,
+    .modal-header .modal-title {
+        font-size: 1rem !important;
+    }
+    
+    #customerLocationMap {
+        height: 200px;
+    }
+    
+    .location-info p {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.25rem;
+    }
+}

@@ -154,7 +154,7 @@ try {
             d.driver_id,
             so.so_number,
             so.total_amount,
-            so.order_date,
+            so.created_at,
             c.customer_id,
             c.customer_name,
             c.contact_person,
@@ -984,7 +984,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             <div class="modal-content">
                 <div class="modal-header py-2">
                     <h5 class="modal-title" id="viewDetailsModalLabel">
-                        <i class="bi bi-truck text-primary me-2"></i>
+                        <i class="bi bi-truck text-custom me-2"></i>
                         Delivery Details
                     </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
@@ -1010,7 +1010,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">
-                        <i class="bi bi-geo-alt-fill text-danger me-2"></i>
+                        <i class="bi bi-geo-alt-fill text-custom me-2"></i>
                         Customer Location
                     </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>

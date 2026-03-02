@@ -18,7 +18,6 @@ function formatRemarks($remarks) {
     $remarks = preg_replace_callback('/Proof Photo: ([^\n]+)/', function($matches) {
         $photoPath = trim($matches[1]);
         $fullPath = '../uploads/deliveries/' . $photoPath;
-        return '<strong>Proof Photo:</strong> <button class="btn btn-sm btn-primary view-photo-btn" data-photo="' . $fullPath . '"><i class="bi bi-image"></i> View Photo</button>';
     }, $remarks);
     return $remarks;
 }
@@ -390,8 +389,11 @@ switch ($delivery['delivery_status']) {
     font-size: 0.85rem;
     line-height: 1.4;
     font-family: monospace;
+    margin-top: 0; /* Ensure no top margin */
+    padding-top: 8px; /* Keep consistent padding */
+    padding-bottom: 8px;
+    display: block; /* Ensure block display */
 }
-
 .view-photo-btn {
     margin: 5px 0;
 }
