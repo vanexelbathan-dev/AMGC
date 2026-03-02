@@ -492,6 +492,12 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="purchase_order.php">
+                            <i class="bi bi-receipt"></i>
+                            <span class="nav-text">Purchase Orders</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="drivers.php">
                             <i class="bi bi-person-badge"></i>
                             <span class="nav-text">Drivers</span>
