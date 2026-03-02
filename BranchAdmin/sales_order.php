@@ -3222,7 +3222,8 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             text: 'You will be logged out of the system',
             icon: 'question',
             showCancelButton: true,
-            confirmButtonColor: '#0d6efd',
+            confirmButtonColor: '#07d826',
+            cancelButtonColor: '#6c757d',
             confirmButtonText: 'Yes, logout'
         }).then((result) => {
             if (result.isConfirmed) {

@@ -48,13 +48,30 @@ if ($result) {
 $total_items = count($inventory_items);
 $total_qty_available = 0;
 $total_value = 0;
+$in_stock_count = 0;
+$low_stock_count = 0;
+$critical_stock_count = 0;
 
 foreach ($inventory_items as $item) {
     $qty_available = $item['current_stock'];
     $total_qty_available += $qty_available;
     $total_value += ($qty_available * $item['unit_price']);
+    
+    // Categorize stock status
+    if ($qty_available <= 0) {
+        $critical_stock_count++;
+    } elseif ($qty_available < $item['reorder_level']) {
+        $low_stock_count++;
+    } else {
+        $in_stock_count++;
+    }
 }
 
+// Format stats for display
+$total_products = $total_items;
+$in_stock_display = $in_stock_count;
+$low_stock_display = $low_stock_count;
+$critical_stock_display = $critical_stock_count;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -162,7 +179,7 @@ foreach ($inventory_items as $item) {
                 <i class="bi bi-box"></i>
             </div>
             <div>
-                <div class="stat-value">547</div>
+                <div class="stat-value"><?php echo $total_products; ?></div>
                 <div class="stat-label">Total Products</div>
             </div>
         </div>
@@ -175,7 +192,7 @@ foreach ($inventory_items as $item) {
                 <i class="bi bi-check-circle"></i>
             </div>
             <div>
-                <div class="stat-value">521</div>
+                <div class="stat-value"><?php echo $in_stock_display; ?></div>
                 <div class="stat-label">In Stock</div>
             </div>
         </div>
@@ -188,7 +205,7 @@ foreach ($inventory_items as $item) {
                 <i class="bi bi-exclamation-circle"></i>
             </div>
             <div>
-                <div class="stat-value">18</div>
+                <div class="stat-value"><?php echo $low_stock_display; ?></div>
                 <div class="stat-label">Low Stock</div>
             </div>
         </div>
@@ -201,7 +218,7 @@ foreach ($inventory_items as $item) {
                 <i class="bi bi-exclamation-triangle"></i>
             </div>
             <div>
-                <div class="stat-value">8</div>
+                <div class="stat-value"><?php echo $critical_stock_display; ?></div>
                 <div class="stat-label">Critical Stock</div>
             </div>
         </div>
@@ -256,8 +273,18 @@ foreach ($inventory_items as $item) {
                                     <?php 
                                         $qty_available = $item['current_stock'];
                                         $line_value = $qty_available * $item['unit_price'];
-                                        $status_badge = ($qty_available < $item['reorder_level']) ? 'bg-warning' : 'bg-success';
-                                        $status_text = ($qty_available < $item['reorder_level']) ? 'Low Stock' : 'In Stock';
+                                        
+                                        // Determine status badge based on stock level
+                                        if ($qty_available <= 0) {
+                                            $status_badge = 'bg-danger';
+                                            $status_text = 'Critical';
+                                        } elseif ($qty_available < $item['reorder_level']) {
+                                            $status_badge = 'bg-warning';
+                                            $status_text = 'Low Stock';
+                                        } else {
+                                            $status_badge = 'bg-success';
+                                            $status_text = 'In Stock';
+                                        }
                                     ?>
                                     <tr>
                                         <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($item['item_code']); ?></span></td>

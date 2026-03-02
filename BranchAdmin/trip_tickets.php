@@ -2140,7 +2140,7 @@ function formatCompletion($percentage) {
             text: 'You will be logged out of the system',
             icon: 'question',
             showCancelButton: true,
-            confirmButtonColor: '#0d6efd',
+            confirmButtonColor: '#07d826',
             cancelButtonColor: '#6c757d',
             confirmButtonText: 'Yes, logout'
         }).then((result) => {

@@ -171,6 +171,9 @@ if (isset($_GET['ajax']) && isset($_GET['id'])) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <!-- SweetAlert2 -->
+    <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 <style>
       /* Additional responsive styles for filter section */
@@ -681,9 +684,22 @@ if (isset($_GET['ajax']) && isset($_GET['id'])) {
             window.location.href = 'all_items.php?' + params.toString();
         }
 
-        // Logout function
+        // Logout function with SweetAlert2 confirmation
         function logout() {
-            window.location.href = '../logout.php';
+            Swal.fire({
+                title: 'Are you sure?',
+                text: 'You will be logged out of the system',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#07d826',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, logout'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    localStorage.removeItem('sidebarCollapsed');
+                    window.location.href = '../logout.php';
+                }
+            });
         }
 
         // View item details via AJAX

@@ -569,6 +569,9 @@ if (empty($user_initials)) {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css" />
+    <!-- SweetAlert2 -->
+    <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
           /* Mobile responsive adjustments ONLY */
         @media (max-width: 768px) {
@@ -1407,9 +1410,22 @@ if (empty($user_initials)) {
             }
         }
         
-        // ============== LOGOUT ==============
+        // ============== LOGOUT WITH SWEETALERT2 ==============
         function logout() {
-            window.location.href = '../logout.php';
+            Swal.fire({
+                title: 'Are you sure?',
+                text: 'You will be logged out of the system',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#07d826',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, logout'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    localStorage.removeItem('sidebarCollapsed');
+                    window.location.href = '../logout.php';
+                }
+            });
         }
         
         // ============== INITIALIZATION ==============
