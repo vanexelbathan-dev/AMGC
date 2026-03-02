@@ -38,6 +38,36 @@ if ($driver_id == 0 && $user_role == 'delivery') {
     $driver_stmt->close();
 }
 
+// If still no driver_id, try to get from drivers table using user_id
+if ($driver_id == 0 && $user_role == 'delivery') {
+    $driver_query = "SELECT driver_id FROM drivers WHERE user_id = ? LIMIT 1";
+    $driver_stmt = $conn->prepare($driver_query);
+    $driver_stmt->bind_param("i", $user_id);
+    $driver_stmt->execute();
+    $driver_result = $driver_stmt->get_result();
+    if ($driver_row = $driver_result->fetch_assoc()) {
+        $driver_id = $driver_row['driver_id'];
+        $_SESSION['driver_id'] = $driver_id;
+    }
+    $driver_stmt->close();
+}
+
+// Get the current trip ID for the driver (if any) - but we'll track even without trip
+$current_trip_id = null;
+if ($driver_id > 0) {
+    $trip_query = "SELECT trip_id FROM trip_tickets 
+                   WHERE driver_id = ? AND trip_status IN ('in-progress', 'planned') 
+                   ORDER BY trip_date DESC LIMIT 1";
+    $trip_stmt = $conn->prepare($trip_query);
+    $trip_stmt->bind_param("i", $driver_id);
+    $trip_stmt->execute();
+    $trip_result = $trip_stmt->get_result();
+    if ($trip_row = $trip_result->fetch_assoc()) {
+        $current_trip_id = $trip_row['trip_id'];
+    }
+    $trip_stmt->close();
+}
+
 // Check if branch_id column exists in deliveries table
 $delivery_branch_column_exists = false;
 $check_delivery_column = $conn->query("SHOW COLUMNS FROM deliveries LIKE 'branch_id'");
@@ -211,6 +241,12 @@ if ($user_role == 'delivery' && $driver_id > 0) {
     $driver_info = $driver_result->fetch_assoc();
     $driver_stmt->close();
 }
+
+// Get driver status from database
+$driver_status = 'unknown';
+if ($driver_id > 0 && $driver_info) {
+    $driver_status = $driver_info['status'] ?? 'active';
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -223,7 +259,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
     <link rel="shortcut icon" href="../Pictures/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="../Pictures/apple-touch-icon.png" />
     <link rel="manifest" href="../Pictures/site.webmanifest" />
-    <link rel="stylesheet" href="../css/del_trip_tickets.css">
+    <link rel="stylesheet" href="../css/delivery.css">
     <link rel="stylesheet" href="../css/fordelivery.css">
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -295,6 +331,22 @@ if ($user_role == 'delivery' && $driver_id > 0) {
         
         .modal-xl {
             max-width: 800px;
+        }
+        
+        .receipt-btn {
+            background-color: #6f42c1;
+            color: white;
+            border: none;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .receipt-btn:hover {
+            background-color: #5a32a3;
+            color: white;
         }
         
         .map-icon-btn {
@@ -596,76 +648,106 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 width: 100%;
             }
         }
-                /* Mobile responsive adjustments */
-        @media (max-width: 768px) {
-            .stat-card {
-                padding: 12px;
-                min-height: 85px;
-                margin-bottom: 8px;
+
+        /* Location tracking status indicator */
+        .tracking-status {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.8);
+            color: white;
+            padding: 8px 15px;
+            border-radius: 30px;
+            font-size: 12px;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            pointer-events: none;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+            transition: background-color 0.3s;
+        }
+
+        .tracking-dot {
+            width: 10px;
+            height: 10px;
+            background-color: #4caf50;
+            border-radius: 50%;
+            display: inline-block;
+            animation: pulse 2s infinite;
+        }
+
+        .tracking-dot.idle {
+            background-color: #ffc107;
+            animation: pulse-idle 2s infinite;
+        }
+
+        .tracking-dot.error {
+            background-color: #f44336;
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0% {
+                box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7);
             }
-            
-            .stat-icon {
-                font-size: 2rem;
-                margin-right: 12px;
+            70% {
+                box-shadow: 0 0 0 10px rgba(76, 175, 80, 0);
             }
-            
-            .stat-value {
-                font-size: 1.5rem;
-            }
-            
-            .stat-label {
-                font-size: 0.8rem;
-            }
-            
-            .col-md-3 {
-                width: 50%;
-                padding-left: 8px;
-                padding-right: 8px;
-            }
-            
-            .row.g-3 {
-                margin-left: -8px;
-                margin-right: -8px;
-            }
-            
-            .mb-3 {
-                margin-bottom: 8px !important;
+            100% {
+                box-shadow: 0 0 0 0 rgba(76, 175, 80, 0);
             }
         }
+
+        @keyframes pulse-idle {
+            0% {
+                box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(255, 193, 7, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(255, 193, 7, 0);
+            }
+        }
+
+        .driver-status-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-left: 8px;
+        }
         
-        @media (max-width: 576px) {
-            .stat-card {
-                min-height: 80px;
-                padding: 10px;
-            }
-            
-            .stat-icon {
-                font-size: 1.8rem;
-                margin-right: 10px;
-            }
-            
-            .stat-value {
-                font-size: 1.3rem;
-            }
-            
-            .stat-label {
-                font-size: 0.75rem;
-            }
-            
-            .col-md-3 {
-                width: 50%;
-                padding-left: 6px;
-                padding-right: 6px;
-            }
-            
-            .row.g-3 {
-                margin-left: -6px;
-                margin-right: -6px;
-            }
-}
+        .driver-status-badge.active {
+            background-color: #28a745;
+            color: white;
+        }
+        
+        .driver-status-badge.idle {
+            background-color: #ffc107;
+            color: #212529;
+        }
+        
+        .driver-status-badge.off-duty {
+            background-color: #6c757d;
+            color: white;
+        }
     </style>
 </head>
 <body>
+    <!-- Location tracking status indicator (only for drivers) - ALWAYS ON when logged in -->
+    <?php if ($user_role == 'delivery' && $driver_id > 0): ?>
+    <div class="tracking-status" id="trackingStatus">
+        <span class="tracking-dot" id="trackingDot"></span>
+        <span id="trackingStatusText">Location tracking active - Updating every 10 seconds</span>
+        <span class="driver-status-badge <?php echo $driver_status; ?>" id="driverStatusBadge">
+            <?php echo ucfirst($driver_status); ?>
+        </span>
+    </div>
+    <?php endif; ?>
+
     <!-- Display success/error messages -->
     <?php if (isset($_SESSION['success_message'])): ?>
         <div class="alert alert-success alert-dismissible fade show m-3" role="alert">
@@ -722,6 +804,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                     <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
                     <div class="user-details-sidebar">
                         <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
+                        <small class="d-block text-muted"><?php echo ucfirst($driver_status); ?></small>
                     </div>
                 </div>
                 
@@ -827,7 +910,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                     <p class="mt-3 mb-0">
                         No deliveries found.
                         <?php if ($user_role == 'delivery'): ?>
-                            <br><small>You don't have any deliveries assigned yet.</small>
+                            <br><small>You don't have any deliveries assigned yet. Your location is still being tracked.</small>
                         <?php elseif ($delivery_branch_column_exists && !$view_all_branches): ?>
                             <br><small>No deliveries found for your branch.</small>
                         <?php endif; ?>
@@ -837,9 +920,9 @@ if ($user_role == 'delivery' && $driver_id > 0) {
 
             <!-- Delivery Orders Table -->
             <div class="card">
-                <div class="table-container">
-                    <table class="table custom-table compact-table">
-                        <thead>
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
                             <tr>
                                 <th>Order ID</th>
                                 <th>Customer Name</th>
@@ -910,8 +993,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                                     <span class="badge <?php echo $status_badge; ?>">
                                         <?php echo $status_text; ?>
                                     </span>
-                                    <?php if ($order['delivery_status'] == 'delivered' && !empty($order['signed_by'])): ?>
-                                    <?php endif; ?>
                                 </td>
                                 <td>
                                     <?php if ($order['stop_sequence']): ?>
@@ -921,8 +1002,8 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <div class="action-buttons">
-                                        <button class="btn-action btn-view" title="View Details" onclick="viewDeliveryDetails(<?php echo $order['delivery_id']; ?>)">
+                                    <div class="btn-group" role="group">
+                                        <button class="btn btn-sm btn-info" title="View Details" onclick="viewDeliveryDetails(<?php echo $order['delivery_id']; ?>)">
                                             <i class="bi bi-eye"></i>
                                         </button>
                                         
@@ -931,7 +1012,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                                                            $order['latitude'] != 0 && $order['longitude'] != 0;
                                         if ($has_coordinates): 
                                         ?>
-                                            <button class="btn-action btn-map" title="View on Map" onclick="showLocation(
+                                            <button class="btn btn-sm map-icon-btn" title="View on Map" onclick="showLocation(
                                                 <?php echo $order['latitude']; ?>, 
                                                 <?php echo $order['longitude']; ?>, 
                                                 '<?php echo htmlspecialchars(addslashes($order['customer_name'])); ?>', 
@@ -959,7 +1040,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                                         <?php endif; ?>
                                         
                                         <?php if ($order['delivery_status'] == 'delivered'): ?>
-                                            <button class="btn-action btn-print" title="Print Receipt" onclick="showReceiptModal(<?php echo $order['delivery_id']; ?>, '<?php echo htmlspecialchars(addslashes($order['so_number'])); ?>', '<?php echo htmlspecialchars(addslashes($order['customer_name'])); ?>', '<?php echo htmlspecialchars(addslashes($order['address'] . ', ' . $order['city'])); ?>', '<?php echo htmlspecialchars(addslashes($order['signed_by'])); ?>', '<?php echo $order['delivery_date']; ?>', '<?php echo htmlspecialchars(addslashes($order['items_receipt'])); ?>')">
+                                            <button class="btn btn-sm receipt-btn" title="Print Receipt" onclick="showReceiptModal(<?php echo $order['delivery_id']; ?>, '<?php echo htmlspecialchars(addslashes($order['so_number'])); ?>', '<?php echo htmlspecialchars(addslashes($order['customer_name'])); ?>', '<?php echo htmlspecialchars(addslashes($order['address'] . ', ' . $order['city'])); ?>', '<?php echo htmlspecialchars(addslashes($order['signed_by'])); ?>', '<?php echo $order['delivery_date']; ?>', '<?php echo htmlspecialchars(addslashes($order['items_receipt'])); ?>')">
                                                 <i class="bi bi-receipt"></i>
                                             </button>
                                         <?php endif; ?>
@@ -1204,6 +1285,8 @@ if ($user_role == 'delivery' && $driver_id > 0) {
         const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
         const userRole = '<?php echo $user_role; ?>';
         const driverId = <?php echo $driver_id ?: 0; ?>;
+        const currentTripId = <?php echo $current_trip_id ?: 'null'; ?>;
+        const driverStatus = '<?php echo $driver_status; ?>';
 
         let currentDeliveryId = null;
         let currentSoId = null;
@@ -1217,6 +1300,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
         let currentPartialDeliveryId = null;
         let currentItems = [];
         let currentThermalReceipt = '';
+        let locationUpdateCount = 0;
 
         // ================= SIDEBAR FUNCTIONS =================
         function toggleSidebar() {
@@ -1909,6 +1993,149 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 }
             }
         });
+    </script>
+
+    <!-- Driver Location Tracking -->
+    <script src="../js/driver-location-tracker.js"></script>
+    <script>
+        // FIXED: ALWAYS track driver location as soon as they log in, even when idle
+        let driverTracker = null;
+        
+        // Update tracking status indicator
+        function updateTrackingStatus(status, message) {
+            const statusEl = document.getElementById('trackingStatus');
+            const dotEl = document.getElementById('trackingDot');
+            const textEl = document.getElementById('trackingStatusText');
+            
+            if (!statusEl || !dotEl || !textEl) return;
+            
+            if (status === 'active') {
+                dotEl.className = 'tracking-dot';
+                statusEl.style.backgroundColor = 'rgba(76, 175, 80, 0.9)';
+                textEl.textContent = message || 'Location tracking active - Updating every 10 seconds';
+            } else if (status === 'idle') {
+                dotEl.className = 'tracking-dot idle';
+                statusEl.style.backgroundColor = 'rgba(255, 193, 7, 0.9)';
+                textEl.textContent = message || 'Location tracking active (idle) - Updating every 10 seconds';
+            } else if (status === 'error') {
+                dotEl.className = 'tracking-dot error';
+                statusEl.style.backgroundColor = 'rgba(244, 67, 54, 0.9)';
+                textEl.textContent = message || 'Location tracking error';
+            }
+        }
+        
+        // This function will start tracking immediately for ANY logged-in driver
+        function initDriverTracking() {
+            // Check if user is a driver (any driver, regardless of status)
+            if (userRole === 'delivery' && driverId > 0) {
+                console.log('[v0] Delivery driver detected - Starting automatic location tracking (IDLE OR ACTIVE)');
+                
+                // Show initial status
+                if (currentTripId) {
+                    updateTrackingStatus('active', 'Location tracking active - On delivery');
+                } else {
+                    updateTrackingStatus('idle', 'Location tracking active (idle) - Updating every 10 seconds');
+                }
+                
+                // Create tracker instance with correct parameters
+                driverTracker = new DriverLocationTracker({
+                    updateInterval: 10000, // 10 seconds
+                    enableHighAccuracy: true,
+                    apiEndpoint: './update_driver_location.php',
+                    onSuccess: function(data) {
+                        locationUpdateCount++;
+                        console.log('[v0] Location updated successfully #' + locationUpdateCount, new Date().toLocaleTimeString());
+                        
+                        // Update status based on trip
+                        if (currentTripId) {
+                            updateTrackingStatus('active', `Location tracking active - Updated ${new Date().toLocaleTimeString()}`);
+                        } else {
+                            updateTrackingStatus('idle', `Location tracking active (idle) - Updated ${new Date().toLocaleTimeString()}`);
+                        }
+                    },
+                    onError: function(error) {
+                        console.log('[v0] Location tracking error:', error);
+                        updateTrackingStatus('error', 'Location error - ' + (error.message || 'Unknown error'));
+                    }
+                });
+
+                // Pass the current trip ID if available (null is fine - still track)
+                if (currentTripId) {
+                    console.log('[v0] Driver has active trip ID:', currentTripId);
+                } else {
+                    console.log('[v0] Driver is idle - tracking location without trip');
+                }
+                
+                // Start tracking immediately
+                setTimeout(function() {
+                    driverTracker.startTracking();
+                }, 1000); // Small delay to ensure page is fully loaded
+            } else {
+                console.log('[v0] Not a delivery driver, tracking not started. Role:', userRole, 'Driver ID:', driverId);
+            }
+        }
+
+        // Start tracking when DOM is loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            initDriverTracking();
+        });
+
+        // Also try to start tracking immediately if the script loads after DOM
+        if (document.readyState === 'complete' || document.readyState === 'interactive') {
+            setTimeout(initDriverTracking, 100);
+        }
+
+        // Handle page visibility change (when user switches tabs and comes back)
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden && driverTracker && userRole === 'delivery' && driverId > 0) {
+                console.log('[v0] Page visible again, ensuring tracking is active');
+                // Check if tracking is still active
+                if (driverTracker.watchId === null) {
+                    console.log('[v0] Tracking was stopped, restarting...');
+                    driverTracker.startTracking();
+                    
+                    // Update status
+                    if (currentTripId) {
+                        updateTrackingStatus('active', 'Location tracking resumed - On delivery');
+                    } else {
+                        updateTrackingStatus('idle', 'Location tracking resumed (idle)');
+                    }
+                }
+            }
+        });
+
+        // Handle before unload - send one last location update
+        window.addEventListener('beforeunload', function() {
+            if (driverTracker && navigator.geolocation && driverTracker.watchId !== null) {
+                navigator.geolocation.getCurrentPosition(function(position) {
+                    // Try to send one last update synchronously
+                    const data = {
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude,
+                        speed: position.coords.speed ? position.coords.speed * 3.6 : 0,
+                        trip_id: currentTripId // This can be null - that's fine
+                    };
+                    
+                    // Use sendBeacon for reliable last update
+                    const blob = new Blob([JSON.stringify(data)], {type: 'application/json'});
+                    navigator.sendBeacon('./update_driver_location.php', blob);
+                    console.log('[v0] Final location sent before exit');
+                }, null, {
+                    timeout: 2000,
+                    maximumAge: 0
+                });
+            }
+        });
+
+        // Periodically check if tracking is still active (every 30 seconds)
+        setInterval(function() {
+            if (userRole === 'delivery' && driverId > 0 && driverTracker) {
+                if (driverTracker.watchId === null) {
+                    console.log('[v0] Tracking stopped unexpectedly, restarting...');
+                    driverTracker.startTracking();
+                }
+            }
+        }, 30000);
     </script>
 </body>
 </html>
