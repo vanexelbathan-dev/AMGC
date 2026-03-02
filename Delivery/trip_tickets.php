@@ -530,7 +530,7 @@ function getTripStatusText($status) {
                     <i class="bi bi-list"></i>
                 </button>
                 <div class="page-title">
-                    <h2><i class="bi bi-ticket me-2"></i>Trip Tickets</h2>
+                    <h2>Trip Tickets</h2>
                     <p>Track and manage delivery trip tickets</p>
                 </div>
                 <?php if ($user_role != 'delivery'): ?>
