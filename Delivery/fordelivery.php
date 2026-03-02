@@ -223,7 +223,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
     <link rel="shortcut icon" href="../Pictures/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="../Pictures/apple-touch-icon.png" />
     <link rel="manifest" href="../Pictures/site.webmanifest" />
-    <link rel="stylesheet" href="../css/delivery.css">
+    <link rel="stylesheet" href="../css/del_trip_tickets.css">
     <link rel="stylesheet" href="../css/fordelivery.css">
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -295,22 +295,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
         
         .modal-xl {
             max-width: 800px;
-        }
-        
-        .receipt-btn {
-            background-color: #6f42c1;
-            color: white;
-            border: none;
-            padding: 3px 8px;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        
-        .receipt-btn:hover {
-            background-color: #5a32a3;
-            color: white;
         }
         
         .map-icon-btn {
@@ -612,6 +596,73 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 width: 100%;
             }
         }
+                /* Mobile responsive adjustments */
+        @media (max-width: 768px) {
+            .stat-card {
+                padding: 12px;
+                min-height: 85px;
+                margin-bottom: 8px;
+            }
+            
+            .stat-icon {
+                font-size: 2rem;
+                margin-right: 12px;
+            }
+            
+            .stat-value {
+                font-size: 1.5rem;
+            }
+            
+            .stat-label {
+                font-size: 0.8rem;
+            }
+            
+            .col-md-3 {
+                width: 50%;
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+            
+            .row.g-3 {
+                margin-left: -8px;
+                margin-right: -8px;
+            }
+            
+            .mb-3 {
+                margin-bottom: 8px !important;
+            }
+        }
+        
+        @media (max-width: 576px) {
+            .stat-card {
+                min-height: 80px;
+                padding: 10px;
+            }
+            
+            .stat-icon {
+                font-size: 1.8rem;
+                margin-right: 10px;
+            }
+            
+            .stat-value {
+                font-size: 1.3rem;
+            }
+            
+            .stat-label {
+                font-size: 0.75rem;
+            }
+            
+            .col-md-3 {
+                width: 50%;
+                padding-left: 6px;
+                padding-right: 6px;
+            }
+            
+            .row.g-3 {
+                margin-left: -6px;
+                margin-right: -6px;
+            }
+}
     </style>
 </head>
 <body>
@@ -786,9 +837,9 @@ if ($user_role == 'delivery' && $driver_id > 0) {
 
             <!-- Delivery Orders Table -->
             <div class="card">
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0">
-                        <thead class="table-light">
+                <div class="table-container">
+                    <table class="table custom-table compact-table">
+                        <thead>
                             <tr>
                                 <th>Order ID</th>
                                 <th>Customer Name</th>
@@ -870,8 +921,8 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <div class="btn-group" role="group">
-                                        <button class="btn btn-sm btn-info" title="View Details" onclick="viewDeliveryDetails(<?php echo $order['delivery_id']; ?>)">
+                                    <div class="action-buttons">
+                                        <button class="btn-action btn-view" title="View Details" onclick="viewDeliveryDetails(<?php echo $order['delivery_id']; ?>)">
                                             <i class="bi bi-eye"></i>
                                         </button>
                                         
@@ -880,7 +931,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                                                            $order['latitude'] != 0 && $order['longitude'] != 0;
                                         if ($has_coordinates): 
                                         ?>
-                                            <button class="btn btn-sm map-icon-btn" title="View on Map" onclick="showLocation(
+                                            <button class="btn-action btn-map" title="View on Map" onclick="showLocation(
                                                 <?php echo $order['latitude']; ?>, 
                                                 <?php echo $order['longitude']; ?>, 
                                                 '<?php echo htmlspecialchars(addslashes($order['customer_name'])); ?>', 
@@ -908,7 +959,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                                         <?php endif; ?>
                                         
                                         <?php if ($order['delivery_status'] == 'delivered'): ?>
-                                            <button class="btn btn-sm receipt-btn" title="Print Receipt" onclick="showReceiptModal(<?php echo $order['delivery_id']; ?>, '<?php echo htmlspecialchars(addslashes($order['so_number'])); ?>', '<?php echo htmlspecialchars(addslashes($order['customer_name'])); ?>', '<?php echo htmlspecialchars(addslashes($order['address'] . ', ' . $order['city'])); ?>', '<?php echo htmlspecialchars(addslashes($order['signed_by'])); ?>', '<?php echo $order['delivery_date']; ?>', '<?php echo htmlspecialchars(addslashes($order['items_receipt'])); ?>')">
+                                            <button class="btn-action btn-print" title="Print Receipt" onclick="showReceiptModal(<?php echo $order['delivery_id']; ?>, '<?php echo htmlspecialchars(addslashes($order['so_number'])); ?>', '<?php echo htmlspecialchars(addslashes($order['customer_name'])); ?>', '<?php echo htmlspecialchars(addslashes($order['address'] . ', ' . $order['city'])); ?>', '<?php echo htmlspecialchars(addslashes($order['signed_by'])); ?>', '<?php echo $order['delivery_date']; ?>', '<?php echo htmlspecialchars(addslashes($order['items_receipt'])); ?>')">
                                                 <i class="bi bi-receipt"></i>
                                             </button>
                                         <?php endif; ?>
