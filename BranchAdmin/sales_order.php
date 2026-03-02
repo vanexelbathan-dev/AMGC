@@ -23,6 +23,13 @@ if ($check_customers_column && $check_customers_column->num_rows > 0) {
     $customers_branch_column_exists = true;
 }
 
+// Check if branch_id column exists in drivers table
+$drivers_branch_column_exists = false;
+$check_drivers_column = $conn->query("SHOW COLUMNS FROM drivers LIKE 'branch_id'");
+if ($check_drivers_column && $check_drivers_column->num_rows > 0) {
+    $drivers_branch_column_exists = true;
+}
+
 // Check if so_id column exists in invoices table
 $invoice_so_column_exists = false;
 $check_invoice_column = $conn->query("SHOW COLUMNS FROM invoices LIKE 'so_id'");
@@ -61,6 +68,11 @@ if ($customers_branch_column_exists && !$view_all_branches) {
     $customers_branch_condition = "AND branch_id = $branch_id";
 }
 
+$drivers_branch_condition = "";
+if ($drivers_branch_column_exists && !$view_all_branches) {
+    $drivers_branch_condition = "AND branch_id = $branch_id";
+}
+
 // ========== HANDLE AJAX REQUESTS ==========
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     header('Content-Type: application/json');
@@ -82,6 +94,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $status_stmt->execute();
             $order_info = $status_stmt->get_result()->fetch_assoc();
             $old_status = $order_info['order_status'];
+            $order_branch_id = $order_info['branch_id'];
             
             // Verify order belongs to user's branch
             if ($so_branch_column_exists && !$view_all_branches) {
@@ -109,12 +122,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             // GENERATE PICK LIST, INVOICE, AND TRIP TICKET WHEN ORDER IS CONFIRMED
             if ($order_status === 'confirmed' && $old_status !== 'confirmed') {
                 
-                // 1. CREATE PICK LIST
+                // ===== DRIVER ASSIGNMENT - REQUIRE ACTIVE DRIVER =====
+                $driver_id = null;
+                $driver_name = null;
+                
+                // Get branch name for better error message
+                $branch_name_query = "SELECT branch_name FROM branches WHERE branch_id = ?";
+                $branch_name_stmt = $conn->prepare($branch_name_query);
+                $branch_name_stmt->bind_param("i", $order_branch_id);
+                $branch_name_stmt->execute();
+                $branch_result = $branch_name_stmt->get_result();
+                $branch_data = $branch_result->fetch_assoc();
+                $branch_display = $branch_data['branch_name'] ?? 'Branch ' . $order_branch_id;
+                
+                // Get an available active driver for this branch (REQUIRED)
+                $driver_query = "SELECT driver_id, driver_name FROM drivers WHERE branch_id = ? AND status = 'active' ORDER BY driver_id LIMIT 1";
+                $driver_stmt = $conn->prepare($driver_query);
+                $driver_stmt->bind_param("i", $order_branch_id);
+                $driver_stmt->execute();
+                $driver_result = $driver_stmt->get_result();
+                
+                if ($driver_result->num_rows > 0) {
+                    $driver = $driver_result->fetch_assoc();
+                    $driver_id = $driver['driver_id'];
+                    $driver_name = $driver['driver_name'];
+                } else {
+                    // NO ACTIVE DRIVER FOUND FOR THIS BRANCH - CANNOT PROCEED
+                    throw new Exception('Cannot confirm order: No active drivers available for ' . $branch_display . '. Please add an active driver to this branch first.');
+                }
+                
+                // 1. CREATE PICK LIST with driver assignment
                 $pick_list_number = 'PL-' . date('Ymd') . '-' . str_pad($so_id, 5, '0', STR_PAD_LEFT);
-                $picklist_query = "INSERT INTO pick_lists (pick_list_number, so_id, branch_id, pick_status, created_at) 
-                                  VALUES (?, ?, ?, 'open', NOW())";
+                
+                // Include driver_id in pick list creation
+                $picklist_query = "INSERT INTO pick_lists (pick_list_number, so_id, branch_id, driver_id, pick_status, created_at) 
+                                  VALUES (?, ?, ?, ?, 'open', NOW())";
                 $picklist_stmt = $conn->prepare($picklist_query);
-                $picklist_stmt->bind_param("sii", $pick_list_number, $so_id, $branch_id);
+                $picklist_stmt->bind_param("siii", $pick_list_number, $so_id, $order_branch_id, $driver_id);
                 
                 if (!$picklist_stmt->execute()) {
                     throw new Exception('Failed to create pick list');
@@ -145,7 +189,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $invoice_query = "INSERT INTO invoices (invoice_number, so_id, customer_id, branch_id, invoice_date, due_date, total_amount, status) 
                                      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')";
                     $invoice_stmt = $conn->prepare($invoice_query);
-                    $invoice_stmt->bind_param("siiissd", $invoice_number, $so_id, $order_info['customer_id'], $branch_id, $invoice_date, $due_date, $total_amount);
+                    $invoice_stmt->bind_param("siiissd", $invoice_number, $so_id, $order_info['customer_id'], $order_branch_id, $invoice_date, $due_date, $total_amount);
                     
                     if (!$invoice_stmt->execute()) {
                         throw new Exception('Failed to create invoice');
@@ -153,41 +197,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $invoice_id = $conn->insert_id;
                 }
                 
-                // 3. CREATE TRIP TICKET
-                // First, get an available driver for this branch
-                $driver_query = "SELECT driver_id FROM drivers WHERE branch_id = ? AND status = 'active' LIMIT 1";
-                $driver_stmt = $conn->prepare($driver_query);
-                $driver_stmt->bind_param("i", $branch_id);
-                $driver_stmt->execute();
-                $driver_result = $driver_stmt->get_result();
-                $driver = $driver_result->fetch_assoc();
-                
-                if (!$driver) {
-                    // If no active driver found, try to get any driver
-                    $driver_query = "SELECT driver_id FROM drivers WHERE branch_id = ? LIMIT 1";
-                    $driver_stmt = $conn->prepare($driver_query);
-                    $driver_stmt->bind_param("i", $branch_id);
-                    $driver_stmt->execute();
-                    $driver_result = $driver_stmt->get_result();
-                    $driver = $driver_result->fetch_assoc();
-                }
-                
-                if (!$driver) {
-                    // If still no driver, use a default driver ID (1) as fallback
-                    $driver_id = 1;
-                } else {
-                    $driver_id = $driver['driver_id'];
-                }
-                
+                // 3. CREATE TRIP TICKET with driver assignment
                 $trip_ticket_number = 'TT-' . date('Ymd') . '-' . str_pad($so_id, 5, '0', STR_PAD_LEFT);
-                $branch_to_use = ($so_branch_column_exists && !$view_all_branches) ? $branch_id : $order_info['branch_id'];
                 $trip_date = date('Y-m-d');
                 
                 // Base required fields for trip_tickets
                 $trip_fields = "trip_number, driver_id, branch_id, trip_date, trip_status, created_by, created_at";
                 $trip_values = "?, ?, ?, ?, 'planned', ?, NOW()";
                 $trip_types = "siisi"; // string, int, int, string, int
-                $trip_params = [$trip_ticket_number, $driver_id, $branch_to_use, $trip_date, $user_id];
+                $trip_params = [$trip_ticket_number, $driver_id, $order_branch_id, $trip_date, $user_id];
                 
                 // Add optional fields if they exist
                 if ($trip_has_so_id) {
@@ -253,7 +271,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                                        (branch_id, item_id, transaction_type, quantity_changed, reference_type, reference_id, created_by, created_at) 
                                        VALUES (?, ?, 'out', ?, 'sales_order', ?, ?, NOW())";
                         $trans_stmt = $conn->prepare($trans_query);
-                        $trans_stmt->bind_param("iiiii", $branch_id, $item_id, $quantity, $so_id, $user_id);
+                        $trans_stmt->bind_param("iiiii", $order_branch_id, $item_id, $quantity, $so_id, $user_id);
                         $trans_stmt->execute();
                     }
                 }
@@ -262,11 +280,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 
                 $response = [
                     'success' => true,
-                    'message' => 'Order confirmed successfully! Pick List and Trip Ticket have been generated. Inventory has been updated.',
+                    'message' => 'Order confirmed successfully! Pick List, Trip Ticket have been generated. Inventory has been updated.',
                     'generated_docs' => [
                         'picklist' => $pick_list_number,
                         'trip_ticket' => $trip_ticket_number,
-                        'driver_assigned' => $driver_id
+                        'driver_id' => $driver_id,
+                        'driver_name' => $driver_name
                     ]
                 ];
                 
@@ -425,22 +444,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $items_result = $items_stmt->get_result();
                 $items = $items_result->fetch_all(MYSQLI_ASSOC);
                 
-                // Get generated documents
-                $docs_query = "
-                    SELECT 
-                        (SELECT pick_list_number FROM pick_lists WHERE so_id = ? LIMIT 1) as pick_list_number,
-                        (SELECT trip_number FROM trip_tickets WHERE " . ($trip_has_so_id ? "so_id = ?" : "1=0") . " LIMIT 1) as trip_ticket_number
-                ";
-                $docs_stmt = $conn->prepare($docs_query);
+                // Get generated documents including driver info
+                $documents = [];
                 
-                if ($trip_has_so_id) {
-                    $docs_stmt->bind_param("ii", $so_id, $so_id);
-                } else {
-                    $docs_stmt->bind_param("i", $so_id);
+                // Get pick list info
+                $pl_query = "SELECT pick_list_number, driver_id FROM pick_lists WHERE so_id = ? LIMIT 1";
+                $pl_stmt = $conn->prepare($pl_query);
+                $pl_stmt->bind_param("i", $so_id);
+                $pl_stmt->execute();
+                $pl_result = $pl_stmt->get_result();
+                if ($pl_row = $pl_result->fetch_assoc()) {
+                    $documents['pick_list_number'] = $pl_row['pick_list_number'];
+                    $documents['picklist_driver_id'] = $pl_row['driver_id'];
+                    
+                    // Get driver name if driver_id exists
+                    if (!empty($pl_row['driver_id'])) {
+                        $driver_query = "SELECT driver_name FROM drivers WHERE driver_id = ?";
+                        $driver_stmt = $conn->prepare($driver_query);
+                        $driver_stmt->bind_param("i", $pl_row['driver_id']);
+                        $driver_stmt->execute();
+                        $driver_result = $driver_stmt->get_result();
+                        $driver = $driver_result->fetch_assoc();
+                        $documents['driver_name'] = $driver['driver_name'] ?? 'Unknown Driver';
+                    }
                 }
                 
-                $docs_stmt->execute();
-                $documents = $docs_stmt->get_result()->fetch_assoc();
+                // Get trip ticket info
+                if ($trip_has_so_id) {
+                    $tt_query = "SELECT trip_number FROM trip_tickets WHERE so_id = ? LIMIT 1";
+                    $tt_stmt = $conn->prepare($tt_query);
+                    $tt_stmt->bind_param("i", $so_id);
+                    $tt_stmt->execute();
+                    $tt_result = $tt_stmt->get_result();
+                    if ($tt_row = $tt_result->fetch_assoc()) {
+                        $documents['trip_ticket_number'] = $tt_row['trip_number'];
+                    }
+                }
                 
                 // Get invoice data if column exists
                 $invoice = null;
@@ -466,7 +505,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             exit;
         }
         
-        // PRINT SALES ORDER - Add this new action for single order printing
+        // PRINT SALES ORDER
         elseif ($_POST['action'] === 'print_order') {
             $so_id = (int)$_POST['so_id'];
             
@@ -514,10 +553,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $items_stmt->execute();
             $items = $items_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             
+            // Get assigned driver from pick list
+            $driver_query = "
+                SELECT d.driver_name, d.vehicle_plate_number, d.vehicle_type
+                FROM pick_lists pl
+                JOIN drivers d ON pl.driver_id = d.driver_id
+                WHERE pl.so_id = ?
+                LIMIT 1
+            ";
+            $driver_stmt = $conn->prepare($driver_query);
+            $driver_stmt->bind_param("i", $so_id);
+            $driver_stmt->execute();
+            $driver = $driver_stmt->get_result()->fetch_assoc();
+            
             echo json_encode([
                 'success' => true,
                 'order' => $order,
-                'items' => $items
+                'items' => $items,
+                'driver' => $driver
             ]);
             exit;
         }
@@ -661,12 +714,14 @@ $sales_query = "
         u.last_name,
         COUNT(soi.so_item_id) as total_items,
         SUM(soi.quantity_ordered) as total_quantity,
-        " . ($invoice_so_column_exists ? "inv.invoice_number, inv.status as invoice_status" : "NULL as invoice_number, NULL as invoice_status") . "
+        " . ($invoice_so_column_exists ? "inv.invoice_number, inv.status as invoice_status" : "NULL as invoice_number, NULL as invoice_status") . ",
+        (SELECT driver_name FROM drivers WHERE driver_id = pl.driver_id LIMIT 1) as assigned_driver
     FROM sales_orders so
     JOIN customers c ON so.customer_id = c.customer_id
     LEFT JOIN branches b ON so.branch_id = b.branch_id
     LEFT JOIN users u ON so.created_by = u.user_id
     LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
+    LEFT JOIN pick_lists pl ON so.so_id = pl.so_id
     " . ($invoice_so_column_exists ? "LEFT JOIN invoices inv ON so.so_id = inv.so_id" : "") . "
     WHERE 1=1
     $branch_condition
@@ -731,7 +786,7 @@ function getOrderStatusText($status) {
     };
 }
 
-/// Payment status based on invoice if available, otherwise simplified
+// Payment status based on invoice if available, otherwise simplified
 function getPaymentStatus($order_status, $invoice_status = null) {
     if ($order_status === 'cancelled') return ['status' => 'Cancelled', 'class' => 'bg-danger'];
     
@@ -819,6 +874,23 @@ function formatDateTime($dateStr) {
             border-radius: 4px;
             color: #c7254e;
         }
+        
+        /* Driver badge styling */
+        .driver-badge {
+            background-color: #e3f2fd;
+            color: #0d6efd;
+            padding: 4px 8px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        }
+        .driver-badge i {
+            font-size: 12px;
+        }
+        
         @media (max-width: 768px) {
             .stat-card {
                 padding: 12px;
@@ -1171,6 +1243,15 @@ function formatDateTime($dateStr) {
                 display: inline-block;
             }
             
+            .driver-badge-print {
+                background-color: #0d6efd;
+                color: white;
+                padding: 3px 10px;
+                border-radius: 15px;
+                font-size: 11px;
+                display: inline-block;
+            }
+            
             /* Print Footer */
             .print-footer {
                 margin-top: 40px;
@@ -1206,22 +1287,24 @@ function formatDateTime($dateStr) {
             /* Adjust column widths for better print layout */
             .custom-table th:nth-child(1) { width: 12%; } /* Order No. */
             .custom-table th:nth-child(2) { width: 10%; } /* Date */
-            .custom-table th:nth-child(3) { width: 20%; } /* Customer */
+            .custom-table th:nth-child(3) { width: 18%; } /* Customer */
             <?php if ($so_branch_column_exists && $view_all_branches): ?>
             .custom-table th:nth-child(4) { width: 10%; } /* Branch */
             .custom-table th:nth-child(5) { width: 5%; }  /* Items */
             .custom-table th:nth-child(6) { width: 5%; }  /* Qty */
             .custom-table th:nth-child(7) { width: 12%; } /* Total Amount */
-            .custom-table th:nth-child(8) { width: 10%; } /* Invoice */
-            .custom-table th:nth-child(9) { width: 10%; } /* Payment Status */
-            .custom-table th:nth-child(10) { width: 10%; } /* Order Status */
+            .custom-table th:nth-child(8) { width: 12%; } /* Driver */
+            .custom-table th:nth-child(9) { width: 10%; } /* Invoice */
+            .custom-table th:nth-child(10) { width: 10%; } /* Payment Status */
+            .custom-table th:nth-child(11) { width: 10%; } /* Order Status */
             <?php else: ?>
             .custom-table th:nth-child(4) { width: 5%; }  /* Items */
             .custom-table th:nth-child(5) { width: 5%; }  /* Qty */
             .custom-table th:nth-child(6) { width: 12%; } /* Total Amount */
-            .custom-table th:nth-child(7) { width: 10%; } /* Invoice */
-            .custom-table th:nth-child(8) { width: 10%; } /* Payment Status */
-            .custom-table th:nth-child(9) { width: 10%; } /* Order Status */
+            .custom-table th:nth-child(7) { width: 12%; } /* Driver */
+            .custom-table th:nth-child(8) { width: 10%; } /* Invoice */
+            .custom-table th:nth-child(9) { width: 10%; } /* Payment Status */
+            .custom-table th:nth-child(10) { width: 10%; } /* Order Status */
             <?php endif; ?>
             
             /* Amount column alignment */
@@ -1394,6 +1477,22 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                     </div>
                 <?php endif; ?>
 
+                <?php if (!$drivers_branch_column_exists): ?>
+                    <div class="alert alert-info alert-dismissible fade show no-print" role="alert">
+                        <i class="bi bi-info-circle"></i> 
+                        <strong>Branch filtering for drivers not yet set up.</strong> Run this SQL:
+                        <br><br>
+                        <code>ALTER TABLE drivers ADD COLUMN branch_id INT NULL;</code>
+                        <br>
+                        <code>ALTER TABLE drivers ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);</code>
+                        <br><br>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="copySQL('drivers')">
+                            <i class="bi bi-files"></i> Copy SQL
+                        </button>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <?php endif; ?>
+
                 <!-- No Orders Warning -->
                 <?php if (empty($sales_orders) && $so_branch_column_exists && !$view_all_branches): ?>
                     <div class="alert alert-warning no-print">
@@ -1452,10 +1551,10 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                 <div class="col-md-5">
                                     <div class="search-box">
                                         <i class="bi bi-search"></i>
-                                        <input type="text" class="form-control" id="searchInput" placeholder="Search by order number or customer..." onkeyup="filterTable()">
+                                        <input type="text" class="form-control" id="searchInput" placeholder="Search by order number, customer, or driver..." onkeyup="filterTable()">
                                     </div>
                                 </div>
-                                <div class="col-md-4">
+                                <div class="col-md-3">
                                     <select class="form-select" id="statusFilter" onchange="filterTable()">
                                         <option value="">All Status</option>
                                         <option value="pending">Pending</option>
@@ -1466,7 +1565,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                         <option value="cancelled">Cancelled</option>
                                     </select>
                                 </div>
-                                <div class="col-md-3">
+                                <div class="col-md-4">
                                     <select class="form-select" id="customerFilter" onchange="filterTable()">
                                         <option value="">All Customers</option>
                                         <?php foreach ($customers as $customer): ?>
@@ -1518,6 +1617,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                     <th>Items</th>
                                     <th>Qty</th>
                                     <th>Total Amount</th>
+                                    <th>Assigned Driver</th>
                                     <th>Invoice</th>
                                     <th>Payment Status</th>
                                     <th>Order Status</th>
@@ -1527,7 +1627,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                             <tbody id="salesOrdersTableBody">
                                 <?php if (empty($sales_orders)): ?>
                                 <tr>
-                                    <td colspan="<?= ($so_branch_column_exists && $view_all_branches) ? '11' : '10' ?>" class="text-center py-4">
+                                    <td colspan="<?= ($so_branch_column_exists && $view_all_branches) ? '12' : '11' ?>" class="text-center py-4">
                                         <i class="bi bi-inbox fs-1 d-block text-muted mb-2"></i>
                                         <p class="text-muted mb-0">No sales orders found</p>
                                     </td>
@@ -1546,7 +1646,8 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                         data-items="<?= $order['total_items'] ?? 0 ?>"
                                         data-qty="<?= $order['total_quantity'] ?? 0 ?>"
                                         data-invoice="<?= htmlspecialchars($order['invoice_number'] ?? '') ?>"
-                                        data-invoice-status="<?= $order['invoice_status'] ?? '' ?>">
+                                        data-invoice-status="<?= $order['invoice_status'] ?? '' ?>"
+                                        data-driver="<?= htmlspecialchars($order['assigned_driver'] ?? '') ?>">
                                         <td><strong><?= htmlspecialchars($order['so_number']) ?></strong></td>
                                         <td><?= formatDate($order['order_date']) ?></td>
                                         <td><?= htmlspecialchars($order['customer_name']) ?></td>
@@ -1560,6 +1661,15 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                         <td class="text-center"><?= $order['total_items'] ?? 0 ?></td>
                                         <td class="text-center"><?= $order['total_quantity'] ?? 0 ?></td>
                                         <td class="text-end">₱<?= number_format($order['total_amount'] ?? 0, 2) ?></td>
+                                        <td>
+                                            <?php if (!empty($order['assigned_driver'])): ?>
+                                                <span class="driver-badge">
+                                                    <i class="bi bi-truck"></i> <?= htmlspecialchars($order['assigned_driver']) ?>
+                                                </span>
+                                            <?php else: ?>
+                                                <span class="badge bg-secondary">No Driver</span>
+                                            <?php endif; ?>
+                                        </td>
                                         <td>
                                             <?php if ($order['invoice_number']): ?>
                                                 <span class="badge bg-success"><?= htmlspecialchars($order['invoice_number']) ?></span>
@@ -1663,8 +1773,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                     <option value="pending">Pending</option>
                                     <option value="confirmed">Confirm Order (Generate Documents & Deduct Stock)</option>
                                 </select>
-                                <small class="text-muted">Confirming will generate Pick List, Trip Ticket, and deduct inventory</small>
-                            </div>
+                                </div>
                             <div class="col-md-4">
                                 <label for="editTotalItems" class="form-label">Items</label>
                                 <input type="number" class="form-control" id="editTotalItems" readonly>
@@ -1747,6 +1856,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
     const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
     const soBranchColumnExists = <?php echo $so_branch_column_exists ? 'true' : 'false'; ?>;
     const invoiceSoColumnExists = <?php echo $invoice_so_column_exists ? 'true' : 'false'; ?>;
+    const driversBranchColumnExists = <?php echo $drivers_branch_column_exists ? 'true' : 'false'; ?>;
     const logoBase64 = '<?php echo $logo_base64; ?>';
 
     // ========== SIDEBAR FUNCTIONS ==========
@@ -1790,6 +1900,36 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 sidebar.classList.add('collapsed');
                 document.querySelectorAll('.nav-text').forEach(text => text.style.display = 'none');
             }
+        }
+    }
+
+    function handleSidebarResize() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.querySelector('.sidebar-overlay');
+        
+        if (window.innerWidth > 992) {
+            if (overlay) {
+                overlay.remove();
+            }
+            sidebar.classList.remove('active');
+            
+            const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+            if (savedCollapsed === 'true') {
+                sidebar.classList.add('collapsed');
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'none';
+                });
+            } else {
+                sidebar.classList.remove('collapsed');
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'inline-block';
+                });
+            }
+        } else {
+            sidebar.classList.remove('collapsed');
+            document.querySelectorAll('.nav-text').forEach(text => {
+                text.style.display = 'inline-block';
+            });
         }
     }
 
@@ -1860,36 +2000,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         // Add resize event listener
         window.addEventListener('resize', handleSidebarResize);
     });
-
-    function handleSidebarResize() {
-        const sidebar = document.getElementById('sidebar');
-        const overlay = document.querySelector('.sidebar-overlay');
-        
-        if (window.innerWidth > 992) {
-            if (overlay) {
-                overlay.remove();
-            }
-            sidebar.classList.remove('active');
-            
-            const savedCollapsed = localStorage.getItem('sidebarCollapsed');
-            if (savedCollapsed === 'true') {
-                sidebar.classList.add('collapsed');
-                document.querySelectorAll('.nav-text').forEach(text => {
-                    text.style.display = 'none';
-                });
-            } else {
-                sidebar.classList.remove('collapsed');
-                document.querySelectorAll('.nav-text').forEach(text => {
-                    text.style.display = 'inline-block';
-                });
-            }
-        } else {
-            sidebar.classList.remove('collapsed');
-            document.querySelectorAll('.nav-text').forEach(text => {
-                text.style.display = 'inline-block';
-            });
-        }
-    }
 
     // ========== CHECK STOCK FUNCTION ==========
     function checkStockBeforeConfirm(soId) {
@@ -1988,6 +2098,10 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 
                 if (documents.pick_list_number) {
                     documentsHtml += `<div class="col-md-4"><div class="card bg-light"><div class="card-body p-2"><small class="text-muted">Pick List</small><br><strong>${documents.pick_list_number}</strong></div></div></div>`;
+                }
+                
+                if (documents.driver_name) {
+                    documentsHtml += `<div class="col-md-4"><div class="card bg-light"><div class="card-body p-2"><small class="text-muted">Assigned Driver</small><br><strong><i class="bi bi-truck"></i> ${documents.driver_name}</strong></div></div></div>`;
                 }
                 
                 if (invoice) {
@@ -2193,6 +2307,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                         <ul class="list-unstyled">
                             <li><i class="bi bi-check-circle-fill text-success"></i> Pick List: ${data.generated_docs.picklist}</li>
                             <li><i class="bi bi-check-circle-fill text-success"></i> Trip Ticket: ${data.generated_docs.trip_ticket}</li>
+                            <li><i class="bi bi-check-circle-fill text-primary"></i> Assigned Driver: ${data.generated_docs.driver_name || 'Driver ID: ' + data.generated_docs.driver_id}</li>
                     `;
                     
                     if (data.generated_docs.invoice) {
@@ -2231,7 +2346,13 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                     });
                 }
             } else {
-                Swal.fire('Error', data.message, 'error');
+                // Show error message - this will now include the "No active drivers" message
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Cannot Confirm Order',
+                    text: data.message,
+                    confirmButtonColor: '#0d6efd'
+                });
             }
         })
         .catch(error => {
@@ -2379,6 +2500,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             if (data.success) {
                 const order = data.order;
                 const items = data.items;
+                const driver = data.driver || null;
                 
                 // Create iframe for printing
                 const iframe = document.createElement('iframe');
@@ -2391,7 +2513,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 document.body.appendChild(iframe);
                 
                 // Generate HTML content with brand colors and logo
-                const htmlContent = generateSingleOrderHTML(order, items);
+                const htmlContent = generateSingleOrderHTML(order, items, driver);
                 
                 // Write to iframe and print
                 const iframeDoc = iframe.contentWindow.document;
@@ -2441,6 +2563,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             let items = '';
             let qty = '';
             let amount = '';
+            let driver = '';
             let invoice = '';
             let payment = '';
             let status = '';
@@ -2450,16 +2573,18 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 items = cells[4].textContent.trim();
                 qty = cells[5].textContent.trim();
                 amount = cells[6].textContent.trim();
-                invoice = cells[7].textContent.trim();
-                payment = cells[8].textContent.trim();
-                status = cells[9].textContent.trim();
+                driver = cells[7].textContent.trim();
+                invoice = cells[8].textContent.trim();
+                payment = cells[9].textContent.trim();
+                status = cells[10].textContent.trim();
             } else {
                 items = cells[3].textContent.trim();
                 qty = cells[4].textContent.trim();
                 amount = cells[5].textContent.trim();
-                invoice = cells[6].textContent.trim();
-                payment = cells[7].textContent.trim();
-                status = cells[8].textContent.trim();
+                driver = cells[6].textContent.trim();
+                invoice = cells[7].textContent.trim();
+                payment = cells[8].textContent.trim();
+                status = cells[9].textContent.trim();
             }
             
             const amountValue = parseFloat(amount.replace('₱', '').replace(',', '')) || 0;
@@ -2475,6 +2600,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze); text-align: center;">${items}</td>`;
             tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze); text-align: center;">${qty}</td>`;
             tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze); text-align: right;">${amount}</td>`;
+            tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze);"><span class="driver-badge-print">${driver}</span></td>`;
             tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze);">${invoice}</td>`;
             tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze);">${payment}</td>`;
             tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze);"><span class="status-badge-print">${status}</span></td>`;
@@ -2492,8 +2618,8 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             minute: '2-digit' 
         });
         
-        const columnCount = soBranchColumnExists && viewAllBranches ? 10 : 9;
-        const totalColspan = soBranchColumnExists && viewAllBranches ? 6 : 5;
+        const columnCount = soBranchColumnExists && viewAllBranches ? 11 : 10;
+        const totalColspan = soBranchColumnExists && viewAllBranches ? 7 : 6;
         
         return `
             <!DOCTYPE html>
@@ -2680,6 +2806,15 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                         display: inline-block;
                     }
                     
+                    .driver-badge-print {
+                        background-color: #0d6efd;
+                        color: white;
+                        padding: 3px 8px;
+                        border-radius: 15px;
+                        font-size: 9px;
+                        display: inline-block;
+                    }
+                    
                     .print-footer {
                         margin-top: 30px;
                         padding-top: 15px;
@@ -2739,6 +2874,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                 <th style="text-align: center;">Items</th>
                                 <th style="text-align: center;">Qty</th>
                                 <th style="text-align: right;">Amount</th>
+                                <th>Driver</th>
                                 <th>Invoice</th>
                                 <th>Payment</th>
                                 <th>Status</th>
@@ -2749,7 +2885,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                             <tr class="total-row">
                                 <td colspan="${totalColspan}" style="text-align: right;">GRAND TOTAL</td>
                                 <td style="text-align: right;">₱${totalAmount.toFixed(2)}</td>
-                                <td colspan="${soBranchColumnExists && viewAllBranches ? '3' : '2'}"></td>
+                                <td colspan="${soBranchColumnExists && viewAllBranches ? '4' : '3'}"></td>
                             </tr>
                         </tbody>
                     </table>
@@ -2772,7 +2908,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
     }
 
     // Generate HTML for single order
-    function generateSingleOrderHTML(order, items) {
+    function generateSingleOrderHTML(order, items, driver) {
         let itemsHtml = '';
         
         if (items && items.length > 0) {
@@ -2982,6 +3118,15 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                         display: inline-block;
                     }
                     
+                    .driver-badge-print {
+                        background-color: #0d6efd;
+                        color: white;
+                        padding: 5px 15px;
+                        border-radius: 20px;
+                        font-size: 12px;
+                        display: inline-block;
+                    }
+                    
                     .print-footer {
                         margin-top: 40px;
                         padding-top: 20px;
@@ -3040,6 +3185,12 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                         <div class="info-row">
                             <span class="info-label">Branch:</span>
                             <span class="info-value">${order.branch_name}</span>
+                        </div>
+                        ` : ''}
+                        ${driver ? `
+                        <div class="info-row">
+                            <span class="info-label">Assigned Driver:</span>
+                            <span class="info-value"><span class="driver-badge-print"><i class="bi bi-truck"></i> ${driver.driver_name} (${driver.vehicle_plate_number || 'No vehicle'})</span></span>
                         </div>
                         ` : ''}
                     </div>
@@ -3110,8 +3261,9 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             const orderNumber = row.dataset.orderNumber?.toLowerCase() || '';
             const customer = row.dataset.customer?.toLowerCase() || '';
             const status = row.dataset.status || '';
+            const driver = row.dataset.driver?.toLowerCase() || '';
             
-            const matchesSearch = searchTerm === '' || orderNumber.includes(searchTerm) || customer.includes(searchTerm);
+            const matchesSearch = searchTerm === '' || orderNumber.includes(searchTerm) || customer.includes(searchTerm) || driver.includes(searchTerm);
             const matchesStatus = statusFilter === '' || status === statusFilter;
             const matchesCustomer = customerFilter === '' || row.dataset.customer === customerFilter;
             
@@ -3163,7 +3315,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         }
         
         const excelData = [];
-        const headers = ['Order Number', 'Order Date', 'Customer Name', 'Items', 'Qty', 'Total Amount (₱)', 'Invoice Number', 'Payment Status', 'Order Status'];
+        const headers = ['Order Number', 'Order Date', 'Customer Name', 'Items', 'Qty', 'Total Amount (₱)', 'Assigned Driver', 'Invoice Number', 'Payment Status', 'Order Status'];
         excelData.push(headers);
 
         rows.forEach(row => {
@@ -3179,16 +3331,17 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             const items = cells[cellIndex++]?.innerText || '0';
             const qty = cells[cellIndex++]?.innerText || '0';
             const amount = cells[cellIndex++]?.innerText.replace('₱', '').replace(/,/g, '') || '0';
+            const driver = cells[cellIndex++]?.innerText || 'No Driver';
             const invoice = cells[cellIndex++]?.innerText || 'No Invoice';
             const payment = cells[cellIndex++]?.innerText || 'Pending';
             const orderStatus = cells[cellIndex]?.innerText || '';
             
-            excelData.push([orderNo, date, customer, items, qty, amount, invoice, payment, orderStatus]);
+            excelData.push([orderNo, date, customer, items, qty, amount, driver, invoice, payment, orderStatus]);
         });
 
         const wb = XLSX.utils.book_new();
         const ws = XLSX.utils.aoa_to_sheet(excelData);
-        ws['!cols'] = [{ wch: 18 }, { wch: 15 }, { wch: 30 }, { wch: 10 }, { wch: 10 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 15 }];
+        ws['!cols'] = [{ wch: 18 }, { wch: 15 }, { wch: 30 }, { wch: 10 }, { wch: 10 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 15 }];
         XLSX.utils.book_append_sheet(wb, ws, 'Sales Orders');
         XLSX.writeFile(wb, `Sales_Orders_${new Date().toISOString().slice(0,10).replace(/-/g, '')}.xls`);
         
@@ -3209,6 +3362,8 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             sql = "ALTER TABLE sales_orders ADD COLUMN branch_id INT NULL;\nALTER TABLE sales_orders ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
         } else if (table === 'customers') {
             sql = "ALTER TABLE customers ADD COLUMN branch_id INT NULL;\nALTER TABLE customers ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+        } else if (table === 'drivers') {
+            sql = "ALTER TABLE drivers ADD COLUMN branch_id INT NULL;\nALTER TABLE drivers ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
         }
         navigator.clipboard.writeText(sql).then(() => {
             Swal.fire({ icon: 'success', title: 'Copied!', timer: 1500, showConfirmButton: false });

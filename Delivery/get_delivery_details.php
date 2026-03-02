@@ -110,17 +110,250 @@ switch ($delivery['delivery_status']) {
         $status_color = 'secondary';
 }
 ?>
-
 <style>
+/* ===== REMOVE ALL TABLE BORDERS COMPLETELY ===== */
+.details-modal-content .custom-table,
+.details-modal-content .custom-table thead,
+.details-modal-content .custom-table tbody,
+.details-modal-content .custom-table tfoot,
+.details-modal-content .custom-table tr,
+.details-modal-content .custom-table th,
+.details-modal-content .custom-table td {
+    border: none !important;
+    border-width: 0 !important;
+    border-style: none !important;
+    border-color: transparent !important;
+    outline: none !important;
+}
+
+/* Remove Bootstrap's default table borders */
+.details-modal-content .table,
+.details-modal-content .table thead,
+.details-modal-content .table tbody,
+.details-modal-content .table tfoot,
+.details-modal-content .table tr,
+.details-modal-content .table th,
+.details-modal-content .table td {
+    border: none !important;
+    border-width: 0 !important;
+    border-style: none !important;
+    border-color: transparent !important;
+}
+
+/* Remove border from card and container */
+.details-modal-content .card,
+.details-modal-content .table-container,
+.details-modal-content .table-responsive {
+    border: none !important;
+    outline: none !important;
+}
+
+/* Add a very subtle separation between rows if desired */
+.details-modal-content .custom-table tbody tr td {
+    border-bottom: 1px solid rgba(0,0,0,0.05) !important;
+}
+
+/* Remove bottom border from last row */
+.details-modal-content .custom-table tbody tr:last-child td {
+    border-bottom: none !important;
+}
+
+/* Style the table header with gradient */
+.details-modal-content .custom-table thead {
+    background: linear-gradient(90deg, var(--dark-green), var(--secondary-green)) !important;
+    color: white;
+}
+
+.details-modal-content .custom-table thead th {
+    border: none !important;
+    color: white;
+    font-weight: 600;
+    padding: 0.75rem 1rem;
+}
+
+
+
+.details-modal-content .custom-table tfoot th,
+.details-modal-content .custom-table tfoot td {
+    border: none !important;
+    color: white;
+    font-weight: 600;
+    padding: 0.75rem 1rem;
+}
+
+/* Override any table-light class that might be applied */
+.details-modal-content .custom-table tfoot.table-light {
+    background: var(--dark-green) !important;
+}
+
+.details-modal-content .custom-table tfoot.table-light th,
+.details-modal-content .custom-table tfoot.table-light td {
+    color: white !important;
+    background: transparent !important;
+}
+
+/* Style table cells */
+.details-modal-content .custom-table td {
+    padding: 0.75rem 1rem;
+    border: none !important;
+}
+
+/* Your existing styles remain below */
 .details-modal-content {
     font-size: 0.9rem;
 }
 
+/* ===== RESPONSIVE BOXES ===== */
 .details-section {
     background: #f8f9fa;
     border-radius: 6px;
-    padding: 10px;
+    padding: 12px;
     margin-bottom: 10px;
+    transition: all 0.3s ease;
+}
+
+/* Mobile responsive styles for boxes */
+@media (max-width: 768px) {
+    .details-section {
+        padding: 10px;
+        margin-bottom: 8px;
+        border-radius: 8px;
+    }
+    
+    .details-section h6 {
+        font-size: 0.85rem;
+        margin-bottom: 6px;
+        padding-bottom: 3px;
+    }
+    
+    /* Stack info rows vertically on very small screens */
+    .info-row {
+        flex-direction: column;
+        margin-bottom: 8px;
+    }
+    
+    .info-label {
+        width: 100%;
+        font-size: 0.7rem;
+        margin-bottom: 2px;
+        color: #6c757d;
+    }
+    
+    .info-value {
+        font-size: 0.8rem;
+        padding-left: 8px;
+        border-left: 2px solid #dee2e6;
+    }
+    
+    /* Make the row layout stack on mobile */
+    .row.g-1 {
+        --bs-gutter-x: 0.25rem;
+    }
+    
+    /* Full width columns on mobile */
+    .col-md-6 {
+        width: 100%;
+        flex: 0 0 auto;
+    }
+}
+
+@media (max-width: 576px) {
+    .details-section {
+        padding: 8px;
+        margin-bottom: 6px;
+        border-radius: 6px;
+    }
+    
+    .details-section h6 {
+        font-size: 0.8rem;
+        margin-bottom: 4px;
+    }
+    
+    .info-row {
+        margin-bottom: 6px;
+    }
+    
+    .info-label {
+        font-size: 0.65rem;
+    }
+    
+    .info-value {
+        font-size: 0.75rem;
+        padding-left: 6px;
+    }
+    
+    /* Header adjustments */
+    .details-modal-content h5 {
+        font-size: 0.9rem !important;
+    }
+    
+    .badge {
+        font-size: 0.6rem !important;
+        padding: 0.2rem 0.5rem !important;
+    }
+    
+    /* Remarks box adjustments */
+    .remarks-box {
+        max-height: 150px;
+        font-size: 0.75rem;
+        padding: 8px !important;
+    }
+    
+    /* Button adjustments */
+    .btn-sm {
+        padding: 0.2rem 0.4rem;
+        font-size: 0.7rem;
+    }
+    
+    .btn-sm i {
+        font-size: 0.7rem;
+    }
+}
+
+/* Extra small devices */
+@media (max-width: 375px) {
+    .details-section {
+        padding: 6px;
+    }
+    
+    .info-value {
+        font-size: 0.7rem;
+        word-break: break-word;
+    }
+    
+    .info-label {
+        font-size: 0.6rem;
+    }
+    
+    /* Make tables scroll horizontally if needed */
+    .table-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+    
+    .custom-table {
+        min-width: 100%;
+    }
+    
+    .custom-table th,
+    .custom-table td {
+        padding: 0.4rem 0.5rem !important;
+        font-size: 0.65rem !important;
+        white-space: nowrap;
+    }
+    
+    /* Allow only specific columns to wrap if needed */
+    .custom-table td:first-child {
+        white-space: normal;
+        word-break: break-word;
+    }
+    
+    /* Adjust footer on very small screens */
+    .custom-table tfoot th,
+    .custom-table tfoot td {
+        padding: 0.4rem 0.5rem !important;
+        font-size: 0.65rem !important;
+    }
 }
 
 .details-section h6 {
@@ -148,26 +381,6 @@ switch ($delivery['delivery_status']) {
     color: #212529;
     flex: 1;
     font-size: 0.85rem;
-}
-
-.items-table {
-    font-size: 0.8rem;
-}
-
-.items-table th {
-    font-size: 0.75rem;
-    padding: 4px;
-}
-
-.items-table td {
-    padding: 4px;
-}
-
-.items-container {
-    max-height: 150px;
-    overflow-y: auto;
-    border: 1px solid #dee2e6;
-    border-radius: 4px;
 }
 
 .remarks-box {
@@ -200,8 +413,116 @@ switch ($delivery['delivery_status']) {
     border-radius: 4px;
     margin-left: 5px;
 }
-</style>
 
+/* ===== MOBILE RESPONSIVE ===== */
+@media (max-width: 992px) {
+    .table thead th,
+    .table tbody td,
+    .custom-table thead th,
+    .custom-table tbody td,
+    .compact-table thead th,
+    .compact-table tbody td,
+    .custom-table tfoot th,
+    .custom-table tfoot td {
+        padding: 0.7rem 0.9rem !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .table-responsive {
+        font-size: 0.85rem;
+    }
+    
+    .table thead th,
+    .table tbody td,
+    .custom-table thead th,
+    .custom-table tbody td,
+    .compact-table thead th,
+    .compact-table tbody td,
+    .custom-table tfoot th,
+    .custom-table tfoot td {
+        padding: 0.6rem 0.75rem !important;
+        font-size: 0.8rem !important;
+    }
+    
+    .badge {
+        padding: 0.25rem 0.75rem !important;
+        font-size: 0.7rem !important;
+    }
+    
+    .table-footer {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .pagination {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+@media (max-width: 576px) {
+    .table thead th,
+    .table tbody td,
+    .custom-table thead th,
+    .custom-table tbody td,
+    .compact-table thead th,
+    .compact-table tbody td,
+    .custom-table tfoot th,
+    .custom-table tfoot td {
+        padding: 0.5rem 0.6rem !important;
+        font-size: 0.75rem !important;
+    }
+    
+    .badge {
+        padding: 0.2rem 0.6rem !important;
+        font-size: 0.65rem !important;
+    }
+}
+
+/* Tables */
+.data-table {
+    background: white;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    border: 1px solid var(--light-green);
+    margin-bottom: 1.5rem;
+}
+
+.table-header {
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--light-green);
+    background: #f9fafb;
+}
+
+.table-header h5 {
+    margin: 0;
+    color: var(--dark-color);
+    font-weight: 600;
+    font-size: 1.1rem;
+}
+
+.custom-table {
+    margin: 0;
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.custom-table tbody tr:hover {
+    background-color: rgba(209, 250, 229, 0.3);
+}
+
+/* Fallback colors in case CSS variables aren't defined */
+:root {
+    --dark-green: #198754;
+    --secondary-green: #20c997;
+    --light-green: #d1e7dd;
+    --dark-color: #212529;
+}
+
+</style>
 <div class="details-modal-content">
     <!-- Header with Status -->
     <div class="d-flex justify-content-between align-items-center mb-2">
@@ -304,9 +625,10 @@ switch ($delivery['delivery_status']) {
     <div class="details-section">
         <h6><i class="bi bi-box-seam me-1"></i>Items (<?php echo count($items_list); ?>)</h6>
         <?php if (!empty($items_list)): ?>
-            <div class="items-container">
-                <table class="table table-sm table-bordered items-table mb-0">
-                    <thead class="table-light">
+            <div class="card">
+            <div class="table-container">
+                <table class="table custom-table compact-table">
+                    <thead>
                         <tr>
                             <th>Item</th>
                             <th width="40">Qty</th>
