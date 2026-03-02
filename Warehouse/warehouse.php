@@ -156,6 +156,12 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                         <a class="nav-link" href="pick_list_items.php">
                             <i class="bi bi-clipboard-check"></i>
                             <span class="nav-text">Pick List Items</span>
+                        </a>    
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="purchase_order.php">
+                            <i class="bi bi-receipt"></i>
+                            <span class="nav-text">Purchase Orders</span>
                         </a>
                     </li>
                     <li class="nav-item">

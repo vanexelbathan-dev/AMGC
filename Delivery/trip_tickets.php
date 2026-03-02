@@ -394,62 +394,12 @@ function getTripStatusText($status) {
     <link rel="shortcut icon" href="../Pictures/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="../Pictures/apple-touch-icon.png" />
     <link rel="manifest" href="../Pictures/site.webmanifest" />
-    <link rel="stylesheet" href="../css/delivery.css">
+    <link rel="stylesheet" href="../css/del_trip_tickets.css">
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <style>
-        /* Branch badge styling */
-        .branch-badge {
-            background-color: #e7f1ff;
-            color: #0d6efd;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            margin-left: 5px;
-        }
-        
-        /* Driver info card */
-        .driver-info-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border-radius: 10px;
-            padding: 15px;
-            margin-bottom: 20px;
-        }
-        
-        .driver-info-card h5 {
-            color: white;
-            border-bottom: 1px solid rgba(255,255,255,0.3);
-            padding-bottom: 10px;
-        }
-        
-        .driver-info-card .info-label {
-            color: rgba(255,255,255,0.8);
-            font-size: 0.9rem;
-        }
-        
-        .driver-info-card .info-value {
-            color: white;
-            font-weight: 600;
-        }
-        
-        /* Alert for missing branch column */
-        .alert-info {
-            background-color: #d1ecf1;
-            border-color: #bee5eb;
-            color: #0c5460;
-        }
-        
-        .alert-info code {
-            background-color: #f8f9fa;
-            padding: 2px 4px;
-            border-radius: 4px;
-            color: #c7254e;
-        }
-        
         /* Mobile responsive adjustments */
         @media (max-width: 768px) {
             .stat-card {
@@ -516,277 +466,7 @@ function getTripStatusText($status) {
                 margin-left: -6px;
                 margin-right: -6px;
             }
-        }
-        
-        /* Driver badge styling */
-        .driver-badge {
-            display: inline-block;
-            padding: 4px 10px;
-            background-color: #e8f4fd;
-            color: #084298;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
-            border-left: 3px solid #0d6efd;
-        }
-        
-        .driver-badge i {
-            margin-right: 4px;
-            color: #0d6efd;
-        }
-        
-        /* Status badges */
-        .status-badge {
-            display: inline-block;
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
-            min-width: 90px;
-            text-align: center;
-        }
-        
-        /* Customer info */
-        .customer-info {
-            font-size: 12px;
-            color: #6c757d;
-        }
-        
-        /* Delivery count badge */
-        .delivery-count {
-            background-color: #0d6efd;
-            color: white;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 10px;
-            margin-left: 5px;
-        }
-        
-        /* ===== TABLE STYLES FROM pick_list_items.php ===== */
-        /* Pick List Table styling */
-        .trip-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-bottom: 20px;
-        }
-        
-        .trip-table thead th {
-            background-color: #f8f9fa;
-            font-weight: 600;
-            font-size: 13px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            color: #495057;
-            padding: 14px 12px;
-            border-bottom: 2px solid #dee2e6;
-            white-space: nowrap;
-            vertical-align: middle;
-            text-align: left;
-        }
-        
-        .trip-table tbody td {
-            padding: 14px 12px;
-            vertical-align: middle;
-            border-bottom: 1px solid #e9ecef;
-            font-size: 13px;
-        }
-        
-        .trip-table tbody tr:hover {
-            background-color: #f8f9fa;
-        }
-        
-        /* Column widths */
-        .col-trip-number { width: 12%; }
-        .col-driver { width: 12%; }
-        .col-branch { width: 8%; }
-        .col-date { width: 10%; }
-        .col-status { width: 10%; }
-        .col-customer { width: 15%; }
-        .col-deliveries { width: 10%; }
-        .col-actions { width: 10%; text-align: center; }
-        
-        /* Action buttons styling */
-        .action-buttons {
-            display: flex;
-            gap: 5px;
-            justify-content: center;
-            align-items: center;
-        }
-        
-        .table-btn {
-            background: none;
-            border: none;
-            padding: 6px;
-            border-radius: 4px;
-            transition: all 0.2s;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            font-size: 14px;
-        }
-        
-        .table-btn:hover {
-            background-color: #e9ecef;
-        }
-        
-        .btn-view { color: #0d6efd; }
-        .btn-edit { color: #ffc107; }
-        .btn-status { color: #198754; }
-        
-        /* Status group headers */
-        .status-group-header {
-            background-color: #e9ecef;
-            font-weight: 600;
-            padding: 8px 16px;
-            border-left: 4px solid #0d6efd;
-        }
-        
-        .status-group-header.pending {
-            border-left-color: #ffc107;
-        }
-        
-        .status-group-header.in-progress {
-            border-left-color: #0d6efd;
-        }
-        
-        .status-group-header.completed {
-            border-left-color: #198754;
-            margin-top: 20px;
-        }
-        
-        .status-group-header i {
-            margin-right: 8px;
-        }
-        
-        /* Filter section */
-        .filter-section {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            justify-content: space-between;
-            gap: 15px;
-            margin-bottom: 25px;
-            padding: 16px 20px;
-            background-color: #f8f9fa;
-            border-radius: 8px;
-        }
-        
-        .filter-controls {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 12px;
-            flex: 1;
-        }
-        
-        .filter-actions {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .filter-dropdowns {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 12px;
-            align-items: center;
-        }
-        
-        .filter-dropdown {
-            min-width: 160px;
-        }
-        
-        .filter-dropdown .form-select {
-            font-size: 13px;
-            padding: 8px 12px;
-            border-radius: 6px;
-            border: 1px solid #ced4da;
-            background-color: white;
-            cursor: pointer;
-        }
-        
-        .filter-dropdown .form-select:focus {
-            border-color: #0d6efd;
-            box-shadow: 0 0 0 0.2rem rgba(13,110,253,0.25);
-        }
-        
-        .filter-label {
-            font-size: 12px;
-            font-weight: 600;
-            color: #495057;
-            margin-bottom: 4px;
-            display: block;
-        }
-
-        /* Search Box Styling */
-        .search-box {
-            position: relative;
-            min-width: 250px;
-        }
-        
-        .search-box i {
-            position: absolute;
-            left: 12px;
-            top: 50%;
-            transform: translateY(-50%);
-            color: #6c757d;
-            font-size: 14px;
-            z-index: 10;
-            pointer-events: none;
-        }
-        
-        .search-box input {
-            width: 100%;
-            padding: 8px 12px 8px 38px;
-            border: 1px solid #ced4da;
-            border-radius: 6px;
-            height: 40px;
-            font-size: 14px;
-        }
-        
-        .search-box input:focus {
-            border-color: #0d6efd;
-            box-shadow: 0 0 0 0.25rem rgba(13,110,253,0.25);
-            outline: none;
-        }
-        
-        /* Status update modal */
-        .status-option {
-            padding: 10px;
-            border: 1px solid #dee2e6;
-            border-radius: 8px;
-            margin-bottom: 10px;
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-        
-        .status-option:hover {
-            background-color: #f8f9fa;
-            border-color: #0d6efd;
-        }
-        
-        .status-option.selected {
-            background-color: #e7f1ff;
-            border-color: #0d6efd;
-            border-width: 2px;
-        }
-        
-        .status-option .status-badge {
-            display: inline-block;
-            width: 100px;
-            margin-right: 10px;
-        }
-        
-        /* Auto-update notification */
-        .auto-update-badge {
-            background-color: #198754;
-            color: white;
-            font-size: 10px;
-            padding: 2px 6px;
-            border-radius: 10px;
-            margin-left: 5px;
-        }
+}
     </style>
 </head>
 <body>
@@ -987,9 +667,9 @@ function getTripStatusText($status) {
 
             <!-- Trip Tickets Table - Same design as pick_list_items.php -->
             <div class="card">
-                <div class="table-responsive">
-                    <table class="table trip-table mb-0 align-middle" id="tripTable">
-                        <thead class="table-light">
+                <div class="table-container">
+                    <table class="table custom-table compact-table">
+                        <thead>
                             <tr>
                                 <th class="col-trip-number">TRIP NUMBER</th>
                                 <th class="col-driver">DRIVER</th>
@@ -1076,7 +756,7 @@ function getTripStatusText($status) {
                                 </td>
                                 <td class="col-actions">
                                     <div class="action-buttons">
-                                        <button class="table-btn btn-view" onclick="viewTripDetails(<?php echo $row['trip_id']; ?>)" title="View Details">
+                                        <button class="btn-action btn-view" onclick="viewTripDetails(<?php echo $row['trip_id']; ?>)" title="View Details">
                                             <i class="bi bi-eye"></i>
                                         </button>
                                     </div>

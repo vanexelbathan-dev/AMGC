@@ -147,6 +147,12 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="purchase_order.php">
+                            <i class="bi bi-receipt"></i>
+                            <span class="nav-text">Purchase Orders</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link active" href="drivers.php">
                             <i class="bi bi-person-badge"></i>
                             <span class="nav-text">Drivers</span>
