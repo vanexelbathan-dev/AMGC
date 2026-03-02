@@ -89,7 +89,6 @@ if (isset($_GET['load_po_details'])) {
         }
         
         ?>
-        <!-- Item Information Section -->
         <div class="row">
             <div class="col-md-6">
                 <div class="card mb-3">
@@ -100,7 +99,7 @@ if (isset($_GET['load_po_details'])) {
                         <table class="table table-sm table-borderless mb-0">
                             <tr>
                                 <td width="40%"><strong>PO Number:</strong></td>
-                                <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($po['po_number']); ?></span></td>
+                                <td><?php echo htmlspecialchars($po['po_number']); ?></td>
                             </tr>
                             <tr>
                                 <td><strong>Supplier:</strong></td>
@@ -140,7 +139,7 @@ if (isset($_GET['load_po_details'])) {
                             </tr>
                             <tr>
                                 <td><strong>Total Received:</strong></td>
-                                <td><strong style="color: var(--primary-green);"><?php echo $total_received; ?></strong> units</td>
+                                <td><?php echo $total_received; ?> units</td>
                             </tr>
                             <tr>
                                 <td><strong>Pending:</strong></td>
@@ -152,74 +151,22 @@ if (isset($_GET['load_po_details'])) {
             </div>
         </div>
 
-        <!-- Progress Section -->
         <div class="row">
             <div class="col-12">
                 <div class="card mb-3">
                     <div class="card-header">
-                        <h6 class="mb-0"><i class="bi bi-graph-up me-2"></i>Receiving Progress</h6>
-                    </div>
-                    <div class="card-body">
-                        <div class="progress mb-3" style="height: 25px;">
-                            <div class="progress-bar bg-<?php echo $status_badge; ?> progress-bar-striped" 
-                                 role="progressbar" 
-                                 style="width: <?php echo $completion_percentage; ?>%; background: linear-gradient(135deg, var(--primary-green), var(--light-green)) !important;"
-                                 aria-valuenow="<?php echo round($completion_percentage); ?>" 
-                                 aria-valuemin="0" 
-                                 aria-valuemax="100">
-                                <?php echo round($completion_percentage, 1); ?>%
-                            </div>
-                        </div>
-                        
-                        <div class="row g-2 justify-content-center">
-                            <div class="col-6 col-md-5">
-                                <div class="progress-stat-card">
-                                    <div class="d-flex flex-column align-items-center">
-                                        <span class="progress-stat-label">Received</span>
-                                        <span class="progress-stat-value" style="color: var(--primary-green);"><?php echo number_format($total_received); ?></span>
-                                        <small class="text-muted">units</small>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-6 col-md-5">
-                                <div class="progress-stat-card">
-                                    <div class="d-flex flex-column align-items-center">
-                                        <span class="progress-stat-label">Total</span>
-                                        <span class="progress-stat-value"><?php echo number_format($total_ordered); ?></span>
-                                        <small class="text-muted">units</small>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="text-center mt-3">
-                            <span class="badge bg-<?php echo $status_badge; ?> p-2" style="font-size: 0.9rem;">
-                                <i class="bi bi-check-circle me-1"></i> <?php echo round($completion_percentage, 1); ?>% Received
-                            </span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- PO Items Section -->
-        <div class="row">
-            <div class="col-12">
-                <div class="card">
-                    <div class="card-header">
                         <h6 class="mb-0"><i class="bi bi-list-check me-2"></i>Purchase Order Items</h6>
                     </div>
                     <div class="table-responsive">
-                        <table class="table table-hover table-sm mb-0">
-                            <thead style="background-color: #f8f9fa;">
+                        <table class="table table-sm table-hover mb-0">
+                            <thead>
                                 <tr>
                                     <th>Item Code</th>
                                     <th>Item Name</th>
                                     <th>Unit</th>
-                                    <th>Ordered</th>
-                                    <th>Received</th>
-                                    <th>Pending</th>
-                                    <th>Action</th>
+                                    <th class="text-center">Ordered</th>
+                                    <th class="text-center">Received</th>
+                                    <th class="text-center">Pending</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -227,27 +174,28 @@ if (isset($_GET['load_po_details'])) {
                                     $received = $item['quantity_received'] ?? 0;
                                     $ordered = $item['quantity_ordered'];
                                     $pending = $ordered - $received;
-                                    $item_status = $received >= $ordered ? 'success' : ($received > 0 ? 'info' : 'warning');
                                 ?>
                                 <tr>
                                     <td><strong><?php echo htmlspecialchars($item['item_code']); ?></strong></td>
                                     <td><?php echo htmlspecialchars($item['item_name']); ?></td>
-                                    <td><small><?php echo htmlspecialchars($item['unit_type'] ?? 'Unit'); ?></small></td>
-                                    <td><?php echo $ordered; ?></td>
-                                    <td><span style="color: var(--primary-green); font-weight: bold;"><?php echo $received; ?></span></td>
-                                    <td><?php echo $pending; ?></td>
-                                    <td>
-                                        <button class="btn btn-sm btn-outline-success" 
-                                                onclick="updateReceivedQuantity(<?php echo $item['po_item_id']; ?>, <?php echo $received; ?>, <?php echo $ordered; ?>)">
-                                            <i class="bi bi-pencil"></i> Update
-                                        </button>
-                                    </td>
+                                    <td><?php echo htmlspecialchars($item['unit_type'] ?? 'Unit'); ?></td>
+                                    <td class="text-center"><?php echo $ordered; ?></td>
+                                    <td class="text-center"><?php echo $received; ?></td>
+                                    <td class="text-center"><?php echo $pending; ?></td>
                                 </tr>
                                 <?php endforeach; ?>
                             </tbody>
                         </table>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <div class="row mt-2">
+            <div class="col-12 text-end">
+                <button type="button" class="btn btn-outline-primary" onclick="window.print()">
+                    <i class="bi bi-printer"></i> Print Details
+                </button>
             </div>
         </div>
         <?php
@@ -258,6 +206,93 @@ if (isset($_GET['load_po_details'])) {
             <i class="bi bi-exclamation-triangle"></i> Error: <?php echo htmlspecialchars($e->getMessage()); ?>
         </div>
         <?php
+        exit;
+    }
+}
+
+// Handle load receive items AJAX request
+if (isset($_GET['load_receive_items'])) {
+    $po_id = (int)$_GET['load_receive_items'];
+    
+    try {
+        // Get PO details
+        $po_query = "SELECT po_number, supplier_name FROM purchase_orders WHERE po_id = ?";
+        $stmt = $conn->prepare($po_query);
+        $stmt->bind_param("i", $po_id);
+        $stmt->execute();
+        $po = $stmt->get_result()->fetch_assoc();
+        
+        // Get PO items
+        $items_query = "SELECT poi.*, i.item_code, i.item_name, i.unit_type
+                        FROM purchase_order_items poi
+                        JOIN items i ON poi.item_id = i.item_id
+                        WHERE poi.po_id = ?
+                        ORDER BY poi.po_item_id";
+        
+        $items_stmt = $conn->prepare($items_query);
+        $items_stmt->bind_param("i", $po_id);
+        $items_stmt->execute();
+        $items_result = $items_stmt->get_result();
+        ?>
+        
+        <div class="container-fluid">
+            <div class="mb-3">
+                <h6 class="fw-bold">PO Number: <?php echo htmlspecialchars($po['po_number']); ?></h6>
+                <p class="text-muted mb-0">Supplier: <?php echo htmlspecialchars($po['supplier_name']); ?></p>
+            </div>
+            
+            <div class="table-responsive">
+                <table class="table table-sm table-hover">
+                    <thead>
+                        <tr>
+                            <th>Item Code</th>
+                            <th>Item Name</th>
+                            <th>Unit</th>
+                            <th class="text-center">Ordered</th>
+                            <th class="text-center">Received</th>
+                            <th class="text-center">To Receive</th>
+                            <th class="text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php while ($item = $items_result->fetch_assoc()): 
+                            $received = $item['quantity_received'] ?? 0;
+                            $ordered = $item['quantity_ordered'];
+                            $pending = $ordered - $received;
+                        ?>
+                        <tr>
+                            <td><strong><?php echo htmlspecialchars($item['item_code']); ?></strong></td>
+                            <td><?php echo htmlspecialchars($item['item_name']); ?></td>
+                            <td><?php echo htmlspecialchars($item['unit_type'] ?? 'Unit'); ?></td>
+                            <td class="text-center"><?php echo $ordered; ?></td>
+                            <td class="text-center"><?php echo $received; ?></td>
+                            <td class="text-center"><?php echo $pending; ?></td>
+                            <td class="text-center">
+                                <?php if ($pending > 0): ?>
+                                <button class="btn btn-sm btn-outline-success" 
+                                        onclick="updateReceivedQuantity(<?php echo $item['po_item_id']; ?>, <?php echo $received; ?>, <?php echo $ordered; ?>)">
+                                    <i class="bi bi-pencil"></i> Receive
+                                </button>
+                                <?php else: ?>
+                                <span class="badge bg-success">Completed</span>
+                                <?php endif; ?>
+                            </td>
+                        </tr>
+                        <?php endwhile; ?>
+                    </tbody>
+                </table>
+            </div>
+            
+            <hr>
+            <div class="text-end">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+        
+        <?php
+        exit;
+    } catch (Exception $e) {
+        echo '<div class="alert alert-danger">Error: ' . htmlspecialchars($e->getMessage()) . '</div>';
         exit;
     }
 }
@@ -333,77 +368,152 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Warehouse - Purchase Orders</title>
-    
-    <!-- Bootstrap CSS -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons -->
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
-    <!-- Custom CSS -->
-    <link href="../css/warehouse.css" rel="stylesheet">
-    
+    <title>Purchase Orders - Warehouse <?php echo !$view_all_branches ? '- ' . htmlspecialchars($branch_name ?? '') : ''; ?></title>
+    <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
+    <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
+    <link rel="shortcut icon" href="../Pictures/favicon.ico" />
+    <link rel="apple-touch-icon" sizes="180x180" href="../Pictures/apple-touch-icon.png" />
+    <link rel="manifest" href="../Pictures/site.webmanifest" />
+    <link rel="stylesheet" href="../css/warehouse.css">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <style>
-        :root {
-            --primary-green: #44D34E;
-            --light-green: #B0EB9F;
-            --dark-green: #048964;
-            --dark-text: #2C3E50;
-            --light-text: #7F8C8D;
+        /* Mobile responsive adjustments */
+        @media (max-width: 768px) {
+            .stat-card {
+                padding: 12px;
+                min-height: 85px;
+                margin-bottom: 8px;
+            }
+            
+            .stat-icon {
+                font-size: 2rem;
+                margin-right: 12px;
+            }
+            
+            .stat-value {
+                font-size: 1.5rem;
+            }
+            
+            .stat-label {
+                font-size: 0.8rem;
+            }
+            
+            .col-md-3 {
+                width: 50%;
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+            
+            .row.g-3 {
+                margin-left: -8px;
+                margin-right: -8px;
+            }
+            
+            .mb-3 {
+                margin-bottom: 8px !important;
+            }
         }
-
-        .progress-stat-card {
-            background: white;
-            border: 1px solid #e0e0e0;
-            border-radius: 8px;
-            padding: 15px;
-            text-align: center;
+        
+        /* Extra small devices */
+        @media (max-width: 576px) {
+            .stat-card {
+                min-height: 80px;
+                padding: 10px;
+            }
+            
+            .stat-icon {
+                font-size: 1.8rem;
+                margin-right: 10px;
+            }
+            
+            .stat-value {
+                font-size: 1.3rem;
+            }
+            
+            .stat-label {
+                font-size: 0.75rem;
+            }
+            
+            .col-md-3 {
+                width: 50%;
+                padding-left: 6px;
+                padding-right: 6px;
+            }
         }
-
-        .progress-stat-label {
-            font-size: 0.85rem;
-            color: var(--light-text);
-            font-weight: 600;
+        
+        /* Branch indicator */
+        .branch-indicator {
+            display: inline-block;
+            padding: 4px 12px;
+            background-color: #e7f5ff;
+            color: #0d6efd;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+            margin-left: 10px;
         }
-
-        .progress-stat-value {
-            font-size: 1.5rem;
-            font-weight: bold;
-            color: var(--dark-green);
-            margin: 5px 0;
+        
+        .branch-indicator i {
+            margin-right: 5px;
         }
-
-        .card {
-            border-radius: 8px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-            border: 1px solid rgba(0,0,0,0.08);
+        
+        .table td {
+            vertical-align: middle;
         }
-
-        .card-header {
+        
+        /* Action buttons */
+        .action-buttons {
+            display: flex;
+            gap: 5px;
+            justify-content: center;
+        }
+        
+        .btn-action {
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            transition: all 0.2s;
+            border: none;
+        }
+        
+        .btn-action.btn-view {
+            background-color: #e7f5ff;
+            color: #0d6efd;
+        }
+        
+        .btn-action.btn-view:hover {
+            background-color: #0d6efd;
+            color: white;
+        }
+        
+        .btn-action.btn-receive {
+            background-color: #d1fae5;
+            color: #048964;
+        }
+        
+        .btn-action.btn-receive:hover {
+            background-color: #048964;
+            color: white;
+        }
+        
+        /* Modal styles */
+        .modal-header {
             background-color: #f8f9fa;
             border-bottom: 1px solid #dee2e6;
-            padding: 1rem;
-        }
-
-        .btn-outline-success {
-            color: var(--primary-green);
-            border-color: var(--primary-green);
-        }
-
-        .btn-outline-success:hover {
-            background-color: var(--primary-green);
-            border-color: var(--primary-green);
-            color: white;
         }
     </style>
 </head>
 <body>
-    <!-- MAIN APPLICATION -->
     <div id="appPage">
         <!-- Sidebar -->
         <div class="sidebar" id="sidebar">
@@ -439,7 +549,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     </li>
                     <li class="nav-item">
                         <a class="nav-link active" href="purchase_order.php">
-                            <i class="bi bi-file-earmark"></i>
+                            <i class="bi bi-receipt"></i>
                             <span class="nav-text">Purchase Orders</span>
                         </a>
                     </li>
@@ -451,7 +561,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     </li>
                 </ul>
             </div>
-             <!-- User Profile Section at the bottom of sidebar -->
+            
             <div class="sidebar-footer">
                 <div class="user-profile-sidebar">
                     <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
@@ -466,18 +576,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             </div>
         </div>
 
-        <!-- Main Content Area -->
+        <!-- Main Content -->
         <div class="main-content">
-            <!-- Header Section -->
+            <!-- Header -->
             <div class="navbar-top">
                 <button class="mobile-toggle-btn" id="mobileToggleBtn">
                     <i class="bi bi-list"></i>
                 </button>
                 <div class="page-title">
-                    <h2>
-                        Purchase Orders
-                    </h2>
-                    <p>Receive and track purchase order items</p>
+                    <h2>Purchase Orders</h2>
+                    <p>View and receive items from supplier orders</p>
                 </div>
             </div>
 
@@ -550,12 +658,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $stmt->close();
             ?>
 
-            <!-- Stats Cards -->
+            <!-- Stats Cards - Original Design -->
             <div class="row g-3 mb-4">
                 <div class="col-md-3 mb-3">
                     <div class="stat-card inventory">
                         <div class="stat-icon">
-                            <i class="bi bi-file-earmark"></i>
+                            <i class="bi bi-receipt"></i>
                         </div>
                         <div>
                             <div class="stat-value"><?php echo $stats['total_pos']; ?></div>
@@ -617,8 +725,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                             <select class="form-select" id="statusFilter">
                                 <option value="">All Status</option>
                                 <option value="pending">Pending</option>
-                                <option value="received">Received</option>
                                 <option value="partial">Partial Received</option>
+                                <option value="received">Received</option>
                             </select>
                         </div>
                     </div>
@@ -629,7 +737,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             <div class="card">
                 <div class="table-responsive">
                     <table class="table table-hover table-sm mb-0" id="poTable">
-                        <thead style="background-color: #f8f9fa;">
+                        <thead>
                             <tr>
                                 <th>PO Number</th>
                                 <th>Supplier</th>
@@ -638,8 +746,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                                 <th>Total Items</th>
                                 <th>Received</th>
                                 <th>Pending</th>
-                                <th>Progress</th>
-                                <th>Action</th>
+                                <th class="text-center">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -686,26 +793,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                                         <td><?php echo date('M d, Y', strtotime($po['order_date'])); ?></td>
                                         <td><span class="badge bg-<?php echo $status_badge; ?>"><?php echo $status_text; ?></span></td>
                                         <td><?php echo $total_ord; ?></td>
-                                        <td><span style="color: var(--primary-green); font-weight: bold;"><?php echo $total_rec; ?></span></td>
+                                        <td><?php echo $total_rec; ?></td>
                                         <td><?php echo $pending; ?></td>
-                                        <td>
-                                            <div style="width: 100px;">
-                                                <div class="progress" style="height: 20px;">
-                                                    <div class="progress-bar" style="width: <?php echo $completion; ?>%; background: var(--primary-green);"></div>
-                                                </div>
-                                                <small class="text-muted"><?php echo round($completion, 0); ?>%</small>
+                                        <td class="text-center">
+                                            <div class="action-buttons">
+                                                <button class="btn-action btn-view" onclick="showPODetails(<?php echo $po['po_id']; ?>)" title="View Details">
+                                                    <i class="bi bi-eye"></i>
+                                                </button>
+                                                <?php if ($status_text != 'Received'): ?>
+                                                <button class="btn-action btn-receive" onclick="openReceiveModal(<?php echo $po['po_id']; ?>)" title="Receive Items">
+                                                    <i class="bi bi-box-seam"></i>
+                                                </button>
+                                                <?php endif; ?>
                                             </div>
-                                        </td>
-                                        <td>
-                                            <button class="btn btn-sm btn-outline-success" onclick="showPODetails(<?php echo $po['po_id']; ?>)">
-                                                <i class="bi bi-eye"></i> View
-                                            </button>
                                         </td>
                                     </tr>
                                     <?php
                                 }
                             } else {
-                                echo '<tr><td colspan="9" class="text-center py-4 text-muted">No purchase orders found</td></tr>';
+                                echo '<tr><td colspan="9" class="text-center py-5 text-muted">';
+                                echo '<i class="bi bi-inbox fs-1 d-block mb-3"></i>';
+                                echo '<p>No purchase orders found</p>';
+                                echo '</td></tr>';
                             }
                             $po_stmt->close();
                             ?>
@@ -718,17 +827,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     <!-- PO Details Modal -->
     <div class="modal fade" id="poDetailsModal" tabindex="-1">
-        <div class="modal-dialog modal-xl">
+        <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">Purchase Order Details</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
-                <div class="modal-body" id="poModalBody" style="max-height: 80vh; overflow-y: auto;">
+                <div class="modal-body" id="poModalBody">
                     <div class="text-center py-4">
-                        <div class="spinner-border text-success" role="status">
+                        <div class="spinner-border text-primary" role="status">
                             <span class="visually-hidden">Loading...</span>
                         </div>
+                        <p class="mt-2">Loading PO details...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Receive Items Modal -->
+    <div class="modal fade" id="receiveModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Receive Items</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body" id="receiveModalBody">
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Loading items...</p>
                     </div>
                 </div>
             </div>
@@ -752,19 +882,60 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-success" onclick="submitUpdateQuantity()">Update</button>
+                    <button type="button" class="btn btn-primary" onclick="submitUpdateQuantity()">Update</button>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
-    <script src="../js/sidebar.js"></script>
-    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         let currentPoItemId = null;
         let currentMaxQuantity = 0;
+
+        // Sidebar functionality
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const isMobile = window.innerWidth <= 992;
+            
+            if (isMobile) {
+                sidebar.classList.toggle('active');
+            } else {
+                sidebar.classList.toggle('collapsed');
+            }
+        }
+
+        function closeMobileSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            sidebar.classList.remove('active');
+        }
+
+        // Initialize sidebar
+        document.addEventListener('DOMContentLoaded', function() {
+            const mobileToggleBtn = document.getElementById('mobileToggleBtn');
+            const desktopToggleBtn = document.getElementById('desktopToggleBtn');
+            
+            if (mobileToggleBtn) {
+                mobileToggleBtn.addEventListener('click', toggleSidebar);
+            }
+            
+            if (desktopToggleBtn) {
+                desktopToggleBtn.addEventListener('click', toggleSidebar);
+            }
+            
+            // Close sidebar when clicking outside on mobile
+            document.addEventListener('click', function(event) {
+                const sidebar = document.getElementById('sidebar');
+                const mobileBtn = document.getElementById('mobileToggleBtn');
+                
+                if (window.innerWidth <= 992 && 
+                    sidebar.classList.contains('active') && 
+                    !sidebar.contains(event.target) && 
+                    (!mobileBtn || !mobileBtn.contains(event.target))) {
+                    closeMobileSidebar();
+                }
+            });
+        });
 
         function logout() {
             if (confirm('Are you sure you want to logout?')) {
@@ -776,14 +947,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             const modal = new bootstrap.Modal(document.getElementById('poDetailsModal'));
             const modalBody = document.getElementById('poModalBody');
             
+            modalBody.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading PO details...</p></div>';
+            
             fetch(`purchase_order.php?load_po_details=${poId}`)
                 .then(response => response.text())
                 .then(html => {
                     modalBody.innerHTML = html;
                 })
                 .catch(error => {
-                    console.error('[v0] Error loading PO details:', error);
-                    modalBody.innerHTML = '<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> Error loading PO details. Please try again.</div>';
+                    console.error('Error loading PO details:', error);
+                    modalBody.innerHTML = '<div class="alert alert-danger">Error loading PO details. Please try again.</div>';
+                });
+            
+            modal.show();
+        }
+
+        function openReceiveModal(poId) {
+            const modal = new bootstrap.Modal(document.getElementById('receiveModal'));
+            const modalBody = document.getElementById('receiveModalBody');
+            
+            modalBody.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading items...</p></div>';
+            
+            fetch(`purchase_order.php?load_receive_items=${poId}`)
+                .then(response => response.text())
+                .then(html => {
+                    modalBody.innerHTML = html;
+                })
+                .catch(error => {
+                    console.error('Error loading receive items:', error);
+                    modalBody.innerHTML = '<div class="alert alert-danger">Error loading items. Please try again.</div>';
                 });
             
             modal.show();
@@ -798,6 +990,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             input.max = maxQty;
             
             document.getElementById('quantityHelp').textContent = `Maximum: ${maxQty} units`;
+            
+            // Close receive modal if open
+            const receiveModal = bootstrap.Modal.getInstance(document.getElementById('receiveModal'));
+            if (receiveModal) {
+                receiveModal.hide();
+            }
             
             const modal = new bootstrap.Modal(document.getElementById('updateQuantityModal'));
             modal.show();
@@ -836,19 +1034,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
             })
             .catch(error => {
-                console.error('[v0] Error:', error);
+                console.error('Error:', error);
                 alert('An error occurred. Please try again.');
             });
         }
 
         // Search and filter functionality
-        document.getElementById('searchInput').addEventListener('keyup', function() {
-            filterTable();
-        });
-
-        document.getElementById('statusFilter').addEventListener('change', function() {
-            filterTable();
-        });
+        document.getElementById('searchInput').addEventListener('keyup', filterTable);
+        document.getElementById('statusFilter').addEventListener('change', filterTable);
 
         function filterTable() {
             const searchTerm = document.getElementById('searchInput').value.toLowerCase();
@@ -856,8 +1049,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             const rows = document.querySelectorAll('#poTable tbody tr');
             
             rows.forEach(row => {
+                if (row.querySelector('td[colspan]')) return;
+                
                 const text = row.innerText.toLowerCase();
-                const status = row.querySelector('td:nth-child(4)').innerText.toLowerCase();
+                const status = row.querySelector('td:nth-child(4) .badge').innerText.toLowerCase();
                 
                 let show = text.includes(searchTerm);
                 if (statusFilter) {
