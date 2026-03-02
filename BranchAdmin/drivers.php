@@ -1968,10 +1968,11 @@ function formatDate($dateStr) {
     function logout() {
         Swal.fire({
             title: 'Are you sure?',
-            text: 'You will be logged out',
+            text: 'You will be logged out of the system',
             icon: 'question',
             showCancelButton: true,
-            confirmButtonColor: '#0d6efd',
+            confirmButtonColor: '#07d826',
+            cancelButtonColor: '#6c757d',
             confirmButtonText: 'Yes, logout'
         }).then((result) => {
             if (result.isConfirmed) {

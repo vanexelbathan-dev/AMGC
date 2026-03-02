@@ -1615,6 +1615,24 @@ if (empty($user_initials)) {
         }
     }
 
+    // ========== LOGOUT WITH SWEETALERT2 ==========
+    function logout() {
+        Swal.fire({
+            title: 'Are you sure?',
+            text: 'You will be logged out of the system',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#07d826',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Yes, logout'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                localStorage.removeItem('sidebarCollapsed');
+                window.location.href = '../logout.php';
+            }
+        });
+    }
+
     // ========== SHOW LOADING ==========
     function showLoading() {
         Swal.fire({
@@ -2273,23 +2291,6 @@ if (empty($user_initials)) {
         XLSX.writeFile(wb, `Global_Users_${new Date().toISOString().slice(0,10).replace(/-/g, '')}.xlsx`);
         
         Swal.fire({ icon: 'success', title: 'Export Complete', timer: 1500, showConfirmButton: false });
-    }
-
-    // ========== LOGOUT ==========
-    function logout() {
-        Swal.fire({
-            title: 'Are you sure?',
-            text: 'You will be logged out',
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonColor: '#0d6efd',
-            confirmButtonText: 'Yes, logout'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                localStorage.removeItem('sidebarCollapsed');
-                window.location.href = '../logout.php';
-            }
-        });
     }
 
     // ========== KEYBOARD SHORTCUTS ==========
