@@ -38,36 +38,6 @@ if ($driver_id == 0 && $user_role == 'delivery') {
     $driver_stmt->close();
 }
 
-// If still no driver_id, try to get from drivers table using user_id
-if ($driver_id == 0 && $user_role == 'delivery') {
-    $driver_query = "SELECT driver_id FROM drivers WHERE user_id = ? LIMIT 1";
-    $driver_stmt = $conn->prepare($driver_query);
-    $driver_stmt->bind_param("i", $user_id);
-    $driver_stmt->execute();
-    $driver_result = $driver_stmt->get_result();
-    if ($driver_row = $driver_result->fetch_assoc()) {
-        $driver_id = $driver_row['driver_id'];
-        $_SESSION['driver_id'] = $driver_id;
-    }
-    $driver_stmt->close();
-}
-
-// Get the current trip ID for the driver (if any) - but we'll track even without trip
-$current_trip_id = null;
-if ($driver_id > 0) {
-    $trip_query = "SELECT trip_id FROM trip_tickets 
-                   WHERE driver_id = ? AND trip_status IN ('in-progress', 'planned') 
-                   ORDER BY trip_date DESC LIMIT 1";
-    $trip_stmt = $conn->prepare($trip_query);
-    $trip_stmt->bind_param("i", $driver_id);
-    $trip_stmt->execute();
-    $trip_result = $trip_stmt->get_result();
-    if ($trip_row = $trip_result->fetch_assoc()) {
-        $current_trip_id = $trip_row['trip_id'];
-    }
-    $trip_stmt->close();
-}
-
 // Check if branch_id column exists in deliveries table
 $delivery_branch_column_exists = false;
 $check_delivery_column = $conn->query("SHOW COLUMNS FROM deliveries LIKE 'branch_id'");
@@ -241,12 +211,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
     $driver_info = $driver_result->fetch_assoc();
     $driver_stmt->close();
 }
-
-// Get driver status from database
-$driver_status = 'unknown';
-if ($driver_id > 0 && $driver_info) {
-    $driver_status = $driver_info['status'] ?? 'active';
-}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -259,7 +223,7 @@ if ($driver_id > 0 && $driver_info) {
     <link rel="shortcut icon" href="../Pictures/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="../Pictures/apple-touch-icon.png" />
     <link rel="manifest" href="../Pictures/site.webmanifest" />
-    <link rel="stylesheet" href="../css/del_trip_tickets.css">
+    <link rel="stylesheet" href="../css/delivery.css">
     <link rel="stylesheet" href="../css/fordelivery.css">
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -413,7 +377,7 @@ if ($driver_id > 0 && $driver_info) {
             margin: 0 auto;
         }
         
-        /* Thermal Paper Receipt - SINGLE RECEIPT, SINGLE PAGE */
+        /* Thermal Paper Receipt */
         .thermal-receipt {
             font-family: 'Courier New', monospace;
             width: 72mm;
@@ -549,31 +513,13 @@ if ($driver_id > 0 && $driver_info) {
             justify-content: center;
         }
         
-        #receiptModal .modal-body::-webkit-scrollbar {
-            width: 8px;
-        }
-        
-        #receiptModal .modal-body::-webkit-scrollbar-track {
-            background: #f1f1f1;
-        }
-        
-        #receiptModal .modal-body::-webkit-scrollbar-thumb {
-            background: #888;
-            border-radius: 4px;
-        }
-        
-        #receiptModal .modal-body::-webkit-scrollbar-thumb:hover {
-            background: #555;
-        }
-        
         #receiptModal .modal-footer {
             background: #f8f9fa;
             border-top: 1px solid #dee2e6;
         }
         
-        /* Print styles - SINGLE RECEIPT, SINGLE PAGE, ANY PAPER SIZE */
+        /* Print styles */
         @media print {
-            /* Hide everything except the receipt */
             body * {
                 visibility: hidden;
             }
@@ -596,7 +542,6 @@ if ($driver_id > 0 && $driver_info) {
                 padding: 0;
             }
             
-            /* Receipt fixed at 72mm width, auto height */
             .thermal-receipt {
                 width: 72mm;
                 height: auto;
@@ -611,10 +556,48 @@ if ($driver_id > 0 && $driver_info) {
                 box-shadow: none;
             }
             
-            /* No fixed page size - let printer handle it */
             @page {
                 margin: 0;
             }
+        }
+        
+        /* GPS Tracking Styles */
+        .tracking-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 5px;
+        }
+        
+        .tracking-active {
+            background-color: #28a745;
+            animation: pulse 1.5s infinite;
+        }
+        
+        .tracking-inactive {
+            background-color: #6c757d;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(1.1); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+        
+        #locationIndicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+        }
+        
+        .update-counter {
+            font-size: 0.75rem;
+            margin-left: 5px;
+            opacity: 0.8;
         }
         
         @media (max-width: 768px) {
@@ -632,107 +615,63 @@ if ($driver_id > 0 && $driver_info) {
                 margin-bottom: 2px;
                 width: 100%;
             }
-        }
-
-        /* Location tracking status indicator */
-        .tracking-status {
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            background: rgba(0,0,0,0.8);
-            color: white;
-            padding: 8px 15px;
-            border-radius: 30px;
-            font-size: 12px;
-            z-index: 9999;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            pointer-events: none;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
-            transition: background-color 0.3s;
-        }
-
-        .tracking-dot {
-            width: 10px;
-            height: 10px;
-            background-color: #4caf50;
-            border-radius: 50%;
-            display: inline-block;
-            animation: pulse 2s infinite;
-        }
-
-        .tracking-dot.idle {
-            background-color: #ffc107;
-            animation: pulse-idle 2s infinite;
-        }
-
-        .tracking-dot.error {
-            background-color: #f44336;
-            animation: none;
-        }
-
-        @keyframes pulse {
-            0% {
-                box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7);
+            .stat-card {
+                padding: 12px;
+                min-height: 85px;
+                margin-bottom: 8px;
             }
-            70% {
-                box-shadow: 0 0 0 10px rgba(76, 175, 80, 0);
+            .stat-icon {
+                font-size: 2rem;
+                margin-right: 12px;
             }
-            100% {
-                box-shadow: 0 0 0 0 rgba(76, 175, 80, 0);
+            .stat-value {
+                font-size: 1.5rem;
             }
-        }
-
-        @keyframes pulse-idle {
-            0% {
-                box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.7);
+            .stat-label {
+                font-size: 0.8rem;
             }
-            70% {
-                box-shadow: 0 0 0 10px rgba(255, 193, 7, 0);
+            .col-md-3 {
+                width: 50%;
+                padding-left: 8px;
+                padding-right: 8px;
             }
-            100% {
-                box-shadow: 0 0 0 0 rgba(255, 193, 7, 0);
+            .row.g-3 {
+                margin-left: -8px;
+                margin-right: -8px;
             }
-        }
-
-        .driver-status-badge {
-            display: inline-block;
-            padding: 3px 8px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: 600;
-            margin-left: 8px;
+            .mb-3 {
+                margin-bottom: 8px !important;
+            }
         }
         
-        .driver-status-badge.active {
-            background-color: #28a745;
-            color: white;
-        }
-        
-        .driver-status-badge.idle {
-            background-color: #ffc107;
-            color: #212529;
-        }
-        
-        .driver-status-badge.off-duty {
-            background-color: #6c757d;
-            color: white;
+        @media (max-width: 576px) {
+            .stat-card {
+                min-height: 80px;
+                padding: 10px;
+            }
+            .stat-icon {
+                font-size: 1.8rem;
+                margin-right: 10px;
+            }
+            .stat-value {
+                font-size: 1.3rem;
+            }
+            .stat-label {
+                font-size: 0.75rem;
+            }
+            .col-md-3 {
+                width: 50%;
+                padding-left: 6px;
+                padding-right: 6px;
+            }
+            .row.g-3 {
+                margin-left: -6px;
+                margin-right: -6px;
+            }
         }
     </style>
 </head>
 <body>
-    <!-- Location tracking status indicator (only for drivers) - ALWAYS ON when logged in -->
-    <?php if ($user_role == 'delivery' && $driver_id > 0): ?>
-    <div class="tracking-status" id="trackingStatus">
-        <span class="tracking-dot" id="trackingDot"></span>
-        <span id="trackingStatusText">Location tracking active - Updating every 10 seconds</span>
-        <span class="driver-status-badge <?php echo $driver_status; ?>" id="driverStatusBadge">
-            <?php echo ucfirst($driver_status); ?>
-        </span>
-    </div>
-    <?php endif; ?>
-
     <!-- Display success/error messages -->
     <?php if (isset($_SESSION['success_message'])): ?>
         <div class="alert alert-success alert-dismissible fade show m-3" role="alert">
@@ -791,7 +730,6 @@ if ($driver_id > 0 && $driver_info) {
                     <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
                     <div class="user-details-sidebar">
                         <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-                        <small class="d-block text-muted"><?php echo ucfirst($driver_status); ?></small>
                     </div>
                 </div>
                 
@@ -811,6 +749,17 @@ if ($driver_id > 0 && $driver_info) {
                 <div class="page-title">
                     <h2>For Delivery</h2>
                     <p>Manage and track deliveries in progress</p>
+                </div>
+                <!-- GPS Tracking Button with Shift Management -->
+                <div style="margin-left: auto; display: flex; gap: 10px; align-items: center;">
+                    <button class="btn btn-success btn-sm" id="trackingBtn" onclick="toggleTracking()">
+                        <i class="bi bi-play-circle"></i> Start Tracking
+                    </button>
+                    <div id="locationIndicator" class="badge bg-secondary" style="padding: 8px 12px;">
+                        <span class="tracking-indicator tracking-inactive"></span>
+                        <span id="locationStatus">Offline</span>
+                        <span id="updateCount" class="update-counter"></span>
+                    </div>
                 </div>
             </div>
 
@@ -878,13 +827,15 @@ if ($driver_id > 0 && $driver_info) {
                             </div>
                         </div>
                         <div class="col-md-6">
-                            <select class="form-select" id="statusFilter">
-                                <option value="">All Status</option>
-                                <option value="pending">Pending</option>
-                                <option value="in-transit">In Transit</option>
-                                <option value="partial">Partial</option>
-                                <option value="delivered">Delivered</option>
-                            </select>
+                            <div class="d-flex gap-2">
+                                <select class="form-select flex-grow-1" id="statusFilter">
+                                    <option value="">All Status</option>
+                                    <option value="pending">Pending</option>
+                                    <option value="in-transit">In Transit</option>
+                                    <option value="partial">Partial</option>
+                                    <option value="delivered">Delivered</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -897,7 +848,7 @@ if ($driver_id > 0 && $driver_info) {
                     <p class="mt-3 mb-0">
                         No deliveries found.
                         <?php if ($user_role == 'delivery'): ?>
-                            <br><small>You don't have any deliveries assigned yet. Your location is still being tracked.</small>
+                            <br><small>You don't have any deliveries assigned yet.</small>
                         <?php elseif ($delivery_branch_column_exists && !$view_all_branches): ?>
                             <br><small>No deliveries found for your branch.</small>
                         <?php endif; ?>
@@ -907,9 +858,9 @@ if ($driver_id > 0 && $driver_info) {
 
             <!-- Delivery Orders Table -->
             <div class="card">
-                <div class="table-responsive">
-                    <table class="table table-hover mb-0">
-                        <thead class="table-light">
+                <div class="table-container">
+                    <table class="table custom-table compact-table">
+                        <thead>
                             <tr>
                                 <th>Order ID</th>
                                 <th>Customer Name</th>
@@ -989,8 +940,8 @@ if ($driver_id > 0 && $driver_info) {
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <div class="btn-group" role="group">
-                                        <button class="btn btn-sm btn-info" title="View Details" onclick="viewDeliveryDetails(<?php echo $order['delivery_id']; ?>)">
+                                    <div class="action-buttons">
+                                        <button class="btn-action btn-view" title="View Details" onclick="viewDeliveryDetails(<?php echo $order['delivery_id']; ?>)">
                                             <i class="bi bi-eye"></i>
                                         </button>
                                         
@@ -999,7 +950,7 @@ if ($driver_id > 0 && $driver_info) {
                                                            $order['latitude'] != 0 && $order['longitude'] != 0;
                                         if ($has_coordinates): 
                                         ?>
-                                            <button class="btn btn-sm map-icon-btn" title="View on Map" onclick="showLocation(
+                                            <button class="btn-action btn-map" title="View on Map" onclick="showLocation(
                                                 <?php echo $order['latitude']; ?>, 
                                                 <?php echo $order['longitude']; ?>, 
                                                 '<?php echo htmlspecialchars(addslashes($order['customer_name'])); ?>', 
@@ -1027,7 +978,7 @@ if ($driver_id > 0 && $driver_info) {
                                         <?php endif; ?>
                                         
                                         <?php if ($order['delivery_status'] == 'delivered'): ?>
-                                            <button class="btn btn-sm receipt-btn" title="Print Receipt" onclick="showReceiptModal(<?php echo $order['delivery_id']; ?>, '<?php echo htmlspecialchars(addslashes($order['so_number'])); ?>', '<?php echo htmlspecialchars(addslashes($order['customer_name'])); ?>', '<?php echo htmlspecialchars(addslashes($order['address'] . ', ' . $order['city'])); ?>', '<?php echo htmlspecialchars(addslashes($order['signed_by'])); ?>', '<?php echo $order['delivery_date']; ?>', '<?php echo htmlspecialchars(addslashes($order['items_receipt'])); ?>')">
+                                            <button class="btn-action btn-print" title="Print Receipt" onclick="showReceiptModal(<?php echo $order['delivery_id']; ?>, '<?php echo htmlspecialchars(addslashes($order['so_number'])); ?>', '<?php echo htmlspecialchars(addslashes($order['customer_name'])); ?>', '<?php echo htmlspecialchars(addslashes($order['address'] . ', ' . $order['city'])); ?>', '<?php echo htmlspecialchars(addslashes($order['signed_by'])); ?>', '<?php echo $order['delivery_date']; ?>', '<?php echo htmlspecialchars(addslashes($order['items_receipt'])); ?>')">
                                                 <i class="bi bi-receipt"></i>
                                             </button>
                                         <?php endif; ?>
@@ -1046,7 +997,7 @@ if ($driver_id > 0 && $driver_info) {
     <!-- Hidden thermal receipt container -->
     <div id="thermalReceipt" style="display: none;"></div>
 
-    <!-- View Details Modal (NO MAP) -->
+    <!-- View Details Modal -->
     <div class="modal fade" id="viewDetailsModal" tabindex="-1" aria-labelledby="viewDetailsModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-xl">
             <div class="modal-content">
@@ -1072,7 +1023,7 @@ if ($driver_id > 0 && $driver_info) {
         </div>
     </div>
 
-    <!-- Location Map Modal (Original Style) -->
+    <!-- Location Map Modal -->
     <div class="modal fade" id="locationMapModal" tabindex="-1">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
@@ -1273,8 +1224,6 @@ if ($driver_id > 0 && $driver_info) {
         const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
         const userRole = '<?php echo $user_role; ?>';
         const driverId = <?php echo $driver_id ?: 0; ?>;
-        const currentTripId = <?php echo $current_trip_id ?: 'null'; ?>;
-        const driverStatus = '<?php echo $driver_status; ?>';
 
         let currentDeliveryId = null;
         let currentSoId = null;
@@ -1288,7 +1237,6 @@ if ($driver_id > 0 && $driver_info) {
         let currentPartialDeliveryId = null;
         let currentItems = [];
         let currentThermalReceipt = '';
-        let locationUpdateCount = 0;
 
         // ================= SIDEBAR FUNCTIONS =================
         function toggleSidebar() {
@@ -1591,10 +1539,8 @@ if ($driver_id > 0 && $driver_info) {
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    // Close modal
                     const modal = bootstrap.Modal.getInstance(document.getElementById('partialModal'));
                     modal.hide();
-                    // Reload to show updated status
                     location.reload();
                 } else {
                     alert('Error: ' + data.message);
@@ -1606,7 +1552,7 @@ if ($driver_id > 0 && $driver_info) {
             });
         }
 
-        // View delivery details in modal (NO MAP)
+        // View delivery details in modal
         function viewDeliveryDetails(deliveryId) {
             const modalBody = document.getElementById('viewDetailsModalBody');
             modalBody.innerHTML = `
@@ -1621,13 +1567,11 @@ if ($driver_id > 0 && $driver_info) {
             const modal = new bootstrap.Modal(document.getElementById('viewDetailsModal'));
             modal.show();
             
-            // Fetch delivery details via AJAX
             fetch('get_delivery_details.php?delivery_id=' + deliveryId)
                 .then(response => response.text())
                 .then(data => {
                     modalBody.innerHTML = data;
                     
-                    // Add click handlers for photo links
                     document.querySelectorAll('.view-photo-btn').forEach(btn => {
                         btn.addEventListener('click', function(e) {
                             e.preventDefault();
@@ -1659,7 +1603,7 @@ if ($driver_id > 0 && $driver_info) {
             modal.show();
         }
 
-        // Show delivery modal (for complete delivery)
+        // Show delivery modal
         function showDeliveryModal(deliveryId, soId, orderNumber) {
             currentDeliveryId = deliveryId;
             currentSoId = soId;
@@ -1695,10 +1639,8 @@ if ($driver_id > 0 && $driver_info) {
                 hour12: true
             });
             
-            // Parse items
             const items = itemsRaw ? itemsRaw.split('||') : [];
             
-            // Format the current date for receipt
             const today = new Date();
             const receiptDate = today.toLocaleDateString('en-PH', {
                 year: 'numeric',
@@ -1711,7 +1653,6 @@ if ($driver_id > 0 && $driver_info) {
                 hour12: true
             });
             
-            // Receipt number
             const receiptNumber = 'DR' + today.getFullYear() + 
                                  String(today.getMonth() + 1).padStart(2, '0') + 
                                  String(today.getDate()).padStart(2, '0') + 
@@ -1800,22 +1741,20 @@ if ($driver_id > 0 && $driver_info) {
             modal.show();
         }
 
-        // Print thermal receipt - SINGLE PAGE, ANY PAPER SIZE
+        // Print thermal receipt
         function printThermalReceipt() {
             const thermalDiv = document.getElementById('thermalReceipt');
             thermalDiv.style.display = 'block';
             thermalDiv.innerHTML = currentThermalReceipt;
             
-            // Print - no fixed page size
             window.print();
             
-            // Clean up
             setTimeout(() => {
                 thermalDiv.style.display = 'none';
             }, 100);
         }
 
-        // Show location on map (from map icon)
+        // Show location on map
         function showLocation(lat, lng, customerName, address) {
             currentLat = parseFloat(lat);
             currentLng = parseFloat(lng);
@@ -1830,7 +1769,6 @@ if ($driver_id > 0 && $driver_info) {
             const modal = new bootstrap.Modal(document.getElementById('locationMapModal'));
             modal.show();
             
-            // Small delay to ensure modal is rendered
             setTimeout(() => {
                 initMap(currentLat, currentLng, customerName);
             }, 500);
@@ -1993,149 +1931,302 @@ if ($driver_id > 0 && $driver_info) {
                 }
             }
         });
-    </script>
 
-    <!-- Driver Location Tracking -->
-    <script src="../js/driver-location-tracker.js"></script>
-    <script>
-        // FIXED: ALWAYS track driver location as soon as they log in, even when idle
-        let driverTracker = null;
-        
-        // Update tracking status indicator
-        function updateTrackingStatus(status, message) {
-            const statusEl = document.getElementById('trackingStatus');
-            const dotEl = document.getElementById('trackingDot');
-            const textEl = document.getElementById('trackingStatusText');
-            
-            if (!statusEl || !dotEl || !textEl) return;
-            
-            if (status === 'active') {
-                dotEl.className = 'tracking-dot';
-                statusEl.style.backgroundColor = 'rgba(76, 175, 80, 0.9)';
-                textEl.textContent = message || 'Location tracking active - Updating every 10 seconds';
-            } else if (status === 'idle') {
-                dotEl.className = 'tracking-dot idle';
-                statusEl.style.backgroundColor = 'rgba(255, 193, 7, 0.9)';
-                textEl.textContent = message || 'Location tracking active (idle) - Updating every 10 seconds';
-            } else if (status === 'error') {
-                dotEl.className = 'tracking-dot error';
-                statusEl.style.backgroundColor = 'rgba(244, 67, 54, 0.9)';
-                textEl.textContent = message || 'Location tracking error';
+        // ============ GPS TRACKING WITH SHIFT MANAGEMENT ============
+        let watchId = null;
+        let trackingActive = false;
+        let updateCount = 0;
+        let retryCount = 0;
+        let currentDriverId = <?php echo $driver_id ?: 0; ?>;
+
+        function toggleTracking() {
+            if (!navigator.geolocation) {
+                alert('Geolocation is not supported by your browser.');
+                return;
             }
+
+            if (trackingActive) {
+                stopTracking();
+                return;
+            }
+
+            updateUI('requesting', 'Starting shift...');
+            startShift();
         }
-        
-        // This function will start tracking immediately for ANY logged-in driver
-        function initDriverTracking() {
-            // Check if user is a driver (any driver, regardless of status)
-            if (userRole === 'delivery' && driverId > 0) {
-                console.log('[v0] Delivery driver detected - Starting automatic location tracking (IDLE OR ACTIVE)');
-                
-                // Show initial status
-                if (currentTripId) {
-                    updateTrackingStatus('active', 'Location tracking active - On delivery');
+
+        function startShift() {
+            fetch('../Global/gps_shift_start.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'start_shift',
+                    driver_id: currentDriverId,
+                    force: true
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('Shift started:', data);
+                    updateUI('success', 'Shift started');
+                    startGPSTracking();
                 } else {
-                    updateTrackingStatus('idle', 'Location tracking active (idle) - Updating every 10 seconds');
-                }
-                
-                // Create tracker instance with correct parameters
-                driverTracker = new DriverLocationTracker({
-                    updateInterval: 10000, // 10 seconds
-                    enableHighAccuracy: true,
-                    apiEndpoint: './update_driver_location.php',
-                    onSuccess: function(data) {
-                        locationUpdateCount++;
-                        console.log('[v0] Location updated successfully #' + locationUpdateCount, new Date().toLocaleTimeString());
-                        
-                        // Update status based on trip
-                        if (currentTripId) {
-                            updateTrackingStatus('active', `Location tracking active - Updated ${new Date().toLocaleTimeString()}`);
-                        } else {
-                            updateTrackingStatus('idle', `Location tracking active (idle) - Updated ${new Date().toLocaleTimeString()}`);
+                    console.error('Failed to start shift:', data.error);
+                    updateUI('error', 'Shift failed: ' + data.error);
+                    
+                    if (data.error.includes('active shift')) {
+                        if (confirm('May active shift ka pa. Gusto mo bang i-end muna?')) {
+                            endExistingShift();
                         }
-                    },
-                    onError: function(error) {
-                        console.log('[v0] Location tracking error:', error);
-                        updateTrackingStatus('error', 'Location error - ' + (error.message || 'Unknown error'));
                     }
-                });
+                }
+            })
+            .catch(error => {
+                console.error('Error starting shift:', error);
+                updateUI('error', 'Connection error');
+            });
+        }
 
-                // Pass the current trip ID if available (null is fine - still track)
-                if (currentTripId) {
-                    console.log('[v0] Driver has active trip ID:', currentTripId);
+        function endExistingShift() {
+            updateUI('requesting', 'Ending previous shift...');
+            
+            fetch('../Global/gps_shift._start.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'force_end_shift',
+                    driver_id: currentDriverId
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('Previous shift ended:', data);
+                    startShift();
                 } else {
-                    console.log('[v0] Driver is idle - tracking location without trip');
+                    updateUI('error', 'Failed to end shift');
                 }
-                
-                // Start tracking immediately
-                setTimeout(function() {
-                    driverTracker.startTracking();
-                }, 1000); // Small delay to ensure page is fully loaded
-            } else {
-                console.log('[v0] Not a delivery driver, tracking not started. Role:', userRole, 'Driver ID:', driverId);
-            }
+            });
         }
 
-        // Start tracking when DOM is loaded
-        document.addEventListener('DOMContentLoaded', function() {
-            initDriverTracking();
-        });
-
-        // Also try to start tracking immediately if the script loads after DOM
-        if (document.readyState === 'complete' || document.readyState === 'interactive') {
-            setTimeout(initDriverTracking, 100);
-        }
-
-        // Handle page visibility change (when user switches tabs and comes back)
-        document.addEventListener('visibilitychange', function() {
-            if (!document.hidden && driverTracker && userRole === 'delivery' && driverId > 0) {
-                console.log('[v0] Page visible again, ensuring tracking is active');
-                // Check if tracking is still active
-                if (driverTracker.watchId === null) {
-                    console.log('[v0] Tracking was stopped, restarting...');
-                    driverTracker.startTracking();
+        function startGPSTracking() {
+            updateUI('requesting', 'Getting GPS location...');
+            
+            navigator.geolocation.getCurrentPosition(
+                function(position) {
+                    sendLocation(position.coords);
+                    startWatching();
+                },
+                function(error) {
+                    console.log('GPS Error:', error.code, error.message);
+                    retryCount++;
                     
-                    // Update status
-                    if (currentTripId) {
-                        updateTrackingStatus('active', 'Location tracking resumed - On delivery');
+                    if (retryCount <= 3) {
+                        updateUI('retry', 'Retrying GPS... (' + retryCount + '/3)');
+                        
+                        setTimeout(function() {
+                            startGPSTracking();
+                        }, 2000);
                     } else {
-                        updateTrackingStatus('idle', 'Location tracking resumed (idle)');
+                        updateUI('error', 'GPS Error: ' + getErrorMessage(error));
+                        retryCount = 0;
                     }
+                },
+                {
+                    enableHighAccuracy: false,
+                    timeout: 10000,
+                    maximumAge: 60000
                 }
-            }
-        });
+            );
+        }
 
-        // Handle before unload - send one last location update
-        window.addEventListener('beforeunload', function() {
-            if (driverTracker && navigator.geolocation && driverTracker.watchId !== null) {
-                navigator.geolocation.getCurrentPosition(function(position) {
-                    // Try to send one last update synchronously
-                    const data = {
-                        latitude: position.coords.latitude,
-                        longitude: position.coords.longitude,
-                        speed: position.coords.speed ? position.coords.speed * 3.6 : 0,
-                        trip_id: currentTripId // This can be null - that's fine
-                    };
+        function getErrorMessage(error) {
+            switch(error.code) {
+                case error.PERMISSION_DENIED:
+                    return 'Please enable location permissions';
+                case error.POSITION_UNAVAILABLE:
+                    return 'Location unavailable - check GPS';
+                case error.TIMEOUT:
+                    return 'GPS timeout - try again';
+                default:
+                    return error.message;
+            }
+        }
+
+        function updateUI(status, message) {
+            let indicator = document.getElementById('locationIndicator');
+            let statusSpan = document.getElementById('locationStatus');
+            let updateSpan = document.getElementById('updateCount');
+            
+            switch(status) {
+                case 'requesting':
+                    indicator.className = 'badge bg-warning';
+                    statusSpan.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>' + message;
+                    break;
+                case 'retry':
+                    indicator.className = 'badge bg-info';
+                    statusSpan.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>' + message;
+                    break;
+                case 'success':
+                    indicator.className = 'badge bg-success';
+                    statusSpan.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>' + message;
+                    break;
+                case 'error':
+                    indicator.className = 'badge bg-danger';
+                    statusSpan.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>' + message;
+                    break;
+                default:
+                    indicator.className = 'badge bg-secondary';
+                    statusSpan.innerHTML = message || 'Offline';
+            }
+            
+            if (updateSpan) {
+                updateSpan.innerHTML = updateCount > 0 ? '(' + updateCount + ')' : '';
+            }
+        }
+
+        function startWatching() {
+            if (watchId) return;
+
+            watchId = navigator.geolocation.watchPosition(
+                function(position) {
+                    sendLocation(position.coords);
+                    updateCount++;
                     
-                    // Use sendBeacon for reliable last update
-                    const blob = new Blob([JSON.stringify(data)], {type: 'application/json'});
-                    navigator.sendBeacon('./update_driver_location.php', blob);
-                    console.log('[v0] Final location sent before exit');
-                }, null, {
-                    timeout: 2000,
-                    maximumAge: 0
-                });
-            }
-        });
-
-        // Periodically check if tracking is still active (every 30 seconds)
-        setInterval(function() {
-            if (userRole === 'delivery' && driverId > 0 && driverTracker) {
-                if (driverTracker.watchId === null) {
-                    console.log('[v0] Tracking stopped unexpectedly, restarting...');
-                    driverTracker.startTracking();
+                    updateUI('success', 'LIVE');
+                },
+                function(error) {
+                    console.log('Watch error:', error.message);
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 15000,
+                    maximumAge: 10000
                 }
+            );
+
+            trackingActive = true;
+            
+            let btn = document.getElementById('trackingBtn');
+            btn.innerHTML = '<i class="bi bi-stop-circle"></i> Stop Tracking';
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-danger');
+        }
+
+        function stopTracking() {
+            if (watchId) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
             }
-        }, 30000);
+            
+            fetch('../Global/gps_shift_start.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'end_shift',
+                    driver_id: currentDriverId
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Shift ended:', data);
+            })
+            .catch(error => {
+                console.error('Error ending shift:', error);
+            });
+            
+            trackingActive = false;
+            updateCount = 0;
+            retryCount = 0;
+            
+            let btn = document.getElementById('trackingBtn');
+            btn.innerHTML = '<i class="bi bi-play-circle"></i> Start Tracking';
+            btn.classList.remove('btn-danger');
+            btn.classList.add('btn-success');
+            
+            updateUI('offline', 'Offline');
+        }
+
+        function sendLocation(coords) {
+            let data = {
+                action: 'update_location',
+                driver_id: currentDriverId,
+                latitude: coords.latitude,
+                longitude: coords.longitude,
+                accuracy: coords.accuracy,
+                speed: coords.speed || 0,
+                heading: coords.heading || 0,
+                timestamp: new Date().toISOString()
+            };
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+            fetch('../Global/gps_shift_start.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data),
+                signal: controller.signal
+            })
+            .then(response => {
+                clearTimeout(timeoutId);
+                if (!response.ok) {
+                    throw new Error('HTTP ' + response.status);
+                }
+                return response.json();
+            })
+            .then(result => {
+                if (!result.success) {
+                    console.log('Location update failed:', result.error);
+                }
+            })
+            .catch(error => {
+                if (error.name === 'AbortError') {
+                    console.log('Location update timeout');
+                } else {
+                    console.log('Location update error:', error.message);
+                }
+            });
+        }
+
+        // Auto-start for delivery drivers
+        <?php if ($user_role == 'delivery' && $driver_id > 0): ?>
+        document.addEventListener('DOMContentLoaded', function() {
+            fetch('../Global/gps_shift_start.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'get_shift_status',
+                    driver_id: <?php echo $driver_id; ?>
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.has_active_shift) {
+                    console.log('May active shift:', data);
+                    startGPSTracking();
+                } else {
+                    console.log('Walang active shift, mag-start ng bago');
+                    setTimeout(function() {
+                        toggleTracking();
+                    }, 2000);
+                }
+            });
+        });
+        <?php endif; ?>
+
+        // Add pulse animation
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes pulse {
+                0% { opacity: 1; }
+                50% { opacity: 0.4; }
+                100% { opacity: 1; }
+            }
+        `;
+        document.head.appendChild(style);
     </script>
 </body>
 </html>
