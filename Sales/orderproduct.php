@@ -252,6 +252,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             throw new Exception("Prepare failed for order items: " . $conn->error);
         }
         
+        $updated_stock_data = [];
+        
         foreach ($items_data as $item) {
             $item_id = (int)$item['id'];
             $quantity = (int)$item['quantity'];
@@ -295,7 +297,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 throw new Exception("Failed to deduct inventory for item ID: $item_id. Stock may have changed.");
             }
             
-            error_log("Updated item stock: Item ID: $item_id, Deducted: $quantity");
+            // Get updated stock for this item
+            if ($items_branch_column_exists && !$view_all_branches) {
+                $stock_query = "SELECT stock FROM items WHERE item_id = ? AND branch_id = ?";
+                $stock_stmt = $conn->prepare($stock_query);
+                $stock_stmt->bind_param('ii', $item_id, $branch_id);
+            } else {
+                $stock_query = "SELECT stock FROM items WHERE item_id = ?";
+                $stock_stmt = $conn->prepare($stock_query);
+                $stock_stmt->bind_param('i', $item_id);
+            }
+            $stock_stmt->execute();
+            $stock_result = $stock_stmt->get_result();
+            $stock_row = $stock_result->fetch_assoc();
+            
+            $updated_stock_data[] = [
+                'item_id' => $item_id,
+                'stock' => (int)$stock_row['stock']
+            ];
+            
+            error_log("Updated item stock: Item ID: $item_id, Deducted: $quantity, New Stock: " . $stock_row['stock']);
         }
         
         $conn->commit();
@@ -305,7 +326,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             'success' => true, 
             'message' => 'Order submitted successfully!', 
             'so_number' => $so_number,
-            'so_id' => $so_id
+            'so_id' => $so_id,
+            'updated_stock' => $updated_stock_data
         ]);
         exit;
         
@@ -314,6 +336,116 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         error_log("Order submission error: " . $e->getMessage());
         echo json_encode([
             'success' => false, 
+            'message' => $e->getMessage()
+        ]);
+        exit;
+    }
+}
+
+// Handle cancel order via AJAX (to restore stock)
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'cancel_order') {
+    header('Content-Type: application/json');
+    
+    try {
+        $order_id = isset($_POST['order_id']) ? (int)$_POST['order_id'] : 0;
+        
+        if ($order_id <= 0) {
+            throw new Exception("Invalid order ID");
+        }
+        
+        $conn->begin_transaction();
+        
+        // Verify order belongs to user's branch (if branch column exists and not admin)
+        if ($items_branch_column_exists && !$view_all_branches) {
+            $check_sql = "SELECT so_id FROM sales_orders WHERE so_id = ? AND branch_id = ?";
+            $check_stmt = $conn->prepare($check_sql);
+            $check_stmt->bind_param('ii', $order_id, $branch_id);
+            $check_stmt->execute();
+            $check_result = $check_stmt->get_result();
+            
+            if ($check_result->num_rows === 0) {
+                throw new Exception("Order not found or access denied");
+            }
+        }
+        
+        // Get order items to restore stock
+        $items_sql = "SELECT soi.item_id, soi.quantity_ordered 
+                     FROM sales_order_items soi 
+                     WHERE soi.so_id = ?";
+        $items_stmt = $conn->prepare($items_sql);
+        $items_stmt->bind_param('i', $order_id);
+        $items_stmt->execute();
+        $items_result = $items_stmt->get_result();
+        $order_items = $items_result->fetch_all(MYSQLI_ASSOC);
+        
+        // Restore stock for each item
+        $restored_stock_data = [];
+        
+        foreach ($order_items as $item) {
+            $item_id = (int)$item['item_id'];
+            $quantity = (int)$item['quantity_ordered'];
+            
+            // Restore stock
+            if ($items_branch_column_exists && !$view_all_branches) {
+                $sql_restore = "UPDATE items 
+                               SET stock = stock + ? 
+                               WHERE item_id = ? AND branch_id = ?";
+                $restore_stmt = $conn->prepare($sql_restore);
+                $restore_stmt->bind_param('iii', $quantity, $item_id, $branch_id);
+            } else {
+                $sql_restore = "UPDATE items 
+                               SET stock = stock + ? 
+                               WHERE item_id = ?";
+                $restore_stmt = $conn->prepare($sql_restore);
+                $restore_stmt->bind_param('ii', $quantity, $item_id);
+            }
+            
+            if (!$restore_stmt->execute()) {
+                throw new Exception("Error restoring stock for item ID: $item_id");
+            }
+            
+            // Get updated stock
+            if ($items_branch_column_exists && !$view_all_branches) {
+                $stock_query = "SELECT stock FROM items WHERE item_id = ? AND branch_id = ?";
+                $stock_stmt = $conn->prepare($stock_query);
+                $stock_stmt->bind_param('ii', $item_id, $branch_id);
+            } else {
+                $stock_query = "SELECT stock FROM items WHERE item_id = ?";
+                $stock_stmt = $conn->prepare($stock_query);
+                $stock_stmt->bind_param('i', $item_id);
+            }
+            $stock_stmt->execute();
+            $stock_result = $stock_stmt->get_result();
+            $stock_row = $stock_result->fetch_assoc();
+            
+            $restored_stock_data[] = [
+                'item_id' => $item_id,
+                'stock' => (int)$stock_row['stock']
+            ];
+        }
+        
+        // Update order status to cancelled
+        $update_sql = "UPDATE sales_orders SET order_status = 'cancelled' WHERE so_id = ?";
+        $update_stmt = $conn->prepare($update_sql);
+        $update_stmt->bind_param('i', $order_id);
+        
+        if (!$update_stmt->execute()) {
+            throw new Exception("Error updating order status");
+        }
+        
+        $conn->commit();
+        
+        echo json_encode([
+            'success' => true,
+            'message' => 'Order cancelled and stock restored successfully',
+            'restored_stock' => $restored_stock_data
+        ]);
+        exit;
+        
+    } catch (Exception $e) {
+        $conn->rollback();
+        echo json_encode([
+            'success' => false,
             'message' => $e->getMessage()
         ]);
         exit;
@@ -336,6 +468,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <style>
+        :root {
+            --primary-green: #2E7D32;
+            --dark-green: #1B5E20;
+            --deep-sea: #0D4C14;
+            --forest-green: #1B4D1F;
+            --warning-yellow: #FFC107;
+            --light-gray: #F5F5F5;
+            --white: #FFFFFF;
+            --black: #212121;
+        }
+
         .cart-item {
             background: #f8f9fa;
             padding: 15px;
@@ -721,6 +864,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 margin-bottom: 15px;
             }
         }
+
+        /* Cancel Order Button */
+        .btn-cancel-order {
+            background-color: #dc3545;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .btn-cancel-order:hover {
+            background-color: #c82333;
+        }
+        
+        .btn-cancel-order:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+
+        /* Restored stock highlight */
+        .stock-updated {
+            animation: highlight 1s ease-out;
+        }
+        
+        @keyframes highlight {
+            0% { background-color: rgba(40, 167, 69, 0.3); }
+            100% { background-color: transparent; }
+        }
     </style>
 </head>
 <body>
@@ -1001,7 +1175,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Add Order</button>
-                    <button type="button" class="btn btn-success" onclick="submitOrder()">
+                    <button type="button" class="btn btn-success" id="confirmOrderBtn" onclick="submitOrder()">
                         <i class="bi bi-check-circle"></i> Confirm & Submit Order
                     </button>
                 </div>
@@ -1039,6 +1213,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     <button type="button" class="btn btn-outline-secondary" onclick="viewOrders()">
                         <i class="bi bi-list-ul me-2"></i> View Orders
                     </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cancel Order Confirmation Modal -->
+    <div class="modal fade" id="cancelOrderModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Cancel Order</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to cancel this order? All items will be returned to inventory.</p>
+                    <p class="text-danger"><small>This action cannot be undone.</small></p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">No, Keep Order</button>
+                    <button type="button" class="btn btn-danger" id="confirmCancelBtn">Yes, Cancel Order</button>
                 </div>
             </div>
         </div>
@@ -1231,7 +1425,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         document.getElementById('customerEmail').value = email;
                         document.getElementById('customerPhone').value = phone;
                         document.getElementById('customerAddress').value = address;
-                        document.getElementById('newCustomerName').value = '';
                     } else {
                         document.getElementById('customerEmail').value = '';
                         document.getElementById('customerPhone').value = '';
@@ -1240,16 +1433,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 });
             }
             
-            const newCustomerName = document.getElementById('newCustomerName');
-            if (newCustomerName) {
-                newCustomerName.addEventListener('input', function() {
-                    if (this.value.trim() !== '') {
-                        document.getElementById('customerSelect').value = '';
-                    }
-                });
-            }
-            
             updateCart();
+            
+            // Check if we have a pending order to restore stock (from URL parameter)
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('cancel') === 'success') {
+                showToast('Order cancelled and stock restored successfully!');
+                // Remove the parameter from URL
+                const url = new URL(window.location);
+                url.searchParams.delete('cancel');
+                window.history.replaceState({}, document.title, url.toString());
+            }
         }
 
         // Calculate available stock for a product (considering items in cart)
@@ -1286,14 +1480,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 const lowStock = availableStock > 0 && availableStock < 10;
                 
                 return `
-                <div class="col-md-6 product-card-mobile">
+                <div class="col-md-6 product-card-mobile" id="product-card-${product.id}">
                     <div class="card h-100">
                         <div class="card-body">
                             <div class="d-flex justify-content-between align-items-start mb-2">
                                 <h6 class="card-title mb-0">${product.name}</h6>
                                 <span class="badge bg-light text-dark">${product.sku}</span>
                             </div>
-                            <p class="text-muted small mb-1 product-stock-mobile">
+                            <p class="text-muted small mb-1 product-stock-mobile" id="stock-info-${product.id}">
                                 Available: <strong class="${lowStock ? 'text-danger' : ''}">${availableStock} units</strong>
                                 ${lowStock && !outOfStock ? '<span class="stock-warning"> - Low Stock</span>' : ''}
                             </p>
@@ -1329,6 +1523,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 </div>
                 `;
             }).join('');
+        }
+
+        // Update product stock display after order
+        function updateProductStock(itemId, newStock) {
+            // Update inventory array
+            const product = inventory.find(p => p.id === itemId);
+            if (product) {
+                product.stock = newStock;
+            }
+            
+            // Update stock info display
+            const stockInfo = document.getElementById(`stock-info-${itemId}`);
+            const qtyInput = document.getElementById(`qty-${itemId}`);
+            const addButton = document.getElementById(`btn-add-${itemId}`);
+            const decreaseBtn = document.querySelector(`#product-card-${itemId} .decrease-btn`);
+            const increaseBtn = document.querySelector(`#product-card-${itemId} .increase-btn`);
+            
+            if (stockInfo) {
+                const availableStock = getAvailableStock(itemId);
+                const lowStock = availableStock > 0 && availableStock < 10;
+                stockInfo.innerHTML = `Available: <strong class="${lowStock ? 'text-danger' : ''}">${availableStock} units</strong> ${lowStock ? '<span class="stock-warning"> - Low Stock</span>' : ''}`;
+            }
+            
+            // Update input max and state
+            if (qtyInput) {
+                const availableStock = getAvailableStock(itemId);
+                qtyInput.max = availableStock;
+                qtyInput.value = 0;
+                
+                if (availableStock === 0) {
+                    qtyInput.disabled = true;
+                    if (addButton) addButton.disabled = true;
+                    if (decreaseBtn) decreaseBtn.disabled = true;
+                    if (increaseBtn) increaseBtn.disabled = true;
+                } else {
+                    qtyInput.disabled = false;
+                    if (addButton) addButton.disabled = true; // Still disabled until quantity > 0
+                    if (decreaseBtn) decreaseBtn.disabled = false;
+                    if (increaseBtn) increaseBtn.disabled = false;
+                }
+            }
+            
+            // Highlight the updated product
+            const productCard = document.getElementById(`product-card-${itemId}`);
+            if (productCard) {
+                productCard.classList.add('stock-updated');
+                setTimeout(() => {
+                    productCard.classList.remove('stock-updated');
+                }, 1000);
+            }
         }
 
         // Decrease quantity
@@ -1546,16 +1790,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
 
             const customerSelect = document.getElementById('customerSelect');
-            const newCustomer = document.getElementById('newCustomerName')?.value.trim() || '';
             const email = document.getElementById('customerEmail')?.value.trim() || '';
             const phone = document.getElementById('customerPhone')?.value.trim() || '';
             const address = document.getElementById('customerAddress')?.value.trim() || '';
             
             const selectedCustomer = customerSelect?.options[customerSelect.selectedIndex];
-            const customerName = selectedCustomer?.value ? selectedCustomer.text.split('(')[0].trim() : newCustomer;
+            const customerName = selectedCustomer?.value ? selectedCustomer.text.split('(')[0].trim() : '';
 
-            if (!customerSelect?.value && !newCustomer) {
-                showToast('Please select or enter a customer');
+            if (!customerSelect?.value && !customerName) {
+                showToast('Please select a customer');
                 return;
             }
 
@@ -1641,13 +1884,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         function submitOrder() {
             const customerSelect = document.getElementById('customerSelect');
             const customer_id = customerSelect?.value ? parseInt(customerSelect.value) : 0;
-            const customer_name = document.getElementById('newCustomerName')?.value.trim() || '';
+            const customer_name = customerSelect?.options[customerSelect.selectedIndex]?.text.split('(')[0].trim() || '';
             const email = document.getElementById('customerEmail')?.value.trim() || '';
             const phone = document.getElementById('customerPhone')?.value.trim() || '';
             const address = document.getElementById('customerAddress')?.value.trim() || '';
             
             if (!customer_id && !customer_name) {
-                showToast('Please select or enter a customer');
+                showToast('Please select a customer');
                 return;
             }
             
@@ -1678,12 +1921,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             formData.append('address', address);
             formData.append('items', JSON.stringify(cartData));
             
-            const submitBtn = document.querySelector('#cartModal .btn-success');
+            const confirmBtn = document.getElementById('confirmOrderBtn');
             let originalText = '';
-            if (submitBtn) {
-                originalText = submitBtn.innerHTML;
-                submitBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Processing...';
-                submitBtn.disabled = true;
+            if (confirmBtn) {
+                originalText = confirmBtn.innerHTML;
+                confirmBtn.innerHTML = '<i class="bi bi-hourglass-split"></i> Processing...';
+                confirmBtn.disabled = true;
             }
             
             console.log('Submitting order...');
@@ -1728,9 +1971,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 }
                 
                 if (data.success) {
+                    // Update local inventory with new stock levels
+                    if (data.updated_stock && data.updated_stock.length > 0) {
+                        data.updated_stock.forEach(item => {
+                            updateProductStock(item.item_id, item.stock);
+                        });
+                    }
+                    
                     cart = [];
                     updateCart();
-                    renderProducts();
                     
                     const successSoNumber = document.getElementById('successSoNumber');
                     const successOrderDate = document.getElementById('successOrderDate');
@@ -1743,15 +1992,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     const successModal = new bootstrap.Modal(document.getElementById('successModal'));
                     successModal.show();
                     
+                    // Reset customer form
                     setTimeout(() => {
                         const customerSelect = document.getElementById('customerSelect');
-                        const newCustomerName = document.getElementById('newCustomerName');
                         const customerEmail = document.getElementById('customerEmail');
                         const customerPhone = document.getElementById('customerPhone');
                         const customerAddress = document.getElementById('customerAddress');
                         
                         if (customerSelect) customerSelect.value = '';
-                        if (newCustomerName) newCustomerName.value = '';
                         if (customerEmail) customerEmail.value = '';
                         if (customerPhone) customerPhone.value = '';
                         if (customerAddress) customerAddress.value = '';
@@ -1759,19 +2007,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     
                 } else {
                     showToast('Error: ' + (data.message || 'Failed to submit order'));
-                    if (submitBtn) {
-                        submitBtn.innerHTML = originalText;
-                        submitBtn.disabled = false;
-                    }
+                }
+                
+                // Reset confirm button regardless of success or failure
+                if (confirmBtn) {
+                    confirmBtn.innerHTML = originalText;
+                    confirmBtn.disabled = false;
                 }
             })
             .catch(error => {
                 console.error('Error:', error.message);
                 showToast('Error: ' + error.message);
-                if (submitBtn) {
-                    submitBtn.innerHTML = originalText;
-                    submitBtn.disabled = false;
+                if (confirmBtn) {
+                    confirmBtn.innerHTML = originalText;
+                    confirmBtn.disabled = false;
                 }
+            });
+        }
+
+        // Cancel order function (to be called from sales_order.php)
+        function cancelOrder(orderId) {
+            return new Promise((resolve, reject) => {
+                const formData = new FormData();
+                formData.append('action', 'cancel_order');
+                formData.append('order_id', orderId);
+                
+                fetch('', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        // Update local inventory with restored stock
+                        if (data.restored_stock && data.restored_stock.length > 0) {
+                            data.restored_stock.forEach(item => {
+                                updateProductStock(item.item_id, item.stock);
+                            });
+                        }
+                        resolve(data);
+                    } else {
+                        reject(new Error(data.message));
+                    }
+                })
+                .catch(error => reject(error));
             });
         }
 
@@ -1867,6 +2146,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 viewCart();
             }
         });
+
+        // Expose cancelOrder function globally
+        window.cancelOrder = cancelOrder;
     </script>
 </body>
 </html>

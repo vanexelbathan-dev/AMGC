@@ -73,6 +73,42 @@ if ($drivers_branch_column_exists && !$view_all_branches) {
     $drivers_branch_condition = "AND branch_id = $branch_id";
 }
 
+// ========== GET AVAILABLE DRIVERS FOR DROPDOWN (Exclude only ACTIVE deliveries) ==========
+$available_drivers_query = "
+    SELECT d.driver_id, d.driver_name, d.vehicle_plate_number, d.vehicle_type
+    FROM drivers d
+    WHERE d.status = 'active'
+";
+
+// Add branch filter
+if ($drivers_branch_column_exists && !$view_all_branches && $branch_id > 0) {
+    $available_drivers_query .= " AND d.branch_id = $branch_id";
+}
+
+// Exclude drivers with ACTIVE pick lists (not completed/cancelled)
+$available_drivers_query .= " AND d.driver_id NOT IN (
+    SELECT DISTINCT pl.driver_id 
+    FROM pick_lists pl
+    JOIN sales_orders so ON pl.so_id = so.so_id
+    WHERE so.order_status IN ('confirmed', 'processing', 'ready')
+    AND pl.driver_id IS NOT NULL
+    AND pl.pick_status NOT IN ('completed', 'cancelled')
+)";
+
+// Exclude drivers with ACTIVE trip tickets (not completed/cancelled)
+$available_drivers_query .= " AND d.driver_id NOT IN (
+    SELECT DISTINCT tt.driver_id
+    FROM trip_tickets tt
+    WHERE tt.trip_status IN ('planned', 'in-progress')
+    AND tt.driver_id IS NOT NULL
+    AND tt.trip_status NOT IN ('completed', 'cancelled')
+)";
+
+$available_drivers_query .= " ORDER BY d.driver_name";
+
+$available_drivers_result = $conn->query($available_drivers_query);
+$available_drivers = $available_drivers_result ? $available_drivers_result->fetch_all(MYSQLI_ASSOC) : [];
+
 // ========== HANDLE AJAX REQUESTS ==========
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     header('Content-Type: application/json');
@@ -83,11 +119,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         // UPDATE SALES ORDER
         if ($_POST['action'] === 'update_order') {
             $so_id = (int)$_POST['so_id'];
-            $order_date = $_POST['order_date'];
+            $created_at = $_POST['created_at'];
             $order_status = $_POST['order_status'];
             $total_amount = (float)$_POST['total_amount'];
+            $selected_driver_id = isset($_POST['driver_id']) && !empty($_POST['driver_id']) ? (int)$_POST['driver_id'] : null;
             
-            // Get the old status to check if it's being confirmed
+            // Get the old status and branch info
             $status_query = "SELECT order_status, customer_id, branch_id, so_number FROM sales_orders WHERE so_id = ?";
             $status_stmt = $conn->prepare($status_query);
             $status_stmt->bind_param("i", $so_id);
@@ -109,56 +146,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
             }
             
+            // Update the sales order
             $update_query = "UPDATE sales_orders 
-                           SET order_date = ?, order_status = ?, total_amount = ?, updated_at = NOW() 
+                           SET created_at = ?, order_status = ?, total_amount = ?, updated_at = NOW() 
                            WHERE so_id = ?";
             $update_stmt = $conn->prepare($update_query);
-            $update_stmt->bind_param("ssdi", $order_date, $order_status, $total_amount, $so_id);
+            $update_stmt->bind_param("ssdi", $created_at, $order_status, $total_amount, $so_id);
             
             if (!$update_stmt->execute()) {
                 throw new Exception('Failed to update sales order');
             }
             
-            // GENERATE PICK LIST, INVOICE, AND TRIP TICKET WHEN ORDER IS CONFIRMED
-            if ($order_status === 'confirmed' && $old_status !== 'confirmed') {
+            // If order is being confirmed (from pending to confirmed)
+            if ($order_status === 'confirmed' && $old_status === 'pending') {
                 
-                // ===== DRIVER ASSIGNMENT - REQUIRE ACTIVE DRIVER =====
-                $driver_id = null;
-                $driver_name = null;
-                
-                // Get branch name for better error message
-                $branch_name_query = "SELECT branch_name FROM branches WHERE branch_id = ?";
-                $branch_name_stmt = $conn->prepare($branch_name_query);
-                $branch_name_stmt->bind_param("i", $order_branch_id);
-                $branch_name_stmt->execute();
-                $branch_result = $branch_name_stmt->get_result();
-                $branch_data = $branch_result->fetch_assoc();
-                $branch_display = $branch_data['branch_name'] ?? 'Branch ' . $order_branch_id;
-                
-                // Get an available active driver for this branch (REQUIRED)
-                $driver_query = "SELECT driver_id, driver_name FROM drivers WHERE branch_id = ? AND status = 'active' ORDER BY driver_id LIMIT 1";
-                $driver_stmt = $conn->prepare($driver_query);
-                $driver_stmt->bind_param("i", $order_branch_id);
-                $driver_stmt->execute();
-                $driver_result = $driver_stmt->get_result();
-                
-                if ($driver_result->num_rows > 0) {
-                    $driver = $driver_result->fetch_assoc();
-                    $driver_id = $driver['driver_id'];
-                    $driver_name = $driver['driver_name'];
-                } else {
-                    // NO ACTIVE DRIVER FOUND FOR THIS BRANCH - CANNOT PROCEED
-                    throw new Exception('Cannot confirm order: No active drivers available for ' . $branch_display . '. Please add an active driver to this branch first.');
+                // Validate that a driver was selected
+                if (!$selected_driver_id) {
+                    throw new Exception('Please select a driver for this delivery');
                 }
                 
-                // 1. CREATE PICK LIST with driver assignment
+                // Verify that the selected driver exists and belongs to the correct branch
+                $check_driver_query = "SELECT driver_id, driver_name FROM drivers WHERE driver_id = ? AND status = 'active'";
+                if ($drivers_branch_column_exists && !$view_all_branches) {
+                    $check_driver_query .= " AND branch_id = ?";
+                    $check_driver_stmt = $conn->prepare($check_driver_query);
+                    $check_driver_stmt->bind_param("ii", $selected_driver_id, $order_branch_id);
+                } else {
+                    $check_driver_stmt = $conn->prepare($check_driver_query);
+                    $check_driver_stmt->bind_param("i", $selected_driver_id);
+                }
+                
+                $check_driver_stmt->execute();
+                $driver_result = $check_driver_stmt->get_result();
+                
+                if ($driver_result->num_rows === 0) {
+                    throw new Exception('Selected driver is not available or does not belong to this branch');
+                }
+                
+                $driver_data = $driver_result->fetch_assoc();
+                $driver_name = $driver_data['driver_name'];
+                
+                // 1. CREATE PICK LIST with selected driver
                 $pick_list_number = 'PL-' . date('Ymd') . '-' . str_pad($so_id, 5, '0', STR_PAD_LEFT);
                 
-                // Include driver_id in pick list creation
                 $picklist_query = "INSERT INTO pick_lists (pick_list_number, so_id, branch_id, driver_id, pick_status, created_at) 
                                   VALUES (?, ?, ?, ?, 'open', NOW())";
                 $picklist_stmt = $conn->prepare($picklist_query);
-                $picklist_stmt->bind_param("siii", $pick_list_number, $so_id, $order_branch_id, $driver_id);
+                $picklist_stmt->bind_param("siii", $pick_list_number, $so_id, $order_branch_id, $selected_driver_id);
                 
                 if (!$picklist_stmt->execute()) {
                     throw new Exception('Failed to create pick list');
@@ -197,7 +231,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $invoice_id = $conn->insert_id;
                 }
                 
-                // 3. CREATE TRIP TICKET with driver assignment
+                // 3. CREATE TRIP TICKET with selected driver
                 $trip_ticket_number = 'TT-' . date('Ymd') . '-' . str_pad($so_id, 5, '0', STR_PAD_LEFT);
                 $trip_date = date('Y-m-d');
                 
@@ -205,7 +239,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $trip_fields = "trip_number, driver_id, branch_id, trip_date, trip_status, created_by, created_at";
                 $trip_values = "?, ?, ?, ?, 'planned', ?, NOW()";
                 $trip_types = "siisi"; // string, int, int, string, int
-                $trip_params = [$trip_ticket_number, $driver_id, $order_branch_id, $trip_date, $user_id];
+                $trip_params = [$trip_ticket_number, $selected_driver_id, $order_branch_id, $trip_date, $user_id];
                 
                 // Add optional fields if they exist
                 if ($trip_has_so_id) {
@@ -275,34 +309,125 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         $trans_stmt->execute();
                     }
                 }
+            }
+            
+            // If order is being marked as delivered - UPDATE RELATED RECORDS
+            if ($order_status === 'delivered' && $old_status !== 'delivered') {
                 
-                $conn->commit();
+                // 1. Update pick list status to completed
+                $update_pl_query = "UPDATE pick_lists SET pick_status = 'completed', updated_at = NOW() WHERE so_id = ?";
+                $update_pl_stmt = $conn->prepare($update_pl_query);
+                $update_pl_stmt->bind_param("i", $so_id);
+                $update_pl_stmt->execute();
                 
-                $response = [
-                    'success' => true,
-                    'message' => 'Order confirmed successfully! Pick List, Trip Ticket have been generated. Inventory has been updated.',
-                    'generated_docs' => [
-                        'picklist' => $pick_list_number,
-                        'trip_ticket' => $trip_ticket_number,
-                        'driver_id' => $driver_id,
-                        'driver_name' => $driver_name
-                    ]
-                ];
-                
-                if ($invoice_so_column_exists) {
-                    $response['message'] = 'Order confirmed successfully! Pick List, Invoice, and Trip Ticket have been generated. Inventory has been updated.';
-                    $response['generated_docs']['invoice'] = $invoice_number;
+                // 2. Update trip ticket status to completed
+                if ($trip_has_so_id) {
+                    $update_tt_query = "UPDATE trip_tickets SET trip_status = 'completed', updated_at = NOW() WHERE so_id = ?";
+                    $update_tt_stmt = $conn->prepare($update_tt_query);
+                    $update_tt_stmt->bind_param("i", $so_id);
+                    $update_tt_stmt->execute();
                 }
                 
-                echo json_encode($response);
-                exit;
+                // 3. Update invoice status to paid
+                if ($invoice_so_column_exists) {
+                    $update_invoice_query = "UPDATE invoices SET status = 'paid' WHERE so_id = ?";
+                    $update_invoice_stmt = $conn->prepare($update_invoice_query);
+                    $update_invoice_stmt->bind_param("i", $so_id);
+                    $update_invoice_stmt->execute();
+                }
+            }
+            
+            // If order is being cancelled - UPDATE RELATED RECORDS
+            if ($order_status === 'cancelled' && $old_status !== 'cancelled') {
+                
+                // 1. Update pick list status to cancelled
+                $update_pl_query = "UPDATE pick_lists SET pick_status = 'cancelled', updated_at = NOW() WHERE so_id = ?";
+                $update_pl_stmt = $conn->prepare($update_pl_query);
+                $update_pl_stmt->bind_param("i", $so_id);
+                $update_pl_stmt->execute();
+                
+                // 2. Update trip ticket status to cancelled
+                if ($trip_has_so_id) {
+                    $update_tt_query = "UPDATE trip_tickets SET trip_status = 'cancelled', updated_at = NOW() WHERE so_id = ?";
+                    $update_tt_stmt = $conn->prepare($update_tt_query);
+                    $update_tt_stmt->bind_param("i", $so_id);
+                    $update_tt_stmt->execute();
+                }
+                
+                // 3. Update invoice status to cancelled
+                if ($invoice_so_column_exists) {
+                    $update_invoice_query = "UPDATE invoices SET status = 'cancelled' WHERE so_id = ?";
+                    $update_invoice_stmt = $conn->prepare($update_invoice_query);
+                    $update_invoice_stmt->bind_param("i", $so_id);
+                    $update_invoice_stmt->execute();
+                }
             }
             
             $conn->commit();
             
+            // Prepare response message
+            $response_message = 'Sales order updated successfully';
+            $generated_docs = [];
+            
+            if ($order_status === 'confirmed' && $old_status === 'pending') {
+                $response_message = 'Order confirmed successfully! Pick List, Trip Ticket have been generated. Inventory has been updated.';
+                $generated_docs = [
+                    'picklist' => $pick_list_number,
+                    'trip_ticket' => $trip_ticket_number,
+                    'driver_id' => $selected_driver_id,
+                    'driver_name' => $driver_name
+                ];
+                
+                if ($invoice_so_column_exists) {
+                    $response_message = 'Order confirmed successfully! Pick List, Invoice, and Trip Ticket have been generated. Inventory has been updated.';
+                    $generated_docs['invoice'] = $invoice_number;
+                }
+            }
+            
             echo json_encode([
                 'success' => true,
-                'message' => 'Sales order updated successfully'
+                'message' => $response_message,
+                'generated_docs' => $generated_docs
+            ]);
+            exit;
+        }
+        
+        // GET AVAILABLE DRIVERS (for refreshing the dropdown)
+        elseif ($_POST['action'] === 'get_available_drivers') {
+            $branch_id_param = (int)$_POST['branch_id'];
+            
+            $query = "
+                SELECT d.driver_id, d.driver_name, d.vehicle_plate_number, d.vehicle_type
+                FROM drivers d
+                WHERE d.status = 'active'
+                AND d.branch_id = ?
+                AND d.driver_id NOT IN (
+                    SELECT DISTINCT pl.driver_id 
+                    FROM pick_lists pl
+                    JOIN sales_orders so ON pl.so_id = so.so_id
+                    WHERE so.order_status IN ('confirmed', 'processing', 'ready')
+                    AND pl.driver_id IS NOT NULL
+                    AND pl.pick_status NOT IN ('completed', 'cancelled')
+                )
+                AND d.driver_id NOT IN (
+                    SELECT DISTINCT tt.driver_id
+                    FROM trip_tickets tt
+                    WHERE tt.trip_status IN ('planned', 'in-progress')
+                    AND tt.driver_id IS NOT NULL
+                    AND tt.trip_status NOT IN ('completed', 'cancelled')
+                )
+                ORDER BY d.driver_name
+            ";
+            
+            $stmt = $conn->prepare($query);
+            $stmt->bind_param("i", $branch_id_param);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            $drivers = $result->fetch_all(MYSQLI_ASSOC);
+            
+            echo json_encode([
+                'success' => true,
+                'drivers' => $drivers
             ]);
             exit;
         }
@@ -348,7 +473,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
             }
             
-            // Check for trip tickets - need to check if so_id exists in trip_tickets first
+            // Check for trip tickets
             if ($trip_has_so_id) {
                 $check_trip_query = "SELECT COUNT(*) as count FROM trip_tickets WHERE so_id = ?";
                 $check_trip_stmt = $conn->prepare($check_trip_query);
@@ -389,7 +514,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         elseif ($_POST['action'] === 'get_order') {
             $so_id = (int)$_POST['so_id'];
             
-            // Add branch filter if needed
             $query = "
                 SELECT 
                     so.*,
@@ -432,8 +556,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         i.price_case,
                         i.price_inner_pack,
                         i.price_box,
-                        i.price_carton,
-                        i.branch_id as item_branch_id
+                        i.price_carton
                     FROM sales_order_items soi
                     JOIN items i ON soi.item_id = i.item_id
                     WHERE soi.so_id = ?
@@ -457,7 +580,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $documents['pick_list_number'] = $pl_row['pick_list_number'];
                     $documents['picklist_driver_id'] = $pl_row['driver_id'];
                     
-                    // Get driver name if driver_id exists
                     if (!empty($pl_row['driver_id'])) {
                         $driver_query = "SELECT driver_name FROM drivers WHERE driver_id = ?";
                         $driver_stmt = $conn->prepare($driver_query);
@@ -481,10 +603,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     }
                 }
                 
-                // Get invoice data if column exists
+                // Get invoice data
                 $invoice = null;
                 if ($invoice_so_column_exists) {
-                    $invoice_query = "SELECT invoice_number, status as invoice_status FROM invoices WHERE so_id = ? LIMIT 1";
+                    $invoice_query = "SELECT invoice_id, invoice_number, status as invoice_status, due_date FROM invoices WHERE so_id = ? LIMIT 1";
                     $invoice_stmt = $conn->prepare($invoice_query);
                     $invoice_stmt->bind_param("i", $so_id);
                     $invoice_stmt->execute();
@@ -537,7 +659,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $stmt->execute();
             $order = $stmt->get_result()->fetch_assoc();
             
-            // Get items
             $items_query = "
                 SELECT 
                     soi.*,
@@ -553,7 +674,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $items_stmt->execute();
             $items = $items_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             
-            // Get assigned driver from pick list
             $driver_query = "
                 SELECT d.driver_name, d.vehicle_plate_number, d.vehicle_type
                 FROM pick_lists pl
@@ -703,7 +823,7 @@ $sales_query = "
     SELECT 
         so.so_id,
         so.so_number,
-        so.order_date,
+        so.created_at,
         so.total_amount,
         so.order_status,
         so.branch_id,
@@ -714,7 +834,7 @@ $sales_query = "
         u.last_name,
         COUNT(soi.so_item_id) as total_items,
         SUM(soi.quantity_ordered) as total_quantity,
-        " . ($invoice_so_column_exists ? "inv.invoice_number, inv.status as invoice_status" : "NULL as invoice_number, NULL as invoice_status") . ",
+        " . ($invoice_so_column_exists ? "inv.invoice_id, inv.invoice_number, inv.status as invoice_status" : "NULL as invoice_id, NULL as invoice_number, NULL as invoice_status") . ",
         (SELECT driver_name FROM drivers WHERE driver_id = pl.driver_id LIMIT 1) as assigned_driver
     FROM sales_orders so
     JOIN customers c ON so.customer_id = c.customer_id
@@ -726,7 +846,7 @@ $sales_query = "
     WHERE 1=1
     $branch_condition
     GROUP BY so.so_id
-    ORDER BY so.order_date DESC, so.so_id DESC
+    ORDER BY so.created_at DESC, so.so_id DESC
 ";
 $sales_result = $conn->query($sales_query);
 if (!$sales_result) {
@@ -734,7 +854,7 @@ if (!$sales_result) {
 }
 $sales_orders = $sales_result->fetch_all(MYSQLI_ASSOC);
 
-// CALCULATE STATISTICS FROM REAL DATA
+// CALCULATE STATISTICS
 $total_orders = count($sales_orders);
 $pending_orders = count(array_filter($sales_orders, fn($so) => $so['order_status'] === 'pending'));
 $processing_orders = count(array_filter($sales_orders, fn($so) => $so['order_status'] === 'processing'));
@@ -742,13 +862,12 @@ $ready_orders = count(array_filter($sales_orders, fn($so) => $so['order_status']
 $delivered_orders = count(array_filter($sales_orders, fn($so) => $so['order_status'] === 'delivered'));
 $cancelled_orders = count(array_filter($sales_orders, fn($so) => $so['order_status'] === 'cancelled'));
 
-// STAT CARD VALUES
 $statTotalOrders = $total_orders;
 $statPendingOrders = $pending_orders;
 $statForDelivery = $ready_orders;
 $statCompletedOrders = $delivered_orders;
 
-// Get unique customers for filter - branch-specific
+// Get unique customers for filter
 $customers_query = "SELECT customer_id, customer_name FROM customers WHERE status = 'active' $customers_branch_condition ORDER BY customer_name";
 $customers_result = $conn->query($customers_query);
 $customers = $customers_result->fetch_all(MYSQLI_ASSOC);
@@ -761,7 +880,7 @@ if (file_exists($logo_path)) {
     $logo_base64 = 'data:image/png;base64,' . base64_encode($image_data);
 }
 
-// Helper function for order status badge
+// Helper functions
 function getOrderStatusBadge($status) {
     return match($status) {
         'pending' => 'badge bg-warning text-dark',
@@ -786,9 +905,9 @@ function getOrderStatusText($status) {
     };
 }
 
-// Payment status based on invoice if available, otherwise simplified
 function getPaymentStatus($order_status, $invoice_status = null) {
     if ($order_status === 'cancelled') return ['status' => 'Cancelled', 'class' => 'bg-danger'];
+    if ($order_status === 'delivered') return ['status' => 'Paid', 'class' => 'bg-success'];
     
     if ($invoice_status) {
         return match($invoice_status) {
@@ -799,19 +918,13 @@ function getPaymentStatus($order_status, $invoice_status = null) {
         };
     }
     
-    return ['status' => 'No Invoice', 'class' => 'bg-secondary'];
+    return ['status' => 'Pending', 'class' => 'bg-warning text-dark'];
 }
 
 function formatDate($dateStr) {
     if (!$dateStr) return '';
     $date = new DateTime($dateStr);
     return $date->format('M d, Y');
-}
-
-function formatDateTime($dateStr) {
-    if (!$dateStr) return '';
-    $date = new DateTime($dateStr);
-    return $date->format('M d, Y H:i');
 }
 ?>
 <!DOCTYPE html>
@@ -826,22 +939,17 @@ function formatDateTime($dateStr) {
     <link rel="apple-touch-icon" sizes="180x180" href="../Pictures/apple-touch-icon.png" />
     <link rel="manifest" href="../Pictures/site.webmanifest" />
     <link rel="stylesheet" href="../css/current_inventory.css">
-    <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
-    <!-- Google Fonts - TENOR SANS and ALICE from brand kit -->
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
     <link href="https://fonts.googleapis.com/css2?family=Tenor+Sans&family=Alice&display=swap" rel="stylesheet">
-    <!-- SheetJS for Excel Export -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    <!-- SweetAlert2 -->
     <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <!-- jQuery for AJAX -->
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     
     <style>
-        /* Brand Colors */
         :root {
             --green: #2E7D32;
             --green-haze: #1B5E20;
@@ -853,7 +961,6 @@ function formatDateTime($dateStr) {
             --black: #212121;
         }
 
-        /* Regular styles for the UI */
         .branch-badge {
             background-color: #e7f1ff;
             color: #0d6efd;
@@ -875,7 +982,6 @@ function formatDateTime($dateStr) {
             color: #c7254e;
         }
         
-        /* Driver badge styling */
         .driver-badge {
             background-color: #e3f2fd;
             color: #0d6efd;
@@ -889,6 +995,24 @@ function formatDateTime($dateStr) {
         }
         .driver-badge i {
             font-size: 12px;
+        }
+        
+        .available-badge {
+            background-color: #d4edda;
+            color: #155724;
+            padding: 2px 6px;
+            border-radius: 12px;
+            font-size: 10px;
+            margin-left: 5px;
+        }
+        
+        .busy-badge {
+            background-color: #f8d7da;
+            color: #721c24;
+            padding: 2px 6px;
+            border-radius: 12px;
+            font-size: 10px;
+            margin-left: 5px;
         }
         
         @media (max-width: 768px) {
@@ -917,67 +1041,7 @@ function formatDateTime($dateStr) {
                 margin-right: -8px;
             }
         }
-        @keyframes slideIn {
-            from {
-                transform: translateX(100%);
-                opacity: 0;
-            }
-            to {
-                transform: translateX(0);
-                opacity: 1;
-            }
-        }
-        .document-notification {
-            animation: slideIn 0.5s ease-out;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            padding: 20px;
-            border-radius: 12px;
-            margin-top: 20px;
-        }
-        .print-order-btn {
-            transition: all 0.3s ease;
-        }
-        .print-order-btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
-        }
-        .invoice-badge {
-            font-size: 0.7rem;
-            padding: 2px 6px;
-            margin-left: 5px;
-        }
-        .db-fix-card {
-            background: #fff3cd;
-            border: 1px solid #ffe69c;
-            border-radius: 8px;
-            padding: 20px;
-            margin-bottom: 20px;
-        }
-        .db-fix-card pre {
-            background: #212529;
-            color: #fff;
-            padding: 15px;
-            border-radius: 5px;
-            overflow-x: auto;
-        }
-        .stock-warning {
-            background-color: #fff3cd;
-            border-left: 4px solid #ffc107;
-            padding: 10px 15px;
-            margin: 10px 0;
-            border-radius: 4px;
-        }
-        .stock-warning ul {
-            margin-top: 5px;
-            margin-bottom: 0;
-        }
-        .stock-warning li {
-            color: #856404;
-            font-size: 0.9rem;
-        }
         
-        /* Action Buttons Styling */
         .action-buttons {
             display: flex;
             gap: 5px;
@@ -1038,14 +1102,27 @@ function formatDateTime($dateStr) {
             transform: translateY(-2px);
         }
         
-        /* Enhanced Print Styles with Brand Colors */
+        .db-fix-card {
+            background: #fff3cd;
+            border: 1px solid #ffe69c;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .db-fix-card pre {
+            background: #212529;
+            color: #fff;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        
         @media print {
             @page {
                 size: landscape;
                 margin: 0.75in;
             }
             
-            /* Hide all UI elements */
             .sidebar, .navbar-top, .footer, .action-buttons, 
             .btn, .table-header .btn, .form-card, 
             .mobile-menu-btn, #desktopToggleBtn, .sidebar-footer,
@@ -1061,7 +1138,6 @@ function formatDateTime($dateStr) {
                 display: none !important;
             }
             
-            /* Show main content */
             .main-content {
                 margin-left: 0 !important;
                 padding: 20px !important;
@@ -1072,251 +1148,6 @@ function formatDateTime($dateStr) {
                 display: block !important;
                 background: var(--white) !important;
                 padding: 20px !important;
-            }
-            
-            /* Print Container */
-            .print-container {
-                max-width: 100%;
-                margin: 0 auto;
-                font-family: 'Tenor Sans', sans-serif;
-            }
-            
-            /* Print Header with Logo */
-            .print-header {
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                margin-bottom: 30px;
-                padding-bottom: 20px;
-                border-bottom: 3px solid var(--deep-sea);
-            }
-            
-            .logo-section {
-                display: flex;
-                align-items: center;
-                gap: 15px;
-            }
-            
-            .company-logo {
-                width: 80px;
-                height: auto;
-            }
-            
-            .company-info h1 {
-                font-family: 'Alice', serif;
-                font-size: 28px;
-                color: var(--deep-sea);
-                margin: 0 0 5px 0;
-                letter-spacing: 1px;
-            }
-            
-            .company-info p {
-                font-family: 'Tenor Sans', sans-serif;
-                font-size: 12px;
-                color: var(--forest-green);
-                margin: 0;
-                line-height: 1.5;
-            }
-            
-            .report-title {
-                text-align: right;
-            }
-            
-            .report-title h2 {
-                font-family: 'Alice', serif;
-                font-size: 24px;
-                color: var(--green-haze);
-                margin: 0 0 5px 0;
-            }
-            
-            .report-title .date-info {
-                font-family: 'Tenor Sans', sans-serif;
-                font-size: 11px;
-                color: var(--forest-green);
-            }
-            
-            /* Summary Box */
-            .summary-box {
-                background: linear-gradient(135deg, var(--light-gray) 0%, var(--white) 100%);
-                border: 2px solid var(--green);
-                border-radius: 10px;
-                padding: 20px;
-                margin-bottom: 30px;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-            }
-            
-            .summary-item {
-                text-align: center;
-                flex: 1;
-                border-right: 2px solid var(--green-haze);
-            }
-            
-            .summary-item:last-child {
-                border-right: none;
-            }
-            
-            .summary-label {
-                font-family: 'Tenor Sans', sans-serif;
-                font-size: 11px;
-                text-transform: uppercase;
-                color: var(--deep-sea);
-                margin-bottom: 5px;
-                font-weight: bold;
-            }
-            
-            .summary-value {
-                font-family: 'Alice', serif;
-                font-size: 18px;
-                color: var(--forest-green);
-                font-weight: bold;
-            }
-            
-            /* Table Styles */
-            table {
-                width: 100%;
-                border-collapse: collapse;
-                margin: 20px 0;
-                font-family: 'Tenor Sans', sans-serif;
-            }
-            
-            th {
-                background: var(--deep-sea);
-                color: var(--white);
-                font-family: 'Alice', serif;
-                font-size: 13px;
-                padding: 12px;
-                text-align: left;
-                border: 1px solid var(--forest-green);
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-            }
-            
-            td {
-                padding: 10px;
-                border: 1px solid var(--green-haze);
-                font-size: 12px;
-                color: var(--black);
-            }
-            
-            tr:nth-child(even) {
-                background-color: var(--light-gray);
-            }
-            
-            tr:hover {
-                background-color: rgba(46, 125, 50, 0.05);
-            }
-            
-            .total-row {
-                background: linear-gradient(135deg, var(--green) 0%, var(--deep-sea) 100%) !important;
-                color: var(--white);
-            }
-            
-            .total-row td {
-                color: var(--white);
-                font-family: 'Alice', serif;
-                font-size: 14px;
-                font-weight: bold;
-                border: 1px solid var(--forest-green);
-            }
-            
-            .status-badge-print {
-                background-color: var(--yellow);
-                color: var(--black);
-                padding: 3px 10px;
-                border-radius: 15px;
-                font-size: 11px;
-                font-family: 'Tenor Sans', sans-serif;
-                font-weight: bold;
-                display: inline-block;
-            }
-            
-            .branch-badge-print {
-                background-color: var(--green);
-                color: var(--white);
-                padding: 3px 10px;
-                border-radius: 15px;
-                font-size: 11px;
-                font-family: 'Tenor Sans', sans-serif;
-                display: inline-block;
-            }
-            
-            .driver-badge-print {
-                background-color: #0d6efd;
-                color: white;
-                padding: 3px 10px;
-                border-radius: 15px;
-                font-size: 11px;
-                display: inline-block;
-            }
-            
-            /* Print Footer */
-            .print-footer {
-                margin-top: 40px;
-                padding-top: 20px;
-                border-top: 2px solid var(--deep-sea);
-                display: flex;
-                justify-content: space-between;
-                font-family: 'Tenor Sans', sans-serif;
-                font-size: 11px;
-                color: var(--forest-green);
-            }
-            
-            .signature-line {
-                width: 200px;
-                border-bottom: 1px solid var(--deep-sea);
-                margin-top: 5px;
-            }
-            
-            .prepared-by {
-                text-align: left;
-            }
-            
-            .generated-info {
-                text-align: right;
-            }
-            
-            /* Hide action column */
-            .custom-table th:last-child,
-            .custom-table td:last-child {
-                display: none !important;
-            }
-            
-            /* Adjust column widths for better print layout */
-            .custom-table th:nth-child(1) { width: 12%; } /* Order No. */
-            .custom-table th:nth-child(2) { width: 10%; } /* Date */
-            .custom-table th:nth-child(3) { width: 18%; } /* Customer */
-            <?php if ($so_branch_column_exists && $view_all_branches): ?>
-            .custom-table th:nth-child(4) { width: 10%; } /* Branch */
-            .custom-table th:nth-child(5) { width: 5%; }  /* Items */
-            .custom-table th:nth-child(6) { width: 5%; }  /* Qty */
-            .custom-table th:nth-child(7) { width: 12%; } /* Total Amount */
-            .custom-table th:nth-child(8) { width: 12%; } /* Driver */
-            .custom-table th:nth-child(9) { width: 10%; } /* Invoice */
-            .custom-table th:nth-child(10) { width: 10%; } /* Payment Status */
-            .custom-table th:nth-child(11) { width: 10%; } /* Order Status */
-            <?php else: ?>
-            .custom-table th:nth-child(4) { width: 5%; }  /* Items */
-            .custom-table th:nth-child(5) { width: 5%; }  /* Qty */
-            .custom-table th:nth-child(6) { width: 12%; } /* Total Amount */
-            .custom-table th:nth-child(7) { width: 12%; } /* Driver */
-            .custom-table th:nth-child(8) { width: 10%; } /* Invoice */
-            .custom-table th:nth-child(9) { width: 10%; } /* Payment Status */
-            .custom-table th:nth-child(10) { width: 10%; } /* Order Status */
-            <?php endif; ?>
-            
-            /* Amount column alignment */
-            td:nth-child(<?php echo ($so_branch_column_exists && $view_all_branches) ? '7' : '6'; ?>) {
-                text-align: right !important;
-                font-weight: 500;
-            }
-            
-            /* Center align items and qty columns */
-            td:nth-child(<?php echo ($so_branch_column_exists && $view_all_branches) ? '5' : '4'; ?>),
-            td:nth-child(<?php echo ($so_branch_column_exists && $view_all_branches) ? '6' : '5'; ?>) {
-                text-align: center !important;
             }
         }
     </style>
@@ -1413,7 +1244,7 @@ function formatDateTime($dateStr) {
                     </div>
                 </div>
 
-                <!-- Database Fix Alert - Only show if invoice_so_column doesn't exist -->
+                <!-- Database Fix Alert -->
                 <?php if (!$invoice_so_column_exists): ?>
                 <div class="db-fix-card no-print">
                     <div class="d-flex align-items-center mb-3">
@@ -1551,7 +1382,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                 <div class="col-md-5">
                                     <div class="search-box">
                                         <i class="bi bi-search"></i>
-                                        <input type="text" class="form-control" id="searchInput" placeholder="Search by order number, customer, or driver..." onkeyup="filterTable()">
+                                        <input type="text" class="form-control" id="searchInput" placeholder="Search by order number or customer..." onkeyup="filterTable()">
                                     </div>
                                 </div>
                                 <div class="col-md-3">
@@ -1641,7 +1472,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                         data-order-number="<?= htmlspecialchars($order['so_number']) ?>"
                                         data-customer="<?= htmlspecialchars($order['customer_name']) ?>"
                                         data-status="<?= $order['order_status'] ?>"
-                                        data-date="<?= $order['order_date'] ?>"
+                                        data-date="<?= $order['created_at'] ?>"
                                         data-amount="<?= $order['total_amount'] ?>"
                                         data-items="<?= $order['total_items'] ?? 0 ?>"
                                         data-qty="<?= $order['total_quantity'] ?? 0 ?>"
@@ -1649,7 +1480,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                         data-invoice-status="<?= $order['invoice_status'] ?? '' ?>"
                                         data-driver="<?= htmlspecialchars($order['assigned_driver'] ?? '') ?>">
                                         <td><strong><?= htmlspecialchars($order['so_number']) ?></strong></td>
-                                        <td><?= formatDate($order['order_date']) ?></td>
+                                        <td><?= formatDate($order['created_at']) ?></td>
                                         <td><?= htmlspecialchars($order['customer_name']) ?></td>
                                         <?php if ($so_branch_column_exists && $view_all_branches): ?>
                                             <td>
@@ -1714,21 +1545,16 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         </div>
     </div>
 
-    <!-- PRINT CONTAINER - Hidden for print generation -->
-    <div id="printContainer" style="display: none;"></div>
-
     <!-- VIEW ORDER MODAL -->
-    <div class="modal fade no-print" id="viewOrderModal" tabindex="-1" aria-hidden="true">
+    <div class="modal fade no-print" id="viewOrderModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header bg-info text-white">
                     <h5 class="modal-title"><i class="bi bi-eye me-2"></i>Sales Order Details</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <div id="viewOrderContent">
-                        <!-- Content populated by JavaScript -->
-                    </div>
+                    <div id="viewOrderContent"></div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -1740,7 +1566,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
     </div>
 
     <!-- EDIT ORDER MODAL -->
-    <div class="modal fade no-print" id="editOrderModal" tabindex="-1" aria-hidden="true">
+    <div class="modal fade no-print" id="editOrderModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header bg-warning text-dark">
@@ -1769,11 +1595,35 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                             </div>
                             <div class="col-md-6">
                                 <label for="editOrderStatus" class="form-label">Order Status *</label>
-                                <select class="form-select" id="editOrderStatus" required>
+                                <select class="form-select" id="editOrderStatus" onchange="onOrderStatusChange()" required>
                                     <option value="pending">Pending</option>
                                     <option value="confirmed">Confirm Order (Generate Documents & Deduct Stock)</option>
                                 </select>
-                                </div>
+                            </div>
+                            
+                            <!-- Driver Selection - Only shown when confirming -->
+                            <div class="col-md-12" id="driverSelectionContainer" style="display: none;">
+                                <label for="editDriverSelect" class="form-label fw-bold">Select Driver *</label>
+                                <select class="form-select select2-driver" id="editDriverSelect" style="width: 100%;">
+                                    <option value="">-- Choose Available Driver --</option>
+                                    <?php if (empty($available_drivers)): ?>
+                                        <option value="" disabled>No available drivers found</option>
+                                    <?php else: ?>
+                                        <?php foreach ($available_drivers as $driver): ?>
+                                            <option value="<?= $driver['driver_id'] ?>" 
+                                                    data-vehicle="<?= htmlspecialchars($driver['vehicle_type'] ?? 'N/A') ?>"
+                                                    data-plate="<?= htmlspecialchars($driver['vehicle_plate_number'] ?? 'N/A') ?>">
+                                                <?= htmlspecialchars($driver['driver_name']) ?> 
+                                                <?php if (!empty($driver['vehicle_plate_number'])): ?>
+                                                    - <?= htmlspecialchars($driver['vehicle_plate_number']) ?>
+                                                <?php endif; ?>
+                                                <span class="available-badge">Available</span>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    <?php endif; ?>
+                                </select>
+                            </div>
+                            
                             <div class="col-md-4">
                                 <label for="editTotalItems" class="form-label">Items</label>
                                 <input type="number" class="form-control" id="editTotalItems" readonly>
@@ -1788,9 +1638,23 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                             </div>
                         </div>
                         
+                        <!-- STOCK CHECK MESSAGE -->
                         <div class="alert alert-info mt-3" id="stockCheckMessage" style="display: none;">
                             <i class="bi bi-info-circle me-2"></i>
                             <span id="stockCheckText"></span>
+                        </div>
+                        
+                        <!-- NO DRIVERS MESSAGE -->
+                        <div class="alert alert-warning mt-3" id="noDriversMessage" style="display: none;">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <strong>No available drivers found for your branch.</strong> 
+                            Please add drivers or mark existing drivers as active.
+                        </div>
+                        
+                        <!-- PAYMENT NOTICE -->
+                        <div class="alert alert-success mt-3" id="paymentNotice" style="display: none;">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <span id="paymentNoticeText"></span>
                         </div>
                     </form>
                 </div>
@@ -1803,12 +1667,12 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
     </div>
 
     <!-- DELETE CONFIRMATION MODAL -->
-    <div class="modal fade no-print" id="deleteOrderModal" tabindex="-1" aria-hidden="true">
+    <div class="modal fade no-print" id="deleteOrderModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header bg-danger text-white">
                     <h5 class="modal-title"><i class="bi bi-trash me-2"></i>Confirm Delete</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
                     <p>Are you sure you want to delete this sales order?</p>
@@ -1827,7 +1691,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
     </div>
 
     <!-- STOCK WARNING MODAL -->
-    <div class="modal fade no-print" id="stockWarningModal" tabindex="-1" aria-hidden="true">
+    <div class="modal fade no-print" id="stockWarningModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog">
             <div class="modal-content">
                 <div class="modal-header bg-warning text-dark">
@@ -1852,12 +1716,13 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
     <script>
     // ========== GLOBAL VARIABLES ==========
     let currentOrderId = null;
-    const branchId = <?php echo $branch_id; ?>;
+    let currentBranchId = <?php echo $branch_id; ?>;
     const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
     const soBranchColumnExists = <?php echo $so_branch_column_exists ? 'true' : 'false'; ?>;
     const invoiceSoColumnExists = <?php echo $invoice_so_column_exists ? 'true' : 'false'; ?>;
     const driversBranchColumnExists = <?php echo $drivers_branch_column_exists ? 'true' : 'false'; ?>;
     const logoBase64 = '<?php echo $logo_base64; ?>';
+    let availableDrivers = <?= json_encode($available_drivers) ?>;
 
     // ========== SIDEBAR FUNCTIONS ==========
     function toggleSidebar() {
@@ -1949,6 +1814,16 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
     document.addEventListener('DOMContentLoaded', function() {
         initializeSidebar();
         
+        // Initialize Select2
+        $('.select2-driver').select2({
+            placeholder: 'Select an available driver',
+            allowClear: true,
+            dropdownParent: $('#editOrderModal'),
+            width: '100%',
+            templateResult: formatDriverOption,
+            templateSelection: formatDriverSelection
+        });
+        
         // Mobile menu toggle
         document.getElementById('mobileMenuBtn').addEventListener('click', function() {
             const sidebar = document.getElementById('sidebar');
@@ -1982,7 +1857,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             });
         });
 
-        // Close sidebar when clicking outside on mobile
         document.addEventListener('click', function(event) {
             const sidebar = document.getElementById('sidebar');
             const mobileBtn = document.getElementById('mobileMenuBtn');
@@ -1997,9 +1871,108 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             }
         });
 
-        // Add resize event listener
         window.addEventListener('resize', handleSidebarResize);
     });
+
+    // Format driver options in Select2
+    function formatDriverOption(driver) {
+        if (!driver.id) return driver.text;
+        
+        const element = $(driver.element);
+        const vehicle = element.data('vehicle') || 'No vehicle';
+        const plate = element.data('plate') || 'No plate';
+        
+        return $('<div><strong>' + driver.text.replace('Available', '').trim() + '</strong><br><small class="text-muted">' + vehicle + ' - ' + plate + '</small> <span class="badge bg-success">Available</span></div>');
+    }
+
+    function formatDriverSelection(driver) {
+        return driver.text ? driver.text.replace('Available', '').trim() : driver.text;
+    }
+
+    // When order status changes
+    function onOrderStatusChange() {
+        const status = document.getElementById('editOrderStatus').value;
+        const driverContainer = document.getElementById('driverSelectionContainer');
+        const noDriversMsg = document.getElementById('noDriversMessage');
+        const paymentNotice = document.getElementById('paymentNotice');
+        const paymentNoticeText = document.getElementById('paymentNoticeText');
+        
+        if (status === 'confirmed') {
+            if (availableDrivers.length > 0) {
+                driverContainer.style.display = 'block';
+                noDriversMsg.style.display = 'none';
+                paymentNotice.style.display = 'none';
+                $('#editDriverSelect').trigger('change');
+            } else {
+                driverContainer.style.display = 'none';
+                noDriversMsg.style.display = 'block';
+                paymentNotice.style.display = 'none';
+            }
+        } else if (status === 'delivered') {
+            driverContainer.style.display = 'none';
+            noDriversMsg.style.display = 'none';
+            paymentNotice.style.display = 'block';
+            paymentNoticeText.innerHTML = 'Marking this order as delivered will automatically update payment status to <strong>Paid</strong>.';
+        } else if (status === 'cancelled') {
+            driverContainer.style.display = 'none';
+            noDriversMsg.style.display = 'none';
+            paymentNotice.style.display = 'block';
+            paymentNoticeText.innerHTML = 'Cancelling this order will update payment status to <strong>Cancelled</strong>.';
+        } else {
+            driverContainer.style.display = 'none';
+            noDriversMsg.style.display = 'none';
+            paymentNotice.style.display = 'none';
+        }
+    }
+
+    // Refresh available drivers
+    function refreshAvailableDrivers() {
+        showLoading();
+        
+        const formData = new FormData();
+        formData.append('action', 'get_available_drivers');
+        formData.append('branch_id', currentBranchId);
+        
+        fetch('sales_order.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            Swal.close();
+            
+            if (data.success) {
+                availableDrivers = data.drivers;
+                
+                const select = $('#editDriverSelect');
+                select.empty();
+                select.append('<option value="">-- Choose Available Driver --</option>');
+                
+                if (data.drivers.length === 0) {
+                    select.append('<option value="" disabled>No available drivers found</option>');
+                } else {
+                    data.drivers.forEach(driver => {
+                        const option = new Option(
+                            driver.driver_name + ' - ' + (driver.vehicle_plate_number || 'No vehicle'),
+                            driver.driver_id,
+                            false,
+                            false
+                        );
+                        $(option).data('vehicle', driver.vehicle_type || 'N/A');
+                        $(option).data('plate', driver.vehicle_plate_number || 'N/A');
+                        select.append(option);
+                    });
+                }
+                
+                select.trigger('change');
+                onOrderStatusChange();
+            }
+        })
+        .catch(error => {
+            Swal.close();
+            console.error('Error refreshing drivers:', error);
+        });
+    }
 
     // ========== CHECK STOCK FUNCTION ==========
     function checkStockBeforeConfirm(soId) {
@@ -2023,7 +1996,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                     document.getElementById('stockCheckText').innerHTML = '<i class="bi bi-check-circle-fill text-success"></i> Stock is sufficient for all items.';
                     return true;
                 } else {
-                    // Show insufficient stock warning
                     let html = '<ul class="list-group">';
                     data.insufficient_items.forEach(item => {
                         html += `<li class="list-group-item list-group-item-warning">
@@ -2066,7 +2038,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 const documents = data.documents || {};
                 const invoice = data.invoice || null;
                 
-                const orderDate = new Date(order.order_date);
+                const orderDate = new Date(order.created_at);
                 const formattedDate = orderDate.toLocaleDateString('en-US', {
                     year: 'numeric',
                     month: 'short',
@@ -2076,7 +2048,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 const statusBadge = getStatusBadge(order.order_status);
                 const statusText = getStatusText(order.order_status);
                 
-                // Build items table
                 let itemsHtml = '';
                 if (items && items.length > 0) {
                     itemsHtml = '<h6 class="mt-4 mb-3 fw-bold">Order Items</h6><div class="table-responsive"><table class="table table-sm table-bordered"><thead class="table-light"><tr><th>Item Code</th><th>Item Name</th><th>Quantity</th><th>Unit Price</th><th>Subtotal</th></tr></thead><tbody>';
@@ -2093,7 +2064,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                     itemsHtml += '</tbody></table></div>';
                 }
                 
-                // Build documents section
                 let documentsHtml = '<div class="mt-4"><h6 class="fw-bold">Generated Documents</h6><div class="row g-2">';
                 
                 if (documents.pick_list_number) {
@@ -2105,7 +2075,9 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 }
                 
                 if (invoice) {
-                    documentsHtml += `<div class="col-md-4"><div class="card bg-light"><div class="card-body p-2"><small class="text-muted">Invoice</small><br><strong>${invoice.invoice_number}</strong><br><span class="badge bg-${invoice.invoice_status === 'paid' ? 'success' : 'warning'}">${invoice.invoice_status}</span></div></div></div>`;
+                    const invoiceStatusClass = invoice.invoice_status === 'paid' ? 'success' : 
+                                               (invoice.invoice_status === 'cancelled' ? 'danger' : 'warning');
+                    documentsHtml += `<div class="col-md-4"><div class="card bg-light"><div class="card-body p-2"><small class="text-muted">Invoice</small><br><strong>${invoice.invoice_number}</strong><br><span class="badge bg-${invoiceStatusClass}">${invoice.invoice_status}</span></div></div></div>`;
                 }
                 
                 if (documents.trip_ticket_number) {
@@ -2177,7 +2149,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 
                 currentOrderId = id;
                 
-                // Show/hide buttons based on status
                 const editBtn = document.getElementById('editFromViewBtn');
                 const printBtn = document.getElementById('printOrderBtn');
                 
@@ -2200,7 +2171,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         });
     }
 
-    // Edit from View Modal
     function editFromView() {
         bootstrap.Modal.getInstance(document.getElementById('viewOrderModal')).hide();
         setTimeout(() => {
@@ -2208,7 +2178,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         }, 300);
     }
 
-    // Edit Order
     function editOrder(id) {
         showLoading();
         
@@ -2227,7 +2196,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             if (data.success) {
                 const order = data.order;
                 
-                const orderDate = order.order_date.split(' ')[0];
+                const orderDate = order.created_at.split(' ')[0];
                 
                 document.getElementById('editOrderId').value = order.so_id;
                 document.getElementById('editOrderNumber').value = order.so_number;
@@ -2238,10 +2207,48 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 document.getElementById('editTotalQty').value = order.total_quantity || 0;
                 document.getElementById('editTotalAmount').value = order.total_amount;
                 
+                $('#editDriverSelect').val('').trigger('change');
+                
                 currentOrderId = id;
                 
-                // Hide stock message initially
                 document.getElementById('stockCheckMessage').style.display = 'none';
+                document.getElementById('driverSelectionContainer').style.display = 'none';
+                document.getElementById('noDriversMessage').style.display = 'none';
+                document.getElementById('paymentNotice').style.display = 'none';
+                
+                if (order.order_status !== 'pending') {
+                    if (order.order_status === 'confirmed' || order.order_status === 'processing' || order.order_status === 'ready') {
+                        document.getElementById('editOrderStatus').innerHTML = `
+                            <option value="confirmed" ${order.order_status === 'confirmed' ? 'selected' : ''}>Confirmed</option>
+                            <option value="processing" ${order.order_status === 'processing' ? 'selected' : ''}>Processing</option>
+                            <option value="ready" ${order.order_status === 'ready' ? 'selected' : ''}>For Delivery</option>
+                            <option value="delivered">Mark as Delivered</option>
+                            <option value="cancelled">Cancel Order</option>
+                        `;
+                    } else if (order.order_status === 'delivered') {
+                        document.getElementById('editOrderStatus').innerHTML = `
+                            <option value="delivered" selected>Delivered</option>
+                            <option value="cancelled">Cancel Order</option>
+                        `;
+                    } else if (order.order_status === 'cancelled') {
+                        document.getElementById('editOrderStatus').innerHTML = `
+                            <option value="cancelled" selected>Cancelled</option>
+                        `;
+                        document.getElementById('updateOrderBtn').disabled = true;
+                    }
+                    
+                    refreshAvailableDrivers();
+                } else {
+                    document.getElementById('editOrderStatus').innerHTML = `
+                        <option value="pending">Pending</option>
+                        <option value="confirmed">Confirm Order (Generate Documents & Deduct Stock)</option>
+                        <option value="delivered">Mark as Delivered</option>
+                        <option value="cancelled">Cancel Order</option>
+                    `;
+                    document.getElementById('editOrderStatus').disabled = false;
+                    document.getElementById('updateOrderBtn').disabled = false;
+                    refreshAvailableDrivers();
+                }
                 
                 new bootstrap.Modal(document.getElementById('editOrderModal')).show();
             } else {
@@ -2254,12 +2261,12 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         });
     }
 
-    // Update Order
     function updateOrder() {
         const orderId = document.getElementById('editOrderId').value;
         const orderDate = document.getElementById('editOrderDate').value;
         const orderStatus = document.getElementById('editOrderStatus').value;
         const totalAmount = document.getElementById('editTotalAmount').value;
+        const selectedDriver = document.getElementById('editDriverSelect').value;
         
         if (!orderDate) {
             Swal.fire('Warning', 'Order Date is required', 'warning');
@@ -2271,27 +2278,35 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             return;
         }
         
-        // If confirming order, check stock first
         if (orderStatus === 'confirmed') {
+            if (!selectedDriver) {
+                Swal.fire('Warning', 'Please select a driver for this delivery', 'warning');
+                return;
+            }
+            
             checkStockBeforeConfirm(orderId).then(proceed => {
                 if (proceed) {
-                    proceedWithUpdate(orderId, orderDate, orderStatus, totalAmount);
+                    proceedWithUpdate(orderId, orderDate, orderStatus, totalAmount, selectedDriver);
                 }
             });
         } else {
-            proceedWithUpdate(orderId, orderDate, orderStatus, totalAmount);
+            proceedWithUpdate(orderId, orderDate, orderStatus, totalAmount, null);
         }
     }
 
-    function proceedWithUpdate(orderId, orderDate, orderStatus, totalAmount) {
+    function proceedWithUpdate(orderId, orderDate, orderStatus, totalAmount, driverId) {
         showLoading();
         
         const formData = new FormData();
         formData.append('action', 'update_order');
         formData.append('so_id', orderId);
-        formData.append('order_date', orderDate);
+        formData.append('created_at', orderDate);
         formData.append('order_status', orderStatus);
         formData.append('total_amount', totalAmount);
+        
+        if (driverId) {
+            formData.append('driver_id', driverId);
+        }
         
         fetch('sales_order.php', {
             method: 'POST',
@@ -2302,7 +2317,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             Swal.close();
             
             if (data.success) {
-                if (data.generated_docs) {
+                if (data.generated_docs && data.generated_docs.picklist) {
                     let docsList = `
                         <ul class="list-unstyled">
                             <li><i class="bi bi-check-circle-fill text-success"></i> Pick List: ${data.generated_docs.picklist}</li>
@@ -2333,6 +2348,26 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                         bootstrap.Modal.getInstance(document.getElementById('editOrderModal')).hide();
                         location.reload();
                     });
+                } else if (orderStatus === 'delivered') {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Order Delivered!',
+                        text: 'Order has been marked as delivered. Payment status updated to Paid.',
+                        confirmButtonColor: '#0d6efd'
+                    }).then(() => {
+                        bootstrap.Modal.getInstance(document.getElementById('editOrderModal')).hide();
+                        location.reload();
+                    });
+                } else if (orderStatus === 'cancelled') {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Order Cancelled!',
+                        text: 'Order has been cancelled. Payment status updated to Cancelled.',
+                        confirmButtonColor: '#0d6efd'
+                    }).then(() => {
+                        bootstrap.Modal.getInstance(document.getElementById('editOrderModal')).hide();
+                        location.reload();
+                    });
                 } else {
                     Swal.fire({
                         icon: 'success',
@@ -2346,13 +2381,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                     });
                 }
             } else {
-                // Show error message - this will now include the "No active drivers" message
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Cannot Confirm Order',
-                    text: data.message,
-                    confirmButtonColor: '#0d6efd'
-                });
+                Swal.fire('Error', data.message, 'error');
             }
         })
         .catch(error => {
@@ -2361,7 +2390,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         });
     }
 
-    // Delete Order
     function deleteOrder(id) {
         const row = document.querySelector(`.sales-order-row[data-id="${id}"]`);
         if (!row) return;
@@ -2371,7 +2399,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         new bootstrap.Modal(document.getElementById('deleteOrderModal')).show();
     }
 
-    // Confirm Delete
     function confirmDelete() {
         showLoading();
         
@@ -2408,9 +2435,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         });
     }
 
-    // ========== PRINT FUNCTIONS ==========
-    
-    // Print All Orders
     function printAllOrders() {
         const rows = document.querySelectorAll('.sales-order-row');
         const visibleRows = [];
@@ -2426,7 +2450,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             return;
         }
         
-        // Show loading on button
         const printBtn = document.querySelector('.btn-primary[onclick="printAllOrders()"]');
         if (printBtn) {
             const originalText = printBtn.innerHTML;
@@ -2439,7 +2462,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             }, 3000);
         }
         
-        // Create iframe for printing
         const iframe = document.createElement('iframe');
         iframe.style.position = 'absolute';
         iframe.style.width = '0';
@@ -2449,31 +2471,25 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         iframe.style.left = '-9999px';
         document.body.appendChild(iframe);
         
-        // Generate HTML content with brand colors and logo
         const htmlContent = generateAllOrdersHTML(visibleRows);
         
-        // Write to iframe and print
         const iframeDoc = iframe.contentWindow.document;
         iframeDoc.open();
         iframeDoc.write(htmlContent);
         iframeDoc.close();
         
-        // Auto print after load
         iframe.contentWindow.focus();
         setTimeout(() => {
             iframe.contentWindow.print();
-            // Remove iframe after print
             setTimeout(() => {
                 document.body.removeChild(iframe);
             }, 100);
         }, 250);
     }
 
-    // Print Single Order
     function printSingleOrder(orderId) {
         currentOrderId = orderId;
         
-        // Show loading on button
         const printBtn = event ? event.target.closest('button') : null;
         if (printBtn) {
             const originalHTML = printBtn.innerHTML;
@@ -2486,7 +2502,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             }, 3000);
         }
         
-        // Get order details
         const formData = new FormData();
         formData.append('action', 'print_order');
         formData.append('so_id', orderId);
@@ -2502,7 +2517,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 const items = data.items;
                 const driver = data.driver || null;
                 
-                // Create iframe for printing
                 const iframe = document.createElement('iframe');
                 iframe.style.position = 'absolute';
                 iframe.style.width = '0';
@@ -2512,20 +2526,16 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 iframe.style.left = '-9999px';
                 document.body.appendChild(iframe);
                 
-                // Generate HTML content with brand colors and logo
                 const htmlContent = generateSingleOrderHTML(order, items, driver);
                 
-                // Write to iframe and print
                 const iframeDoc = iframe.contentWindow.document;
                 iframeDoc.open();
                 iframeDoc.write(htmlContent);
                 iframeDoc.close();
                 
-                // Auto print after load
                 iframe.contentWindow.focus();
                 setTimeout(() => {
                     iframe.contentWindow.print();
-                    // Remove iframe after print
                     setTimeout(() => {
                         document.body.removeChild(iframe);
                     }, 100);
@@ -2540,14 +2550,12 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         });
     }
 
-    // Print from View Modal
     function printOrder(id) {
         printSingleOrder(id);
         const modal = bootstrap.Modal.getInstance(document.getElementById('viewOrderModal'));
         if (modal) modal.hide();
     }
 
-    // Generate HTML for all orders
     function generateAllOrdersHTML(rows) {
         let tableRows = '';
         let totalAmount = 0;
@@ -2907,7 +2915,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         `;
     }
 
-    // Generate HTML for single order
     function generateSingleOrderHTML(order, items, driver) {
         let itemsHtml = '';
         
@@ -2937,7 +2944,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             minute: '2-digit' 
         });
         
-        const orderDate = new Date(order.order_date);
+        const orderDate = new Date(order.created_at);
         const orderDateFormatted = orderDate.toLocaleDateString('en-US', { 
             year: 'numeric', 
             month: 'long', 
@@ -3251,7 +3258,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         `;
     }
 
-    // ========== FILTER FUNCTIONS ==========
     function filterTable() {
         const searchTerm = document.getElementById('searchInput').value.toLowerCase();
         const statusFilter = document.getElementById('statusFilter').value;
@@ -3271,12 +3277,10 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         });
     }
 
-    // ========== REFRESH ORDERS ==========
     function refreshOrders() {
         location.reload();
     }
 
-    // ========== UTILITY FUNCTIONS ==========
     function formatDate(dateStr) {
         if (!dateStr) return '';
         return new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
@@ -3306,7 +3310,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         return texts[status] || status;
     }
 
-    // ========== EXPORT TO EXCEL ==========
     function exportToExcel() {
         const rows = document.querySelectorAll('.sales-order-row:not([style*="display: none"])');
         if (rows.length === 0) {
@@ -3348,7 +3351,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         Swal.fire({ icon: 'success', title: 'Export Complete', timer: 2000, showConfirmButton: false });
     }
 
-    // ========== COPY SQL FUNCTION ==========
     function copyFixSQL() {
         const sql = "ALTER TABLE invoices ADD COLUMN so_id INT NULL;\nALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);";
         navigator.clipboard.writeText(sql).then(() => {
@@ -3370,7 +3372,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         });
     }
 
-    // ========== LOGOUT ==========
     function logout() {
         Swal.fire({
             title: 'Are you sure?',
@@ -3388,7 +3389,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         });
     }
 
-    // Keyboard shortcuts
     document.addEventListener('keydown', function(e) {
         if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
             e.preventDefault();

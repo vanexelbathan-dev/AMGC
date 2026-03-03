@@ -42,7 +42,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         
         // Validate that this delivery belongs to the logged-in driver (if delivery role)
         if ($user_role == 'delivery' && $driver_id > 0) {
-            $check_query = "SELECT delivery_id, driver_id FROM deliveries WHERE delivery_id = ?";
+            $check_query = "SELECT delivery_id, driver_id, trip_id FROM deliveries WHERE delivery_id = ?";
             $check_stmt = $conn->prepare($check_query);
             $check_stmt->bind_param("i", $delivery_id);
             $check_stmt->execute();
@@ -58,6 +58,18 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             if (!empty($delivery_data['driver_id']) && $delivery_data['driver_id'] != $driver_id) {
                 throw new Exception("You are not authorized to update this delivery");
             }
+            
+            $trip_id = $delivery_data['trip_id'];
+        } else {
+            // Get trip_id for admin users
+            $trip_query = "SELECT trip_id FROM deliveries WHERE delivery_id = ?";
+            $trip_stmt = $conn->prepare($trip_query);
+            $trip_stmt->bind_param("i", $delivery_id);
+            $trip_stmt->execute();
+            $trip_result = $trip_stmt->get_result();
+            $trip_data = $trip_result->fetch_assoc();
+            $trip_id = $trip_data['trip_id'] ?? null;
+            $trip_stmt->close();
         }
         
         // Handle file upload
@@ -165,8 +177,31 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $driver_stmt->close();
         }
         
+        // ===== UPDATE RELATED RECORDS FOR DELIVERED ORDER =====
+        // Update pick list status to completed
+        $update_pl_query = "UPDATE pick_lists SET pick_status = 'completed', updated_at = NOW() WHERE so_id = ?";
+        $update_pl_stmt = $conn->prepare($update_pl_query);
+        $update_pl_stmt->bind_param("i", $so_id);
+        $update_pl_stmt->execute();
+        $update_pl_stmt->close();
+        
+        // Update trip ticket status to completed if exists
+        if ($trip_id) {
+            $update_tt_query = "UPDATE trip_tickets SET trip_status = 'completed', updated_at = NOW() WHERE trip_id = ?";
+            $update_tt_stmt = $conn->prepare($update_tt_query);
+            $update_tt_stmt->bind_param("i", $trip_id);
+            $update_tt_stmt->execute();
+            $update_tt_stmt->close();
+        }
+        
+        // Update invoice status to paid
+        $update_invoice_query = "UPDATE invoices SET status = 'paid', updated_at = NOW() WHERE so_id = ?";
+        $update_invoice_stmt = $conn->prepare($update_invoice_query);
+        $update_invoice_stmt->bind_param("i", $so_id);
+        $update_invoice_stmt->execute();
+        $update_invoice_stmt->close();
+        
         // Update inventory - reduce quantity for delivered items
-        // Get items from this delivery
         $items_query = "SELECT soi.item_id, soi.quantity_ordered 
                         FROM sales_order_items soi 
                         WHERE soi.so_id = ?";
@@ -212,7 +247,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $conn->commit();
         
         // Redirect back with success message
-        $_SESSION['success_message'] = 'Delivery completed successfully! Inventory has been updated.';
+        $_SESSION['success_message'] = 'Delivery completed successfully! Inventory and trip status have been updated.';
         
         // Redirect based on role
         if ($user_role == 'delivery') {

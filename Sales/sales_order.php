@@ -276,7 +276,7 @@ if (file_exists($logo_path)) {
     <!-- Google Fonts - Tenor Sans and Alice -->
     <link href="https://fonts.googleapis.com/css2?family=Tenor+Sans&family=Alice&display=swap" rel="stylesheet">
     <style>
-        /* Brand Colors */
+        /* Brand Colors - Keep UI exactly the same */
         :root {
             --green: #2E7D32;
             --green-haze: #1B5E20;
@@ -349,96 +349,93 @@ if (file_exists($logo_path)) {
             }
         }
 
-        /* Print Styles - With Brand Colors and Logo */
+        /* OPTIMIZED PRINT STYLES - BLACK AND WHITE, MINIMAL WHITESPACE */
         @media print {
             @page {
                 size: landscape;
-                margin: 0.75in;
+                margin: 0.3in;
             }
             
             body {
-                background-color: var(--white);
-                font-family: 'Tenor Sans', sans-serif;
+                background: #fff;
+                font-family: Arial, Helvetica, sans-serif;
+                font-size: 10px;
+                line-height: 1.2;
             }
             
-            .no-print {
+            .no-print, .sidebar, .navbar-top, .stat-card, .card-header, 
+            .btn, .modal, .action-buttons, .mobile-toggle-btn, 
+            .desktop-toggle-btn, .logout-btn-sidebar {
                 display: none !important;
             }
             
+            .main-content {
+                margin: 0 !important;
+                padding: 0 !important;
+                width: 100% !important;
+            }
+            
             .print-container {
-                padding: 20px;
-                background: var(--white);
+                padding: 10px;
             }
             
             .print-header {
                 display: flex;
                 align-items: center;
                 justify-content: space-between;
-                margin-bottom: 30px;
-                padding-bottom: 20px;
-                border-bottom: 3px solid var(--deep-sea);
+                margin-bottom: 10px;
+                padding-bottom: 5px;
+                border-bottom: 1px solid #000;
             }
             
             .logo-section {
                 display: flex;
                 align-items: center;
-                gap: 15px;
+                gap: 10px;
             }
             
             .company-logo {
-                width: 80px;
+                width: 40px;
                 height: auto;
             }
             
             .company-info h1 {
-                font-family: 'Alice', serif;
-                font-size: 28px;
-                color: var(--deep-sea);
-                margin: 0 0 5px 0;
-                letter-spacing: 1px;
+                font-size: 18px;
+                font-weight: bold;
+                margin: 0;
+                color: #000;
             }
             
             .company-info p {
-                font-family: 'Tenor Sans', sans-serif;
-                font-size: 12px;
-                color: var(--forest-green);
+                font-size: 8px;
                 margin: 0;
-                line-height: 1.5;
-            }
-            
-            .report-title {
-                text-align: right;
+                color: #333;
             }
             
             .report-title h2 {
-                font-family: 'Alice', serif;
-                font-size: 24px;
-                color: var(--green-haze);
-                margin: 0 0 5px 0;
+                font-size: 16px;
+                font-weight: bold;
+                margin: 0;
+                color: #000;
             }
             
             .report-title .date-info {
-                font-family: 'Tenor Sans', sans-serif;
-                font-size: 11px;
-                color: var(--forest-green);
+                font-size: 8px;
+                color: #333;
             }
             
             .summary-box {
-                background: linear-gradient(135deg, var(--light-gray) 0%, var(--white) 100%);
-                border: 2px solid var(--green);
-                border-radius: 10px;
-                padding: 20px;
-                margin-bottom: 30px;
+                border: 1px solid #000;
+                padding: 8px;
+                margin-bottom: 10px;
                 display: flex;
-                justify-content: space-between;
-                align-items: center;
-                box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+                background: #f9f9f9;
             }
             
             .summary-item {
                 text-align: center;
                 flex: 1;
-                border-right: 2px solid var(--green-haze);
+                border-right: 1px solid #000;
             }
             
             .summary-item:last-child {
@@ -446,112 +443,73 @@ if (file_exists($logo_path)) {
             }
             
             .summary-label {
-                font-family: 'Tenor Sans', sans-serif;
-                font-size: 11px;
-                text-transform: uppercase;
-                color: var(--deep-sea);
-                margin-bottom: 5px;
+                font-size: 8px;
                 font-weight: bold;
+                text-transform: uppercase;
+                margin-bottom: 2px;
             }
             
             .summary-value {
-                font-family: 'Alice', serif;
-                font-size: 18px;
-                color: var(--forest-green);
+                font-size: 12px;
                 font-weight: bold;
             }
             
             table {
                 width: 100%;
                 border-collapse: collapse;
-                margin: 20px 0;
-                font-family: 'Tenor Sans', sans-serif;
+                margin: 8px 0;
             }
             
             th {
-                background: var(--deep-sea);
-                color: var(--white);
-                font-family: 'Alice', serif;
-                font-size: 13px;
-                padding: 12px;
-                text-align: left;
-                border: 1px solid var(--forest-green);
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
+                background: #f0f0f0 !important;
+                color: #000 !important;
+                border: 1px solid #000;
+                padding: 4px;
+                font-size: 9px;
+                font-weight: bold;
             }
             
             td {
-                padding: 10px;
-                border: 1px solid var(--green-haze);
-                font-size: 12px;
-                color: var(--black);
+                border: 1px solid #000;
+                padding: 3px;
+                font-size: 9px;
             }
             
             tr:nth-child(even) {
-                background-color: var(--light-gray);
-            }
-            
-            tr:hover {
-                background-color: rgba(46, 125, 50, 0.05);
+                background: #f9f9f9;
             }
             
             .total-row {
-                background: linear-gradient(135deg, var(--green) 0%, var(--deep-sea) 100%) !important;
-                color: var(--white);
+                background: #e0e0e0 !important;
+                font-weight: bold;
             }
             
             .total-row td {
-                color: var(--white);
-                font-family: 'Alice', serif;
-                font-size: 14px;
-                font-weight: bold;
-                border: 1px solid var(--forest-green);
-            }
-            
-            .branch-badge-print {
-                background-color: var(--green);
-                color: var(--white);
-                padding: 3px 10px;
-                border-radius: 15px;
-                font-size: 11px;
-                font-family: 'Tenor Sans', sans-serif;
-                display: inline-block;
+                color: #000;
+                border: 1px solid #000;
             }
             
             .status-badge-print {
-                background-color: var(--yellow);
-                color: var(--black);
-                padding: 3px 10px;
-                border-radius: 15px;
-                font-size: 11px;
-                font-family: 'Tenor Sans', sans-serif;
+                border: 1px solid #000;
+                padding: 2px 5px;
+                font-size: 8px;
                 font-weight: bold;
-                display: inline-block;
+                background: #fff;
             }
             
             .print-footer {
-                margin-top: 40px;
-                padding-top: 20px;
-                border-top: 2px solid var(--deep-sea);
+                margin-top: 15px;
+                padding-top: 5px;
+                border-top: 1px solid #000;
                 display: flex;
                 justify-content: space-between;
-                font-family: 'Tenor Sans', sans-serif;
-                font-size: 11px;
-                color: var(--forest-green);
+                font-size: 8px;
             }
             
             .signature-line {
-                width: 200px;
-                border-bottom: 1px solid var(--deep-sea);
-                margin-top: 5px;
-            }
-            
-            .prepared-by {
-                text-align: left;
-            }
-            
-            .generated-info {
-                text-align: right;
+                width: 120px;
+                border-bottom: 1px solid #000;
+                margin-top: 3px;
             }
         }
 
@@ -1394,7 +1352,7 @@ if (file_exists($logo_path)) {
             });
         }
         
-        // PRINT SINGLE ORDER - With Brand Colors and Logo
+        // PRINT SINGLE ORDER - Optimized for ink/paper
         function printSingleOrder(orderId) {
             currentOrderId = orderId;
             
@@ -1437,7 +1395,7 @@ if (file_exists($logo_path)) {
                     iframe.style.left = '-9999px';
                     document.body.appendChild(iframe);
                     
-                    // Generate HTML content with brand colors and logo
+                    // Generate HTML content with optimized print styles
                     const htmlContent = generateSingleOrderHTML(order, items);
                     
                     // Write to iframe and print
@@ -1465,7 +1423,109 @@ if (file_exists($logo_path)) {
             });
         }
         
-        // PRINT ALL ORDERS - With Brand Colors and Logo
+        // Generate HTML for single order - Optimized for ink/paper
+        function generateSingleOrderHTML(order, items) {
+            let itemsHtml = '';
+            
+            if (items && items.length > 0) {
+                itemsHtml = items.map(item => `
+                    <tr>
+                        <td>${item.item_name}<br><span style="color:#666;font-size:9px;">${item.item_code}</span></td>
+                        <td style="text-align:center;">${item.quantity_ordered}</td>
+                        <td style="text-align:right;">₱${parseFloat(item.unit_price).toFixed(2)}</td>
+                        <td style="text-align:right;">₱${parseFloat(item.line_total).toFixed(2)}</td>
+                    </tr>
+                `).join('');
+            }
+            
+            const currentDate = new Date();
+            const formattedDate = currentDate.toLocaleDateString('en-US', { 
+                year: 'numeric', month: 'short', day: 'numeric'
+            });
+            const formattedTime = currentDate.toLocaleTimeString('en-US', { 
+                hour: '2-digit', minute: '2-digit'
+            });
+            
+            return `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>Order #${order.so_number}</title>
+                    <style>
+                        * { margin:0; padding:0; box-sizing:border-box; }
+                        body { font-family:Arial,Helvetica,sans-serif; font-size:11px; background:#fff; color:#000; line-height:1.2; }
+                        @page { size:portrait; margin:0.3in; }
+                        .print-container { max-width:100%; margin:0; padding:5px; }
+                        .header { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; padding-bottom:5px; border-bottom:1px solid #000; }
+                        .logo-section { display:flex; align-items:center; gap:8px; }
+                        .company-logo { width:40px; height:auto; }
+                        .company-name { font-size:16px; font-weight:bold; }
+                        .order-info { text-align:right; }
+                        .order-info div:first-child { font-weight:bold; }
+                        .section { margin-bottom:8px; }
+                        .section-title { font-weight:bold; border-bottom:1px solid #000; margin-bottom:3px; padding-bottom:2px; }
+                        .info-row { display:flex; margin-bottom:2px; }
+                        .info-label { width:100px; font-weight:bold; }
+                        .info-value { flex:1; }
+                        table { width:100%; border-collapse:collapse; margin:5px 0; }
+                        th { background:#f0f0f0; border:1px solid #000; padding:4px; text-align:left; font-size:10px; }
+                        td { border:1px solid #000; padding:3px; font-size:10px; }
+                        tr:nth-child(even) { background:#f9f9f9; }
+                        .total-row { background:#e0e0e0; font-weight:bold; }
+                        .footer { margin-top:10px; padding-top:5px; border-top:1px solid #000; font-size:8px; display:flex; justify-content:space-between; }
+                        .signature-line { width:100px; border-bottom:1px solid #000; margin-top:2px; }
+                    </style>
+                </head>
+                <body>
+                    <div class="print-container">
+                        <div class="header">
+                            <div class="logo-section">
+                                <img src="${logoBase64}" alt="AMGC" class="company-logo">
+                                <span class="company-name">AMGC</span>
+                            </div>
+                            <div class="order-info">
+                                <div>SALES ORDER</div>
+                                <div>#${order.so_number}</div>
+                            </div>
+                        </div>
+                        
+                        <div class="section">
+                            <div class="section-title">ORDER INFO</div>
+                            <div class="info-row"><span class="info-label">Date:</span><span class="info-value">${new Date(order.order_date).toLocaleString()}</span></div>
+                            <div class="info-row"><span class="info-label">Status:</span><span class="info-value">${order.order_status}</span></div>
+                            <div class="info-row"><span class="info-label">Prepared By:</span><span class="info-value">${order.created_by || 'System'}</span></div>
+                            ${order.branch_name ? `<div class="info-row"><span class="info-label">Branch:</span><span class="info-value">${order.branch_name}</span></div>` : ''}
+                        </div>
+                        
+                        <div class="section">
+                            <div class="section-title">CUSTOMER</div>
+                            <div class="info-row"><span class="info-label">Name:</span><span class="info-value">${order.customer_name}</span></div>
+                            <div class="info-row"><span class="info-label">Email:</span><span class="info-value">${order.email || 'N/A'}</span></div>
+                            <div class="info-row"><span class="info-label">Phone:</span><span class="info-value">${order.phone_number || 'N/A'}</span></div>
+                            <div class="info-row"><span class="info-label">Address:</span><span class="info-value">${order.address || 'N/A'}</span></div>
+                        </div>
+                        
+                        <div class="section-title">ITEMS</div>
+                        <table>
+                            <thead><tr><th>Product</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
+                            <tbody>
+                                ${itemsHtml}
+                                <tr class="total-row"><td colspan="3" style="text-align:right;">TOTAL</td><td style="text-align:right;">₱${parseFloat(order.total_amount).toFixed(2)}</td></tr>
+                            </tbody>
+                        </table>
+                        
+                        <div class="footer">
+                            <div>Printed: ${formattedDate} ${formattedTime}</div>
+                            <div>Computer-generated</div>
+                        </div>
+                    </div>
+                </body>
+                </html>
+            `;
+        }
+        
+        // PRINT ALL ORDERS - Optimized for ink/paper
         function printAllOrders() {
             const rows = document.querySelectorAll('#ordersTable tbody tr');
             const visibleRows = [];
@@ -1504,7 +1564,7 @@ if (file_exists($logo_path)) {
             iframe.style.left = '-9999px';
             document.body.appendChild(iframe);
             
-            // Generate HTML content with brand colors and logo
+            // Generate HTML content with optimized print styles
             const htmlContent = generateAllOrdersHTML(visibleRows);
             
             // Write to iframe and print
@@ -1524,325 +1584,7 @@ if (file_exists($logo_path)) {
             }, 250);
         }
         
-        // Generate HTML for single order with brand colors
-        function generateSingleOrderHTML(order, items) {
-            let itemsHtml = '';
-            
-            if (items && items.length > 0) {
-                itemsHtml = items.map(item => `
-                    <tr>
-                        <td style="padding: 10px; border: 1px solid var(--green-haze);">${item.item_name}<br><small style="color: var(--forest-green);">${item.item_code}</small></td>
-                        <td style="padding: 10px; border: 1px solid var(--green-haze); text-align: center;">${item.quantity_ordered}</td>
-                        <td style="padding: 10px; border: 1px solid var(--green-haze); text-align: right;">₱${parseFloat(item.unit_price).toFixed(2)}</td>
-                        <td style="padding: 10px; border: 1px solid var(--green-haze); text-align: right;">₱${parseFloat(item.line_total).toFixed(2)}</td>
-                    </tr>
-                `).join('');
-            }
-            
-            const currentDate = new Date();
-            const formattedDate = currentDate.toLocaleDateString('en-US', { 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
-            });
-            const formattedTime = currentDate.toLocaleTimeString('en-US', { 
-                hour: '2-digit', 
-                minute: '2-digit' 
-            });
-            
-            return `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                    <title>Order #${order.so_number}</title>
-                    <link href="https://fonts.googleapis.com/css2?family=Tenor+Sans&family=Alice&display=swap" rel="stylesheet">
-                    <style>
-                        :root {
-                            --green: #2E7D32;
-                            --green-haze: #1B5E20;
-                            --deep-sea: #0D4C14;
-                            --forest-green: #1B4D1F;
-                            --yellow: #FFC107;
-                            --white: #FFFFFF;
-                            --light-gray: #F5F5F5;
-                            --black: #212121;
-                        }
-                        
-                        @page {
-                            size: portrait;
-                            margin: 0.75in;
-                        }
-                        
-                        body {
-                            font-family: 'Tenor Sans', sans-serif;
-                            margin: 0;
-                            padding: 20px;
-                            color: var(--black);
-                            background-color: var(--white);
-                        }
-                        
-                        .print-container {
-                            max-width: 800px;
-                            margin: 0 auto;
-                        }
-                        
-                        .print-header {
-                            display: flex;
-                            align-items: center;
-                            justify-content: space-between;
-                            margin-bottom: 30px;
-                            padding-bottom: 20px;
-                            border-bottom: 3px solid var(--deep-sea);
-                        }
-                        
-                        .logo-section {
-                            display: flex;
-                            align-items: center;
-                            gap: 15px;
-                        }
-                        
-                        .company-logo {
-                            width: 80px;
-                            height: auto;
-                        }
-                        
-                        .company-info h1 {
-                            font-family: 'Alice', serif;
-                            font-size: 28px;
-                            color: var(--deep-sea);
-                            margin: 0 0 5px 0;
-                            letter-spacing: 1px;
-                        }
-                        
-                        .company-info p {
-                            font-family: 'Tenor Sans', sans-serif;
-                            font-size: 12px;
-                            color: var(--forest-green);
-                            margin: 0;
-                            line-height: 1.5;
-                        }
-                        
-                        .report-title {
-                            text-align: right;
-                        }
-                        
-                        .report-title h2 {
-                            font-family: 'Alice', serif;
-                            font-size: 24px;
-                            color: var(--green-haze);
-                            margin: 0 0 5px 0;
-                        }
-                        
-                        .report-title .date-info {
-                            font-family: 'Tenor Sans', sans-serif;
-                            font-size: 11px;
-                            color: var(--forest-green);
-                        }
-                        
-                        .customer-section {
-                            background: linear-gradient(135deg, var(--light-gray) 0%, var(--white) 100%);
-                            border: 2px solid var(--green);
-                            border-radius: 10px;
-                            padding: 20px;
-                            margin-bottom: 30px;
-                        }
-                        
-                        .section-title {
-                            font-family: 'Alice', serif;
-                            font-size: 18px;
-                            color: var(--deep-sea);
-                            margin-bottom: 15px;
-                            border-bottom: 2px solid var(--green-haze);
-                            padding-bottom: 5px;
-                        }
-                        
-                        .info-row {
-                            display: flex;
-                            margin-bottom: 8px;
-                            font-size: 13px;
-                        }
-                        
-                        .info-label {
-                            width: 120px;
-                            font-weight: bold;
-                            color: var(--forest-green);
-                        }
-                        
-                        .info-value {
-                            flex: 1;
-                            color: var(--black);
-                        }
-                        
-                        table {
-                            width: 100%;
-                            border-collapse: collapse;
-                            margin: 20px 0;
-                        }
-                        
-                        th {
-                            background: var(--deep-sea);
-                            color: var(--white);
-                            font-family: 'Alice', serif;
-                            font-size: 13px;
-                            padding: 12px;
-                            text-align: left;
-                            border: 1px solid var(--forest-green);
-                        }
-                        
-                        td {
-                            padding: 10px;
-                            border: 1px solid var(--green-haze);
-                            font-size: 12px;
-                        }
-                        
-                        tr:nth-child(even) {
-                            background-color: var(--light-gray);
-                        }
-                        
-                        .total-row {
-                            background: linear-gradient(135deg, var(--green) 0%, var(--deep-sea) 100%);
-                            color: var(--white);
-                            font-family: 'Alice', serif;
-                            font-size: 14px;
-                            font-weight: bold;
-                        }
-                        
-                        .total-row td {
-                            color: var(--white);
-                            border: 1px solid var(--forest-green);
-                        }
-                        
-                        .status-badge {
-                            background-color: var(--yellow);
-                            color: var(--black);
-                            padding: 5px 15px;
-                            border-radius: 20px;
-                            font-size: 12px;
-                            font-weight: bold;
-                            display: inline-block;
-                        }
-                        
-                        .print-footer {
-                            margin-top: 40px;
-                            padding-top: 20px;
-                            border-top: 2px solid var(--deep-sea);
-                            display: flex;
-                            justify-content: space-between;
-                            font-family: 'Tenor Sans', sans-serif;
-                            font-size: 11px;
-                            color: var(--forest-green);
-                        }
-                        
-                        .signature-line {
-                            width: 200px;
-                            border-bottom: 1px solid var(--deep-sea);
-                            margin-top: 5px;
-                        }
-                    </style>
-                </head>
-                <body>
-                    <div class="print-container">
-                        <div class="print-header">
-                            <div class="logo-section">
-                                <img src="${logoBase64}" alt="AMGC Logo" class="company-logo">
-                                <div class="company-info">
-                                    <h1>AMGC</h1>
-                                    <p>Quality Products, Quality Service</p>
-                                </div>
-                            </div>
-                            <div class="report-title">
-                                <h2>SALES ORDER</h2>
-                                <div class="date-info">${formattedDate} | ${formattedTime}</div>
-                            </div>
-                        </div>
-                        
-                        <div class="customer-section">
-                            <div class="section-title">Order Information</div>
-                            <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                                <div class="info-row">
-                                    <span class="info-label">Order Number:</span>
-                                    <span class="info-value"><strong>${order.so_number}</strong></span>
-                                </div>
-                                <div class="info-row">
-                                    <span class="info-label">Status:</span>
-                                    <span class="info-value"><span class="status-badge">${order.order_status}</span></span>
-                                </div>
-                            </div>
-                            <div class="info-row">
-                                <span class="info-label">Order Date:</span>
-                                <span class="info-value">${new Date(order.order_date).toLocaleString()}</span>
-                            </div>
-                            <div class="info-row">
-                                <span class="info-label">Created By:</span>
-                                <span class="info-value">${order.created_by || 'System'}</span>
-                            </div>
-                            ${order.branch_name ? `
-                            <div class="info-row">
-                                <span class="info-label">Branch:</span>
-                                <span class="info-value">${order.branch_name}</span>
-                            </div>
-                            ` : ''}
-                        </div>
-                        
-                        <div class="customer-section">
-                            <div class="section-title">Customer Information</div>
-                            <div class="info-row">
-                                <span class="info-label">Name:</span>
-                                <span class="info-value">${order.customer_name}</span>
-                            </div>
-                            <div class="info-row">
-                                <span class="info-label">Email:</span>
-                                <span class="info-value">${order.email || 'N/A'}</span>
-                            </div>
-                            <div class="info-row">
-                                <span class="info-label">Phone:</span>
-                                <span class="info-value">${order.phone_number || 'N/A'}</span>
-                            </div>
-                            <div class="info-row">
-                                <span class="info-label">Address:</span>
-                                <span class="info-value">${order.address || 'N/A'}</span>
-                            </div>
-                        </div>
-                        
-                        <div class="section-title">Order Items</div>
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Product</th>
-                                    <th style="text-align: center;">Qty</th>
-                                    <th style="text-align: right;">Unit Price</th>
-                                    <th style="text-align: right;">Total</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${itemsHtml}
-                                <tr class="total-row">
-                                    <td colspan="3" style="text-align: right;">GRAND TOTAL</td>
-                                    <td style="text-align: right;">₱${parseFloat(order.total_amount).toFixed(2)}</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        
-                        <div class="print-footer">
-                            <div class="prepared-by">
-                                <div>Prepared by:</div>
-                                <div class="signature-line"></div>
-                                <div style="margin-top: 5px;">${document.querySelector('.user-name-sidebar')?.textContent || 'Sales Staff'}</div>
-                            </div>
-                            <div class="generated-info">
-                                <div>Generated on:</div>
-                                <div>${formattedDate} at ${formattedTime}</div>
-                            </div>
-                        </div>
-                    </div>
-                </body>
-                </html>
-            `;
-        }
-        
-        // Generate HTML for all orders with brand colors
+        // Generate HTML for all orders - Optimized for ink/paper
         function generateAllOrdersHTML(rows) {
             let tableRows = '';
             let totalAmount = 0;
@@ -1856,10 +1598,7 @@ if (file_exists($logo_path)) {
                     const date = cells[1].textContent.trim().replace(/\n/g, ' ');
                     const customer = cells[2].textContent.trim();
                     
-                    let branch = '';
-                    let items = '';
-                    let amount = '';
-                    let status = '';
+                    let branch = '', items = '', amount = '', status = '';
                     
                     if (hasBranchColumn) {
                         branch = cells[3].textContent.trim();
@@ -1876,28 +1615,23 @@ if (file_exists($logo_path)) {
                     totalAmount += amountValue;
                     
                     tableRows += '<tr>';
-                    tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze);">${orderNumber}</td>`;
-                    tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze);">${date}</td>`;
-                    tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze);">${customer}</td>`;
-                    if (hasBranchColumn) {
-                        tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze);">${branch}</td>`;
-                    }
-                    tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze); text-align: center;">${items}</td>`;
-                    tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze); text-align: right;">${amount}</td>`;
-                    tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze);"><span class="status-badge-print">${status}</span></td>`;
+                    tableRows += `<td>${orderNumber}</td>`;
+                    tableRows += `<td>${date}</td>`;
+                    tableRows += `<td>${customer}</td>`;
+                    if (hasBranchColumn) tableRows += `<td>${branch}</td>`;
+                    tableRows += `<td style="text-align:center;">${items}</td>`;
+                    tableRows += `<td style="text-align:right;">${amount}</td>`;
+                    tableRows += `<td>${status}</td>`;
                     tableRows += '</tr>';
                 }
             });
             
             const currentDate = new Date();
             const formattedDate = currentDate.toLocaleDateString('en-US', { 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
+                year: 'numeric', month: 'short', day: 'numeric'
             });
             const formattedTime = currentDate.toLocaleTimeString('en-US', { 
-                hour: '2-digit', 
-                minute: '2-digit' 
+                hour: '2-digit', minute: '2-digit'
             });
             
             const columnCount = branchColumnExists && viewAllBranches ? 7 : 6;
@@ -1908,257 +1642,71 @@ if (file_exists($logo_path)) {
                 <html>
                 <head>
                     <meta charset="UTF-8">
-                    <meta name="viewport" content="width=device-width, initial-scale=1.0">
                     <title>Sales Orders Report</title>
-                    <link href="https://fonts.googleapis.com/css2?family=Tenor+Sans&family=Alice&display=swap" rel="stylesheet">
                     <style>
-                        :root {
-                            --green: #2E7D32;
-                            --green-haze: #1B5E20;
-                            --deep-sea: #0D4C14;
-                            --forest-green: #1B4D1F;
-                            --yellow: #FFC107;
-                            --white: #FFFFFF;
-                            --light-gray: #F5F5F5;
-                            --black: #212121;
-                        }
-                        
-                        @page {
-                            size: landscape;
-                            margin: 0.5in;
-                        }
-                        
-                        body {
-                            font-family: 'Tenor Sans', sans-serif;
-                            margin: 0;
-                            padding: 20px;
-                            color: var(--black);
-                            background-color: var(--white);
-                        }
-                        
-                        .print-container {
-                            max-width: 100%;
-                            margin: 0 auto;
-                        }
-                        
-                        .print-header {
-                            display: flex;
-                            align-items: center;
-                            justify-content: space-between;
-                            margin-bottom: 30px;
-                            padding-bottom: 20px;
-                            border-bottom: 3px solid var(--deep-sea);
-                        }
-                        
-                        .logo-section {
-                            display: flex;
-                            align-items: center;
-                            gap: 15px;
-                        }
-                        
-                        .company-logo {
-                            width: 70px;
-                            height: auto;
-                        }
-                        
-                        .company-info h1 {
-                            font-family: 'Alice', serif;
-                            font-size: 26px;
-                            color: var(--deep-sea);
-                            margin: 0 0 5px 0;
-                        }
-                        
-                        .company-info p {
-                            font-family: 'Tenor Sans', sans-serif;
-                            font-size: 11px;
-                            color: var(--forest-green);
-                            margin: 0;
-                        }
-                        
-                        .report-title {
-                            text-align: right;
-                        }
-                        
-                        .report-title h2 {
-                            font-family: 'Alice', serif;
-                            font-size: 22px;
-                            color: var(--green-haze);
-                            margin: 0 0 5px 0;
-                        }
-                        
-                        .report-title .date-info {
-                            font-family: 'Tenor Sans', sans-serif;
-                            font-size: 10px;
-                            color: var(--forest-green);
-                        }
-                        
-                        .summary-box {
-                            background: linear-gradient(135deg, var(--light-gray) 0%, var(--white) 100%);
-                            border: 2px solid var(--green);
-                            border-radius: 10px;
-                            padding: 15px;
-                            margin-bottom: 25px;
-                            display: flex;
-                            justify-content: space-between;
-                            align-items: center;
-                        }
-                        
-                        .summary-item {
-                            text-align: center;
-                            flex: 1;
-                            border-right: 2px solid var(--green-haze);
-                        }
-                        
-                        .summary-item:last-child {
-                            border-right: none;
-                        }
-                        
-                        .summary-label {
-                            font-family: 'Tenor Sans', sans-serif;
-                            font-size: 10px;
-                            text-transform: uppercase;
-                            color: var(--deep-sea);
-                            margin-bottom: 5px;
-                            font-weight: bold;
-                        }
-                        
-                        .summary-value {
-                            font-family: 'Alice', serif;
-                            font-size: 16px;
-                            color: var(--forest-green);
-                            font-weight: bold;
-                        }
-                        
-                        table {
-                            width: 100%;
-                            border-collapse: collapse;
-                            margin: 20px 0;
-                        }
-                        
-                        th {
-                            background: var(--deep-sea);
-                            color: var(--white);
-                            font-family: 'Alice', serif;
-                            font-size: 12px;
-                            padding: 10px;
-                            text-align: left;
-                            border: 1px solid var(--forest-green);
-                        }
-                        
-                        td {
-                            padding: 8px;
-                            border: 1px solid var(--green-haze);
-                            font-size: 11px;
-                        }
-                        
-                        tr:nth-child(even) {
-                            background-color: var(--light-gray);
-                        }
-                        
-                        .total-row {
-                            background: linear-gradient(135deg, var(--green) 0%, var(--deep-sea) 100%);
-                            color: var(--white);
-                            font-family: 'Alice', serif;
-                            font-size: 13px;
-                            font-weight: bold;
-                        }
-                        
-                        .total-row td {
-                            color: var(--white);
-                            border: 1px solid var(--forest-green);
-                        }
-                        
-                        .status-badge-print {
-                            background-color: var(--yellow);
-                            color: var(--black);
-                            padding: 3px 10px;
-                            border-radius: 15px;
-                            font-size: 10px;
-                            font-weight: bold;
-                            display: inline-block;
-                        }
-                        
-                        .print-footer {
-                            margin-top: 30px;
-                            padding-top: 15px;
-                            border-top: 2px solid var(--deep-sea);
-                            display: flex;
-                            justify-content: space-between;
-                            font-family: 'Tenor Sans', sans-serif;
-                            font-size: 10px;
-                            color: var(--forest-green);
-                        }
-                        
-                        .signature-line {
-                            width: 150px;
-                            border-bottom: 1px solid var(--deep-sea);
-                            margin-top: 5px;
-                        }
+                        * { margin:0; padding:0; box-sizing:border-box; }
+                        body { font-family:Arial,Helvetica,sans-serif; font-size:10px; background:#fff; color:#000; line-height:1.2; }
+                        @page { size:landscape; margin:0.2in; }
+                        .print-container { max-width:100%; margin:0; padding:5px; }
+                        .header { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; padding-bottom:4px; border-bottom:1px solid #000; }
+                        .logo-section { display:flex; align-items:center; gap:8px; }
+                        .company-logo { width:30px; height:auto; }
+                        .company-name { font-size:14px; font-weight:bold; }
+                        .report-title { text-align:right; }
+                        .report-title div:first-child { font-weight:bold; font-size:12px; }
+                        .summary { border:1px solid #000; margin-bottom:8px; padding:4px; display:flex; background:#f9f9f9; }
+                        .summary-item { flex:1; text-align:center; border-right:1px solid #000; }
+                        .summary-item:last-child { border-right:none; }
+                        .summary-label { font-size:8px; font-weight:bold; }
+                        .summary-value { font-size:11px; font-weight:bold; }
+                        table { width:100%; border-collapse:collapse; }
+                        th { background:#f0f0f0; border:1px solid #000; padding:4px; text-align:left; font-size:9px; font-weight:bold; }
+                        td { border:1px solid #000; padding:3px; font-size:9px; }
+                        tr:nth-child(even) { background:#f9f9f9; }
+                        .total-row { background:#e0e0e0; font-weight:bold; }
+                        .footer { margin-top:8px; padding-top:4px; border-top:1px solid #000; font-size:8px; display:flex; justify-content:space-between; }
                     </style>
                 </head>
                 <body>
                     <div class="print-container">
-                        <div class="print-header">
+                        <div class="header">
                             <div class="logo-section">
-                                <img src="${logoBase64}" alt="AMGC Logo" class="company-logo">
-                                <div class="company-info">
-                                    <h1>AMGC</h1>
-                                    <p>Quality Products, Quality Service</p>
-                                </div>
+                                <img src="${logoBase64}" alt="AMGC" class="company-logo">
+                                <span class="company-name">AMGC</span>
                             </div>
                             <div class="report-title">
-                                <h2>SALES ORDERS REPORT</h2>
-                                <div class="date-info">${formattedDate} | ${formattedTime}</div>
+                                <div>SALES ORDERS</div>
+                                <div>${formattedDate}</div>
                             </div>
                         </div>
                         
-                        <div class="summary-box">
-                            <div class="summary-item">
-                                <div class="summary-label">Total Orders</div>
-                                <div class="summary-value">${rows.length}</div>
-                            </div>
-                            <div class="summary-item">
-                                <div class="summary-label">Total Amount</div>
-                                <div class="summary-value">₱${totalAmount.toFixed(2)}</div>
-                            </div>
-                            <div class="summary-item">
-                                <div class="summary-label">Branch</div>
-                                <div class="summary-value">${!viewAllBranches && branchId > 0 ? `Branch ${branchId}` : 'All Branches'}</div>
-                            </div>
+                        <div class="summary">
+                            <div class="summary-item"><div class="summary-label">ORDERS</div><div class="summary-value">${rows.length}</div></div>
+                            <div class="summary-item"><div class="summary-label">TOTAL</div><div class="summary-value">₱${totalAmount.toFixed(2)}</div></div>
+                            <div class="summary-item"><div class="summary-label">BRANCH</div><div class="summary-value">${!viewAllBranches && branchId > 0 ? `Branch ${branchId}` : 'All'}</div></div>
                         </div>
                         
                         <table>
                             <thead>
                                 <tr>
-                                    <th>Order #</th>
-                                    <th>Date</th>
-                                    <th>Customer</th>
+                                    <th>Order #</th><th>Date</th><th>Customer</th>
                                     ${branchColumnExists && viewAllBranches ? '<th>Branch</th>' : ''}
-                                    <th style="text-align: center;">Items</th>
-                                    <th style="text-align: right;">Total Amount</th>
-                                    <th>Status</th>
+                                    <th>Items</th><th>Amount</th><th>Status</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 ${tableRows}
                                 <tr class="total-row">
-                                    <td colspan="${totalColspan}" style="text-align: right;">GRAND TOTAL</td>
-                                    <td style="text-align: right;">₱${totalAmount.toFixed(2)}</td>
+                                    <td colspan="${totalColspan}" style="text-align:right;">TOTAL</td>
+                                    <td style="text-align:right;">₱${totalAmount.toFixed(2)}</td>
                                     <td></td>
                                 </tr>
                             </tbody>
                         </table>
                         
-                        <div class="print-footer">
-                            <div class="prepared-by">
-                                <div>Prepared by:</div>
-                                <div class="signature-line"></div>
-                                <div style="margin-top: 5px;">${document.querySelector('.user-name-sidebar')?.textContent || 'Sales Staff'}</div>
-                            </div>
-                            <div class="generated-info">
-                                <div>Generated on:</div>
-                                <div>${formattedDate} at ${formattedTime}</div>
-                            </div>
+                        <div class="footer">
+                            <div>Printed: ${formattedDate} ${formattedTime}</div>
+                            <div>Computer-generated</div>
                         </div>
                     </div>
                 </body>
@@ -2193,44 +1741,18 @@ if (file_exists($logo_path)) {
             
             // Create Excel HTML content
             let excelContent = `
-                <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
-                <head>
-                    <meta charset="UTF-8">
-                    <title>Sales Orders Export</title>
-                    <style>
-                        .title { font-size: 20px; font-weight: bold; }
-                        .header { background: #4e73df; color: white; }
-                        th { background: #4e73df; color: white; padding: 8px; }
-                        td { padding: 6px; border: 1px solid #ddd; }
-                    </style>
-                </head>
+                <html>
+                <head><meta charset="UTF-8"><title>Sales Orders Export</title></head>
                 <body>
                     <table border="1">
-                        <tr>
-                            <td colspan="${branchColumnExists && viewAllBranches ? '8' : '7'}" style="font-size: 20px; font-weight: bold; text-align: center; background: #4e73df; color: white;">
-                                SALES ORDERS REPORT
-                            </td>
-                        </tr>
-                        <tr>
-                            <td colspan="${branchColumnExists && viewAllBranches ? '8' : '7'}" style="text-align: center;">
-                                Export Date: ${new Date().toLocaleString()}
-                            </td>
-                        </tr>
-                        <tr>
-                            <td colspan="${branchColumnExists && viewAllBranches ? '8' : '7'}" style="text-align: center;">
-                                Total Orders: ${visibleRows.length} | Total Amount: ₱${calculateTotalAmount(visibleRows).toFixed(2)}
-                                ${!viewAllBranches && branchId > 0 ? ` | Branch: ${branchId}` : ''}
-                            </td>
-                        </tr>
+                        <tr><td colspan="${branchColumnExists && viewAllBranches ? '8' : '7'}" style="font-size:16px;font-weight:bold;text-align:center;">SALES ORDERS REPORT</td></tr>
+                        <tr><td colspan="${branchColumnExists && viewAllBranches ? '8' : '7'}" style="text-align:center;">Export Date: ${new Date().toLocaleString()}</td></tr>
+                        <tr><td colspan="${branchColumnExists && viewAllBranches ? '8' : '7'}" style="text-align:center;">Total Orders: ${visibleRows.length} | Total Amount: ₱${calculateTotalAmount(visibleRows).toFixed(2)}</td></tr>
                         <tr></tr>
                         <tr>
-                            <th>Order #</th>
-                            <th>Date</th>
-                            <th>Customer</th>
+                            <th>Order #</th><th>Date</th><th>Customer</th>
                             ${branchColumnExists && viewAllBranches ? '<th>Branch</th>' : ''}
-                            <th>Items</th>
-                            <th>Total Amount</th>
-                            <th>Status</th>
+                            <th>Items</th><th>Amount</th><th>Status</th>
                         </tr>
             `;
             
@@ -2258,8 +1780,8 @@ if (file_exists($logo_path)) {
             });
             
             excelContent += `
-                        <tr style="font-weight: bold; background: #f0f0f0;">
-                            <td colspan="${branchColumnExists && viewAllBranches ? '5' : '4'}" style="text-align: right;">GRAND TOTAL</td>
+                        <tr style="font-weight:bold;">
+                            <td colspan="${branchColumnExists && viewAllBranches ? '5' : '4'}" style="text-align:right;">GRAND TOTAL</td>
                             <td>₱${calculateTotalAmount(visibleRows).toFixed(2)}</td>
                             <td></td>
                             ${branchColumnExists && viewAllBranches ? '<td></td>' : ''}
