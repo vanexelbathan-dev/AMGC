@@ -223,317 +223,17 @@ if ($user_role == 'delivery' && $driver_id > 0) {
     <link rel="shortcut icon" href="../Pictures/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="../Pictures/apple-touch-icon.png" />
     <link rel="manifest" href="../Pictures/site.webmanifest" />
-    <link rel="stylesheet" href="../css/del_trip_tickets.css">
-    <link rel="stylesheet" href="../css/fordelivery.css">
+    <link rel="stylesheet" href="../css/del_trip_tickets.css?v=2.0">
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <!-- Leaflet CSS for maps -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-        .branch-badge {
-            background-color: #e7f1ff;
-            color: #0d6efd;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            margin-left: 5px;
-        }
         
-        .driver-badge {
-            background-color: #e7f1ff;
-            color: #0d6efd;
-            padding: 2px 8px;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            display: inline-block;
-        }
-        
-        .driver-info-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border-radius: 10px;
-            padding: 15px;
-            margin-bottom: 20px;
-        }
-        
-        .driver-info-card h5 {
-            color: white;
-            border-bottom: 1px solid rgba(255,255,255,0.3);
-            padding-bottom: 10px;
-        }
-        
-        .driver-info-card .info-label {
-            color: rgba(255,255,255,0.8);
-            font-size: 0.9rem;
-        }
-        
-        .driver-info-card .info-value {
-            color: white;
-            font-weight: 600;
-        }
-        
-        .alert-info {
-            background-color: #d1ecf1;
-            border-color: #bee5eb;
-            color: #0c5460;
-        }
-        
-        .alert-info code {
-            background-color: #f8f9fa;
-            padding: 2px 4px;
-            border-radius: 4px;
-            color: #c7254e;
-        }
-        
-        .btn-group .btn {
-            margin-right: 2px;
-        }
-        
-        .modal-xl {
-            max-width: 800px;
-        }
-        
-        .map-icon-btn {
-            background-color: #28a745;
-            color: white;
-            border: none;
-            padding: 3px 8px;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            cursor: pointer;
-            transition: all 0.3s;
-            display: inline-flex;
-            align-items: center;
-            gap: 3px;
-        }
-        
-        .map-icon-btn:hover {
-            background-color: #218838;
-            color: white;
-        }
-        
-        .map-icon-btn i {
-            font-size: 0.9rem;
-        }
-        
-        .status-badge-delivered {
-            background-color: #28a745;
-            color: white;
-        }
-        
-        .delivered-row {
-            background-color: #f8f9fa;
-        }
-        
-        /* Map Modal Styles */
-        .location-map {
-            height: 400px;
-            width: 100%;
-            border-radius: 8px;
-            margin-bottom: 15px;
-        }
-        
-        .location-info {
-            background-color: #f8f9fa;
-            border-radius: 8px;
-            padding: 15px;
-            margin-top: 15px;
-        }
-        
-        .location-info p {
-            margin-bottom: 8px;
-        }
-        
-        .location-info i {
-            color: #dc3545;
-            margin-right: 8px;
-        }
-        
-        .coordinates-badge {
-            background-color: #e7f1ff;
-            color: #0d6efd;
-            padding: 4px 10px;
-            border-radius: 20px;
-            font-size: 0.85rem;
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-        }
-        
-        .coordinates-badge i {
-            font-size: 1rem;
-        }
-        
-        /* Photo Modal Styles */
-        .photo-modal-img {
-            max-width: 100%;
-            max-height: 70vh;
-            display: block;
-            margin: 0 auto;
-        }
-        
-        /* Thermal Paper Receipt - SINGLE RECEIPT, SINGLE PAGE */
-        .thermal-receipt {
-            font-family: 'Courier New', monospace;
-            width: 72mm;
-            margin: 0 auto;
-            padding: 3mm;
-            background: white;
-            color: black;
-            font-size: 11px;
-            line-height: 1.3;
-            box-sizing: border-box;
-            border: 1px solid #ddd;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        }
-        
-        .receipt-header {
-            text-align: center;
-            margin-bottom: 4px;
-            padding-bottom: 2px;
-            border-bottom: 1px dashed #333;
-        }
-        
-        .receipt-header .company-name {
-            font-size: 16px;
-            font-weight: bold;
-            letter-spacing: 1px;
-        }
-        
-        .receipt-header .receipt-title {
-            font-size: 12px;
-            font-weight: bold;
-        }
-        
-        .receipt-header .receipt-no {
-            font-size: 10px;
-        }
-        
-        .receipt-info {
-            margin: 4px 0;
-            padding: 4px;
-            background: #f5f5f5;
-            font-size: 10px;
-        }
-        
-        .info-line {
-            display: flex;
-            margin: 2px 0;
-        }
-        
-        .info-label {
-            font-weight: bold;
-            width: 70px;
-            color: #333;
-        }
-        
-        .info-value {
-            flex: 1;
-            text-align: left;
-        }
-        
-        .items-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 4px 0;
-            font-size: 10px;
-        }
-        
-        .items-table th {
-            text-align: left;
-            border-bottom: 1px solid #333;
-            padding: 2px 0;
-        }
-        
-        .items-table td {
-            padding: 2px 0;
-            border-bottom: 1px dotted #999;
-            vertical-align: top;
-        }
-        
-        .items-table .item-name {
-            max-width: 100px;
-            word-wrap: break-word;
-        }
-        
-        .items-table .text-right {
-            text-align: right;
-        }
-        
-        .items-table .text-center {
-            text-align: center;
-        }
-        
-        .receipt-total {
-            margin-top: 4px;
-            padding-top: 2px;
-            border-top: 2px solid #333;
-            text-align: right;
-            font-weight: bold;
-            font-size: 12px;
-        }
-        
-        .receipt-footer {
-            text-align: center;
-            margin-top: 4px;
-            padding-top: 2px;
-            border-top: 1px dashed #333;
-            font-size: 9px;
-            color: #666;
-        }
-        
-        /* Receipt Modal */
-        #receiptModal .modal-dialog {
-            max-width: 500px;
-            margin: 20px auto;
-        }
-        
-        #receiptModal .modal-content {
-            border-radius: 10px;
-            overflow: hidden;
-        }
-        
-        #receiptModal .modal-header {
-            background: #f8f9fa;
-            border-bottom: 1px solid #dee2e6;
-        }
-        
-        #receiptModal .modal-body {
-            padding: 20px;
-            background: #fff;
-            min-height: 500px;
-            max-height: 700px;
-            overflow-y: auto;
-            display: flex;
-            justify-content: center;
-        }
-        
-        #receiptModal .modal-body::-webkit-scrollbar {
-            width: 8px;
-        }
-        
-        #receiptModal .modal-body::-webkit-scrollbar-track {
-            background: #f1f1f1;
-        }
-        
-        #receiptModal .modal-body::-webkit-scrollbar-thumb {
-            background: #888;
-            border-radius: 4px;
-        }
-        
-        #receiptModal .modal-body::-webkit-scrollbar-thumb:hover {
-            background: #555;
-        }
-        
-        #receiptModal .modal-footer {
-            background: #f8f9fa;
-            border-top: 1px solid #dee2e6;
-        }
-        
+      
         /* Print styles - SINGLE RECEIPT, SINGLE PAGE, ANY PAPER SIZE */
         @media print {
             /* Hide everything except the receipt */
@@ -695,14 +395,15 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 </h3>
             </div>
             
-            <div class="sidebar-menu">
+           <div class="sidebar-menu">
                 <ul class="nav flex-column">
-                    <li class="nav-item">
+                     <li class="nav-item">
                         <a class="nav-link active" href="fordelivery.php">
                             <i class="bi bi-truck"></i>
                             <span class="nav-text">For Delivery</span>
                         </a>
                     </li>
+
                     <li class="nav-item">
                         <a class="nav-link" href="trip_tickets.php">
                             <i class="bi bi-ticket"></i>
@@ -712,11 +413,12 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                     <li class="nav-item">
                         <a class="nav-link" href="rejecteddelivery.php">
                             <i class="bi bi-exclamation-circle"></i>
-                            <span class="nav-text">Rejected Delivery Advice</span>
+                            <span class="nav-text">Rejected Delivery</span>
                         </a>
                     </li>
                 </ul>
             </div>
+            <hr class="sidebar-divider">
             <div class="sidebar-footer">
                 <div class="user-profile-sidebar">
                     <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
@@ -1196,6 +898,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             </div>
         </div>
     </div>
+
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -1832,9 +1535,20 @@ if ($user_role == 'delivery' && $driver_id > 0) {
 
         // Logout
         function logout() {
-            if (confirm('Are you sure you want to logout?')) {
+        Swal.fire({
+            title: 'Are you sure?',
+            text: 'You will be logged out of the system',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#07d826',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Yes, logout'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                localStorage.removeItem('sidebarCollapsed');
                 window.location.href = '../logout.php';
             }
+        });
         }
 
         // Initialize on page load
@@ -1892,6 +1606,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             }
         });
 
+        
         // Keyboard shortcuts
         document.addEventListener('keydown', function(e) {
             if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {

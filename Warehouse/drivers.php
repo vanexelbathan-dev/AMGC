@@ -56,6 +56,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         /* Mobile responsive */
         @media (max-width: 768px) {
@@ -108,6 +109,99 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
             .stat-label {
                 font-size: 0.75rem;
             }
+        }
+
+        /* Mobile Profile Modal Styles */
+        .user-avatar-large {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--dark-green), var(--primary-green));
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin: 0 auto;
+            border: 4px solid var(--light-green);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        #profileModal .modal-content {
+            border: none;
+            border-radius: 20px;
+            overflow: hidden;
+        }
+
+        #profileModal .modal-header {
+            background: linear-gradient(135deg, var(--dark-green), var(--primary-green));
+            color: white;
+            border-bottom: none;
+            padding: 1.5rem;
+        }
+
+        #profileModal .modal-header .modal-title {
+            color: white;
+            font-weight: 600;
+        }
+
+        #profileModal .modal-header .btn-close {
+            filter: brightness(0) invert(1);
+            opacity: 0.9;
+        }
+
+        #profileModal .modal-header .btn-close:hover {
+            opacity: 1;
+            transform: rotate(90deg);
+        }
+
+        #profileModal .modal-body {
+            padding: 2rem;
+            background: linear-gradient(135deg, #f9fefc 0%, #f0fdf4 100%);
+        }
+
+        #profileModal .branch-info {
+            background: var(--light-green);
+            color: var(--dark-green);
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+            display: inline-block;
+            font-weight: 500;
+        }
+
+        #profileModal .btn-danger {
+            background: linear-gradient(135deg, #dc3545, #f87171);
+            border: none;
+            padding: 1rem;
+            border-radius: 50px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        #profileModal .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(220, 53, 69, 0.3);
+        }
+
+        /* Mobile Logout Button in Bottom Nav */
+        .mobile-nav .nav-link.logout-btn {
+            color: #dc3545;
+        }
+
+        .mobile-nav .nav-link.logout-btn i {
+            color: #dc3545;
+        }
+
+        .mobile-nav .nav-link.logout-btn.active,
+        .mobile-nav .nav-link.logout-btn:hover {
+            background: rgba(220, 53, 69, 0.1);
+            color: #dc3545;
+        }
+
+        .mobile-nav .nav-link.logout-btn.active i,
+        .mobile-nav .nav-link.logout-btn:hover i {
+            color: #dc3545;
         }
     </style>
 </head>
@@ -366,12 +460,12 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                     }
                                     ?>
                                     <tr data-vehicle-type="<?php echo strtolower($row['vehicle_type'] ?? ''); ?>">
-                                        <td><?php echo $row['driver_name']; ?></td>
-                                        <td><?php echo $row['license_number']; ?></td>
-                                        <td><?php echo $row['contact_number'] ?? 'N/A'; ?></td>
-                                        <td><?php echo $row['vehicle_type'] ?? 'N/A'; ?></td>
-                                        <td><?php echo $row['vehicle_plate_number'] ?? 'N/A'; ?></td>
-                                        <td><?php echo $row['branch_name'] ?? 'N/A'; ?></td>
+                                        <td><?php echo htmlspecialchars($row['driver_name']); ?></td>
+                                        <td><?php echo htmlspecialchars($row['license_number']); ?></td>
+                                        <td><?php echo htmlspecialchars($row['contact_number'] ?? 'N/A'); ?></td>
+                                        <td><?php echo htmlspecialchars($row['vehicle_type'] ?? 'N/A'); ?></td>
+                                        <td><?php echo htmlspecialchars($row['vehicle_plate_number'] ?? 'N/A'); ?></td>
+                                        <td><?php echo htmlspecialchars($row['branch_name'] ?? 'N/A'); ?></td>
                                         <td><span class="badge <?php echo $status_badge; ?>"><?php echo ucfirst(str_replace('-', ' ', $row['status'])); ?></span></td>
                                         <td>
                                             <button class="btn-action btn-view" data-bs-toggle="modal" data-bs-target="#viewDriverModal" 
@@ -390,6 +484,94 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                             ?>
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile Bottom Navigation -->
+    <div class="mobile-nav" id="mobileNav">
+        <ul class="nav">
+            <li class="nav-item">
+                <a class="nav-link" href="warehouse.php">
+                    <i class="bi bi-speedometer2"></i>
+                    <span>Dashboard</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="currentinventory.php">
+                    <i class="bi bi-boxes"></i>
+                    <span>Inventory</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="pick_list_items.php">
+                    <i class="bi bi-clipboard-check"></i>
+                    <span>Pick Lists</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="purchase_order.php">
+                    <i class="bi bi-receipt"></i>
+                    <span>PO</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link active" href="drivers.php">
+                    <i class="bi bi-person-badge"></i>
+                    <span>Drivers</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link logout-btn" href="#" onclick="showProfileModal(); return false;">
+                    <i class="bi bi-box-arrow-right"></i>
+                    <span>Logout</span>
+                </a>
+            </li>
+        </ul>
+    </div>
+
+    <!-- Mobile Profile/Logout Modal -->
+    <div class="modal fade" id="profileModal" tabindex="-1" aria-labelledby="profileModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="profileModalLabel">
+                        <i class="bi bi-person-circle me-2"></i>User Profile
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <!-- User Avatar -->
+                    <div class="user-avatar-large mb-3">
+                        <?php echo substr($user_name, 0, 2); ?>
+                    </div>
+                    
+                    <!-- User Name -->
+                    <h4 class="mb-1"><?php echo htmlspecialchars($user_name); ?></h4>
+                    
+                    <!-- User Role -->
+                    <p class="text-muted mb-3">
+                        <span class="badge bg-success"><?php echo ucfirst($user_role); ?></span>
+                    </p>
+                    
+                    <!-- Branch Info (if applicable) -->
+                    <?php if (!$view_all_branches && $user_branch_id > 0): ?>
+                    <div class="branch-info mb-3">
+                        <i class="bi bi-building me-1"></i>
+                        <span><?php echo htmlspecialchars($branch_name); ?></span>
+                    </div>
+                    <?php endif; ?>
+                    
+                    <!-- User ID -->
+                    <div class="user-id text-muted small mb-4">
+                        <i class="bi bi-hash"></i> User ID: <?php echo $user_id; ?>
+                    </div>
+                    
+                    <!-- Logout Button -->
+                    <button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()">
+                        <i class="bi bi-box-arrow-right me-2"></i>Logout
+                    </button>
                 </div>
             </div>
         </div>
@@ -587,91 +769,106 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
         }
         // ================= END SIDEBAR FUNCTIONS =================
 
-        // Initialize on page load
-        document.addEventListener('DOMContentLoaded', function() {
-            console.log("Drivers Management page loaded!");
+        // ================= MOBILE NAVIGATION FUNCTIONS =================
+        function initMobileNav() {
+            const mobileNav = document.getElementById('mobileNav');
+            const isMobile = window.innerWidth <= 992;
             
-            // Initialize sidebar
-            initializeSidebar();
-            
-            // Setup mobile toggle button - support multiple button IDs
-            const mobileToggleBtn = document.getElementById('mobileToggleBtn');
-            if (mobileToggleBtn) {
-                mobileToggleBtn.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    toggleSidebar();
-                });
-            }
-            
-            const mobileMenuBtn = document.getElementById('mobileMenuBtn');
-            if (mobileMenuBtn) {
-                mobileMenuBtn.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    toggleSidebar();
-                });
-            }
-            
-            // Setup desktop toggle button
-            const desktopToggleBtn = document.getElementById('desktopToggleBtn');
-            if (desktopToggleBtn) {
-                desktopToggleBtn.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    toggleSidebar();
-                });
-            }
-            
-            // Add click listeners to sidebar links to close on mobile
-            document.querySelectorAll('.sidebar .nav-link').forEach(link => {
-                link.addEventListener('click', function() {
-                    if (window.innerWidth <= 992) {
-                        closeMobileSidebar();
+            if (isMobile) {
+                mobileNav.style.display = 'block';
+                
+                // Set active state based on current page (excluding logout)
+                const currentPage = window.location.pathname.split('/').pop();
+                const navLinks = mobileNav.querySelectorAll('.nav-link:not(.logout-btn)');
+                
+                navLinks.forEach(link => {
+                    link.classList.remove('active');
+                    const href = link.getAttribute('href');
+                    if (currentPage === href) {
+                        link.classList.add('active');
                     }
                 });
-            });
-            
-            // Close sidebar when clicking outside on mobile
-            document.addEventListener('click', function(event) {
-                const sidebar = document.getElementById('sidebar');
-                const mobileBtn = document.getElementById('mobileToggleBtn') || document.getElementById('mobileMenuBtn');
-                const overlay = document.querySelector('.sidebar-overlay');
-                const isMobile = window.innerWidth <= 992;
-                
-                if (isMobile && sidebar && sidebar.classList.contains('active') && 
-                    !sidebar.contains(event.target) && 
-                    (!mobileBtn || !mobileBtn.contains(event.target)) &&
-                    (!overlay || !overlay.contains(event.target))) {
-                    closeMobileSidebar();
-                }
-            });
-
-            // Add resize event listener
-            window.addEventListener('resize', handleSidebarResize);
-
-            // Setup event listeners
-            setupEventListeners();
-        });
-
-        // Setup event listeners
-        function setupEventListeners() {
-            // Search functionality
-            const searchInput = document.getElementById('searchInput');
-            if (searchInput) {
-                searchInput.addEventListener('keyup', filterTable);
-            }
-
-            // Status filter
-            const statusFilter = document.getElementById('statusFilter');
-            if (statusFilter) {
-                statusFilter.addEventListener('change', filterTable);
-            }
-            
-            // Vehicle type filter
-            const vehicleTypeFilter = document.getElementById('vehicleTypeFilter');
-            if (vehicleTypeFilter) {
-                vehicleTypeFilter.addEventListener('keyup', filterTable);
+            } else {
+                mobileNav.style.display = 'none';
             }
         }
-        
+
+        // ================= PROFILE/LOGOUT FUNCTIONS =================
+        function showProfileModal() {
+            const profileModal = new bootstrap.Modal(document.getElementById('profileModal'));
+            profileModal.show();
+        }
+
+        function confirmLogout() {
+            // Close the modal first
+            const modal = bootstrap.Modal.getInstance(document.getElementById('profileModal'));
+            if (modal) {
+                modal.hide();
+            }
+            
+            // Show confirmation dialog
+            Swal.fire({
+                title: 'Are you sure?',
+                text: 'You will be logged out of the system',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#dc3545',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, logout'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    localStorage.removeItem('sidebarCollapsed');
+                    window.location.href = '../logout.php';
+                }
+            });
+        }
+
+        // Original logout function for sidebar
+        function logout() {
+            Swal.fire({
+                title: 'Are you sure?',
+                text: 'You will be logged out of the system',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#07d826',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, logout'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    localStorage.removeItem('sidebarCollapsed');
+                    window.location.href = '../logout.php';
+                }
+            });
+        }
+
+        // ================= DRIVER FUNCTIONS =================
+        // Load driver details via AJAX
+        function loadDriverDetails(driverId) {
+            const driverDetailsContent = document.getElementById('driverDetailsContent');
+            if (driverDetailsContent) {
+                driverDetailsContent.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading driver details...</p></div>';
+            }
+            
+            fetch('get_driver_details.php?driver_id=' + driverId)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.text();
+                })
+                .then(data => {
+                    if (driverDetailsContent) {
+                        driverDetailsContent.innerHTML = data;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    if (driverDetailsContent) {
+                        driverDetailsContent.innerHTML = '<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> Failed to load driver details. Please try again.</div>';
+                    }
+                });
+        }
+
         // Filter table function
         function filterTable() {
             const searchInput = document.getElementById('searchInput');
@@ -722,39 +919,88 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
             filterTable();
         }
 
-        // Load driver details via AJAX
-        function loadDriverDetails(driverId) {
-            const driverDetailsContent = document.getElementById('driverDetailsContent');
-            if (driverDetailsContent) {
-                driverDetailsContent.innerHTML = '<div class="text-center py-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading driver details...</p></div>';
+        // Setup event listeners
+        function setupEventListeners() {
+            // Search functionality
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput) {
+                searchInput.addEventListener('keyup', filterTable);
+            }
+
+            // Status filter
+            const statusFilter = document.getElementById('statusFilter');
+            if (statusFilter) {
+                statusFilter.addEventListener('change', filterTable);
             }
             
-            fetch('get_driver_details.php?driver_id=' + driverId)
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('Network response was not ok');
-                    }
-                    return response.text();
-                })
-                .then(data => {
-                    if (driverDetailsContent) {
-                        driverDetailsContent.innerHTML = data;
-                    }
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    if (driverDetailsContent) {
-                        driverDetailsContent.innerHTML = '<div class="alert alert-danger"><i class="bi bi-exclamation-triangle"></i> Failed to load driver details. Please try again.</div>';
-                    }
-                });
-        }
-
-        // Logout function
-        function logout() {
-            if (confirm('Are you sure you want to logout?')) {
-                window.location.href = '../logout.php';
+            // Vehicle type filter
+            const vehicleTypeFilter = document.getElementById('vehicleTypeFilter');
+            if (vehicleTypeFilter) {
+                vehicleTypeFilter.addEventListener('keyup', filterTable);
             }
         }
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("Drivers Management page loaded!");
+            
+            // Initialize sidebar
+            initializeSidebar();
+            
+            // Initialize mobile navigation
+            initMobileNav();
+            
+            // Setup mobile toggle button
+            const mobileToggleBtn = document.getElementById('mobileToggleBtn');
+            if (mobileToggleBtn) {
+                mobileToggleBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleSidebar();
+                });
+            }
+            
+            // Setup desktop toggle button
+            const desktopToggleBtn = document.getElementById('desktopToggleBtn');
+            if (desktopToggleBtn) {
+                desktopToggleBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleSidebar();
+                });
+            }
+            
+            // Add click listeners to sidebar links to close on mobile
+            document.querySelectorAll('.sidebar .nav-link').forEach(link => {
+                link.addEventListener('click', function() {
+                    if (window.innerWidth <= 992) {
+                        closeMobileSidebar();
+                    }
+                });
+            });
+            
+            // Close sidebar when clicking outside on mobile
+            document.addEventListener('click', function(event) {
+                const sidebar = document.getElementById('sidebar');
+                const mobileBtn = document.getElementById('mobileToggleBtn');
+                const overlay = document.querySelector('.sidebar-overlay');
+                const isMobile = window.innerWidth <= 992;
+                
+                if (isMobile && sidebar && sidebar.classList.contains('active') && 
+                    !sidebar.contains(event.target) && 
+                    (!mobileBtn || !mobileBtn.contains(event.target)) &&
+                    (!overlay || !overlay.contains(event.target))) {
+                    closeMobileSidebar();
+                }
+            });
+
+            // Add resize event listener
+            window.addEventListener('resize', function() {
+                handleSidebarResize();
+                initMobileNav();
+            });
+
+            // Setup event listeners
+            setupEventListeners();
+        });
 
         // Keyboard shortcuts
         document.addEventListener('keydown', function(e) {
@@ -766,6 +1012,13 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
             // Escape to close sidebar on mobile
             else if (e.key === 'Escape' && window.innerWidth <= 992) {
                 closeMobileSidebar();
+            }
+            // Escape to close modal
+            else if (e.key === 'Escape') {
+                const profileModal = document.getElementById('profileModal');
+                if (profileModal.classList.contains('show')) {
+                    bootstrap.Modal.getInstance(profileModal).hide();
+                }
             }
             // Ctrl + F to focus search
             else if (e.ctrlKey && e.key === 'f') {

@@ -67,9 +67,8 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-
-        
         /* Mobile responsive */
         @media (max-width: 768px) {
             .stat-card {
@@ -564,6 +563,89 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
         </div>
     </div>
 
+    <!-- Mobile Bottom Navigation (Like in Screenshot) -->
+    <div class="mobile-nav" id="mobileNav">
+        <ul class="nav">
+            <li class="nav-item">
+                <a class="nav-link active" href="warehouse.php">
+                    <i class="bi bi-speedometer2"></i>
+                    <span>Dashboard</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="currentinventory.php">
+                    <i class="bi bi-boxes"></i>
+                    <span>Inventory</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="pick_list_items.php">
+                    <i class="bi bi-clipboard-check"></i>
+                    <span>Pick Lists</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="purchase_order.php">
+                    <i class="bi bi-receipt"></i>
+                    <span>PO</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="drivers.php">
+                    <i class="bi bi-person-badge"></i>
+                    <span>Drivers</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link logout-btn" href="#" onclick="showProfileModal(); return false;">
+                    <i class="bi bi-box-arrow-right"></i>
+                    <span>Logout</span>
+                </a>
+            </li>
+        </ul>
+    </div>
+
+    <!-- Mobile Profile/Logout Modal -->
+    <div class="modal fade" id="profileModal" tabindex="-1" aria-labelledby="profileModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="profileModalLabel">
+                        <i class="bi bi-person-circle me-2"></i>User Profile
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <!-- User Avatar -->
+                    <div class="user-avatar-large mb-3">
+                        <?php echo substr($user_name, 0, 2); ?>
+                    </div>
+                    
+                    <!-- User Name -->
+                    <h4 class="mb-1"><?php echo htmlspecialchars($user_name); ?></h4>
+                    
+                    <!-- User Role -->
+                    <p class="text-muted mb-3">
+                        <span class="badge bg-success"><?php echo ucfirst($user_role); ?></span>
+                    </p>
+                    
+                    <!-- Branch Info (if applicable) -->
+                    <?php if (!$view_all_branches && $user_branch_id > 0): ?>
+                    <div class="branch-info mb-3">
+                        <i class="bi bi-building me-1"></i>
+                        <span><?php echo htmlspecialchars($branch_name); ?></span>
+                    </div>
+                    <?php endif; ?>
+                    
+                    <!-- Logout Button -->
+                    <button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()">
+                        <i class="bi bi-box-arrow-right me-2"></i>Logout
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
@@ -738,11 +820,77 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
         }
         // ================= END SIDEBAR FUNCTIONS =================
 
-        // Logout function
-        function logout() {
-            if (confirm('Are you sure you want to logout?')) {
-                window.location.href = '../logout.php';
+        // Initialize mobile navigation active state and visibility
+        function initMobileNav() {
+            const mobileNav = document.getElementById('mobileNav');
+            const isMobile = window.innerWidth <= 992;
+            
+            if (isMobile) {
+                mobileNav.style.display = 'block';
+                
+                // Set active state based on current page (excluding logout)
+                const currentPage = window.location.pathname.split('/').pop();
+                const navLinks = mobileNav.querySelectorAll('.nav-link:not(.logout-btn)');
+                
+                navLinks.forEach(link => {
+                    link.classList.remove('active');
+                    const href = link.getAttribute('href');
+                    if (currentPage === href) {
+                        link.classList.add('active');
+                    }
+                });
+            } else {
+                mobileNav.style.display = 'none';
             }
+        }
+
+        // Show profile modal
+        function showProfileModal() {
+            const profileModal = new bootstrap.Modal(document.getElementById('profileModal'));
+            profileModal.show();
+        }
+
+        // Confirm logout function
+        function confirmLogout() {
+            // Close the modal first
+            const modal = bootstrap.Modal.getInstance(document.getElementById('profileModal'));
+            if (modal) {
+                modal.hide();
+            }
+            
+            // Show confirmation dialog
+            Swal.fire({
+                title: 'Are you sure?',
+                text: 'You will be logged out of the system',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#dc3545',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, logout'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    localStorage.removeItem('sidebarCollapsed');
+                    window.location.href = '../logout.php';
+                }
+            });
+        }
+
+        // Original logout function for sidebar
+        function logout() {
+            Swal.fire({
+                title: 'Are you sure?',
+                text: 'You will be logged out of the system',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#dc3545',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, logout'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    localStorage.removeItem('sidebarCollapsed');
+                    window.location.href = '../logout.php';
+                }
+            });
         }
 
         // Initialize when page loads
@@ -751,6 +899,9 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
             
             // Initialize sidebar
             initializeSidebar();
+            
+            // Initialize mobile navigation
+            initMobileNav();
             
             // Setup mobile toggle button
             const mobileToggleBtn = document.getElementById('mobileToggleBtn');
@@ -795,7 +946,10 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
             });
 
             // Add resize event listener
-            window.addEventListener('resize', handleSidebarResize);
+            window.addEventListener('resize', function() {
+                handleSidebarResize();
+                initMobileNav();
+            });
         });
 
         // Keyboard shortcuts
@@ -808,6 +962,13 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
             // Escape to close sidebar on mobile
             else if (e.key === 'Escape' && window.innerWidth <= 992) {
                 closeMobileSidebar();
+            }
+            // Escape to close modal
+            else if (e.key === 'Escape') {
+                const profileModal = document.getElementById('profileModal');
+                if (profileModal.classList.contains('show')) {
+                    bootstrap.Modal.getInstance(profileModal).hide();
+                }
             }
         });
     </script>

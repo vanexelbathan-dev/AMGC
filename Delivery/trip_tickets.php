@@ -399,6 +399,7 @@ function getTripStatusText($status) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         /* Mobile responsive adjustments */
         @media (max-width: 768px) {
@@ -484,14 +485,15 @@ function getTripStatusText($status) {
                 </h3>
             </div>
             
-            <div class="sidebar-menu">
+             <div class="sidebar-menu">
                 <ul class="nav flex-column">
-                    <li class="nav-item">
+                     <li class="nav-item">
                         <a class="nav-link" href="fordelivery.php">
                             <i class="bi bi-truck"></i>
                             <span class="nav-text">For Delivery</span>
                         </a>
                     </li>
+
                     <li class="nav-item">
                         <a class="nav-link active" href="trip_tickets.php">
                             <i class="bi bi-ticket"></i>
@@ -501,11 +503,12 @@ function getTripStatusText($status) {
                     <li class="nav-item">
                         <a class="nav-link" href="rejecteddelivery.php">
                             <i class="bi bi-exclamation-circle"></i>
-                            <span class="nav-text">Rejected Delivery Advice</span>
+                            <span class="nav-text">Rejected Delivery</span>
                         </a>
                     </li>
-                </ul>    
+                </ul>
             </div>
+            <hr class="sidebar-divider">
             <!-- User Profile Section at the bottom of sidebar -->
             <div class="sidebar-footer">
                 <div class="user-profile-sidebar">
@@ -1292,11 +1295,22 @@ function getTripStatusText($status) {
         }
 
         // Logout function
-        function logout() {
-            if (confirm('Are you sure you want to logout?')) {
+         function logout() {
+        Swal.fire({
+            title: 'Are you sure?',
+            text: 'You will be logged out of the system',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#07d826',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Yes, logout'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                localStorage.removeItem('sidebarCollapsed');
                 window.location.href = '../logout.php';
             }
-        }
+        });
+    }
 
         // Form validation (for non-delivery roles)
         const addTicketForm = document.getElementById('addTicketForm');
