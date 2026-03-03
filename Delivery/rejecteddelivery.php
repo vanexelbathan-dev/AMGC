@@ -447,12 +447,12 @@ try {
             </div>
             <!-- User Profile Section at the bottom of sidebar -->
             <div class="sidebar-footer">
-                <div class="user-profile-sidebar">
+                <   div class="user-profile-sidebar">
                     <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
                     <div class="user-details-sidebar">
                         <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
                     </div>
-                </div>
+                </>
                     
                 <button class="logout-btn-sidebar" onclick="logout()">
                     <i class="bi bi-box-arrow-right"></i>

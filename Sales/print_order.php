@@ -50,6 +50,14 @@ $items_stmt->bind_param('i', $order_id);
 $items_stmt->execute();
 $items_result = $items_stmt->get_result();
 $items = $items_result->fetch_all(MYSQLI_ASSOC);
+
+// Get base64 encoded logo for printing
+$logo_path = '../Pictures/amgc3DLogo.png';
+$logo_base64 = '';
+if (file_exists($logo_path)) {
+    $image_data = file_get_contents($logo_path);
+    $logo_base64 = 'data:image/png;base64,' . base64_encode($image_data);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -58,6 +66,7 @@ $items = $items_result->fetch_all(MYSQLI_ASSOC);
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Order <?php echo $order['so_number']; ?> - Print</title>
     <style>
+        /* OPTIMIZED FOR PRINT - BLACK AND WHITE, MINIMAL WHITESPACE */
         * {
             margin: 0;
             padding: 0;
@@ -66,99 +75,102 @@ $items = $items_result->fetch_all(MYSQLI_ASSOC);
         
         body {
             font-family: 'Arial', 'Helvetica', sans-serif;
-            margin: 20px;
-            color: #333;
-            background-color: #fff;
+            font-size: 11px;
+            line-height: 1.2;
+            color: #000;
+            background: #fff;
+            margin: 0;
+            padding: 0;
         }
         
         .print-container {
-            max-width: 900px;
-            margin: 0 auto;
-            padding: 40px;
-            background: white;
+            max-width: 100%;
+            margin: 0;
+            padding: 15px;
         }
         
         .header {
-            text-align: center;
-            margin-bottom: 40px;
-            padding-bottom: 25px;
-            border-bottom: 2px solid #000;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #000;
+        }
+        
+        .logo-section {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .company-logo {
+            width: 50px;
+            height: auto;
+            /* Only colored element */
         }
         
         .company-name {
-            font-size: 32px;
+            font-size: 20px;
             font-weight: bold;
             color: #000;
-            margin-bottom: 10px;
-            letter-spacing: 2px;
+            letter-spacing: 1px;
         }
         
         .document-type {
-            font-size: 14px;
-            text-transform: uppercase;
-            letter-spacing: 2px;
-            color: #333;
-            font-weight: normal;
+            font-size: 12px;
+            font-weight: bold;
+            color: #000;
         }
         
         .order-title {
-            font-size: 16px;
-            margin: 30px 0 10px 0;
-            color: #000;
+            font-size: 14px;
             font-weight: bold;
+            margin: 12px 0 8px 0;
+            border-bottom: 1px solid #000;
+            padding-bottom: 3px;
         }
         
         .info-section {
-            margin-bottom: 25px;
-        }
-        
-        .info-section h4 {
-            font-size: 12px;
-            font-weight: bold;
-            text-transform: uppercase;
-            color: #000;
             margin-bottom: 12px;
-            padding-bottom: 5px;
-            border-bottom: 1px solid #000;
         }
         
         .info-row {
             display: flex;
-            margin-bottom: 8px;
-            align-items: flex-start;
-            font-size: 12px;
+            margin-bottom: 3px;
+            font-size: 11px;
         }
         
         .info-label {
             font-weight: bold;
-            min-width: 130px;
+            min-width: 100px;
             color: #000;
         }
         
         .info-value {
             flex: 1;
-            color: #333;
+            color: #000;
         }
         
         .items-table {
             width: 100%;
             border-collapse: collapse;
-            margin: 20px 0;
-            font-size: 11px;
+            margin: 8px 0;
+            font-size: 10px;
         }
         
         .items-table th {
-            background: #f5f5f5;
+            background: #f0f0f0;
             color: #000;
             border: 1px solid #000;
-            padding: 10px;
+            padding: 6px;
             text-align: left;
             font-weight: bold;
         }
         
         .items-table td {
-            border: 1px solid #ccc;
-            padding: 10px;
+            border: 1px solid #000;
+            padding: 5px;
         }
         
         .items-table tbody tr {
@@ -170,78 +182,72 @@ $items = $items_result->fetch_all(MYSQLI_ASSOC);
         }
         
         .total-section {
-            margin-top: 25px;
-            padding: 15px;
-            background: #f5f5f5;
-            border: 1px solid #ccc;
-        }
-        
-        .total-row {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 8px;
-            font-size: 12px;
-        }
-        
-        .subtotal-label {
-            font-weight: normal;
+            margin-top: 10px;
+            padding: 8px;
+            border: 1px solid #000;
+            background: #f9f9f9;
+            text-align: right;
         }
         
         .grand-total {
-            font-size: 14px;
+            font-size: 12px;
             font-weight: bold;
-            color: #000;
-            border-top: 1px solid #000;
-            padding-top: 10px;
-            margin-top: 10px;
         }
         
         .footer {
-            margin-top: 50px;
-            padding-top: 15px;
-            border-top: 1px solid #ccc;
+            margin-top: 20px;
+            padding-top: 8px;
+            border-top: 1px solid #000;
             text-align: center;
-            color: #666;
-            font-size: 10px;
+            color: #333;
+            font-size: 9px;
         }
         
         .status-badge {
             display: inline-block;
-            padding: 3px 8px;
+            padding: 2px 6px;
             border: 1px solid #000;
             font-weight: bold;
             text-transform: uppercase;
-            font-size: 10px;
-            letter-spacing: 0.5px;
+            font-size: 9px;
             background: #fff;
         }
         
         .notes-section {
-            margin-top: 20px;
-            padding: 12px;
-            background-color: #f9f9f9;
+            margin-top: 12px;
+            padding: 8px;
             border-left: 2px solid #000;
         }
         
-        .notes-section h4 {
-            border-bottom: none;
-            margin-bottom: 8px;
-            color: #000;
+        .no-print {
+            text-align: center;
+            margin-top: 15px;
+        }
+        
+        .no-print button {
+            padding: 6px 12px;
+            margin: 0 5px;
+            border: 1px solid #000;
+            background: #fff;
+            cursor: pointer;
         }
         
         @media print {
             body {
                 margin: 0;
                 padding: 0;
-                background-color: white;
             }
-            
             .print-container {
                 padding: 0;
             }
-            
             .no-print {
                 display: none !important;
+            }
+            /* Ensure black and white only (except logo) */
+            th, td, .total-section, .header, .footer {
+                background: #fff !important;
+                color: #000 !important;
+                border-color: #000 !important;
             }
         }
     </style>
@@ -249,26 +255,24 @@ $items = $items_result->fetch_all(MYSQLI_ASSOC);
 <body>
     <div class="print-container">
         <div class="header">
-            <div class="company-name">AMGC</div>
-            <div class="document-type">Sales Order</div>
+            <div class="logo-section">
+                <img src="<?php echo $logo_base64; ?>" alt="AMGC Logo" class="company-logo">
+                <span class="company-name">AMGC</span>
+            </div>
+            <div class="document-type">
+                SALES ORDER #<?php echo htmlspecialchars($order['so_number']); ?>
+            </div>
         </div>
         
-        <div class="order-title">
-            Order Number: <?php echo htmlspecialchars($order['so_number']); ?>
-        </div>
-        
+        <div class="order-title">ORDER INFORMATION</div>
         <div class="info-section">
             <div class="info-row">
                 <div class="info-label">Order Date:</div>
-                <div class="info-value"><?php echo date('F d, Y', strtotime($order['order_date'])); ?></div>
+                <div class="info-value"><?php echo date('M d, Y', strtotime($order['order_date'])); ?></div>
             </div>
             <div class="info-row">
                 <div class="info-label">Status:</div>
-                <div class="info-value">
-                    <span class="status-badge">
-                        <?php echo strtoupper($order['order_status']); ?>
-                    </span>
-                </div>
+                <div class="info-value"><?php echo strtoupper($order['order_status']); ?></div>
             </div>
             <div class="info-row">
                 <div class="info-label">Prepared By:</div>
@@ -276,8 +280,8 @@ $items = $items_result->fetch_all(MYSQLI_ASSOC);
             </div>
         </div>
         
+        <div class="order-title">CUSTOMER INFORMATION</div>
         <div class="info-section">
-            <h4>Bill To</h4>
             <div class="info-row">
                 <div class="info-label">Name:</div>
                 <div class="info-value"><?php echo htmlspecialchars($order['customer_name']); ?></div>
@@ -296,12 +300,13 @@ $items = $items_result->fetch_all(MYSQLI_ASSOC);
             </div>
         </div>
         
+        <div class="order-title">ORDER ITEMS</div>
         <table class="items-table">
             <thead>
                 <tr>
                     <th style="width: 40%;">Product</th>
                     <th style="width: 15%;">SKU</th>
-                    <th style="width: 15%;" class="text-right">Quantity</th>
+                    <th style="width: 15%;" class="text-right">Qty</th>
                     <th style="width: 15%;" class="text-right">Unit Price</th>
                     <th style="width: 15%;" class="text-right">Amount</th>
                 </tr>
@@ -320,40 +325,30 @@ $items = $items_result->fetch_all(MYSQLI_ASSOC);
         </table>
         
         <div class="total-section">
-            <div class="total-row">
-                <span style="font-weight: bold;">Total Amount:</span>
-                <span style="font-weight: bold;">₱<?php echo number_format($order['total_amount'], 2); ?></span>
-            </div>
+            <span class="grand-total">TOTAL AMOUNT: ₱<?php echo number_format($order['total_amount'], 2); ?></span>
         </div>
         
         <?php if (!empty($order['notes'])): ?>
         <div class="notes-section">
-            <h4>Notes</h4>
-            <p><?php echo nl2br(htmlspecialchars($order['notes'])); ?></p>
+            <strong>NOTES:</strong> <?php echo nl2br(htmlspecialchars($order['notes'])); ?>
         </div>
         <?php endif; ?>
         
         <div class="footer">
-            This is a computer-generated document.
-            <br/>Printed on: <?php echo date('F d, Y H:i', strtotime(date('Y-m-d H:i:s'))); ?>
+            Printed on: <?php echo date('M d, Y H:i'); ?> | Computer-generated document
         </div>
     </div>
     
-    <div class="no-print" style="text-align: center; margin-top: 20px;">
-        <button onclick="window.print()" class="btn btn-primary" style="padding: 8px 16px; margin-right: 10px;">
-            <i class="bi bi-printer"></i> Print
-        </button>
-        <button onclick="window.close()" class="btn btn-secondary" style="padding: 8px 16px;">
-            <i class="bi bi-x-circle"></i> Close
-        </button>
+    <div class="no-print">
+        <button onclick="window.print()">🖨️ Print</button>
+        <button onclick="window.close()">✖️ Close</button>
     </div>
     
     <script>
-        // Auto print on page load
         window.onload = function() {
             setTimeout(function() {
                 window.print();
-            }, 500);
+            }, 300);
         };
     </script>
 </body>

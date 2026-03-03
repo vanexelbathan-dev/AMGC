@@ -1257,9 +1257,7 @@ function formatLocation($item) {
                         <button class="btn btn-outline-success" onclick="exportToExcel()">
                             <i class="bi bi-file-earmark-excel me-1"></i> Export to Excel
                         </button>
-                        <button class="btn btn-primary" id="addItemButton" onclick="showAddItemModal()">
-                            <i class="bi bi-plus-circle me-1"></i> Add Item
-                        </button>
+
                     </div>
                 </div>
 
@@ -1304,7 +1302,7 @@ function formatLocation($item) {
                                     // Format location for display
                                     $location_display = '';
                                     if (!empty($item['latitude']) && !empty($item['longitude'])) {
-                                        $location_display = '<span class="customer-location-badge"><i class="bi bi-geo-alt-fill"></i> ' . 
+                                        $location_display = '<span><i class="bi bi-geo-alt-fill"></i> ' . 
                                                            number_format($item['latitude'], 6) . ', ' . 
                                                            number_format($item['longitude'], 6) . '</span>';
                                         if (!empty($item['full_address'])) {
@@ -1434,15 +1432,6 @@ function formatLocation($item) {
                             <?php endif; ?>
                         </tbody>
                     </table>
-                </div>
-                
-                <!-- Add Item Card -->
-                <div class="new-item-card mt-4" id="addItemCard" onclick="showAddItemModal()">
-                    <div class="add-icon">
-                        <i class="bi bi-plus-lg"></i>
-                    </div>
-                    <h5>Add New Pick List Item</h5>
-                    <p>Click to add a new item to the pick list and assign a driver</p>
                 </div>
             </div>
         </div>
