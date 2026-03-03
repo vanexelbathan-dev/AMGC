@@ -569,9 +569,6 @@ if (empty($user_initials)) {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.min.css" />
-    <!-- SweetAlert2 -->
-    <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
           /* Mobile responsive adjustments ONLY */
         @media (max-width: 768px) {
@@ -1410,22 +1407,9 @@ if (empty($user_initials)) {
             }
         }
         
-        // ============== LOGOUT WITH SWEETALERT2 ==============
+        // ============== LOGOUT ==============
         function logout() {
-            Swal.fire({
-                title: 'Are you sure?',
-                text: 'You will be logged out of the system',
-                icon: 'question',
-                showCancelButton: true,
-                confirmButtonColor: '#07d826',
-                cancelButtonColor: '#6c757d',
-                confirmButtonText: 'Yes, logout'
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    localStorage.removeItem('sidebarCollapsed');
-                    window.location.href = '../logout.php';
-                }
-            });
+            window.location.href = '../logout.php';
         }
         
         // ============== INITIALIZATION ==============
@@ -1483,36 +1467,39 @@ if (empty($user_initials)) {
     <!-- Driver Location Tracking Script -->
     <script src="../js/driver-location-tracker.js"></script>
     <script>
+        let driverTracker = null;
+
         // Initialize real-time driver location tracking
         document.addEventListener('DOMContentLoaded', function() {
+            // Create tracker instance
+            driverTracker = new DriverLocationTracker({
+                updateInterval: 10000,
+                enableHighAccuracy: true,
+                apiEndpoint: './update_driver_location.php',
+                onSuccess: function(data) {
+                    console.log('[v0] Location sent successfully');
+                },
+                onError: function(error) {
+                    console.log('[v0] Location tracking error:', error);
+                }
+            });
+
             // Get current driver ID from URL parameter or data attribute
             const urlParams = new URLSearchParams(window.location.search);
             const driverId = urlParams.get('driver_id') || document.getElementById('current_driver_id')?.value;
+            const isDriver = urlParams.get('is_driver') === '1';
             
-            // Initialize geolocation tracking if this is a driver viewing their own location
-            if (driverId && window.driverTracker) {
-                console.log('[v0] Initializing live location tracking for driver:', driverId);
-                
-                // You can customize the update frequency here
-                window.driverTracker.updateInterval = 10000; // Update every 10 seconds
-                
-                // Update the tracking status display periodically
-                setInterval(function() {
-                    const lastLocation = window.driverTracker.getLastLocation();
-                    if (lastLocation) {
-                        // Update any location display on the page
-                        const locationDisplay = document.getElementById('current-location-display');
-                        if (locationDisplay) {
-                            locationDisplay.innerHTML = `
-                                <div class="alert alert-info">
-                                    <i class="bi bi-geo-alt"></i> Live Location: 
-                                    ${lastLocation.latitude.toFixed(6)}, ${lastLocation.longitude.toFixed(6)} 
-                                    (Accuracy: ${Math.round(lastLocation.accuracy)}m)
-                                </div>
-                            `;
-                        }
-                    }
-                }, 5000);
+            // Check if current user is a driver with active delivery/trip
+            const userTypeElement = document.getElementById('user_type');
+            const userType = userTypeElement ? userTypeElement.value : '<?php echo isset($_SESSION['user_type']) ? $_SESSION['user_type'] : ''; ?>';
+            const currentUserId = <?php echo isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 'null'; ?>;
+            
+            console.log('[v0] Driver Tracking Initialized - User Type:', userType, 'Driver ID:', driverId);
+            
+            // Start tracking if user is a driver with active trip
+            if (userType === 'driver' || userType === 'delivery' || isDriver) {
+                console.log('[v0] Starting automatic location tracking for driver');
+                driverTracker.startTracking();
             }
         });
     </script>

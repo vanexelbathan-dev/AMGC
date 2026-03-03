@@ -121,7 +121,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $password_hash = password_hash($password, PASSWORD_DEFAULT);
             
             // Insert user account
-            $insert_user = $conn->prepare("INSERT INTO users (email, password_hash, first_name, last_name, role, branch_id, driver_id, contact_number, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'delivery', ?, ?, ?, 'active', NOW(), NOW())");
+            $insert_user = $conn->prepare("INSERT INTO users (email, password_hash, first_name, last_name, role, branch_id, driver_id, contact_number, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'delivery', ?, ?, ?, ?, NOW(), NOW())");
             $insert_user->bind_param("ssssiiss", $email, $password_hash, $first_name, $last_name, $branch_id, $driver_id, $contact_number, $status);
             
             if (!$insert_user->execute()) {
@@ -470,20 +470,7 @@ $total_sales = count($sales_agents);
 $active_users = count(array_filter($users, function($u) { return $u['user_status'] === 'active'; }));
 
 // Helper functions - EXACTLY the same as users.php
-function getUserRoleBadge($role) {
-    switch($role) {
-        case 'branch_admin':
-            return 'bg-danger';
-        case 'delivery':
-            return 'bg-primary';
-        case 'warehouse':
-            return 'bg-success';
-        case 'sales':
-            return 'bg-warning text-dark';
-        default:
-            return 'bg-secondary';
-    }
-}
+
 
 function getUserRoleText($role) {
     switch($role) {
@@ -1117,10 +1104,8 @@ if (empty($user_initials)) {
                                         <small class="text-muted"><?= htmlspecialchars($user['email']) ?></small>
                                     </td>
                                     <td class="col-role">
-                                        
-                                            <i class="bi <?= $user['role'] === 'branch_admin' ?  : ($user['role'] === 'delivery' ?  : ($user['role'] === 'warehouse' ?  : '')) ?>"></i>
+                                            <i class="bi <?= $user['role'] === 'branch_admin' ? '' : ($user['role'] === 'delivery' ? '' : ($user['role'] === 'warehouse' ? '' : '')) ?>"></i>
                                             <?= getUserRoleText($user['role']) ?>
-                                        </span>
                                     </td>
                                     <td class="col-details">
                                         <div class="details-text">
@@ -1182,7 +1167,7 @@ if (empty($user_initials)) {
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <form id="branchAdminForm" onsubmit="return false;">
+                    <form id="branchAdminForm">
                         <input type="hidden" id="branchAdminId" name="user_id">
                         
                         <div class="form-section">
@@ -1252,7 +1237,7 @@ if (empty($user_initials)) {
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <form id="driverForm" onsubmit="return false;">
+                    <form id="driverForm">
                         <input type="hidden" id="driverId" name="driver_id">
                         <input type="hidden" id="driverUserId" name="user_id">
                         
@@ -1361,7 +1346,7 @@ if (empty($user_initials)) {
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <form id="warehouseForm" onsubmit="return false;">
+                    <form id="warehouseForm">
                         <input type="hidden" id="warehouseId" name="user_id">
                         
                         <div class="form-section">
@@ -1444,7 +1429,7 @@ if (empty($user_initials)) {
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body">
-                    <form id="salesForm" onsubmit="return false;">
+                    <form id="salesForm">
                         <input type="hidden" id="salesId" name="user_id">
                         
                         <div class="form-section">
@@ -2049,6 +2034,7 @@ if (empty($user_initials)) {
 
     function saveDriver() {
         const driverId = document.getElementById('driverId').value;
+        const userId = document.getElementById('driverUserId').value;
         const driverName = document.getElementById('driverName').value.trim();
         const licenseNumber = document.getElementById('licenseNumber').value.trim();
         const firstName = document.getElementById('driverFirstName').value.trim();
@@ -2057,16 +2043,20 @@ if (empty($user_initials)) {
         const password = document.getElementById('driverPassword').value;
         const branchId = document.getElementById('driverBranchId').value;
         
+        // Validate required fields
         if (!driverName) return Swal.fire('Warning', 'Driver Name is required', 'warning');
         if (!licenseNumber) return Swal.fire('Warning', 'License Number is required', 'warning');
         if (!branchId) return Swal.fire('Warning', 'Branch is required', 'warning');
         if (!firstName) return Swal.fire('Warning', 'First Name is required', 'warning');
         if (!lastName) return Swal.fire('Warning', 'Last Name is required', 'warning');
         if (!email) return Swal.fire('Warning', 'Email is required', 'warning');
+        
+        // Validate email format
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
             return Swal.fire('Warning', 'Invalid email format', 'warning');
         }
         
+        // Password validation for new drivers
         if (!driverId && !password) {
             return Swal.fire('Warning', 'Password is required for new users', 'warning');
         }
@@ -2076,15 +2066,46 @@ if (empty($user_initials)) {
         
         showLoading();
         
-        const formData = new FormData(document.getElementById('driverForm'));
+        const formData = new FormData();
+        
         if (driverId) {
+            // EDIT MODE
             formData.append('action', 'update_user');
             formData.append('user_role_type', 'driver');
-            formData.append('user_id', currentUserId);
+            formData.append('user_id', userId);
             formData.append('driver_id', driverId);
+            formData.append('driver_name', driverName);
+            formData.append('license_number', licenseNumber);
+            formData.append('license_expiry', document.getElementById('licenseExpiry').value || '');
+            formData.append('contact_number', document.getElementById('contactNumber').value || '');
+            formData.append('vehicle_type', document.getElementById('vehicleType').value || '');
+            formData.append('vehicle_plate_number', document.getElementById('vehiclePlate').value || '');
+            formData.append('branch_id', branchId);
             formData.append('driver_status', document.getElementById('driverStatus').value);
+            formData.append('first_name', firstName);
+            formData.append('last_name', lastName);
+            formData.append('email', email);
+            if (password) {
+                formData.append('password', password);
+            }
+            formData.append('status', document.getElementById('driverStatus').value);
+            formData.append('contact_number', document.getElementById('contactNumber').value || '');
+            
         } else {
+            // ADD MODE
             formData.append('action', 'add_driver');
+            formData.append('driver_name', driverName);
+            formData.append('license_number', licenseNumber);
+            formData.append('license_expiry', document.getElementById('licenseExpiry').value || '');
+            formData.append('contact_number', document.getElementById('contactNumber').value || '');
+            formData.append('vehicle_type', document.getElementById('vehicleType').value || '');
+            formData.append('vehicle_plate_number', document.getElementById('vehiclePlate').value || '');
+            formData.append('branch_id', branchId);
+            formData.append('status', document.getElementById('driverStatus').value);
+            formData.append('first_name', firstName);
+            formData.append('last_name', lastName);
+            formData.append('email', email);
+            formData.append('password', password);
         }
         
         fetch('drivers.php', { method: 'POST', body: formData })
@@ -2318,3 +2339,4 @@ if (empty($user_initials)) {
     </script>
 </body>
 </html>
+<?php $conn->close(); ?>
