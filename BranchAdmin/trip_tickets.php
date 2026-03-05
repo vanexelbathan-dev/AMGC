@@ -9,6 +9,14 @@ $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'branch_admin';
 $branch_id = $_SESSION['branch_id'] ?? 0;
 $view_all_branches = $_SESSION['view_all_branches'] ?? false;
 
+// Get base64 encoded logo for printing
+$logo_path = '../Pictures/amgc3DLogo.png';
+$logo_base64 = '';
+if (file_exists($logo_path)) {
+    $image_data = file_get_contents($logo_path);
+    $logo_base64 = 'data:image/png;base64,' . base64_encode($image_data);
+}
+
 // Check if branch_id column exists in trip_tickets table
 $tt_branch_column_exists = false;
 $check_tt_column = $conn->query("SHOW COLUMNS FROM trip_tickets LIKE 'branch_id'");
@@ -36,93 +44,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     try {
         $conn->begin_transaction();
         
-        // CREATE TRIP TICKET
-        if ($_POST['action'] === 'create_trip') {
-            $so_id = (int)$_POST['so_id'];
-            $picklist_id = (int)$_POST['picklist_id'];
-            $trip_date = $_POST['trip_date'];
-            $trip_status = $_POST['trip_status'];
-            $remarks = $_POST['remarks'] ?? '';
-            
-            // Validate required fields
-            if (!$so_id) {
-                throw new Exception('Sales Order is required');
-            }
-            
-            if (!$picklist_id) {
-                throw new Exception('Pick List is required');
-            }
-            
-            if (!$trip_date) {
-                throw new Exception('Trip date is required');
-            }
-            
-            // Verify SO belongs to user's branch
-            $check_so_query = "SELECT so_id FROM sales_orders WHERE so_id = ? AND branch_id = ?";
-            $check_so_stmt = $conn->prepare($check_so_query);
-            $check_so_stmt->bind_param("ii", $so_id, $branch_id);
-            $check_so_stmt->execute();
-            if ($check_so_stmt->get_result()->num_rows === 0 && !$view_all_branches) {
-                throw new Exception('Sales Order not found or access denied');
-            }
-            
-            // Verify pick list belongs to user's branch and get driver_id
-            $pl_query = "SELECT pick_list_id, driver_id FROM pick_lists WHERE pick_list_id = ? AND branch_id = ?";
-            $pl_stmt = $conn->prepare($pl_query);
-            $pl_stmt->bind_param("ii", $picklist_id, $branch_id);
-            $pl_stmt->execute();
-            $pl_result = $pl_stmt->get_result();
-            
-            if ($pl_result->num_rows === 0 && !$view_all_branches) {
-                throw new Exception('Pick List not found or access denied');
-            }
-            
-            $picklist = $pl_result->fetch_assoc();
-            $driver_id = $picklist['driver_id'];
-            
-            if (!$driver_id) {
-                throw new Exception('Selected pick list has no assigned driver. Please assign a driver to the pick list first.');
-            }
-            
-            // Generate trip number
-            $trip_number = 'TT-' . date('Ymd') . '-' . str_pad($so_id, 5, '0', STR_PAD_LEFT);
-            
-            // Check if trip number already exists
-            $check_trip_query = "SELECT trip_id FROM trip_tickets WHERE trip_number = ?";
-            $check_trip_stmt = $conn->prepare($check_trip_query);
-            $check_trip_stmt->bind_param("s", $trip_number);
-            $check_trip_stmt->execute();
-            
-            if ($check_trip_stmt->get_result()->num_rows > 0) {
-                // Generate a unique number with random suffix
-                $trip_number = 'TT-' . date('Ymd') . '-' . rand(1000, 9999);
-            }
-            
-            // Create trip ticket
-            $insert_query = "INSERT INTO trip_tickets (trip_number, so_id, picklist_id, driver_id, branch_id, trip_date, trip_status, remarks, created_by, created_at) 
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())";
-            $insert_stmt = $conn->prepare($insert_query);
-            $insert_stmt->bind_param("siiissssi", $trip_number, $so_id, $picklist_id, $driver_id, $branch_id, $trip_date, $trip_status, $remarks, $user_id);
-            
-            if (!$insert_stmt->execute()) {
-                throw new Exception('Failed to create trip ticket: ' . $insert_stmt->error);
-            }
-            
-            $trip_id = $conn->insert_id;
-            
-            $conn->commit();
-            
-            echo json_encode([
-                'success' => true,
-                'message' => 'Trip ticket created successfully',
-                'trip_id' => $trip_id,
-                'trip_number' => $trip_number
-            ]);
-            exit;
-        }
-        
         // UPDATE TRIP TICKET
-        elseif ($_POST['action'] === 'update_trip') {
+        if ($_POST['action'] === 'update_trip') {
             $trip_id = (int)$_POST['trip_id'];
             $trip_status = $_POST['trip_status'];
             $trip_date = $_POST['trip_date'];
@@ -302,6 +225,84 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             exit;
         }
         
+        // PRINT TRIP TICKETS
+        elseif ($_POST['action'] === 'print_trip_tickets') {
+            $filter_data = json_decode($_POST['filter_data'] ?? '{}', true);
+            
+            // Build query based on filters
+            $print_query = "
+                SELECT 
+                    tt.trip_id,
+                    tt.trip_number,
+                    tt.so_id,
+                    tt.picklist_id,
+                    tt.driver_id as trip_driver_id,
+                    COALESCE(pl.driver_name, d.driver_name) as driver_name,
+                    COALESCE(pl.vehicle_plate_number, d.vehicle_plate_number) as vehicle_plate_number,
+                    tt.branch_id,
+                    b.branch_name,
+                    tt.trip_date,
+                    tt.trip_status,
+                    tt.total_stops,
+                    tt.total_delivered,
+                    tt.total_failed,
+                    tt.remarks,
+                    tt.created_at,
+                    so.so_number,
+                    so.order_status,
+                    c.customer_name,
+                    GROUP_CONCAT(DISTINCT i.item_name SEPARATOR ', ') as item_names,
+                    GROUP_CONCAT(DISTINCT i.item_code SEPARATOR ', ') as item_codes,
+                    pl.pick_list_number,
+                    pl.driver_name as picklist_driver_name
+                FROM trip_tickets tt
+                LEFT JOIN drivers d ON tt.driver_id = d.driver_id
+                LEFT JOIN branches b ON tt.branch_id = b.branch_id
+                LEFT JOIN sales_orders so ON tt.so_id = so.so_id
+                LEFT JOIN customers c ON so.customer_id = c.customer_id
+                LEFT JOIN pick_list_items pli ON tt.picklist_id = pli.pick_list_id
+                LEFT JOIN items i ON pli.item_id = i.item_id
+                LEFT JOIN (
+                    SELECT 
+                        pl.pick_list_id,
+                        pl.pick_list_number,
+                        pl.driver_id,
+                        d.driver_name,
+                        d.vehicle_plate_number
+                    FROM pick_lists pl
+                    LEFT JOIN drivers d ON pl.driver_id = d.driver_id
+                ) pl ON tt.picklist_id = pl.pick_list_id
+                WHERE 1=1
+            ";
+            
+            // Apply filters
+            if (!empty($filter_data['status']) && $filter_data['status'] !== '') {
+                $print_query .= " AND tt.trip_status = '" . $conn->real_escape_string($filter_data['status']) . "'";
+            }
+            
+            if (!empty($filter_data['driver']) && $filter_data['driver'] !== '') {
+                $print_query .= " AND COALESCE(pl.driver_name, d.driver_name) LIKE '%" . $conn->real_escape_string($filter_data['driver']) . "%'";
+            }
+            
+            if (!$view_all_branches && $tt_branch_column_exists) {
+                $print_query .= " AND tt.branch_id = $branch_id";
+            }
+            
+            $print_query .= " GROUP BY tt.trip_id ORDER BY tt.trip_date DESC, tt.trip_id DESC";
+            
+            $print_result = $conn->query($print_query);
+            $print_items = $print_result ? $print_result->fetch_all(MYSQLI_ASSOC) : [];
+            
+            echo json_encode([
+                'success' => true,
+                'items' => $print_items,
+                'branch_name' => $branch_id ? ('Branch ' . $branch_id) : 'All Branches',
+                'view_all' => $view_all_branches,
+                'tt_branch_column_exists' => $tt_branch_column_exists
+            ]);
+            exit;
+        }
+        
     } catch (Exception $e) {
         $conn->rollback();
         echo json_encode([
@@ -339,6 +340,9 @@ $trip_query = "
         so.order_status,
         so.customer_id,
         c.customer_name,
+        GROUP_CONCAT(DISTINCT i.item_name SEPARATOR ', ') as item_names,
+        GROUP_CONCAT(DISTINCT i.item_code SEPARATOR ', ') as item_codes,
+        COUNT(DISTINCT i.item_id) as item_count,
         pl.pick_list_number,
         pl.pick_status,
         pl.driver_id as picklist_driver_id,
@@ -362,6 +366,8 @@ $trip_query = "
     LEFT JOIN branches b ON tt.branch_id = b.branch_id
     LEFT JOIN sales_orders so ON tt.so_id = so.so_id
     LEFT JOIN customers c ON so.customer_id = c.customer_id
+    LEFT JOIN pick_list_items pli ON tt.picklist_id = pli.pick_list_id
+    LEFT JOIN items i ON pli.item_id = i.item_id
     LEFT JOIN (
         SELECT 
             pl.pick_list_id,
@@ -376,6 +382,7 @@ $trip_query = "
     ) pl ON tt.picklist_id = pl.pick_list_id
     WHERE 1=1
     $branch_condition
+    GROUP BY tt.trip_id
     ORDER BY tt.trip_date DESC, tt.trip_id DESC
 ";
 
@@ -412,13 +419,12 @@ $statCompletedTrips = $completed_tickets;
 // Helper function for status badge
 function getTripStatusClass($status) {
     return match($status) {
-        'planned' => 'bg-warning text-dark',
-        'pending' => 'bg-warning text-dark',
-        'in-progress' => 'bg-primary text-white',
-        'completed' => 'bg-success text-white',
-        'cancelled' => 'bg-danger text-white',
-        'delayed' => 'bg-info text-white',
-        default => 'bg-secondary text-white'
+        'planned', 'pending' => 'status-pending',
+        'in-progress' => 'status-in-progress',
+        'completed' => 'status-completed',
+        'cancelled' => 'status-cancelled',
+        'delayed' => 'status-delayed',
+        default => 'status-default'
     };
 }
 
@@ -593,14 +599,35 @@ function formatCompletion($percentage) {
             font-size: 12px;
         }
         
-        .status-badge {
+        /* Status text styling - no boxes */
+        .status-text {
             display: inline-block;
-            padding: 5px 12px;
-            font-size: 12px;
+            font-size: 13px;
             font-weight: 500;
-            border-radius: 20px;
-            text-align: center;
-            min-width: 85px;
+        }
+        
+        .status-pending {
+            color: #856404;
+        }
+        
+        .status-in-progress {
+            color: #004085;
+        }
+        
+        .status-completed {
+            color: #155724;
+        }
+        
+        .status-cancelled {
+            color: #721c24;
+        }
+        
+        .status-delayed {
+            color: #0c5460;
+        }
+        
+        .status-default {
+            color: #6c757d;
         }
         
         .compact-table th {
@@ -622,9 +649,171 @@ function formatCompletion($percentage) {
             color: #6c757d;
             display: block;
         }
+
+        /* Item name styling - truncated in table, full on hover */
+        .item-names {
+            font-size: 12px;
+            max-width: 200px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            cursor: help;
+            position: relative;
+        }
+        
+        .item-names:hover {
+            white-space: normal;
+            overflow: visible;
+            background-color: #f8f9fa;
+            position: absolute;
+            z-index: 1000;
+            padding: 8px;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            max-width: 300px;
+            word-wrap: break-word;
+        }
+        
+        .item-names small {
+            color: #6c757d;
+            display: block;
+            font-size: 10px;
+            margin-top: 4px;
+        }
+
+        /* Button styling - matching refresh button */
+        .btn-outline-primary {
+            color: #0d6efd;
+            border-color: #0d6efd;
+            background-color: transparent;
+            transition: all 0.2s ease-in-out;
+        }
+        
+        .btn-outline-primary:hover {
+            color: #fff;
+            background-color: #0d6efd;
+            border-color: #0d6efd;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(13, 110, 253, 0.2);
+        }
+        
+        .btn-outline-primary:active {
+            transform: translateY(0);
+            box-shadow: none;
+        }
+        
+        .btn-outline-primary:disabled {
+            color: #6c757d;
+            border-color: #dee2e6;
+            background-color: #e9ecef;
+            pointer-events: none;
+            opacity: 0.65;
+        }
+
+        /* Print Frame */
+        #printFrame {
+            position: absolute;
+            left: -9999px;
+            top: -9999px;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* Compact print styles - only logo has color */
+        @media print {
+            @page {
+                size: landscape;
+                margin: 0.3in;
+            }
+            
+            body * {
+                visibility: hidden;
+                background: white !important;
+                color: black !important;
+                border-color: black !important;
+            }
+            
+            #printFrame, #printFrame * {
+                visibility: visible;
+            }
+            
+            #printFrame {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: auto;
+                border: none;
+            }
+            
+            /* Only keep the logo colored */
+            #printFrame img {
+                filter: none !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            
+            /* Everything else black and white */
+            #printFrame * {
+                background: white !important;
+                color: black !important;
+                border-color: #000 !important;
+                box-shadow: none !important;
+                text-shadow: none !important;
+                -webkit-print-color-adjust: economy;
+                print-color-adjust: economy;
+            }
+            
+            /* Table borders in black */
+            #printFrame table, 
+            #printFrame th, 
+            #printFrame td {
+                border: 1px solid #000 !important;
+            }
+            
+            /* Header background to white with black text */
+            #printFrame th {
+                background: white !important;
+                color: black !important;
+                font-weight: bold;
+            }
+            
+            /* Remove any gradient backgrounds */
+            #printFrame .summary-box,
+            #printFrame .customer-section,
+            #printFrame .total-row {
+                background: white !important;
+                border: 1px solid #000 !important;
+            }
+            
+            /* Show full items in print */
+            #printFrame .item-names {
+                white-space: normal !important;
+                overflow: visible !important;
+                max-width: none !important;
+                position: static !important;
+                padding: 0 !important;
+                border: none !important;
+                box-shadow: none !important;
+                background: transparent !important;
+            }
+        }
     </style>
 </head>
 <body>
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.8); z-index: 9999; justify-content: center; align-items: center;">
+        <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+
+    <!-- Print Frame (hidden) -->
+    <iframe id="printFrame" name="printFrame"></iframe>
+
     <!-- MAIN APPLICATION -->
     <div id="appPage">
         <!-- Sidebar -->
@@ -810,28 +999,18 @@ function formatCompletion($percentage) {
                     </div>
                 </div>
 
-                <!-- Action Buttons -->
+                <!-- Filter Section -->
                 <div class="row g-3 mb-4">
                     <div class="col-12">
                         <div class="form-card">
                             <div class="row g-3 align-items-center">
-                                <div class="col-md-3">
-                                    <div class="d-flex gap-2">
-                                        <button class="btn btn-primary" onclick="showCreateModal()">
-                                            <i class="bi bi-plus-circle me-2"></i> New Trip Ticket
-                                        </button>
-                                        <button class="btn btn-outline-primary" onclick="printTripTickets()">
-                                            <i class="bi bi-printer me-2"></i> Print
-                                        </button>
-                                    </div>
-                                </div>
                                 <div class="col-md-4">
                                     <div class="search-box">
                                         <i class="bi bi-search"></i>
-                                        <input type="text" class="form-control" placeholder="Search trip number, driver, SO, pick list..." id="searchInput" onkeyup="filterTripTickets()">
+                                        <input type="text" class="form-control" placeholder="Search trip number, driver, SO, pick list, item..." id="searchInput" onkeyup="filterTripTickets()">
                                     </div>
                                 </div>
-                                <div class="col-md-2">
+                                <div class="col-md-3">
                                     <select class="form-select" id="statusFilter" onchange="filterTripTickets()">
                                         <option value="">All Status</option>
                                         <option value="planned">Pending</option>
@@ -851,6 +1030,9 @@ function formatCompletion($percentage) {
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
+                                <div class="col-md-2">
+                                    <!-- Empty for spacing -->
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -867,11 +1049,14 @@ function formatCompletion($percentage) {
                             <button class="btn btn-sm btn-outline-primary" onclick="refreshTripTickets()">
                                 <i class="bi bi-arrow-clockwise"></i> Refresh
                             </button>
+                            <button class="btn btn-sm btn-outline-primary" onclick="printTripTickets()">
+                                <i class="bi bi-printer"></i> Print
+                            </button>
                             <button class="btn btn-sm btn-outline-success" onclick="exportToExcel()">
-                                <i class="bi bi-file-earmark-excel"></i> Export to Excel
+                                <i class="bi bi-file-earmark-excel"></i> Export
                             </button>
                             <button class="btn btn-sm btn-outline-danger" onclick="deleteSelected()">
-                                <i class="bi bi-trash"></i> Delete Selected
+                                <i class="bi bi-trash"></i> Delete
                             </button>
                         </div>
                     </div>
@@ -879,26 +1064,27 @@ function formatCompletion($percentage) {
                         <table class="table custom-table compact-table" id="tripTicketsTable">
                             <thead>
                                 <tr>
-                                    <th width="50">
+                                    <th width="40">
                                         <input type="checkbox" class="form-check-input" id="selectAll" onclick="toggleSelectAll()">
                                     </th>
-                                    <th width="120">Trip Number</th>
-                                    <th width="120">SO Number</th>
-                                    <th width="120">Pick List</th>
-                                    <th width="150">Driver</th>
-                                    <th width="100">Branch</th>
+                                    <th width="110">Trip Number</th>
+                                    <th width="110">SO Number</th>
+                                    <th width="110">Pick List</th>
+                                    <th width="200">Items</th>
+                                    <th width="130">Driver</th>
+                                    <th width="90">Branch</th>
                                     <?php if ($tt_branch_column_exists && $view_all_branches): ?>
-                                        <th width="80">Branch ID</th>
+                                        <th width="70">Branch ID</th>
                                     <?php endif; ?>
-                                    <th width="100">Trip Date</th>
-                                    <th width="100">Status</th>
+                                    <th width="90">Trip Date</th>
+                                    <th width="80">Status</th>
                                     <th width="100">Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="tripTicketsTableBody">
                                 <?php if (empty($trip_tickets)): ?>
                                 <tr>
-                                    <td colspan="<?= ($tt_branch_column_exists && $view_all_branches) ? '10' : '9' ?>" class="text-center py-4">
+                                    <td colspan="<?= ($tt_branch_column_exists && $view_all_branches) ? '12' : '11' ?>" class="text-center py-4">
                                         <i class="bi bi-inbox fs-1 d-block text-muted mb-2"></i>
                                         <p class="text-muted mb-0">
                                             No trip tickets found
@@ -912,13 +1098,27 @@ function formatCompletion($percentage) {
                                     <?php foreach ($trip_tickets as $ticket):
                                         // Determine driver display
                                         $driver_display = $ticket['picklist_driver_name'] ?: $ticket['driver_name'] ?: 'Unassigned';
+                                        // Get item names
+                                        $item_names = $ticket['item_names'] ?? 'No items';
+                                        $item_codes = $ticket['item_codes'] ?? '';
+                                        $item_count = $ticket['item_count'] ?? 0;
+                                        
+                                        // Create truncated display for table
+                                        $truncated_items = $item_names;
+                                        if (strlen($truncated_items) > 50) {
+                                            $truncated_items = substr($truncated_items, 0, 47) . '...';
+                                        }
                                     ?>
                                     <tr class="trip-row" 
                                         data-id="<?= $ticket['trip_id'] ?>"
                                         data-trip-number="<?= htmlspecialchars($ticket['trip_number']) ?>"
                                         data-driver="<?= htmlspecialchars($driver_display) ?>"
                                         data-status="<?= $ticket['trip_status'] ?>"
-                                        data-branch="<?= $ticket['branch_id'] ?? '' ?>">
+                                        data-branch="<?= $ticket['branch_id'] ?? '' ?>"
+                                        data-so-number="<?= htmlspecialchars($ticket['so_number'] ?? '') ?>"
+                                        data-picklist="<?= htmlspecialchars($ticket['pick_list_number'] ?? '') ?>"
+                                        data-items="<?= htmlspecialchars($item_names) ?>"
+                                        data-date="<?= $ticket['trip_date'] ?? '' ?>">
                                         <td>
                                             <input type="checkbox" class="form-check-input ticket-checkbox" value="<?= $ticket['trip_id'] ?>">
                                         </td>
@@ -938,6 +1138,14 @@ function formatCompletion($percentage) {
                                             <?php endif; ?>
                                         </td>
                                         <td>
+                                            <div class="item-names" title="<?= htmlspecialchars($item_names) ?>">
+                                                <?= htmlspecialchars($truncated_items) ?>
+                                                <?php if ($item_count > 1): ?>
+                                                    <small><?= $item_count ?> items</small>
+                                                <?php endif; ?>
+                                            </div>
+                                        </td>
+                                        <td>
                                             <div class="driver-info">
                                                 <?= htmlspecialchars($driver_display) ?>
                                             </div>
@@ -952,16 +1160,16 @@ function formatCompletion($percentage) {
                                         <?php endif; ?>
                                         <td><?= formatDateOnly($ticket['trip_date']) ?></td>
                                         <td>
-                                            <span class="status-badge <?= getTripStatusClass($ticket['trip_status']) ?>">
+                                            <span class="status-text <?= getTripStatusClass($ticket['trip_status']) ?>">
                                                 <?= getTripStatusText($ticket['trip_status']) ?>
                                             </span>
                                         </td>
                                         <td>
                                             <div class="action-buttons">
-                                                <button class="btn-action btn-view" onclick="viewTripTicket('<?= htmlspecialchars($ticket['trip_number']) ?>')" title="View">
+                                                <button class="btn-action btn-view" onclick='viewTripTicket("<?= htmlspecialchars($ticket['trip_number']) ?>")' title="View">
                                                     <i class="bi bi-eye"></i>
                                                 </button>
-                                                <button class="btn-action btn-edit" onclick="editTripTicket('<?= htmlspecialchars($ticket['trip_number']) ?>')" title="Edit">
+                                                <button class="btn-action btn-edit" onclick='editTripTicket("<?= htmlspecialchars($ticket['trip_number']) ?>")' title="Edit">
                                                     <i class="bi bi-pencil"></i>
                                                 </button>
                                                 <?php if ($ticket['trip_status'] != 'completed'): ?>
@@ -977,6 +1185,7 @@ function formatCompletion($percentage) {
                             </tbody>
                         </table>
                     </div>
+                </div>
             </div>
         </div>
     </div>
@@ -1134,82 +1343,6 @@ function formatCompletion($percentage) {
         </div>
     </div>
 
-    <!-- Create Modal -->
-    <div class="modal fade" id="createModal" tabindex="-1" aria-labelledby="createModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header bg-success text-white">
-                    <h5 class="modal-title" id="createModalLabel"><i class="bi bi-plus-circle me-2"></i>Create New Trip Ticket</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="createForm">
-                        <?php if ($tt_branch_column_exists && !$view_all_branches): ?>
-                            <input type="hidden" name="branch_id" value="<?= $branch_id ?>">
-                            <div class="alert alert-info mb-3">
-                                <i class="bi bi-info-circle me-2"></i>
-                                Creating trip ticket for Branch <?= $branch_id ?>
-                            </div>
-                        <?php endif; ?>
-                        
-                        <div class="row g-3">
-                            <div class="col-md-6">
-                                <label for="createSOId" class="form-label">Sales Order *</label>
-                                <select class="form-select" id="createSOId" required onchange="loadPickListForSO()">
-                                    <option value="">Select Sales Order</option>
-                                    <?php
-                                    $so_query = "SELECT so_id, so_number FROM sales_orders WHERE order_status IN ('confirmed', 'processing')";
-                                    if (!$view_all_branches) {
-                                        $so_query .= " AND branch_id = $branch_id";
-                                    }
-                                    $so_query .= " ORDER BY so_number DESC";
-                                    $so_result = $conn->query($so_query);
-                                    while ($so = $so_result->fetch_assoc()):
-                                    ?>
-                                    <option value="<?= $so['so_id'] ?>"><?= htmlspecialchars($so['so_number']) ?></option>
-                                    <?php endwhile; ?>
-                                </select>
-                            </div>
-                            <div class="col-md-6">
-                                <label for="createPickListId" class="form-label">Pick List *</label>
-                                <select class="form-select" id="createPickListId" required>
-                                    <option value="">Select Pick List</option>
-                                </select>
-                                <small class="text-muted">Driver will be taken from the selected pick list</small>
-                            </div>
-                            <div class="col-md-6">
-                                <label for="createTripDate" class="form-label">Trip Date *</label>
-                                <input type="date" class="form-control" id="createTripDate" required>
-                            </div>
-                            <div class="col-md-6">
-                                <label for="createStatus" class="form-label">Status *</label>
-                                <select class="form-select" id="createStatus" required>
-                                    <option value="planned">Pending</option>
-                                    <option value="in-progress">In Transit</option>
-                                    <option value="completed">Delivered</option>
-                                    <option value="cancelled">Cancelled</option>
-                                    <option value="delayed">Delayed</option>
-                                </select>
-                            </div>
-                            <div class="col-md-12">
-                                <label for="createRemarks" class="form-label">Remarks</label>
-                                <textarea class="form-control" id="createRemarks" rows="3"></textarea>
-                            </div>
-                        </div>
-                        <div class="alert alert-info mt-3">
-                            <i class="bi bi-info-circle me-2"></i>
-                            Fields marked with * are required. The driver will be automatically assigned from the selected pick list.
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-success" onclick="createNewTripTicket()">Create Ticket</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
     <!-- Finalize Modal -->
     <div class="modal fade" id="finalizeModal" tabindex="-1" aria-labelledby="finalizeModalLabel" aria-hidden="true">
         <div class="modal-dialog">
@@ -1273,6 +1406,7 @@ function formatCompletion($percentage) {
     const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
     const ttBranchColumnExists = <?php echo $tt_branch_column_exists ? 'true' : 'false'; ?>;
     const driversBranchColumnExists = <?php echo $drivers_branch_column_exists ? 'true' : 'false'; ?>;
+    const logoBase64 = '<?php echo $logo_base64; ?>';
     let selectedTrips = [];
 
     // ========== SIDEBAR FUNCTIONS ==========
@@ -1424,14 +1558,11 @@ function formatCompletion($percentage) {
 
     // ========== SHOW LOADING ==========
     function showLoading() {
-        Swal.fire({
-            title: 'Processing...',
-            text: 'Please wait',
-            allowOutsideClick: false,
-            didOpen: () => {
-                Swal.showLoading();
-            }
-        });
+        document.getElementById('loadingOverlay').style.display = 'flex';
+    }
+
+    function hideLoading() {
+        document.getElementById('loadingOverlay').style.display = 'none';
     }
 
     // ========== TRIP TICKET FUNCTIONS ==========
@@ -1483,14 +1614,6 @@ function formatCompletion($percentage) {
         });
 
         window.addEventListener('resize', handleSidebarResize);
-        
-        // Set default date for create modal
-        const today = new Date();
-        const formattedDate = today.toISOString().slice(0, 10);
-        const createTripDate = document.getElementById('createTripDate');
-        if (createTripDate) {
-            createTripDate.value = formattedDate;
-        }
     });
 
     // Filter trip tickets
@@ -1505,10 +1628,16 @@ function formatCompletion($percentage) {
             const tripNumber = row.dataset.tripNumber?.toLowerCase() || '';
             const driver = row.dataset.driver?.toLowerCase() || '';
             const status = row.dataset.status || '';
+            const soNumber = row.dataset.soNumber?.toLowerCase() || '';
+            const picklist = row.dataset.picklist?.toLowerCase() || '';
+            const items = row.dataset.items?.toLowerCase() || '';
             
             let matchesSearch = searchText === '' || 
                 tripNumber.includes(searchText) || 
-                driver.includes(searchText);
+                driver.includes(searchText) ||
+                soNumber.includes(searchText) ||
+                picklist.includes(searchText) ||
+                items.includes(searchText);
             
             let matchesStatus = statusFilter === '' || status === statusFilter;
             let matchesDriver = driverFilter === '' || row.dataset.driver === driverFilter;
@@ -1574,39 +1703,6 @@ function formatCompletion($percentage) {
         window.location.href = 'pick_list_items.php?view=' + picklistId;
     }
 
-    // Load pick lists for selected SO
-    function loadPickListForSO() {
-        const soId = document.getElementById('createSOId').value;
-        const picklistSelect = document.getElementById('createPickListId');
-        
-        if (!soId) {
-            picklistSelect.innerHTML = '<option value="">Select Pick List</option>';
-            return;
-        }
-        
-        // Clear current options
-        picklistSelect.innerHTML = '<option value="">Loading...</option>';
-        
-        // Fetch pick lists for this SO via AJAX
-        fetch('get_picklists_for_so.php?so_id=' + soId)
-            .then(response => response.json())
-            .then(data => {
-                let options = '<option value="">Select Pick List</option>';
-                if (data.length > 0) {
-                    data.forEach(pl => {
-                        options += `<option value="${pl.pick_list_id}" data-driver="${pl.driver_name || 'Unassigned'}">${pl.pick_list_number} - Driver: ${pl.driver_name || 'Unassigned'}</option>`;
-                    });
-                } else {
-                    options += '<option value="">No pick lists found</option>';
-                }
-                picklistSelect.innerHTML = options;
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                picklistSelect.innerHTML = '<option value="">Error loading pick lists</option>';
-            });
-    }
-
     // View trip ticket
     function viewTripTicket(tripNumber) {
         const ticket = tripTickets.find(t => t.trip_number === tripNumber);
@@ -1620,6 +1716,10 @@ function formatCompletion($percentage) {
         // Determine the correct driver (pick list driver takes precedence)
         const driverName = ticket.picklist_driver_name || ticket.driver_name || 'Unassigned';
         const driverSource = ticket.picklist_driver_name ? '(from pick list)' : '(from trip ticket)';
+        
+        // Format items for display
+        const itemsDisplay = ticket.item_names || 'No items';
+        const itemsCodeDisplay = ticket.item_codes ? `<br><small class="text-muted">${ticket.item_codes}</small>` : '';
         
         // Populate details grid
         const detailsGrid = document.getElementById('ticketDetails');
@@ -1641,6 +1741,10 @@ function formatCompletion($percentage) {
                 <div class="detail-value">${ticket.pick_list_number || 'N/A'}</div>
             </div>
             <div class="detail-card">
+                <div class="detail-label">Items</div>
+                <div class="detail-value">${itemsDisplay}${itemsCodeDisplay}</div>
+            </div>
+            <div class="detail-card">
                 <div class="detail-label">Branch</div>
                 <div class="detail-value">${ticket.branch_name || 'N/A'}</div>
             </div>
@@ -1650,7 +1754,7 @@ function formatCompletion($percentage) {
             </div>
             <div class="detail-card">
                 <div class="detail-label">Status</div>
-                <div class="detail-value"><span class="status-badge ${getStatusClass(ticket.trip_status)}">${getStatusText(ticket.trip_status)}</span></div>
+                <div class="detail-value"><span class="status-text ${getStatusClass(ticket.trip_status)}">${getStatusText(ticket.trip_status)}</span></div>
             </div>
             <div class="detail-card">
                 <div class="detail-label">Customer</div>
@@ -1748,7 +1852,7 @@ function formatCompletion($percentage) {
         })
         .then(response => response.json())
         .then(data => {
-            Swal.close();
+            hideLoading();
             
             if (data.success) {
                 Swal.fire({
@@ -1766,7 +1870,7 @@ function formatCompletion($percentage) {
             }
         })
         .catch(error => {
-            Swal.close();
+            hideLoading();
             Swal.fire('Error', 'An error occurred while updating the trip ticket', 'error');
         });
     }
@@ -1785,7 +1889,7 @@ function formatCompletion($percentage) {
         })
         .then(response => response.json())
         .then(data => {
-            Swal.close();
+            hideLoading();
             
             if (data.success) {
                 Swal.fire({
@@ -1802,76 +1906,8 @@ function formatCompletion($percentage) {
             }
         })
         .catch(error => {
-            Swal.close();
+            hideLoading();
             Swal.fire('Error', 'An error occurred while finalizing the trip ticket', 'error');
-        });
-    }
-
-    // Show create modal
-    function showCreateModal() {
-        const modal = new bootstrap.Modal(document.getElementById('createModal'));
-        modal.show();
-    }
-
-    // Create new trip ticket
-    function createNewTripTicket() {
-        const soId = document.getElementById('createSOId').value;
-        const picklistId = document.getElementById('createPickListId').value;
-        const tripDate = document.getElementById('createTripDate').value;
-        const status = document.getElementById('createStatus').value;
-        const remarks = document.getElementById('createRemarks').value;
-        
-        if (!soId) {
-            Swal.fire('Warning', 'Please select a sales order', 'warning');
-            return;
-        }
-        
-        if (!picklistId) {
-            Swal.fire('Warning', 'Please select a pick list', 'warning');
-            return;
-        }
-        
-        if (!tripDate) {
-            Swal.fire('Warning', 'Trip date is required', 'warning');
-            return;
-        }
-        
-        showLoading();
-        
-        const formData = new FormData();
-        formData.append('action', 'create_trip');
-        formData.append('so_id', soId);
-        formData.append('picklist_id', picklistId);
-        formData.append('trip_date', tripDate);
-        formData.append('trip_status', status);
-        formData.append('remarks', remarks);
-        
-        fetch('trip_tickets.php', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            Swal.close();
-            
-            if (data.success) {
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Success!',
-                    text: data.message,
-                    timer: 2000,
-                    showConfirmButton: false
-                }).then(() => {
-                    bootstrap.Modal.getInstance(document.getElementById('createModal')).hide();
-                    location.reload();
-                });
-            } else {
-                Swal.fire('Error', data.message, 'error');
-            }
-        })
-        .catch(error => {
-            Swal.close();
-            Swal.fire('Error', 'An error occurred while creating the trip ticket', 'error');
         });
     }
 
@@ -1921,7 +1957,7 @@ function formatCompletion($percentage) {
         })
         .then(response => response.json())
         .then(data => {
-            Swal.close();
+            hideLoading();
             
             if (data.success) {
                 Swal.fire({
@@ -1939,7 +1975,7 @@ function formatCompletion($percentage) {
             }
         })
         .catch(error => {
-            Swal.close();
+            hideLoading();
             Swal.fire('Error', 'An error occurred while deleting the trip tickets', 'error');
         });
     }
@@ -1949,9 +1985,234 @@ function formatCompletion($percentage) {
         location.reload();
     }
 
-    // Print trip tickets
+    // ========== PRINT FUNCTION - FIXED VERSION ==========
     function printTripTickets() {
-        window.print();
+        // Show loading indicator on button
+        const printBtn = document.querySelector('.btn-outline-primary[onclick="printTripTickets()"]');
+        if (printBtn) {
+            const originalText = printBtn.innerHTML;
+            printBtn.innerHTML = '<i class="bi bi-printer"></i> Preparing...';
+            printBtn.disabled = true;
+        }
+
+        // Get current filter values
+        const statusFilter = document.getElementById('statusFilter').value;
+        const driverFilter = document.getElementById('driverFilter').value;
+        
+        const filterData = {
+            status: statusFilter || '',
+            driver: driverFilter || '',
+            branch: 'all'
+        };
+        
+        showLoading();
+        
+        // Fetch filtered data from server
+        const formData = new FormData();
+        formData.append('action', 'print_trip_tickets');
+        formData.append('filter_data', JSON.stringify(filterData));
+        
+        fetch('trip_tickets.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            hideLoading();
+            
+            if (data.success) {
+                const items = data.items;
+                
+                if (items.length === 0) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'No Data',
+                        text: 'No trip tickets match the current filters',
+                        confirmButtonColor: '#0d6efd'
+                    });
+                    return;
+                }
+                
+                // Generate compact HTML
+                const htmlContent = generatePrintHTML(items);
+                
+                // Use hidden iframe for printing
+                const iframe = document.getElementById('printFrame');
+                const iframeDoc = iframe.contentWindow.document;
+                
+                iframeDoc.open();
+                iframeDoc.write(htmlContent);
+                iframeDoc.close();
+                
+                // Restore button
+                setTimeout(() => {
+                    if (printBtn) {
+                        printBtn.innerHTML = '<i class="bi bi-printer"></i> Print';
+                        printBtn.disabled = false;
+                    }
+                }, 1000);
+                
+                // Trigger print dialog
+                setTimeout(() => {
+                    iframe.contentWindow.focus();
+                    iframe.contentWindow.print();
+                }, 250);
+            } else {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: data.message || 'Failed to load trip ticket data',
+                    confirmButtonColor: '#0d6efd'
+                });
+                if (printBtn) {
+                    printBtn.innerHTML = '<i class="bi bi-printer"></i> Print';
+                    printBtn.disabled = false;
+                }
+            }
+        })
+        .catch(error => {
+            hideLoading();
+            console.error('Error:', error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: 'An error occurred while preparing print: ' + error.message,
+                confirmButtonColor: '#0d6efd'
+            });
+            if (printBtn) {
+                printBtn.innerHTML = '<i class="bi bi-printer"></i> Print';
+                printBtn.disabled = false;
+            }
+        });
+    }
+
+    // Compact HTML generator for trip tickets print - shows full items
+    function generatePrintHTML(items) {
+        let tableRows = '';
+        let totalStops = 0;
+        let totalDelivered = 0;
+        
+        items.forEach(item => {
+            const driverName = item.picklist_driver_name || item.driver_name || 'Unassigned';
+            totalStops += parseInt(item.actual_stops || item.total_stops || 0);
+            totalDelivered += parseInt(item.actual_delivered || item.total_delivered || 0);
+            
+            // Format date for display
+            let tripDate = item.trip_date || '';
+            if (tripDate) {
+                const date = new Date(tripDate);
+                tripDate = date.toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric'
+                });
+            }
+            
+            // Show full item names in print (no truncation)
+            let itemNames = item.item_names || 'No items';
+            
+            tableRows += '<tr>';
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.trip_number || ''}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.so_number || 'N/A'}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.pick_list_number || 'N/A'}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${itemNames}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${driverName}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.branch_name || 'N/A'}</td>`;
+            if (ttBranchColumnExists && viewAllBranches) {
+                tableRows += `<td style="padding: 3px; border: 1px solid #000; text-align: center;">${item.branch_id || 'N/A'}</td>`;
+            }
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${tripDate}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${getStatusText(item.trip_status)}</td>`;
+            tableRows += '</tr>';
+        });
+        
+        const currentDate = new Date().toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'short', 
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+        
+        return `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>Trip Tickets Report</title>
+                <style>
+                    body { font-family: Arial, sans-serif; margin: 0; padding: 0; font-size: 9px; }
+                    .print-container { max-width: 100%; margin: 0; }
+                    .print-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; border-bottom: 1px solid #000; padding-bottom: 3px; }
+                    .logo-section { display: flex; align-items: center; gap: 5px; }
+                    .company-logo { width: 30px; height: auto; }
+                    .company-info h1 { font-size: 14px; margin: 0; font-weight: bold; }
+                    .company-info p { font-size: 8px; margin: 0; }
+                    .report-title h2 { font-size: 12px; margin: 0; }
+                    .report-title .date-info { font-size: 8px; }
+                    .summary-box { border: 1px solid #000; padding: 3px; margin-bottom: 5px; display: flex; }
+                    .summary-item { flex: 1; text-align: center; border-right: 1px solid #000; }
+                    .summary-item:last-child { border-right: none; }
+                    .summary-label { font-size: 8px; font-weight: bold; }
+                    .summary-value { font-size: 11px; font-weight: bold; }
+                    table { width: 100%; border-collapse: collapse; font-size: 8px; }
+                    th { border: 1px solid #000; padding: 3px; text-align: left; font-weight: bold; background: white !important; color: black !important; }
+                    td { border: 1px solid #000; padding: 3px; }
+                    .print-badge { border: 1px solid #000; padding: 2px 4px; font-size: 8px; }
+                    .total-row { font-weight: bold; }
+                    .print-footer { margin-top: 5px; border-top: 1px solid #000; padding-top: 3px; display: flex; justify-content: space-between; font-size: 8px; }
+                </style>
+            </head>
+            <body>
+                <div class="print-container">
+                    <div class="print-header">
+                        <div class="logo-section">
+                            <img src="${logoBase64}" alt="AMGC Logo" class="company-logo">
+                            <div class="company-info">
+                                <h1>AMGC</h1>
+                                <p>Trip Tickets Report</p>
+                            </div>
+                        </div>
+                        <div class="report-title">
+                            <h2>TRIP TICKETS</h2>
+                            <div class="date-info">${currentDate}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="summary-box">
+                        <div class="summary-item"><div class="summary-label">Total Trips</div><div class="summary-value">${items.length}</div></div>
+                        <div class="summary-item"><div class="summary-label">Total Stops</div><div class="summary-value">${totalStops}</div></div>
+                        <div class="summary-item"><div class="summary-label">Total Delivered</div><div class="summary-value">${totalDelivered}</div></div>
+                        <div class="summary-item"><div class="summary-label">Branch</div><div class="summary-value">${!viewAllBranches ? ('Branch ' + branchId) : 'All'}</div></div>
+                    </div>
+                    
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Trip #</th>
+                                <th>SO #</th>
+                                <th>Pick List</th>
+                                <th>Items</th>
+                                <th>Driver</th>
+                                <th>Branch</th>
+                                ${(ttBranchColumnExists && viewAllBranches) ? '<th>Branch ID</th>' : ''}
+                                <th>Trip Date</th>
+                                <th>Status</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRows}
+                        </tbody>
+                    </table>
+                    
+                    <div class="print-footer">
+                        <div>Generated: ${currentDate}</div>
+                        <div>${document.querySelector('.user-name-sidebar')?.textContent || 'Branch Admin'}</div>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
     }
 
     // ========== EXCEL EXPORT FUNCTION ==========
@@ -1970,6 +2231,7 @@ function formatCompletion($percentage) {
             'Trip Number',
             'SO Number',
             'Pick List',
+            'Items',
             'Driver',
             'Branch',
             ...(ttBranchColumnExists && viewAllBranches ? ['Branch ID'] : []),
@@ -1991,6 +2253,10 @@ function formatCompletion($percentage) {
                 const soNumber = cells[cellIndex++]?.innerText || '';
                 const pickList = cells[cellIndex++]?.innerText || '';
                 
+                // Items
+                const itemsCell = cells[cellIndex++];
+                const items = itemsCell?.querySelector('.item-names')?.innerText.trim() || itemsCell?.innerText || '';
+                
                 // Driver info
                 const driverCell = cells[cellIndex++];
                 const driverName = driverCell?.querySelector('.driver-info')?.innerText.trim().split('\n')[0] || driverCell?.innerText || '';
@@ -2009,6 +2275,7 @@ function formatCompletion($percentage) {
                     tripNumber,
                     soNumber,
                     pickList,
+                    items,
                     driverName,
                     branch,
                     ...(ttBranchColumnExists && viewAllBranches ? [branchId] : []),
@@ -2029,6 +2296,7 @@ function formatCompletion($percentage) {
             { wch: 15 }, // Trip Number
             { wch: 15 }, // SO Number
             { wch: 15 }, // Pick List
+            { wch: 40 }, // Items (wider for full names)
             { wch: 20 }, // Driver
             { wch: 15 }, // Branch
             ...(ttBranchColumnExists && viewAllBranches ? [{ wch: 10 }] : []), // Branch ID
@@ -2084,14 +2352,14 @@ function formatCompletion($percentage) {
     // Helper functions
     function getStatusClass(status) {
         const classes = {
-            'planned': 'bg-warning text-dark',
-            'pending': 'bg-warning text-dark',
-            'in-progress': 'bg-primary text-white',
-            'completed': 'bg-success text-white',
-            'cancelled': 'bg-danger text-white',
-            'delayed': 'bg-info text-white'
+            'planned': 'status-pending',
+            'pending': 'status-pending',
+            'in-progress': 'status-in-progress',
+            'completed': 'status-completed',
+            'cancelled': 'status-cancelled',
+            'delayed': 'status-delayed'
         };
-        return classes[status] || 'bg-secondary text-white';
+        return classes[status] || 'status-default';
     }
 
     function getStatusText(status) {
@@ -2158,12 +2426,12 @@ function formatCompletion($percentage) {
             toggleSidebar();
         } else if (e.key === 'Escape' && window.innerWidth <= 992) {
             closeMobileSidebar();
-        } else if (e.ctrlKey && e.key === 'n') {
-            e.preventDefault();
-            showCreateModal();
         } else if (e.ctrlKey && e.key === 'f') {
             e.preventDefault();
             document.getElementById('searchInput')?.focus();
+        } else if (e.ctrlKey && e.key === 'p') {
+            e.preventDefault();
+            printTripTickets();
         }
     });
     </script>

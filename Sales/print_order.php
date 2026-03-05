@@ -335,7 +335,7 @@ if (file_exists($logo_path)) {
         <?php endif; ?>
         
         <div class="footer">
-            Printed on: <?php echo date('M d, Y H:i'); ?> | Computer-generated document
+            Printed on: <?php echo date('M d, Y H:i'); ?> | Computer generated document
         </div>
     </div>
     

@@ -1085,7 +1085,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label">Phone</label>
-                                    <input type="tel" class="form-control" id="customerPhone" placeholder="(555) 000-0000">
+                                    <input type="tel" class="form-control" id="customerPhone" placeholder="09XX-XXX-XXXX">
                                 </div>
                                 <div class="col-6">
                                     <label class="form-label">Address</label>

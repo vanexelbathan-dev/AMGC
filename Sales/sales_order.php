@@ -191,7 +191,7 @@ if (isset($_GET['search']) && !empty($_GET['search'])) {
     $param_types .= "ss";
 }
 
-// Build query with branch information
+// Build query with branch information and FULL item names (no truncation)
 $sql = "SELECT 
             so.so_id,
             so.so_number,
@@ -201,7 +201,15 @@ $sql = "SELECT
             so.branch_id,
             c.customer_name,
             b.branch_name,
-            (SELECT COUNT(*) FROM sales_order_items WHERE so_id = so.so_id) as item_count
+            (SELECT COUNT(*) FROM sales_order_items WHERE so_id = so.so_id) as item_count,
+            (SELECT GROUP_CONCAT(i.item_name SEPARATOR ', ') 
+             FROM sales_order_items soi 
+             JOIN items i ON soi.item_id = i.item_id 
+             WHERE soi.so_id = so.so_id) as item_names,
+            (SELECT GROUP_CONCAT(CONCAT(i.item_name, ' (', soi.quantity_ordered, ')') SEPARATOR ', ') 
+             FROM sales_order_items soi 
+             JOIN items i ON soi.item_id = i.item_id 
+             WHERE soi.so_id = so.so_id) as item_names_with_qty
         FROM sales_orders so
         LEFT JOIN customers c ON so.customer_id = c.customer_id
         LEFT JOIN branches b ON so.branch_id = b.branch_id
@@ -211,7 +219,9 @@ $sql = "SELECT
 // Prepare and execute
 if (!empty($params)) {
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param($param_types, ...$params);
+    if ($param_types && count($params) > 0) {
+        $stmt->bind_param($param_types, ...$params);
+    }
 } else {
     $stmt = $conn->prepare($sql);
 }
@@ -551,6 +561,22 @@ if (file_exists($logo_path)) {
             background-color: #c8e6c9;
             transform: translateY(-2px);
         }
+        
+        /* Item names tooltip */
+        .item-names-tooltip {
+            cursor: help;
+            border-bottom: 1px dotted #999;
+            max-width: 200px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: inline-block;
+        }
+        
+        /* For Excel export - we want full text, but this is just for display */
+        .full-item-names {
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -792,6 +818,7 @@ if (file_exists($logo_path)) {
                                         <th>Branch</th>
                                     <?php endif; ?>
                                     <th>Items</th>
+                                    <th>Items List</th>
                                     <th>Total Amount</th>
                                     <th>Status</th>
                                     <th class="no-print">Actions</th>
@@ -800,7 +827,7 @@ if (file_exists($logo_path)) {
                             <tbody>
                                 <?php if (empty($orders)): ?>
                                     <tr>
-                                        <td colspan="<?php echo ($branch_column_exists && $view_all_branches) ? '8' : '7'; ?>" class="text-center text-muted py-4">
+                                        <td colspan="<?php echo ($branch_column_exists && $view_all_branches) ? '9' : '8'; ?>" class="text-center text-muted py-4">
                                             <i class="bi bi-inbox" style="font-size: 2rem;"></i><br>
                                             No orders found
                                             <?php if ($branch_column_exists && !$view_all_branches): ?>
@@ -825,6 +852,26 @@ if (file_exists($logo_path)) {
                                                 </td>
                                             <?php endif; ?>
                                             <td><span class="badge bg-info"><?php echo $order['item_count']; ?> items</span></td>
+                                            <td>
+                                                <?php if (!empty($order['item_names'])): ?>
+                                                    <!-- Display truncated version with tooltip for UI -->
+                                                    <span class="item-names-tooltip" title="<?php echo htmlspecialchars($order['item_names_with_qty'] ?? $order['item_names']); ?>">
+                                                        <?php 
+                                                        $item_names = explode(', ', $order['item_names']);
+                                                        if (count($item_names) > 2) {
+                                                            echo htmlspecialchars(implode(', ', array_slice($item_names, 0, 2))) . '...';
+                                                        } else {
+                                                            echo htmlspecialchars($order['item_names']);
+                                                        }
+                                                        ?>
+                                                    </span>
+                                                    <!-- Store full item names in data attribute for Excel export -->
+                                                    <span class="full-item-names" style="display: none;"><?php echo htmlspecialchars($order['item_names_with_qty'] ?? $order['item_names']); ?></span>
+                                                <?php else: ?>
+                                                    <span class="text-muted">No items</span>
+                                                    <span class="full-item-names" style="display: none;">No items</span>
+                                                <?php endif; ?>
+                                            </td>
                                             <td><strong>₱<?php echo number_format($order['total_amount'], 2); ?></strong></td>
                                             <td>
                                                 <?php
@@ -1156,7 +1203,7 @@ if (file_exists($logo_path)) {
                                 return;
                             }
                             
-                            const statusCell = row.cells[branchColumnExists && viewAllBranches ? 6 : 5];
+                            const statusCell = row.cells[branchColumnExists && viewAllBranches ? 7 : 6];
                             const statusText = statusCell.textContent.toLowerCase().trim();
                             row.style.display = statusText.includes(filter) ? '' : 'none';
                         }
@@ -1593,22 +1640,28 @@ if (file_exists($logo_path)) {
                 const cells = row.querySelectorAll('td');
                 const hasBranchColumn = branchColumnExists && viewAllBranches;
                 
-                if (cells.length >= 6) {
+                if (cells.length >= 7) {
                     const orderNumber = cells[0].textContent.trim();
                     const date = cells[1].textContent.trim().replace(/\n/g, ' ');
                     const customer = cells[2].textContent.trim();
                     
-                    let branch = '', items = '', amount = '', status = '';
+                    let branch = '', items = '', itemsList = '', amount = '', status = '';
                     
                     if (hasBranchColumn) {
                         branch = cells[3].textContent.trim();
                         items = cells[4].textContent.trim();
-                        amount = cells[5].textContent.trim();
-                        status = cells[6].textContent.trim();
+                        // Get FULL item names from the hidden span
+                        const fullItemsSpan = cells[5].querySelector('.full-item-names');
+                        itemsList = fullItemsSpan ? fullItemsSpan.textContent.trim() : cells[5].textContent.trim();
+                        amount = cells[6].textContent.trim();
+                        status = cells[7].textContent.trim();
                     } else {
                         items = cells[3].textContent.trim();
-                        amount = cells[4].textContent.trim();
-                        status = cells[5].textContent.trim();
+                        // Get FULL item names from the hidden span
+                        const fullItemsSpan = cells[4].querySelector('.full-item-names');
+                        itemsList = fullItemsSpan ? fullItemsSpan.textContent.trim() : cells[4].textContent.trim();
+                        amount = cells[5].textContent.trim();
+                        status = cells[6].textContent.trim();
                     }
                     
                     const amountValue = parseFloat(amount.replace('₱', '').replace(',', '')) || 0;
@@ -1620,6 +1673,7 @@ if (file_exists($logo_path)) {
                     tableRows += `<td>${customer}</td>`;
                     if (hasBranchColumn) tableRows += `<td>${branch}</td>`;
                     tableRows += `<td style="text-align:center;">${items}</td>`;
+                    tableRows += `<td>${itemsList}</td>`;
                     tableRows += `<td style="text-align:right;">${amount}</td>`;
                     tableRows += `<td>${status}</td>`;
                     tableRows += '</tr>';
@@ -1634,8 +1688,8 @@ if (file_exists($logo_path)) {
                 hour: '2-digit', minute: '2-digit'
             });
             
-            const columnCount = branchColumnExists && viewAllBranches ? 7 : 6;
-            const totalColspan = branchColumnExists && viewAllBranches ? 5 : 4;
+            const columnCount = branchColumnExists && viewAllBranches ? 8 : 7;
+            const totalColspan = branchColumnExists && viewAllBranches ? 6 : 5;
             
             return `
                 <!DOCTYPE html>
@@ -1691,7 +1745,7 @@ if (file_exists($logo_path)) {
                                 <tr>
                                     <th>Order #</th><th>Date</th><th>Customer</th>
                                     ${branchColumnExists && viewAllBranches ? '<th>Branch</th>' : ''}
-                                    <th>Items</th><th>Amount</th><th>Status</th>
+                                    <th>Items</th><th>Item Names</th><th>Amount</th><th>Status</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -1723,7 +1777,7 @@ if (file_exists($logo_path)) {
             }
         }
         
-        // Export to Excel
+        // Export to Excel - UPDATED WITH FULL ITEM NAMES (NO TRUNCATION)
         function exportToExcel() {
             const rows = document.querySelectorAll('#ordersTable tbody tr');
             const visibleRows = [];
@@ -1739,20 +1793,25 @@ if (file_exists($logo_path)) {
                 return;
             }
             
-            // Create Excel HTML content
+            // Create Excel HTML content with FULL item names (no truncation)
             let excelContent = `
                 <html>
                 <head><meta charset="UTF-8"><title>Sales Orders Export</title></head>
                 <body>
                     <table border="1">
-                        <tr><td colspan="${branchColumnExists && viewAllBranches ? '8' : '7'}" style="font-size:16px;font-weight:bold;text-align:center;">SALES ORDERS REPORT</td></tr>
-                        <tr><td colspan="${branchColumnExists && viewAllBranches ? '8' : '7'}" style="text-align:center;">Export Date: ${new Date().toLocaleString()}</td></tr>
-                        <tr><td colspan="${branchColumnExists && viewAllBranches ? '8' : '7'}" style="text-align:center;">Total Orders: ${visibleRows.length} | Total Amount: ₱${calculateTotalAmount(visibleRows).toFixed(2)}</td></tr>
-                        <tr></tr>
-                        <tr>
-                            <th>Order #</th><th>Date</th><th>Customer</th>
+                        <tr><td colspan="${branchColumnExists && viewAllBranches ? '9' : '8'}" style="font-size:16px;font-weight:bold;text-align:center;background-color:#2E7D32;color:white;">SALES ORDERS REPORT</td></tr>
+                        <tr><td colspan="${branchColumnExists && viewAllBranches ? '9' : '8'}" style="text-align:center;background-color:#f0f0f0;">Export Date: ${new Date().toLocaleString()}</td></tr>
+                        <tr><td colspan="${branchColumnExists && viewAllBranches ? '9' : '8'}" style="text-align:center;background-color:#f0f0f0;">Total Orders: ${visibleRows.length} | Total Amount: ₱${calculateTotalAmount(visibleRows).toFixed(2)}</td></tr>
+                        <tr><td colspan="${branchColumnExists && viewAllBranches ? '9' : '8'}" style="background-color:#f0f0f0;"></td></tr>
+                        <tr style="background-color:#2E7D32;color:white;font-weight:bold;">
+                            <th>Order #</th>
+                            <th>Date</th>
+                            <th>Customer</th>
                             ${branchColumnExists && viewAllBranches ? '<th>Branch</th>' : ''}
-                            <th>Items</th><th>Amount</th><th>Status</th>
+                            <th>Items Count</th>
+                            <th>Item Names (with Quantities)</th>
+                            <th>Amount</th>
+                            <th>Status</th>
                         </tr>
             `;
             
@@ -1760,32 +1819,74 @@ if (file_exists($logo_path)) {
                 const cells = row.querySelectorAll('td');
                 const hasBranchColumn = branchColumnExists && viewAllBranches;
                 
-                excelContent += '<tr>';
-                excelContent += `<td>${cells[0].textContent.trim()}</td>`;
-                excelContent += `<td>${cells[1].textContent.trim().replace(/\n/g, ' ')}</td>`;
-                excelContent += `<td>${cells[2].textContent.trim()}</td>`;
+                // Get order number, date, customer
+                const orderNumber = cells[0].textContent.trim();
+                const date = cells[1].textContent.trim().replace(/\n/g, ' ');
+                const customer = cells[2].textContent.trim();
+                
+                // Get FULL item names from hidden span
+                let itemsCount, fullItemNames, amount, status;
                 
                 if (hasBranchColumn) {
-                    excelContent += `<td>${cells[3].textContent.trim()}</td>`;
-                    excelContent += `<td>${cells[4].textContent.trim()}</td>`;
-                    excelContent += `<td>${cells[5].textContent.trim()}</td>`;
-                    excelContent += `<td>${cells[6].textContent.trim()}</td>`;
+                    const branch = cells[3].textContent.trim();
+                    itemsCount = cells[4].textContent.trim();
+                    
+                    // Get full item names from the hidden span
+                    const fullItemsSpan = cells[5].querySelector('.full-item-names');
+                    fullItemNames = fullItemsSpan ? fullItemsSpan.textContent.trim() : cells[5].textContent.trim();
+                    
+                    amount = cells[6].textContent.trim();
+                    status = cells[7].textContent.trim();
+                    
+                    excelContent += '<tr>';
+                    excelContent += `<td>${orderNumber}</td>`;
+                    excelContent += `<td>${date}</td>`;
+                    excelContent += `<td>${customer}</td>`;
+                    excelContent += `<td>${branch}</td>`;
+                    excelContent += `<td>${itemsCount}</td>`;
+                    excelContent += `<td>${fullItemNames}</td>`;
+                    excelContent += `<td>${amount}</td>`;
+                    excelContent += `<td>${status}</td>`;
+                    excelContent += '</tr>';
                 } else {
-                    excelContent += `<td>${cells[3].textContent.trim()}</td>`;
-                    excelContent += `<td>${cells[4].textContent.trim()}</td>`;
-                    excelContent += `<td>${cells[5].textContent.trim()}</td>`;
+                    itemsCount = cells[3].textContent.trim();
+                    
+                    // Get full item names from the hidden span
+                    const fullItemsSpan = cells[4].querySelector('.full-item-names');
+                    fullItemNames = fullItemsSpan ? fullItemsSpan.textContent.trim() : cells[4].textContent.trim();
+                    
+                    amount = cells[5].textContent.trim();
+                    status = cells[6].textContent.trim();
+                    
+                    excelContent += '<tr>';
+                    excelContent += `<td>${orderNumber}</td>`;
+                    excelContent += `<td>${date}</td>`;
+                    excelContent += `<td>${customer}</td>`;
+                    excelContent += `<td>${itemsCount}</td>`;
+                    excelContent += `<td>${fullItemNames}</td>`;
+                    excelContent += `<td>${amount}</td>`;
+                    excelContent += `<td>${status}</td>`;
+                    excelContent += '</tr>';
                 }
-                
-                excelContent += '</tr>';
             });
             
             excelContent += `
-                        <tr style="font-weight:bold;">
+                        <tr style="font-weight:bold;background-color:#f0f0f0;">
                             <td colspan="${branchColumnExists && viewAllBranches ? '5' : '4'}" style="text-align:right;">GRAND TOTAL</td>
+                            <td>${visibleRows.length} orders</td>
                             <td>₱${calculateTotalAmount(visibleRows).toFixed(2)}</td>
                             <td></td>
                             ${branchColumnExists && viewAllBranches ? '<td></td>' : ''}
                         </tr>
+                    </table>
+                    <br>
+                    <table border="1">
+                        <tr><td colspan="2" style="background-color:#2E7D32;color:white;font-weight:bold;">Summary Statistics</td></tr>
+                        <tr><td>Total Orders:</td><td>${visibleRows.length}</td></tr>
+                        <tr><td>Total Revenue:</td><td>₱${calculateTotalAmount(visibleRows).toFixed(2)}</td></tr>
+                        <tr><td>Average Order Value:</td><td>₱${(calculateTotalAmount(visibleRows) / visibleRows.length).toFixed(2)}</td></tr>
+                        <tr><td>Export Date:</td><td>${new Date().toLocaleString()}</td></tr>
+                        <tr><td>Branch Filter:</td><td>${!viewAllBranches && branchId > 0 ? `Branch ${branchId}` : 'All Branches'}</td></tr>
                     </table>
                 </body>
                 </html>
@@ -1814,7 +1915,7 @@ if (file_exists($logo_path)) {
             rows.forEach(row => {
                 const cells = row.querySelectorAll('td');
                 const hasBranchColumn = branchColumnExists && viewAllBranches;
-                const amountIndex = hasBranchColumn ? 5 : 4;
+                const amountIndex = hasBranchColumn ? 6 : 5;
                 
                 if (cells.length > amountIndex) {
                     const amount = cells[amountIndex].textContent.trim();
@@ -1851,6 +1952,10 @@ if (file_exists($logo_path)) {
             else if (e.ctrlKey && e.key === 'p' && !e.target.matches('input, textarea')) {
                 e.preventDefault();
                 printAllOrders();
+            }
+            else if (e.ctrlKey && e.key === 'e' && !e.target.matches('input, textarea')) {
+                e.preventDefault();
+                exportToExcel();
             }
         });
     </script>

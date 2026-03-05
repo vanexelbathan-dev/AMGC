@@ -1117,38 +1117,109 @@ function formatDate($dateStr) {
             overflow-x: auto;
         }
         
+        /* Compact print styles - only logo has color */
         @media print {
             @page {
-                size: landscape;
-                margin: 0.75in;
+                size: portrait;
+                margin: 0.3in;
             }
             
-            .sidebar, .navbar-top, .footer, .action-buttons, 
-            .btn, .table-header .btn, .form-card, 
-            .mobile-menu-btn, #desktopToggleBtn, .sidebar-footer,
-            .stat-card, .alert, .badge:not(.print-badge), .branch-badge,
-            .modal, .data-table .table-header button,
-            .filter-section, .row.g-3.mb-4, #dashboardSubtitle,
-            .db-fix-card, .stock-warning, #dashboardContent .row:first-child,
-            .search-box, select, option, .table-header .d-flex,
-            .data-table .table-header .btn, .page-title p,
-            .modal-backdrop, .modal, .btn-action, .btn-group,
-            .page-title i, .action-buttons, .btn-success, .btn-primary,
-            .no-print {
-                display: none !important;
+            body * {
+                visibility: hidden;
+                background: white !important;
+                color: black !important;
+                border-color: black !important;
             }
             
-            .main-content {
-                margin-left: 0 !important;
-                padding: 20px !important;
-                width: 100% !important;
+            #printFrame, #printFrame * {
+                visibility: visible;
             }
             
-            #dashboardContent {
-                display: block !important;
-                background: var(--white) !important;
-                padding: 20px !important;
+            #printFrame {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: auto;
+                border: none;
             }
+            
+            /* Only keep the logo colored */
+            #printFrame img {
+                filter: none !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            
+            /* Everything else black and white */
+            #printFrame * {
+                background: white !important;
+                color: black !important;
+                border-color: #000 !important;
+                box-shadow: none !important;
+                text-shadow: none !important;
+                -webkit-print-color-adjust: economy;
+                print-color-adjust: economy;
+            }
+            
+            /* Table borders in black */
+            #printFrame table, 
+            #printFrame th, 
+            #printFrame td {
+                border: 1px solid #000 !important;
+            }
+            
+            /* Header background to white with black text */
+            #printFrame th {
+                background: white !important;
+                color: black !important;
+                font-weight: bold;
+            }
+            
+            /* Remove any gradient backgrounds */
+            #printFrame .summary-box,
+            #printFrame .customer-section,
+            #printFrame .total-row {
+                background: white !important;
+                border: 1px solid #000 !important;
+            }
+            
+            /* Remove all background colors from badges */
+            #printFrame .status-badge-print,
+            #printFrame .branch-badge-print,
+            #printFrame .driver-badge-print {
+                background: white !important;
+                border: 1px solid #000 !important;
+                color: black !important;
+                padding: 2px 6px;
+            }
+        }
+        
+        /* Print iframe styles */
+        #printFrame {
+            position: absolute;
+            left: -9999px;
+            top: -9999px;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        .sidebar, .navbar-top, .footer, .action-buttons, 
+        .btn, .table-header .btn, .form-card, 
+        .mobile-menu-btn, #desktopToggleBtn, .sidebar-footer,
+        .stat-card, .alert, .badge:not(.print-badge), .branch-badge,
+        .modal, .data-table .table-header button,
+        .filter-section, .row.g-3.mb-4, #dashboardSubtitle,
+        .db-fix-card, .stock-warning, #dashboardContent .row:first-child,
+        .search-box, select, option, .table-header .d-flex,
+        .data-table .table-header .btn, .page-title p,
+        .modal-backdrop, .modal, .btn-action, .btn-group,
+        .page-title i, .action-buttons, .btn-success, .btn-primary,
+        .no-print {
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
         }
     </style>
 </head>
@@ -1709,6 +1780,9 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             </div>
         </div>
     </div>
+
+    <!-- Print Frame (hidden) -->
+    <iframe id="printFrame" name="printFrame"></iframe>
 
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -2435,6 +2509,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         });
     }
 
+    // Optimized print function - no new tab, compact layout
     function printAllOrders() {
         const rows = document.querySelectorAll('.sales-order-row');
         const visibleRows = [];
@@ -2450,40 +2525,37 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             return;
         }
         
+        // Show loading indicator on button
         const printBtn = document.querySelector('.btn-primary[onclick="printAllOrders()"]');
         if (printBtn) {
             const originalText = printBtn.innerHTML;
-            printBtn.innerHTML = '<i class="bi bi-printer"></i> Printing...';
+            printBtn.innerHTML = '<i class="bi bi-printer"></i> Preparing...';
             printBtn.disabled = true;
-            
-            setTimeout(() => {
-                printBtn.innerHTML = originalText;
-                printBtn.disabled = false;
-            }, 3000);
         }
         
-        const iframe = document.createElement('iframe');
-        iframe.style.position = 'absolute';
-        iframe.style.width = '0';
-        iframe.style.height = '0';
-        iframe.style.border = 'none';
-        iframe.style.top = '-9999px';
-        iframe.style.left = '-9999px';
-        document.body.appendChild(iframe);
-        
+        // Generate compact HTML
         const htmlContent = generateAllOrdersHTML(visibleRows);
         
+        // Use hidden iframe for printing
+        const iframe = document.getElementById('printFrame');
         const iframeDoc = iframe.contentWindow.document;
+        
         iframeDoc.open();
         iframeDoc.write(htmlContent);
         iframeDoc.close();
         
-        iframe.contentWindow.focus();
+        // Restore button after a short delay
         setTimeout(() => {
+            if (printBtn) {
+                printBtn.innerHTML = '<i class="bi bi-printer"></i> Print All Orders';
+                printBtn.disabled = false;
+            }
+        }, 1000);
+        
+        // Trigger print dialog
+        setTimeout(() => {
+            iframe.contentWindow.focus();
             iframe.contentWindow.print();
-            setTimeout(() => {
-                document.body.removeChild(iframe);
-            }, 100);
         }, 250);
     }
 
@@ -2495,11 +2567,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             const originalHTML = printBtn.innerHTML;
             printBtn.innerHTML = '<i class="bi bi-printer"></i>';
             printBtn.disabled = true;
-            
-            setTimeout(() => {
-                printBtn.innerHTML = originalHTML;
-                printBtn.disabled = false;
-            }, 3000);
         }
         
         const formData = new FormData();
@@ -2517,36 +2584,45 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 const items = data.items;
                 const driver = data.driver || null;
                 
-                const iframe = document.createElement('iframe');
-                iframe.style.position = 'absolute';
-                iframe.style.width = '0';
-                iframe.style.height = '0';
-                iframe.style.border = 'none';
-                iframe.style.top = '-9999px';
-                iframe.style.left = '-9999px';
-                document.body.appendChild(iframe);
-                
+                // Generate compact HTML
                 const htmlContent = generateSingleOrderHTML(order, items, driver);
                 
+                // Use hidden iframe for printing
+                const iframe = document.getElementById('printFrame');
                 const iframeDoc = iframe.contentWindow.document;
+                
                 iframeDoc.open();
                 iframeDoc.write(htmlContent);
                 iframeDoc.close();
                 
-                iframe.contentWindow.focus();
+                // Restore button
                 setTimeout(() => {
+                    if (printBtn) {
+                        printBtn.innerHTML = '<i class="bi bi-printer"></i>';
+                        printBtn.disabled = false;
+                    }
+                }, 1000);
+                
+                // Trigger print dialog
+                setTimeout(() => {
+                    iframe.contentWindow.focus();
                     iframe.contentWindow.print();
-                    setTimeout(() => {
-                        document.body.removeChild(iframe);
-                    }, 100);
                 }, 250);
             } else {
                 Swal.fire('Error', 'Failed to load order details', 'error');
+                if (printBtn) {
+                    printBtn.innerHTML = '<i class="bi bi-printer"></i>';
+                    printBtn.disabled = false;
+                }
             }
         })
         .catch(error => {
             console.error('Error:', error);
             Swal.fire('Error', 'Network error: ' + error.message, 'error');
+            if (printBtn) {
+                printBtn.innerHTML = '<i class="bi bi-printer"></i>';
+                printBtn.disabled = false;
+            }
         });
     }
 
@@ -2556,6 +2632,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         if (modal) modal.hide();
     }
 
+    // Compact HTML generator for multiple orders
     function generateAllOrdersHTML(rows) {
         let tableRows = '';
         let totalAmount = 0;
@@ -2599,31 +2676,26 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             totalAmount += amountValue;
             
             tableRows += '<tr>';
-            tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze);">${orderNumber}</td>`;
-            tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze);">${date}</td>`;
-            tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze);">${customer}</td>`;
+            tableRows += `<td style="padding: 4px; border: 1px solid #000;">${orderNumber}</td>`;
+            tableRows += `<td style="padding: 4px; border: 1px solid #000;">${date}</td>`;
+            tableRows += `<td style="padding: 4px; border: 1px solid #000;">${customer}</td>`;
             if (hasBranchColumn) {
-                tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze);"><span class="branch-badge-print">${branch}</span></td>`;
+                tableRows += `<td style="padding: 4px; border: 1px solid #000;">${branch}</td>`;
             }
-            tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze); text-align: center;">${items}</td>`;
-            tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze); text-align: center;">${qty}</td>`;
-            tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze); text-align: right;">${amount}</td>`;
-            tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze);"><span class="driver-badge-print">${driver}</span></td>`;
-            tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze);">${invoice}</td>`;
-            tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze);">${payment}</td>`;
-            tableRows += `<td style="padding: 8px; border: 1px solid var(--green-haze);"><span class="status-badge-print">${status}</span></td>`;
+            tableRows += `<td style="padding: 4px; border: 1px solid #000; text-align: center;">${items}</td>`;
+            tableRows += `<td style="padding: 4px; border: 1px solid #000; text-align: center;">${qty}</td>`;
+            tableRows += `<td style="padding: 4px; border: 1px solid #000; text-align: right;">${amount}</td>`;
+            tableRows += `<td style="padding: 4px; border: 1px solid #000;">${driver}</td>`;
+            tableRows += `<td style="padding: 4px; border: 1px solid #000;">${invoice}</td>`;
+            tableRows += `<td style="padding: 4px; border: 1px solid #000;">${payment}</td>`;
+            tableRows += `<td style="padding: 4px; border: 1px solid #000;">${status}</td>`;
             tableRows += '</tr>';
         });
         
-        const currentDate = new Date();
-        const formattedDate = currentDate.toLocaleDateString('en-US', { 
+        const currentDate = new Date().toLocaleDateString('en-US', { 
             year: 'numeric', 
-            month: 'long', 
+            month: 'short', 
             day: 'numeric' 
-        });
-        const formattedTime = currentDate.toLocaleTimeString('en-US', { 
-            hour: '2-digit', 
-            minute: '2-digit' 
         });
         
         const columnCount = soBranchColumnExists && viewAllBranches ? 11 : 10;
@@ -2634,211 +2706,27 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             <html>
             <head>
                 <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>Sales Orders Report</title>
-                <link href="https://fonts.googleapis.com/css2?family=Tenor+Sans&family=Alice&display=swap" rel="stylesheet">
+                <title>Sales Orders</title>
                 <style>
-                    :root {
-                        --green: #2E7D32;
-                        --green-haze: #1B5E20;
-                        --deep-sea: #0D4C14;
-                        --forest-green: #1B4D1F;
-                        --yellow: #FFC107;
-                        --white: #FFFFFF;
-                        --light-gray: #F5F5F5;
-                        --black: #212121;
-                    }
-                    
-                    @page {
-                        size: landscape;
-                        margin: 0.5in;
-                    }
-                    
-                    body {
-                        font-family: 'Tenor Sans', sans-serif;
-                        margin: 0;
-                        padding: 20px;
-                        color: var(--black);
-                        background-color: var(--white);
-                    }
-                    
-                    .print-container {
-                        max-width: 100%;
-                        margin: 0 auto;
-                    }
-                    
-                    .print-header {
-                        display: flex;
-                        align-items: center;
-                        justify-content: space-between;
-                        margin-bottom: 30px;
-                        padding-bottom: 20px;
-                        border-bottom: 3px solid var(--deep-sea);
-                    }
-                    
-                    .logo-section {
-                        display: flex;
-                        align-items: center;
-                        gap: 15px;
-                    }
-                    
-                    .company-logo {
-                        width: 70px;
-                        height: auto;
-                    }
-                    
-                    .company-info h1 {
-                        font-family: 'Alice', serif;
-                        font-size: 26px;
-                        color: var(--deep-sea);
-                        margin: 0 0 5px 0;
-                    }
-                    
-                    .company-info p {
-                        font-family: 'Tenor Sans', sans-serif;
-                        font-size: 11px;
-                        color: var(--forest-green);
-                        margin: 0;
-                    }
-                    
-                    .report-title {
-                        text-align: right;
-                    }
-                    
-                    .report-title h2 {
-                        font-family: 'Alice', serif;
-                        font-size: 22px;
-                        color: var(--green-haze);
-                        margin: 0 0 5px 0;
-                    }
-                    
-                    .report-title .date-info {
-                        font-family: 'Tenor Sans', sans-serif;
-                        font-size: 10px;
-                        color: var(--forest-green);
-                    }
-                    
-                    .summary-box {
-                        background: linear-gradient(135deg, var(--light-gray) 0%, var(--white) 100%);
-                        border: 2px solid var(--green);
-                        border-radius: 10px;
-                        padding: 15px;
-                        margin-bottom: 25px;
-                        display: flex;
-                        justify-content: space-between;
-                        align-items: center;
-                    }
-                    
-                    .summary-item {
-                        text-align: center;
-                        flex: 1;
-                        border-right: 2px solid var(--green-haze);
-                    }
-                    
-                    .summary-item:last-child {
-                        border-right: none;
-                    }
-                    
-                    .summary-label {
-                        font-family: 'Tenor Sans', sans-serif;
-                        font-size: 10px;
-                        text-transform: uppercase;
-                        color: var(--deep-sea);
-                        margin-bottom: 5px;
-                        font-weight: bold;
-                    }
-                    
-                    .summary-value {
-                        font-family: 'Alice', serif;
-                        font-size: 16px;
-                        color: var(--forest-green);
-                        font-weight: bold;
-                    }
-                    
-                    table {
-                        width: 100%;
-                        border-collapse: collapse;
-                        margin: 20px 0;
-                        font-size: 10px;
-                    }
-                    
-                    th {
-                        background: var(--deep-sea);
-                        color: var(--white);
-                        font-family: 'Alice', serif;
-                        font-size: 11px;
-                        padding: 10px;
-                        text-align: left;
-                        border: 1px solid var(--forest-green);
-                    }
-                    
-                    td {
-                        padding: 8px;
-                        border: 1px solid var(--green-haze);
-                        font-size: 10px;
-                    }
-                    
-                    tr:nth-child(even) {
-                        background-color: var(--light-gray);
-                    }
-                    
-                    .total-row {
-                        background: linear-gradient(135deg, var(--green) 0%, var(--deep-sea) 100%);
-                        color: var(--white);
-                        font-family: 'Alice', serif;
-                        font-size: 12px;
-                        font-weight: bold;
-                    }
-                    
-                    .total-row td {
-                        color: var(--white);
-                        border: 1px solid var(--forest-green);
-                    }
-                    
-                    .status-badge-print {
-                        background-color: var(--yellow);
-                        color: var(--black);
-                        padding: 3px 8px;
-                        border-radius: 15px;
-                        font-size: 9px;
-                        font-weight: bold;
-                        display: inline-block;
-                    }
-                    
-                    .branch-badge-print {
-                        background-color: var(--green);
-                        color: var(--white);
-                        padding: 3px 8px;
-                        border-radius: 15px;
-                        font-size: 9px;
-                        display: inline-block;
-                    }
-                    
-                    .driver-badge-print {
-                        background-color: #0d6efd;
-                        color: white;
-                        padding: 3px 8px;
-                        border-radius: 15px;
-                        font-size: 9px;
-                        display: inline-block;
-                    }
-                    
-                    .print-footer {
-                        margin-top: 30px;
-                        padding-top: 15px;
-                        border-top: 2px solid var(--deep-sea);
-                        display: flex;
-                        justify-content: space-between;
-                        font-family: 'Tenor Sans', sans-serif;
-                        font-size: 10px;
-                        color: var(--forest-green);
-                    }
-                    
-                    .signature-line {
-                        width: 150px;
-                        border-bottom: 1px solid var(--deep-sea);
-                        margin-top: 5px;
-                    }
+                    body { font-family: Arial, sans-serif; margin: 0; padding: 0; font-size: 10px; }
+                    .print-container { max-width: 100%; margin: 0; }
+                    .print-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; border-bottom: 1px solid #000; padding-bottom: 3px; }
+                    .logo-section { display: flex; align-items: center; gap: 5px; }
+                    .company-logo { width: 30px; height: auto; }
+                    .company-info h1 { font-size: 14px; margin: 0; font-weight: bold; }
+                    .company-info p { font-size: 8px; margin: 0; }
+                    .report-title h2 { font-size: 12px; margin: 0; }
+                    .report-title .date-info { font-size: 8px; }
+                    .summary-box { border: 1px solid #000; padding: 3px; margin-bottom: 5px; display: flex; }
+                    .summary-item { flex: 1; text-align: center; border-right: 1px solid #000; }
+                    .summary-item:last-child { border-right: none; }
+                    .summary-label { font-size: 8px; font-weight: bold; }
+                    .summary-value { font-size: 11px; font-weight: bold; }
+                    table { width: 100%; border-collapse: collapse; font-size: 8px; }
+                    th { border: 1px solid #000; padding: 3px; text-align: left; font-weight: bold; }
+                    td { border: 1px solid #000; padding: 3px; }
+                    .total-row { font-weight: bold; }
+                    .print-footer { margin-top: 5px; border-top: 1px solid #000; padding-top: 3px; display: flex; justify-content: space-between; font-size: 8px; }
                 </style>
             </head>
             <body>
@@ -2848,28 +2736,19 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                             <img src="${logoBase64}" alt="AMGC Logo" class="company-logo">
                             <div class="company-info">
                                 <h1>AMGC</h1>
-                                <p>Quality Products, Quality Service</p>
+                                <p>Sales Orders Report</p>
                             </div>
                         </div>
                         <div class="report-title">
-                            <h2>SALES ORDERS REPORT</h2>
-                            <div class="date-info">${formattedDate} | ${formattedTime}</div>
+                            <h2>SALES ORDERS</h2>
+                            <div class="date-info">${currentDate}</div>
                         </div>
                     </div>
                     
                     <div class="summary-box">
-                        <div class="summary-item">
-                            <div class="summary-label">Total Orders</div>
-                            <div class="summary-value">${rows.length}</div>
-                        </div>
-                        <div class="summary-item">
-                            <div class="summary-label">Total Amount</div>
-                            <div class="summary-value">₱${totalAmount.toFixed(2)}</div>
-                        </div>
-                        <div class="summary-item">
-                            <div class="summary-label">Branch</div>
-                            <div class="summary-value">${!viewAllBranches && branchId > 0 ? `Branch ${branchId}` : 'All Branches'}</div>
-                        </div>
+                        <div class="summary-item"><div class="summary-label">Total</div><div class="summary-value">${rows.length}</div></div>
+                        <div class="summary-item"><div class="summary-label">Amount</div><div class="summary-value">₱${totalAmount.toFixed(2)}</div></div>
+                        <div class="summary-item"><div class="summary-label">Branch</div><div class="summary-value">${!viewAllBranches && currentBranchId > 0 ? `Branch ${currentBranchId}` : 'All'}</div></div>
                     </div>
                     
                     <table>
@@ -2879,9 +2758,9 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                 <th>Date</th>
                                 <th>Customer</th>
                                 ${soBranchColumnExists && viewAllBranches ? '<th>Branch</th>' : ''}
-                                <th style="text-align: center;">Items</th>
-                                <th style="text-align: center;">Qty</th>
-                                <th style="text-align: right;">Amount</th>
+                                <th>Items</th>
+                                <th>Qty</th>
+                                <th>Amount</th>
                                 <th>Driver</th>
                                 <th>Invoice</th>
                                 <th>Payment</th>
@@ -2891,7 +2770,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                         <tbody>
                             ${tableRows}
                             <tr class="total-row">
-                                <td colspan="${totalColspan}" style="text-align: right;">GRAND TOTAL</td>
+                                <td colspan="${totalColspan}" style="text-align: right;">TOTAL</td>
                                 <td style="text-align: right;">₱${totalAmount.toFixed(2)}</td>
                                 <td colspan="${soBranchColumnExists && viewAllBranches ? '4' : '3'}"></td>
                             </tr>
@@ -2899,15 +2778,8 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                     </table>
                     
                     <div class="print-footer">
-                        <div class="prepared-by">
-                            <div>Prepared by:</div>
-                            <div class="signature-line"></div>
-                            <div style="margin-top: 5px;">${document.querySelector('.user-name-sidebar')?.textContent || 'Branch Admin'}</div>
-                        </div>
-                        <div class="generated-info">
-                            <div>Generated on:</div>
-                            <div>${formattedDate} at ${formattedTime}</div>
-                        </div>
+                        <div>Generated: ${currentDate}</div>
+                        <div>${document.querySelector('.user-name-sidebar')?.textContent || 'Branch Admin'}</div>
                     </div>
                 </div>
             </body>
@@ -2915,6 +2787,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         `;
     }
 
+    // Compact HTML generator for single order
     function generateSingleOrderHTML(order, items, driver) {
         let itemsHtml = '';
         
@@ -2923,233 +2796,44 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 const subtotal = item.quantity_ordered * item.unit_price;
                 return `
                     <tr>
-                        <td style="padding: 8px; border: 1px solid var(--green-haze);">${item.item_name}<br><small style="color: var(--forest-green);">${item.item_code}</small></td>
-                        <td style="padding: 8px; border: 1px solid var(--green-haze); text-align: center;">${item.quantity_ordered}</td>
-                        <td style="padding: 8px; border: 1px solid var(--green-haze); text-align: right;">₱${parseFloat(item.unit_price).toFixed(2)}</td>
-                        <td style="padding: 8px; border: 1px solid var(--green-haze); text-align: right;">₱${parseFloat(subtotal).toFixed(2)}</td>
+                        <td style="padding: 3px; border: 1px solid #000;">${item.item_name}<br><span style="font-size: 7px;">${item.item_code}</span></td>
+                        <td style="padding: 3px; border: 1px solid #000; text-align: center;">${item.quantity_ordered}</td>
+                        <td style="padding: 3px; border: 1px solid #000; text-align: right;">₱${parseFloat(item.unit_price).toFixed(2)}</td>
+                        <td style="padding: 3px; border: 1px solid #000; text-align: right;">₱${parseFloat(subtotal).toFixed(2)}</td>
                     </tr>
                 `;
             }).join('');
         }
         
         const createdByName = order.first_name ? `${order.first_name} ${order.last_name || ''}` : 'Branch Admin';
-        const currentDate = new Date();
-        const formattedDate = currentDate.toLocaleDateString('en-US', { 
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric' 
-        });
-        const formattedTime = currentDate.toLocaleTimeString('en-US', { 
-            hour: '2-digit', 
-            minute: '2-digit' 
-        });
-        
-        const orderDate = new Date(order.created_at);
-        const orderDateFormatted = orderDate.toLocaleDateString('en-US', { 
-            year: 'numeric', 
-            month: 'long', 
-            day: 'numeric' 
-        });
+        const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
         
         return `
             <!DOCTYPE html>
             <html>
             <head>
                 <meta charset="UTF-8">
-                <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <title>Order #${order.so_number}</title>
-                <link href="https://fonts.googleapis.com/css2?family=Tenor+Sans&family=Alice&display=swap" rel="stylesheet">
                 <style>
-                    :root {
-                        --green: #2E7D32;
-                        --green-haze: #1B5E20;
-                        --deep-sea: #0D4C14;
-                        --forest-green: #1B4D1F;
-                        --yellow: #FFC107;
-                        --white: #FFFFFF;
-                        --light-gray: #F5F5F5;
-                        --black: #212121;
-                    }
-                    
-                    @page {
-                        size: portrait;
-                        margin: 0.75in;
-                    }
-                    
-                    body {
-                        font-family: 'Tenor Sans', sans-serif;
-                        margin: 0;
-                        padding: 20px;
-                        color: var(--black);
-                        background-color: var(--white);
-                    }
-                    
-                    .print-container {
-                        max-width: 800px;
-                        margin: 0 auto;
-                    }
-                    
-                    .print-header {
-                        display: flex;
-                        align-items: center;
-                        justify-content: space-between;
-                        margin-bottom: 30px;
-                        padding-bottom: 20px;
-                        border-bottom: 3px solid var(--deep-sea);
-                    }
-                    
-                    .logo-section {
-                        display: flex;
-                        align-items: center;
-                        gap: 15px;
-                    }
-                    
-                    .company-logo {
-                        width: 80px;
-                        height: auto;
-                    }
-                    
-                    .company-info h1 {
-                        font-family: 'Alice', serif;
-                        font-size: 28px;
-                        color: var(--deep-sea);
-                        margin: 0 0 5px 0;
-                        letter-spacing: 1px;
-                    }
-                    
-                    .company-info p {
-                        font-family: 'Tenor Sans', sans-serif;
-                        font-size: 12px;
-                        color: var(--forest-green);
-                        margin: 0;
-                        line-height: 1.5;
-                    }
-                    
-                    .report-title {
-                        text-align: right;
-                    }
-                    
-                    .report-title h2 {
-                        font-family: 'Alice', serif;
-                        font-size: 24px;
-                        color: var(--green-haze);
-                        margin: 0 0 5px 0;
-                    }
-                    
-                    .report-title .date-info {
-                        font-family: 'Tenor Sans', sans-serif;
-                        font-size: 11px;
-                        color: var(--forest-green);
-                    }
-                    
-                    .customer-section {
-                        background: linear-gradient(135deg, var(--light-gray) 0%, var(--white) 100%);
-                        border: 2px solid var(--green);
-                        border-radius: 10px;
-                        padding: 20px;
-                        margin-bottom: 30px;
-                    }
-                    
-                    .section-title {
-                        font-family: 'Alice', serif;
-                        font-size: 18px;
-                        color: var(--deep-sea);
-                        margin-bottom: 15px;
-                        border-bottom: 2px solid var(--green-haze);
-                        padding-bottom: 5px;
-                    }
-                    
-                    .info-row {
-                        display: flex;
-                        margin-bottom: 8px;
-                        font-size: 13px;
-                    }
-                    
-                    .info-label {
-                        width: 120px;
-                        font-weight: bold;
-                        color: var(--forest-green);
-                    }
-                    
-                    .info-value {
-                        flex: 1;
-                        color: var(--black);
-                    }
-                    
-                    table {
-                        width: 100%;
-                        border-collapse: collapse;
-                        margin: 20px 0;
-                    }
-                    
-                    th {
-                        background: var(--deep-sea);
-                        color: var(--white);
-                        font-family: 'Alice', serif;
-                        font-size: 13px;
-                        padding: 10px;
-                        text-align: left;
-                        border: 1px solid var(--forest-green);
-                    }
-                    
-                    td {
-                        padding: 8px;
-                        border: 1px solid var(--green-haze);
-                        font-size: 12px;
-                    }
-                    
-                    tr:nth-child(even) {
-                        background-color: var(--light-gray);
-                    }
-                    
-                    .total-row {
-                        background: linear-gradient(135deg, var(--green) 0%, var(--deep-sea) 100%);
-                        color: var(--white);
-                        font-family: 'Alice', serif;
-                        font-size: 14px;
-                        font-weight: bold;
-                    }
-                    
-                    .total-row td {
-                        color: var(--white);
-                        border: 1px solid var(--forest-green);
-                    }
-                    
-                    .status-badge {
-                        background-color: var(--yellow);
-                        color: var(--black);
-                        padding: 5px 15px;
-                        border-radius: 20px;
-                        font-size: 12px;
-                        font-weight: bold;
-                        display: inline-block;
-                    }
-                    
-                    .driver-badge-print {
-                        background-color: #0d6efd;
-                        color: white;
-                        padding: 5px 15px;
-                        border-radius: 20px;
-                        font-size: 12px;
-                        display: inline-block;
-                    }
-                    
-                    .print-footer {
-                        margin-top: 40px;
-                        padding-top: 20px;
-                        border-top: 2px solid var(--deep-sea);
-                        display: flex;
-                        justify-content: space-between;
-                        font-family: 'Tenor Sans', sans-serif;
-                        font-size: 11px;
-                        color: var(--forest-green);
-                    }
-                    
-                    .signature-line {
-                        width: 200px;
-                        border-bottom: 1px solid var(--deep-sea);
-                        margin-top: 5px;
-                    }
+                    body { font-family: Arial, sans-serif; margin: 0; padding: 0; font-size: 10px; }
+                    .print-container { max-width: 100%; margin: 0; }
+                    .print-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; border-bottom: 1px solid #000; padding-bottom: 3px; }
+                    .logo-section { display: flex; align-items: center; gap: 5px; }
+                    .company-logo { width: 30px; height: auto; }
+                    .company-info h1 { font-size: 14px; margin: 0; font-weight: bold; }
+                    .company-info p { font-size: 8px; margin: 0; }
+                    .report-title h2 { font-size: 12px; margin: 0; }
+                    .report-title .date-info { font-size: 8px; }
+                    .customer-section { border: 1px solid #000; padding: 5px; margin-bottom: 5px; }
+                    .section-title { font-size: 10px; font-weight: bold; margin-bottom: 3px; border-bottom: 1px solid #000; }
+                    .info-row { display: flex; font-size: 9px; margin-bottom: 2px; }
+                    .info-label { width: 80px; font-weight: bold; }
+                    .info-value { flex: 1; }
+                    table { width: 100%; border-collapse: collapse; font-size: 9px; }
+                    th { border: 1px solid #000; padding: 3px; text-align: left; font-weight: bold; }
+                    td { border: 1px solid #000; padding: 3px; }
+                    .total-row { font-weight: bold; }
+                    .print-footer { margin-top: 5px; border-top: 1px solid #000; padding-top: 3px; display: flex; justify-content: space-between; font-size: 8px; }
                 </style>
             </head>
             <body>
@@ -3159,98 +2843,47 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                             <img src="${logoBase64}" alt="AMGC Logo" class="company-logo">
                             <div class="company-info">
                                 <h1>AMGC</h1>
-                                <p>Quality Products, Quality Service</p>
+                                <p>Sales Order</p>
                             </div>
                         </div>
                         <div class="report-title">
-                            <h2>SALES ORDER</h2>
-                            <div class="date-info">${formattedDate} | ${formattedTime}</div>
+                            <h2>${order.so_number}</h2>
+                            <div class="date-info">${currentDate}</div>
                         </div>
                     </div>
                     
                     <div class="customer-section">
-                        <div class="section-title">Order Information</div>
-                        <div style="display: flex; justify-content: space-between; margin-bottom: 10px;">
-                            <div class="info-row">
-                                <span class="info-label">Order Number:</span>
-                                <span class="info-value"><strong>${order.so_number}</strong></span>
-                            </div>
-                            <div class="info-row">
-                                <span class="info-label">Status:</span>
-                                <span class="info-value"><span class="status-badge">${order.order_status}</span></span>
-                            </div>
-                        </div>
-                        <div class="info-row">
-                            <span class="info-label">Order Date:</span>
-                            <span class="info-value">${orderDateFormatted}</span>
-                        </div>
-                        <div class="info-row">
-                            <span class="info-label">Created By:</span>
-                            <span class="info-value">${createdByName}</span>
-                        </div>
-                        ${order.branch_name ? `
-                        <div class="info-row">
-                            <span class="info-label">Branch:</span>
-                            <span class="info-value">${order.branch_name}</span>
-                        </div>
-                        ` : ''}
-                        ${driver ? `
-                        <div class="info-row">
-                            <span class="info-label">Assigned Driver:</span>
-                            <span class="info-value"><span class="driver-badge-print"><i class="bi bi-truck"></i> ${driver.driver_name} (${driver.vehicle_plate_number || 'No vehicle'})</span></span>
-                        </div>
-                        ` : ''}
-                    </div>
-                    
-                    <div class="customer-section">
-                        <div class="section-title">Customer Information</div>
-                        <div class="info-row">
-                            <span class="info-label">Name:</span>
-                            <span class="info-value">${order.customer_name}</span>
-                        </div>
-                        <div class="info-row">
-                            <span class="info-label">Email:</span>
-                            <span class="info-value">${order.email || 'N/A'}</span>
-                        </div>
-                        <div class="info-row">
-                            <span class="info-label">Phone:</span>
-                            <span class="info-value">${order.contact_number || 'N/A'}</span>
-                        </div>
-                        <div class="info-row">
-                            <span class="info-label">Address:</span>
-                            <span class="info-value">${order.address || 'N/A'}</span>
+                        <div class="section-title">Order Info</div>
+                        <div style="display: flex; flex-wrap: wrap;">
+                            <div class="info-row" style="width: 50%;"><span class="info-label">Date:</span><span class="info-value">${order.created_at.split(' ')[0]}</span></div>
+                            <div class="info-row" style="width: 50%;"><span class="info-label">Status:</span><span class="info-value">${order.order_status}</span></div>
+                            <div class="info-row" style="width: 50%;"><span class="info-label">Customer:</span><span class="info-value">${order.customer_name}</span></div>
+                            ${driver ? `<div class="info-row" style="width: 50%;"><span class="info-label">Driver:</span><span class="info-value">${driver.driver_name}</span></div>` : ''}
                         </div>
                     </div>
                     
-                    <div class="section-title">Order Items</div>
+                    <div class="section-title">Items</div>
                     <table>
                         <thead>
                             <tr>
                                 <th>Product</th>
                                 <th style="text-align: center;">Qty</th>
-                                <th style="text-align: right;">Unit Price</th>
+                                <th style="text-align: right;">Price</th>
                                 <th style="text-align: right;">Total</th>
                             </tr>
                         </thead>
                         <tbody>
                             ${itemsHtml}
                             <tr class="total-row">
-                                <td colspan="3" style="text-align: right;">GRAND TOTAL</td>
+                                <td colspan="3" style="text-align: right;">TOTAL</td>
                                 <td style="text-align: right;">₱${parseFloat(order.total_amount).toFixed(2)}</td>
                             </tr>
                         </tbody>
                     </table>
                     
                     <div class="print-footer">
-                        <div class="prepared-by">
-                            <div>Prepared by:</div>
-                            <div class="signature-line"></div>
-                            <div style="margin-top: 5px;">${document.querySelector('.user-name-sidebar')?.textContent || 'Branch Admin'}</div>
-                        </div>
-                        <div class="generated-info">
-                            <div>Generated on:</div>
-                            <div>${formattedDate} at ${formattedTime}</div>
-                        </div>
+                        <div>Created by: ${createdByName}</div>
+                        <div>${currentDate}</div>
                     </div>
                 </div>
             </body>

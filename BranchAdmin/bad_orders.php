@@ -51,6 +51,14 @@ if ($check_inv_trans && $check_inv_trans->num_rows > 0) {
     $inventory_transactions_exists = true;
 }
 
+// Get base64 encoded logo for printing
+$logo_path = '../Pictures/amgc3DLogo.png';
+$logo_base64 = '';
+if (file_exists($logo_path)) {
+    $image_data = file_get_contents($logo_path);
+    $logo_base64 = 'data:image/png;base64,' . base64_encode($image_data);
+}
+
 // Determine branch filter condition
 $rmr_branch_condition = "";
 $delivery_branch_condition = "";
@@ -400,6 +408,98 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 'message' => 'RMR created successfully from rejected delivery',
                 'rmr_id' => $rmr_id,
                 'rmr_number' => $rmr_number
+            ]);
+            exit;
+        }
+        
+        // PRINT RMR REPORT
+        elseif ($_POST['action'] === 'print_rmr') {
+            $filter_data = json_decode($_POST['filter_data'] ?? '{}', true);
+            
+            // Build query based on filters
+            $print_query = "
+                SELECT 
+                    r.rmr_id,
+                    r.rmr_number,
+                    r.delivery_id,
+                    r.so_id,
+                    r.return_quantity,
+                    r.return_reason,
+                    r.reason_details,
+                    r.rmr_status,
+                    r.received_date,
+                    r.inspector_name,
+                    r.inspection_type,
+                    r.disposition_type,
+                    r.branch_id,
+                    r.created_at,
+                    c.customer_name,
+                    i.item_code,
+                    i.item_name,
+                    i.unit_price,
+                    i.unit_type,
+                    b.branch_name,
+                    CONCAT(u.first_name, ' ', u.last_name) as received_by_name
+                FROM rmr_requests r
+                JOIN customers c ON r.customer_id = c.customer_id
+                JOIN items i ON r.item_id = i.item_id
+                LEFT JOIN branches b ON r.branch_id = b.branch_id
+                LEFT JOIN users u ON r.received_by = u.user_id
+                WHERE 1=1
+            ";
+            
+            // Apply filters
+            if (!empty($filter_data['status']) && $filter_data['status'] !== 'all') {
+                $print_query .= " AND r.rmr_status = '" . $conn->real_escape_string($filter_data['status']) . "'";
+            }
+            
+            if (!empty($filter_data['reason']) && $filter_data['reason'] !== 'all') {
+                $print_query .= " AND r.return_reason = '" . $conn->real_escape_string($filter_data['reason']) . "'";
+            }
+            
+            if (!empty($filter_data['branch']) && $filter_data['branch'] !== 'all' && $rmr_branch_column_exists && $view_all_branches) {
+                $print_query .= " AND r.branch_id = " . (int)$filter_data['branch'];
+            } elseif (!$view_all_branches && $rmr_branch_column_exists) {
+                $print_query .= " AND r.branch_id = $branch_id";
+            }
+            
+            // Date filter
+            if (!empty($filter_data['date']) && $filter_data['date'] !== 'all') {
+                $date_filter = $filter_data['date'];
+                $today = date('Y-m-d');
+                
+                switch($date_filter) {
+                    case 'today':
+                        $print_query .= " AND DATE(r.received_date) = '$today'";
+                        break;
+                    case 'yesterday':
+                        $yesterday = date('Y-m-d', strtotime('-1 day'));
+                        $print_query .= " AND DATE(r.received_date) = '$yesterday'";
+                        break;
+                    case 'this_week':
+                        $start_week = date('Y-m-d', strtotime('monday this week'));
+                        $end_week = date('Y-m-d', strtotime('sunday this week'));
+                        $print_query .= " AND DATE(r.received_date) BETWEEN '$start_week' AND '$end_week'";
+                        break;
+                    case 'this_month':
+                        $start_month = date('Y-m-01');
+                        $end_month = date('Y-m-t');
+                        $print_query .= " AND DATE(r.received_date) BETWEEN '$start_month' AND '$end_month'";
+                        break;
+                }
+            }
+            
+            $print_query .= " ORDER BY r.received_date DESC, r.rmr_id DESC";
+            
+            $print_result = $conn->query($print_query);
+            $print_items = $print_result ? $print_result->fetch_all(MYSQLI_ASSOC) : [];
+            
+            echo json_encode([
+                'success' => true,
+                'items' => $print_items,
+                'branch_name' => $branch_id ? ('Branch ' . $branch_id) : 'All Branches',
+                'view_all' => $view_all_branches,
+                'rmr_branch_column_exists' => $rmr_branch_column_exists
             ]);
             exit;
         }
@@ -819,8 +919,95 @@ function formatDate($dateTimeStr) {
         .rejected-table th:nth-child(7) { width: 8%; }  /* Status */
         .rejected-table th:nth-child(8) { width: 12%; } /* Actions */
         
+        /* Print Frame */
+        #printFrame {
+            position: absolute;
+            left: -9999px;
+            top: -9999px;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
 
-        
+        /* Compact print styles - only logo has color */
+        @media print {
+            @page {
+                size: landscape;
+                margin: 0.3in;
+            }
+            
+            body * {
+                visibility: hidden;
+                background: white !important;
+                color: black !important;
+                border-color: black !important;
+            }
+            
+            #printFrame, #printFrame * {
+                visibility: visible;
+            }
+            
+            #printFrame {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: auto;
+                border: none;
+            }
+            
+            /* Only keep the logo colored */
+            #printFrame img {
+                filter: none !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            
+            /* Everything else black and white */
+            #printFrame * {
+                background: white !important;
+                color: black !important;
+                border-color: #000 !important;
+                box-shadow: none !important;
+                text-shadow: none !important;
+                -webkit-print-color-adjust: economy;
+                print-color-adjust: economy;
+            }
+            
+            /* Table borders in black */
+            #printFrame table, 
+            #printFrame th, 
+            #printFrame td {
+                border: 1px solid #000 !important;
+            }
+            
+            /* Header background to white with black text */
+            #printFrame th {
+                background: white !important;
+                color: black !important;
+                font-weight: bold;
+            }
+            
+            /* Remove any gradient backgrounds */
+            #printFrame .summary-box,
+            #printFrame .customer-section,
+            #printFrame .total-row {
+                background: white !important;
+                border: 1px solid #000 !important;
+            }
+            
+            /* Remove all background colors from badges */
+            #printFrame .status-badge,
+            #printFrame .return-reason,
+            #printFrame .badge {
+                background: white !important;
+                border: 1px solid #000 !important;
+                color: black !important;
+                padding: 2px 6px;
+            }
+        }
+
         /* Photo thumbnail styling - bigger but not too wide */
         .photo-thumbnail {
             width: 50px;
@@ -1024,7 +1211,6 @@ function formatDate($dateTimeStr) {
         .btn-action:hover {
             background-color: #e9ecef;
         }
-
         
         .nav-tabs .nav-link {
             color: #495057;
@@ -1192,6 +1378,16 @@ function formatDate($dateTimeStr) {
     </style>
 </head>
 <body>
+    <!-- Loading Overlay (optional) -->
+    <div id="loadingOverlay" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(255,255,255,0.8); z-index: 9999; justify-content: center; align-items: center;">
+        <div class="spinner-border text-primary" style="width: 3rem; height: 3rem;" role="status">
+            <span class="visually-hidden">Loading...</span>
+        </div>
+    </div>
+
+    <!-- Print Frame (hidden) -->
+    <iframe id="printFrame" name="printFrame"></iframe>
+
     <!-- MAIN APPLICATION -->
     <div id="appPage">
         <!-- Sidebar -->
@@ -1906,6 +2102,7 @@ function formatDate($dateTimeStr) {
     const rmrBranchColumnExists = <?php echo $rmr_branch_column_exists ? 'true' : 'false'; ?>;
     const customersBranchColumnExists = <?php echo $customers_branch_column_exists ? 'true' : 'false'; ?>;
     const itemsBranchColumnExists = <?php echo $items_branch_column_exists ? 'true' : 'false'; ?>;
+    const logoBase64 = '<?php echo $logo_base64; ?>';
     
     // ========== SIDEBAR FUNCTIONS ==========
     function toggleSidebar() {
@@ -1953,14 +2150,11 @@ function formatDate($dateTimeStr) {
 
     // ========== SHOW LOADING ==========
     function showLoading() {
-        Swal.fire({
-            title: 'Processing...',
-            text: 'Please wait',
-            allowOutsideClick: false,
-            didOpen: () => {
-                Swal.showLoading();
-            }
-        });
+        document.getElementById('loadingOverlay').style.display = 'flex';
+    }
+
+    function hideLoading() {
+        document.getElementById('loadingOverlay').style.display = 'none';
     }
 
     // ========== FILTER FUNCTIONS ==========
@@ -2106,7 +2300,7 @@ function formatDate($dateTimeStr) {
         })
         .then(response => response.json())
         .then(data => {
-            Swal.close();
+            hideLoading();
             
             if (data.success) {
                 Swal.fire({
@@ -2124,7 +2318,7 @@ function formatDate($dateTimeStr) {
             }
         })
         .catch(error => {
-            Swal.close();
+            hideLoading();
             Swal.fire('Error', 'An error occurred while creating RMR', 'error');
         });
     }
@@ -2159,7 +2353,7 @@ function formatDate($dateTimeStr) {
         })
         .then(response => response.json())
         .then(data => {
-            Swal.close();
+            hideLoading();
             
             if (data.success) {
                 Swal.fire({
@@ -2177,7 +2371,7 @@ function formatDate($dateTimeStr) {
             }
         })
         .catch(error => {
-            Swal.close();
+            hideLoading();
             Swal.fire('Error', 'An error occurred while processing RMR', 'error');
         });
     }
@@ -2253,7 +2447,7 @@ function formatDate($dateTimeStr) {
             })
             .then(response => response.json())
             .then(data => {
-                Swal.close();
+                hideLoading();
                 
                 if (data.success) {
                     Swal.fire({
@@ -2271,7 +2465,7 @@ function formatDate($dateTimeStr) {
                 }
             })
             .catch(error => {
-                Swal.close();
+                hideLoading();
                 Swal.fire('Error', 'An error occurred while approving RMR', 'error');
             });
         } else {
@@ -2295,7 +2489,7 @@ function formatDate($dateTimeStr) {
             })
             .then(response => response.json())
             .then(data => {
-                Swal.close();
+                hideLoading();
                 
                 if (data.success) {
                     Swal.fire({
@@ -2313,7 +2507,7 @@ function formatDate($dateTimeStr) {
                 }
             })
             .catch(error => {
-                Swal.close();
+                hideLoading();
                 Swal.fire('Error', 'An error occurred while rejecting RMR', 'error');
             });
         }
@@ -2333,7 +2527,7 @@ function formatDate($dateTimeStr) {
         })
         .then(response => response.json())
         .then(data => {
-            Swal.close();
+            hideLoading();
             
             if (data.success) {
                 const rmr = data.rmr;
@@ -2493,7 +2687,7 @@ function formatDate($dateTimeStr) {
             }
         })
         .catch(error => {
-            Swal.close();
+            hideLoading();
             Swal.fire('Error', 'An error occurred while fetching RMR details', 'error');
         });
     }
@@ -2745,6 +2939,227 @@ function formatDate($dateTimeStr) {
         }, 300);
     }
 
+    // ========== PRINT FUNCTION - UPDATED WITH OPTIMIZED FORMAT ==========
+    function printRMRReport() {
+        // Show loading indicator on button
+        const printBtn = document.querySelector('.btn-outline-primary[onclick="printRMRReport()"]');
+        if (printBtn) {
+            const originalText = printBtn.innerHTML;
+            printBtn.innerHTML = '<i class="bi bi-printer"></i> Preparing...';
+            printBtn.disabled = true;
+        }
+
+        // Get current filter values
+        const filterData = {
+            date: document.getElementById('dateFilter').value,
+            status: document.getElementById('statusFilter').value,
+            reason: document.getElementById('reasonFilter').value,
+            branch: document.getElementById('branchFilter')?.value || 'all'
+        };
+        
+        showLoading();
+        
+        // Fetch filtered data from server
+        const formData = new FormData();
+        formData.append('action', 'print_rmr');
+        formData.append('filter_data', JSON.stringify(filterData));
+        
+        fetch('bad_orders.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            hideLoading();
+            
+            if (data.success) {
+                const items = data.items;
+                
+                if (items.length === 0) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'No Data',
+                        text: 'No RMR requests match the current filters',
+                        confirmButtonColor: '#0d6efd'
+                    });
+                    return;
+                }
+                
+                // Generate compact HTML
+                const htmlContent = generatePrintHTML(items, data.branch_name, data.view_all, data.rmr_branch_column_exists);
+                
+                // Use hidden iframe for printing
+                const iframe = document.getElementById('printFrame');
+                const iframeDoc = iframe.contentWindow.document;
+                
+                iframeDoc.open();
+                iframeDoc.write(htmlContent);
+                iframeDoc.close();
+                
+                // Restore button
+                setTimeout(() => {
+                    if (printBtn) {
+                        printBtn.innerHTML = '<i class="bi bi-printer"></i> Print';
+                        printBtn.disabled = false;
+                    }
+                }, 1000);
+                
+                // Trigger print dialog
+                setTimeout(() => {
+                    iframe.contentWindow.focus();
+                    iframe.contentWindow.print();
+                }, 250);
+            } else {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: 'Failed to load RMR data',
+                    confirmButtonColor: '#0d6efd'
+                });
+                if (printBtn) {
+                    printBtn.innerHTML = '<i class="bi bi-printer"></i> Print';
+                    printBtn.disabled = false;
+                }
+            }
+        })
+        .catch(error => {
+            hideLoading();
+            console.error('Error:', error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: 'An error occurred while preparing print',
+                confirmButtonColor: '#0d6efd'
+            });
+            if (printBtn) {
+                printBtn.innerHTML = '<i class="bi bi-printer"></i> Print';
+                printBtn.disabled = false;
+            }
+        });
+    }
+
+    // Compact HTML generator for RMR print
+    function generatePrintHTML(items, branchName, viewAll, rmrBranchColumnExists) {
+        let tableRows = '';
+        let totalAmount = 0;
+        let totalQuantity = 0;
+        
+        items.forEach(item => {
+            const amount = item.return_quantity * item.unit_price;
+            totalAmount += amount;
+            totalQuantity += parseInt(item.return_quantity);
+            
+            tableRows += '<tr>';
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.rmr_number}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.customer_name}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.item_code}<br><small>${item.item_name}</small></td>`;
+            if (viewAll && rmrBranchColumnExists) {
+                tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.branch_name || 'Branch ' + item.branch_id}</td>`;
+            }
+            tableRows += `<td style="padding: 3px; border: 1px solid #000; text-align: center;">${item.return_quantity}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000; text-align: right;">₱${Number(amount).toFixed(2)}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${getReasonText(item.return_reason)}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${getStatusText(item.rmr_status)}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${new Date(item.received_date).toLocaleDateString()}</td>`;
+            tableRows += '</tr>';
+        });
+        
+        const currentDate = new Date().toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'short', 
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+        
+        const columnCount = viewAll && rmrBranchColumnExists ? 9 : 8;
+        
+        return `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>RMR Report</title>
+                <style>
+                    body { font-family: Arial, sans-serif; margin: 0; padding: 0; font-size: 9px; }
+                    .print-container { max-width: 100%; margin: 0; }
+                    .print-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; border-bottom: 1px solid #000; padding-bottom: 3px; }
+                    .logo-section { display: flex; align-items: center; gap: 5px; }
+                    .company-logo { width: 30px; height: auto; }
+                    .company-info h1 { font-size: 14px; margin: 0; font-weight: bold; }
+                    .company-info p { font-size: 8px; margin: 0; }
+                    .report-title h2 { font-size: 12px; margin: 0; }
+                    .report-title .date-info { font-size: 8px; }
+                    .summary-box { border: 1px solid #000; padding: 3px; margin-bottom: 5px; display: flex; }
+                    .summary-item { flex: 1; text-align: center; border-right: 1px solid #000; }
+                    .summary-item:last-child { border-right: none; }
+                    .summary-label { font-size: 8px; font-weight: bold; }
+                    .summary-value { font-size: 11px; font-weight: bold; }
+                    table { width: 100%; border-collapse: collapse; font-size: 8px; }
+                    th { border: 1px solid #000; padding: 3px; text-align: left; font-weight: bold; background: white !important; color: black !important; }
+                    td { border: 1px solid #000; padding: 3px; }
+                    .total-row { font-weight: bold; }
+                    .print-footer { margin-top: 5px; border-top: 1px solid #000; padding-top: 3px; display: flex; justify-content: space-between; font-size: 8px; }
+                </style>
+            </head>
+            <body>
+                <div class="print-container">
+                    <div class="print-header">
+                        <div class="logo-section">
+                            <img src="${logoBase64}" alt="AMGC Logo" class="company-logo">
+                            <div class="company-info">
+                                <h1>AMGC</h1>
+                                <p>RMR Report</p>
+                            </div>
+                        </div>
+                        <div class="report-title">
+                            <h2>RETURNED MERCHANDISE REQUESTS</h2>
+                            <div class="date-info">${currentDate}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="summary-box">
+                        <div class="summary-item"><div class="summary-label">Total RMR</div><div class="summary-value">${items.length}</div></div>
+                        <div class="summary-item"><div class="summary-label">Total Qty</div><div class="summary-value">${totalQuantity}</div></div>
+                        <div class="summary-item"><div class="summary-label">Total Amount</div><div class="summary-value">₱${totalAmount.toFixed(2)}</div></div>
+                        <div class="summary-item"><div class="summary-label">Branch</div><div class="summary-value">${!viewAll ? branchName : 'All'}</div></div>
+                    </div>
+                    
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>RMR #</th>
+                                <th>Customer</th>
+                                <th>Item</th>
+                                ${viewAll && rmrBranchColumnExists ? '<th>Branch</th>' : ''}
+                                <th style="text-align: center;">Qty</th>
+                                <th style="text-align: right;">Amount</th>
+                                <th>Reason</th>
+                                <th>Status</th>
+                                <th>Date</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRows}
+                            <tr class="total-row">
+                                <td colspan="${viewAll && rmrBranchColumnExists ? '3' : '2'}" style="text-align: right;">TOTAL</td>
+                                <td style="text-align: center;">${totalQuantity}</td>
+                                <td style="text-align: right;">₱${totalAmount.toFixed(2)}</td>
+                                <td colspan="${viewAll && rmrBranchColumnExists ? '4' : '3'}"></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    
+                    <div class="print-footer">
+                        <div>Generated: ${currentDate}</div>
+                        <div>${document.querySelector('.user-name-sidebar')?.textContent || 'Branch Admin'}</div>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
+    }
+
     // Helper functions
     function getStatusClass(status) {
         const classes = {
@@ -2803,7 +3218,7 @@ function formatDate($dateTimeStr) {
         return texts[disposition] || disposition;
     }
 
-    // Print RMR Details
+    // Print RMR Details (single RMR)
     function printRMRDetails() {
         const content = document.getElementById('rmrDetailsContent').innerHTML;
         const printWindow = window.open('', '_blank');
@@ -2838,10 +3253,6 @@ function formatDate($dateTimeStr) {
         printWindow.print();
     }
 
-    function printRMRReport() {
-        window.print();
-    }
-
     // ========== EXCEL EXPORT FUNCTION ==========
     function exportRMRToExcel() {
         const table = document.getElementById('rmrTable');
@@ -2850,7 +3261,7 @@ function formatDate($dateTimeStr) {
             return;
         }
 
-        const rows = table.querySelectorAll('tbody tr.rmr-row:not([style*="display: none"])');
+        const rows = document.querySelectorAll('.rmr-row:not([style*="display: none"])');
         if (rows.length === 0) {
             Swal.fire('Warning', 'No RMR requests to export', 'warning');
             return;
@@ -2980,6 +3391,21 @@ function formatDate($dateTimeStr) {
             }
         });
     }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+        if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
+            e.preventDefault();
+            toggleSidebar();
+        } else if (e.ctrlKey && e.key === 'f') {
+            e.preventDefault();
+            const searchInput = document.getElementById('globalSearch');
+            if (searchInput) searchInput.focus();
+        } else if (e.ctrlKey && e.key === 'p') {
+            e.preventDefault();
+            printRMRReport();
+        }
+    });
     </script>
 </body>
 </html>

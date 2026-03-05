@@ -75,6 +75,14 @@ if (!$view_all_branches) {
     }
 }
 
+// Get base64 encoded logo for printing
+$logo_path = '../Pictures/amgc3DLogo.png';
+$logo_base64 = '';
+if (file_exists($logo_path)) {
+    $image_data = file_get_contents($logo_path);
+    $logo_base64 = 'data:image/png;base64,' . base64_encode($image_data);
+}
+
 // ========== HANDLE AJAX REQUESTS ==========
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     header('Content-Type: application/json');
@@ -602,6 +610,102 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             exit;
         }
         
+        // PRINT PICK LIST ITEMS
+        elseif ($_POST['action'] === 'print_pick_list') {
+            $filter_data = json_decode($_POST['filter_data'] ?? '{}', true);
+            
+            // Build query based on filters
+            $print_query = "
+                SELECT 
+                    pl.pick_list_id,
+                    pl.pick_list_number,
+                    pl.pick_date,
+                    pl.pick_status,
+                    pl.driver_id,
+                    pl.branch_id,
+                    b.branch_name,
+                    d.driver_name as assigned_driver,
+                    pli.pick_item_id,
+                    pli.quantity_to_pick,
+                    pli.quantity_picked,
+                    pli.location_bin,
+                    i.item_id,
+                    i.item_code,
+                    i.item_name,
+                    i.unit_type,
+                    i.stock as current_stock,
+                    so.so_id,
+                    so.so_number,
+                    so.order_status,
+                    so.customer_id,
+                    c.customer_name,
+                    c.latitude,
+                    c.longitude,
+                    c.full_address,
+                    CONCAT(u.first_name, ' ', u.last_name) as encoded_by_name,
+                    pl.created_at as encoded_at
+                FROM pick_lists pl
+                LEFT JOIN branches b ON pl.branch_id = b.branch_id
+                LEFT JOIN pick_list_items pli ON pl.pick_list_id = pli.pick_list_id
+                LEFT JOIN items i ON pli.item_id = i.item_id
+                LEFT JOIN sales_orders so ON pl.so_id = so.so_id
+                LEFT JOIN customers c ON so.customer_id = c.customer_id
+                LEFT JOIN users u ON pl.picked_by = u.user_id
+                LEFT JOIN drivers d ON pl.driver_id = d.driver_id
+                WHERE pli.item_id IS NOT NULL
+            ";
+            
+            // Apply filters
+            if (!empty($filter_data['status']) && $filter_data['status'] !== 'all') {
+                $print_query .= " AND pl.pick_status = '" . $conn->real_escape_string($filter_data['status']) . "'";
+            }
+            
+            if (!empty($filter_data['branch']) && $filter_data['branch'] !== 'all' && $view_all_branches) {
+                $print_query .= " AND pl.branch_id = " . (int)$filter_data['branch'];
+            } elseif (!$view_all_branches) {
+                $print_query .= " AND pl.branch_id = $branch_id";
+            }
+            
+            // Date filter
+            if (!empty($filter_data['date']) && $filter_data['date'] !== 'all') {
+                $date_filter = $filter_data['date'];
+                $today = date('Y-m-d');
+                
+                switch($date_filter) {
+                    case 'today':
+                        $print_query .= " AND DATE(pl.created_at) = '$today'";
+                        break;
+                    case 'yesterday':
+                        $yesterday = date('Y-m-d', strtotime('-1 day'));
+                        $print_query .= " AND DATE(pl.created_at) = '$yesterday'";
+                        break;
+                    case 'this_week':
+                        $start_week = date('Y-m-d', strtotime('monday this week'));
+                        $end_week = date('Y-m-d', strtotime('sunday this week'));
+                        $print_query .= " AND DATE(pl.created_at) BETWEEN '$start_week' AND '$end_week'";
+                        break;
+                    case 'this_month':
+                        $start_month = date('Y-m-01');
+                        $end_month = date('Y-m-t');
+                        $print_query .= " AND DATE(pl.created_at) BETWEEN '$start_month' AND '$end_month'";
+                        break;
+                }
+            }
+            
+            $print_query .= " ORDER BY pl.created_at DESC, pl.pick_list_id DESC";
+            
+            $print_result = $conn->query($print_query);
+            $print_items = $print_result ? $print_result->fetch_all(MYSQLI_ASSOC) : [];
+            
+            echo json_encode([
+                'success' => true,
+                'items' => $print_items,
+                'branch_name' => $branch_name,
+                'view_all' => $view_all_branches
+            ]);
+            exit;
+        }
+        
     } catch (Exception $e) {
         $conn->rollback();
         echo json_encode([
@@ -951,13 +1055,115 @@ function formatLocation($item) {
     <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
     <!-- SheetJS for Excel Export -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-   
+    
+    <style>
+        :root {
+            --green: #2E7D32;
+            --green-haze: #1B5E20;
+            --deep-sea: #0D4C14;
+            --forest-green: #1B4D1F;
+            --yellow: #FFC107;
+            --white: #FFFFFF;
+            --light-gray: #F5F5F5;
+            --black: #212121;
+        }
+
+        /* Print Frame */
+        #printFrame {
+            position: absolute;
+            left: -9999px;
+            top: -9999px;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        /* Compact print styles - only logo has color */
+        @media print {
+            @page {
+                size: landscape;
+                margin: 0.3in;
+            }
+            
+            body * {
+                visibility: hidden;
+                background: white !important;
+                color: black !important;
+                border-color: black !important;
+            }
+            
+            #printFrame, #printFrame * {
+                visibility: visible;
+            }
+            
+            #printFrame {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: auto;
+                border: none;
+            }
+            
+            /* Only keep the logo colored */
+            #printFrame img {
+                filter: none !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            
+            /* Everything else black and white */
+            #printFrame * {
+                background: white !important;
+                color: black !important;
+                border-color: #000 !important;
+                box-shadow: none !important;
+                text-shadow: none !important;
+                -webkit-print-color-adjust: economy;
+                print-color-adjust: economy;
+            }
+            
+            /* Table borders in black */
+            #printFrame table, 
+            #printFrame th, 
+            #printFrame td {
+                border: 1px solid #000 !important;
+            }
+            
+            /* Header background to white with black text */
+            #printFrame th {
+                background: white !important;
+                color: black !important;
+                font-weight: bold;
+            }
+            
+            /* Remove any gradient backgrounds */
+            #printFrame .summary-box,
+            #printFrame .customer-section,
+            #printFrame .total-row {
+                background: white !important;
+                border: 1px solid #000 !important;
+            }
+            
+            /* Remove all background colors from badges */
+            #printFrame .badge {
+                background: white !important;
+                border: 1px solid #000 !important;
+                color: black !important;
+                padding: 2px 6px;
+            }
+        }
+    </style>
 </head>
 <body>
     <!-- Loading Overlay -->
     <div id="loadingOverlay" class="loading-overlay">
         <div class="loading-spinner"></div>
     </div>
+
+    <!-- Print Frame (hidden) -->
+    <iframe id="printFrame" name="printFrame"></iframe>
 
     <!-- MAIN APPLICATION -->
     <div id="appPage">
@@ -1257,7 +1463,9 @@ function formatLocation($item) {
                         <button class="btn btn-outline-success" onclick="exportToExcel()">
                             <i class="bi bi-file-earmark-excel me-1"></i> Export to Excel
                         </button>
-
+                        <button class="btn btn-primary" id="addItemButton" onclick="showAddItemModal()">
+                            <i class="bi bi-plus-circle me-1"></i> Add Item
+                        </button>
                     </div>
                 </div>
 
@@ -1302,7 +1510,7 @@ function formatLocation($item) {
                                     // Format location for display
                                     $location_display = '';
                                     if (!empty($item['latitude']) && !empty($item['longitude'])) {
-                                        $location_display = '<span><i class="bi bi-geo-alt-fill"></i> ' . 
+                                        $location_display = '<span class="customer-location-badge"><i class="bi bi-geo-alt-fill"></i> ' . 
                                                            number_format($item['latitude'], 6) . ', ' . 
                                                            number_format($item['longitude'], 6) . '</span>';
                                         if (!empty($item['full_address'])) {
@@ -1432,6 +1640,15 @@ function formatLocation($item) {
                             <?php endif; ?>
                         </tbody>
                     </table>
+                </div>
+                
+                <!-- Add Item Card -->
+                <div class="new-item-card mt-4" id="addItemCard" onclick="showAddItemModal()">
+                    <div class="add-icon">
+                        <i class="bi bi-plus-lg"></i>
+                    </div>
+                    <h5>Add New Pick List Item</h5>
+                    <p>Click to add a new item to the pick list and assign a driver</p>
                 </div>
             </div>
         </div>
@@ -1809,6 +2026,7 @@ function formatLocation($item) {
     const userRole = '<?php echo $user_role; ?>';
     const branchName = '<?php echo htmlspecialchars($branch_name); ?>';
     const branchDisplayId = <?php echo $branch_display_id; ?>;
+    const logoBase64 = '<?php echo $logo_base64; ?>';
     let selectedPickItemId = null;
     let itemsData = <?= json_encode($items_by_code) ?>;
     let soItemsData = <?= json_encode($so_items_by_so) ?>;
@@ -3302,9 +3520,249 @@ function formatLocation($item) {
         });
     }
 
-    // ========== PRINT FUNCTION ==========
+    // ========== PRINT FUNCTION - UPDATED WITH OPTIMIZED FORMAT ==========
     function printPickList() {
-        window.print();
+        // Show loading indicator on button
+        const printBtn = document.querySelector('.btn-outline-primary[onclick="printPickList()"]');
+        if (printBtn) {
+            const originalText = printBtn.innerHTML;
+            printBtn.innerHTML = '<i class="bi bi-printer"></i> Preparing...';
+            printBtn.disabled = true;
+        }
+
+        // Get current filter values
+        const filterData = {
+            date: document.getElementById('dateFilter').value,
+            status: document.getElementById('statusFilter').value,
+            branch: document.getElementById('branchFilter')?.value || 'all',
+            quantity: document.getElementById('quantityFilter').value,
+            search: document.getElementById('globalSearch').value
+        };
+        
+        showLoading();
+        
+        // Fetch filtered data from server
+        const formData = new FormData();
+        formData.append('action', 'print_pick_list');
+        formData.append('filter_data', JSON.stringify(filterData));
+        
+        fetch('pick_list_items.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            hideLoading();
+            
+            if (data.success) {
+                const items = data.items;
+                
+                if (items.length === 0) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'No Data',
+                        text: 'No pick list items match the current filters',
+                        confirmButtonColor: '#0d6efd'
+                    });
+                    return;
+                }
+                
+                // Generate compact HTML
+                const htmlContent = generatePrintHTML(items, data.branch_name, data.view_all);
+                
+                // Use hidden iframe for printing
+                const iframe = document.getElementById('printFrame');
+                const iframeDoc = iframe.contentWindow.document;
+                
+                iframeDoc.open();
+                iframeDoc.write(htmlContent);
+                iframeDoc.close();
+                
+                // Restore button
+                setTimeout(() => {
+                    if (printBtn) {
+                        printBtn.innerHTML = '<i class="bi bi-printer"></i> Print';
+                        printBtn.disabled = false;
+                    }
+                }, 1000);
+                
+                // Trigger print dialog
+                setTimeout(() => {
+                    iframe.contentWindow.focus();
+                    iframe.contentWindow.print();
+                }, 250);
+            } else {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: 'Failed to load pick list data',
+                    confirmButtonColor: '#0d6efd'
+                });
+                if (printBtn) {
+                    printBtn.innerHTML = '<i class="bi bi-printer"></i> Print';
+                    printBtn.disabled = false;
+                }
+            }
+        })
+        .catch(error => {
+            hideLoading();
+            console.error('Error:', error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: 'An error occurred while preparing print',
+                confirmButtonColor: '#0d6efd'
+            });
+            if (printBtn) {
+                printBtn.innerHTML = '<i class="bi bi-printer"></i> Print';
+                printBtn.disabled = false;
+            }
+        });
+    }
+
+    // Compact HTML generator for pick list print
+    function generatePrintHTML(items, branchName, viewAll) {
+        let tableRows = '';
+        let totalItems = 0;
+        let totalQuantity = 0;
+        
+        // Group items by pick list for better organization
+        const pickLists = {};
+        items.forEach(item => {
+            if (!pickLists[item.pick_list_id]) {
+                pickLists[item.pick_list_id] = {
+                    pick_list_number: item.pick_list_number,
+                    pick_date: item.pick_date,
+                    pick_status: item.pick_status,
+                    driver_name: item.assigned_driver || 'Unassigned',
+                    branch_name: item.branch_name,
+                    items: []
+                };
+            }
+            pickLists[item.pick_list_id].items.push(item);
+            totalItems++;
+            totalQuantity += parseInt(item.quantity_to_pick) || 0;
+        });
+        
+        // Build table rows
+        items.forEach(item => {
+            // Format location
+            let locationDisplay = '';
+            if (item.latitude && item.longitude) {
+                locationDisplay = `${parseFloat(item.latitude).toFixed(6)}, ${parseFloat(item.longitude).toFixed(6)}`;
+            } else if (item.full_address) {
+                locationDisplay = item.full_address.substring(0, 40) + (item.full_address.length > 40 ? '...' : '');
+            } else {
+                locationDisplay = 'No location';
+            }
+            
+            tableRows += '<tr>';
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.so_number || 'N/A'}</td>`;
+            if (viewAll && pickListsBranchColumnExists) {
+                tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.branch_name || 'Branch ' + item.branch_id}</td>`;
+            }
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.item_code}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.item_name}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000; text-align: center;">${item.quantity_to_pick}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${locationDisplay}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.pick_status}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.assigned_driver || 'Unassigned'}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.encoded_by_name || 'System'}</td>`;
+            tableRows += '</tr>';
+        });
+        
+        const currentDate = new Date().toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'short', 
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+        
+        const columnCount = viewAll && pickListsBranchColumnExists ? 9 : 8;
+        
+        return `
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="UTF-8">
+                <title>Pick List Items Report</title>
+                <style>
+                    body { font-family: Arial, sans-serif; margin: 0; padding: 0; font-size: 9px; }
+                    .print-container { max-width: 100%; margin: 0; }
+                    .print-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; border-bottom: 1px solid #000; padding-bottom: 3px; }
+                    .logo-section { display: flex; align-items: center; gap: 5px; }
+                    .company-logo { width: 30px; height: auto; }
+                    .company-info h1 { font-size: 14px; margin: 0; font-weight: bold; }
+                    .company-info p { font-size: 8px; margin: 0; }
+                    .report-title h2 { font-size: 12px; margin: 0; }
+                    .report-title .date-info { font-size: 8px; }
+                    .summary-box { border: 1px solid #000; padding: 3px; margin-bottom: 5px; display: flex; }
+                    .summary-item { flex: 1; text-align: center; border-right: 1px solid #000; }
+                    .summary-item:last-child { border-right: none; }
+                    .summary-label { font-size: 8px; font-weight: bold; }
+                    .summary-value { font-size: 11px; font-weight: bold; }
+                    table { width: 100%; border-collapse: collapse; font-size: 8px; }
+                    th { border: 1px solid #000; padding: 3px; text-align: left; font-weight: bold; background: white !important; color: black !important; }
+                    td { border: 1px solid #000; padding: 3px; }
+                    .total-row { font-weight: bold; }
+                    .print-footer { margin-top: 5px; border-top: 1px solid #000; padding-top: 3px; display: flex; justify-content: space-between; font-size: 8px; }
+                </style>
+            </head>
+            <body>
+                <div class="print-container">
+                    <div class="print-header">
+                        <div class="logo-section">
+                            <img src="${logoBase64}" alt="AMGC Logo" class="company-logo">
+                            <div class="company-info">
+                                <h1>AMGC</h1>
+                                <p>Pick List Report</p>
+                            </div>
+                        </div>
+                        <div class="report-title">
+                            <h2>PICK LIST ITEMS</h2>
+                            <div class="date-info">${currentDate}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="summary-box">
+                        <div class="summary-item"><div class="summary-label">Total Items</div><div class="summary-value">${totalItems}</div></div>
+                        <div class="summary-item"><div class="summary-label">Total Qty</div><div class="summary-value">${totalQuantity}</div></div>
+                        <div class="summary-item"><div class="summary-label">Branch</div><div class="summary-value">${!viewAll ? branchName : 'All'}</div></div>
+                    </div>
+                    
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>SO #</th>
+                                ${viewAll && pickListsBranchColumnExists ? '<th>Branch</th>' : ''}
+                                <th>Item Code</th>
+                                <th>Item Name</th>
+                                <th style="text-align: center;">Qty</th>
+                                <th>Location</th>
+                                <th>Status</th>
+                                <th>Driver</th>
+                                <th>Encoded By</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${tableRows}
+                            <tr class="total-row">
+                                <td colspan="${viewAll && pickListsBranchColumnExists ? '4' : '3'}" style="text-align: right;">TOTAL</td>
+                                <td style="text-align: center;">${totalQuantity}</td>
+                                <td colspan="${viewAll && pickListsBranchColumnExists ? '5' : '4'}"></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                    
+                    <div class="print-footer">
+                        <div>Generated: ${currentDate}</div>
+                        <div>${document.querySelector('.user-name-sidebar')?.textContent || 'Branch Admin'}</div>
+                    </div>
+                </div>
+            </body>
+            </html>
+        `;
     }
 
     // ========== LOGOUT FUNCTION ==========
@@ -3415,6 +3873,9 @@ function formatLocation($item) {
         } else if (e.ctrlKey && e.key === 'n') {
             e.preventDefault();
             showAddItemModal();
+        } else if (e.ctrlKey && e.key === 'p') {
+            e.preventDefault();
+            printPickList();
         }
     });
     </script>
