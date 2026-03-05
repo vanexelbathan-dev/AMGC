@@ -73,9 +73,30 @@ if ($drivers_branch_column_exists && !$view_all_branches) {
     $drivers_branch_condition = "AND branch_id = $branch_id";
 }
 
-// ========== GET AVAILABLE DRIVERS FOR DROPDOWN (Exclude only ACTIVE deliveries) ==========
+// ========== GET AVAILABLE DRIVERS FOR DROPDOWN ==========
+// Updated logic: Only exclude drivers with active IN-TRANSIT trips
+// Drivers with pending/planned deliveries can still be assigned
 $available_drivers_query = "
-    SELECT d.driver_id, d.driver_name, d.vehicle_plate_number, d.vehicle_type
+    SELECT 
+        d.driver_id, 
+        d.driver_name, 
+        d.vehicle_plate_number, 
+        d.vehicle_type,
+        d.status,
+        (
+            SELECT COUNT(*) 
+            FROM pick_lists pl 
+            JOIN sales_orders so ON pl.so_id = so.so_id 
+            WHERE pl.driver_id = d.driver_id 
+            AND so.order_status IN ('confirmed', 'processing', 'ready')
+            AND pl.pick_status NOT IN ('completed', 'cancelled')
+        ) as pending_deliveries,
+        (
+            SELECT COUNT(*) 
+            FROM trip_tickets tt 
+            WHERE tt.driver_id = d.driver_id 
+            AND tt.trip_status = 'in-progress'
+        ) as active_trips
     FROM drivers d
     WHERE d.status = 'active'
 ";
@@ -85,29 +106,20 @@ if ($drivers_branch_column_exists && !$view_all_branches && $branch_id > 0) {
     $available_drivers_query .= " AND d.branch_id = $branch_id";
 }
 
-// Exclude drivers with ACTIVE pick lists (not completed/cancelled)
-$available_drivers_query .= " AND d.driver_id NOT IN (
-    SELECT DISTINCT pl.driver_id 
-    FROM pick_lists pl
-    JOIN sales_orders so ON pl.so_id = so.so_id
-    WHERE so.order_status IN ('confirmed', 'processing', 'ready')
-    AND pl.driver_id IS NOT NULL
-    AND pl.pick_status NOT IN ('completed', 'cancelled')
-)";
-
-// Exclude drivers with ACTIVE trip tickets (not completed/cancelled)
-$available_drivers_query .= " AND d.driver_id NOT IN (
-    SELECT DISTINCT tt.driver_id
-    FROM trip_tickets tt
-    WHERE tt.trip_status IN ('planned', 'in-progress')
-    AND tt.driver_id IS NOT NULL
-    AND tt.trip_status NOT IN ('completed', 'cancelled')
-)";
-
-$available_drivers_query .= " ORDER BY d.driver_name";
+// Only exclude drivers with ACTIVE IN-TRANSIT trips
+// Drivers with pending deliveries can still be assigned
+$available_drivers_query .= " HAVING active_trips = 0 ORDER BY pending_deliveries DESC, d.driver_name";
 
 $available_drivers_result = $conn->query($available_drivers_query);
 $available_drivers = $available_drivers_result ? $available_drivers_result->fetch_all(MYSQLI_ASSOC) : [];
+
+// Get drivers with pending deliveries for grouping
+$drivers_with_pending = array_filter($available_drivers, function($d) { 
+    return $d['pending_deliveries'] > 0; 
+});
+$available_drivers_without_pending = array_filter($available_drivers, function($d) { 
+    return $d['pending_deliveries'] == 0; 
+});
 
 // ========== HANDLE AJAX REQUESTS ==========
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
@@ -397,26 +409,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $branch_id_param = (int)$_POST['branch_id'];
             
             $query = "
-                SELECT d.driver_id, d.driver_name, d.vehicle_plate_number, d.vehicle_type
+                SELECT 
+                    d.driver_id, 
+                    d.driver_name, 
+                    d.vehicle_plate_number, 
+                    d.vehicle_type,
+                    d.status,
+                    (
+                        SELECT COUNT(*) 
+                        FROM pick_lists pl 
+                        JOIN sales_orders so ON pl.so_id = so.so_id 
+                        WHERE pl.driver_id = d.driver_id 
+                        AND so.order_status IN ('confirmed', 'processing', 'ready')
+                        AND pl.pick_status NOT IN ('completed', 'cancelled')
+                    ) as pending_deliveries,
+                    (
+                        SELECT COUNT(*) 
+                        FROM trip_tickets tt 
+                        WHERE tt.driver_id = d.driver_id 
+                        AND tt.trip_status = 'in-progress'
+                    ) as active_trips
                 FROM drivers d
                 WHERE d.status = 'active'
                 AND d.branch_id = ?
-                AND d.driver_id NOT IN (
-                    SELECT DISTINCT pl.driver_id 
-                    FROM pick_lists pl
-                    JOIN sales_orders so ON pl.so_id = so.so_id
-                    WHERE so.order_status IN ('confirmed', 'processing', 'ready')
-                    AND pl.driver_id IS NOT NULL
-                    AND pl.pick_status NOT IN ('completed', 'cancelled')
-                )
-                AND d.driver_id NOT IN (
-                    SELECT DISTINCT tt.driver_id
-                    FROM trip_tickets tt
-                    WHERE tt.trip_status IN ('planned', 'in-progress')
-                    AND tt.driver_id IS NOT NULL
-                    AND tt.trip_status NOT IN ('completed', 'cancelled')
-                )
-                ORDER BY d.driver_name
+                HAVING active_trips = 0
+                ORDER BY pending_deliveries DESC, d.driver_name
             ";
             
             $stmt = $conn->prepare($query);
@@ -1013,6 +1030,96 @@ function formatDate($dateStr) {
             border-radius: 12px;
             font-size: 10px;
             margin-left: 5px;
+        }
+
+        /* Select2 Custom Styling - Matching Color Palette */
+        .select2-container--default .select2-selection--single {
+            height: 38px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            background-color: white;
+        }
+
+        .select2-container--default .select2-selection--single .select2-selection__rendered {
+            line-height: 38px;
+            padding-left: 12px;
+            color: #212121;
+        }
+
+        .select2-container--default .select2-selection--single .select2-selection__arrow {
+            height: 36px;
+        }
+
+        .select2-container--default .select2-results__option--highlighted.select2-results__option--selectable {
+            background-color: #2E7D32;
+            color: white;
+        }
+
+        .select2-container--default .select2-results__option--selected {
+            background-color: #e8f5e9;
+            color: #1B5E20;
+        }
+
+        .select2-container--default .select2-results__group {
+            background-color: #f5f5f5;
+            color: #0D4C14;
+            font-weight: 600;
+            padding: 8px 12px;
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .select2-container--default .select2-results__option {
+            padding: 8px 12px;
+        }
+
+        .driver-option {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .driver-option .driver-name {
+            font-weight: 500;
+            color: #212121;
+        }
+
+        .driver-option .driver-vehicle {
+            font-size: 11px;
+            color: #6c757d;
+            margin-left: 8px;
+        }
+
+        .driver-option .pending-count {
+            background-color: #FFC107;
+            color: #212121;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+
+        .select2-container--default .select2-results__option--highlighted .driver-option .driver-name,
+        .select2-container--default .select2-results__option--highlighted .driver-option .driver-vehicle,
+        .select2-container--default .select2-results__option--highlighted .driver-option .pending-count {
+            color: white;
+        }
+
+        .select2-container--default .select2-results__option--highlighted .driver-option .pending-count {
+            background-color: rgba(255,255,255,0.3);
+            color: white;
+        }
+
+        .driver-info-tooltip {
+            font-size: 11px;
+            padding: 4px 8px;
+            background-color: #f8f9fa;
+            border-radius: 4px;
+            margin-top: 4px;
+        }
+
+        .driver-info-tooltip i {
+            color: #2E7D32;
+            margin-right: 4px;
         }
         
         @media (max-width: 768px) {
@@ -1676,11 +1783,30 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                             <div class="col-md-12" id="driverSelectionContainer" style="display: none;">
                                 <label for="editDriverSelect" class="form-label fw-bold">Select Driver *</label>
                                 <select class="form-select select2-driver" id="editDriverSelect" style="width: 100%;">
-                                    <option value="">-- Choose Available Driver --</option>
-                                    <?php if (empty($available_drivers)): ?>
-                                        <option value="" disabled>No available drivers found</option>
-                                    <?php else: ?>
-                                        <?php foreach ($available_drivers as $driver): ?>
+                                    <option value="">-- Choose Driver --</option>
+                                    
+                                    <!-- Drivers with existing deliveries -->
+                                    <?php if (!empty($drivers_with_pending)): ?>
+                                    <optgroup label="Drivers with existing deliveries (can be assigned)">
+                                        <?php foreach ($drivers_with_pending as $driver): ?>
+                                            <option value="<?= $driver['driver_id'] ?>" 
+                                                    data-vehicle="<?= htmlspecialchars($driver['vehicle_type'] ?? 'N/A') ?>"
+                                                    data-plate="<?= htmlspecialchars($driver['vehicle_plate_number'] ?? 'N/A') ?>"
+                                                    data-pending="<?= $driver['pending_deliveries'] ?>">
+                                                <?= htmlspecialchars($driver['driver_name']) ?> 
+                                                <?php if (!empty($driver['vehicle_plate_number'])): ?>
+                                                    - <?= htmlspecialchars($driver['vehicle_plate_number']) ?>
+                                                <?php endif; ?>
+                                                <span class="badge bg-warning text-dark ms-2"><?= $driver['pending_deliveries'] ?> pending</span>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </optgroup>
+                                    <?php endif; ?>
+                                    
+                                    <!-- Available drivers -->
+                                    <?php if (!empty($available_drivers_without_pending)): ?>
+                                    <optgroup label="Available Drivers">
+                                        <?php foreach ($available_drivers_without_pending as $driver): ?>
                                             <option value="<?= $driver['driver_id'] ?>" 
                                                     data-vehicle="<?= htmlspecialchars($driver['vehicle_type'] ?? 'N/A') ?>"
                                                     data-plate="<?= htmlspecialchars($driver['vehicle_plate_number'] ?? 'N/A') ?>">
@@ -1691,8 +1817,13 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                                 <span class="available-badge">Available</span>
                                             </option>
                                         <?php endforeach; ?>
+                                    </optgroup>
                                     <?php endif; ?>
                                 </select>
+                                <div class="driver-info-tooltip">
+                                    <i class="bi bi-info-circle"></i> 
+                                    Drivers with existing deliveries can still be assigned. They will be delivered together in one trip.
+                                </div>
                             </div>
                             
                             <div class="col-md-4">
@@ -1888,14 +2019,15 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
     document.addEventListener('DOMContentLoaded', function() {
         initializeSidebar();
         
-        // Initialize Select2
+        // Initialize Select2 with custom styling
         $('.select2-driver').select2({
-            placeholder: 'Select an available driver',
+            placeholder: 'Select a driver',
             allowClear: true,
             dropdownParent: $('#editOrderModal'),
             width: '100%',
             templateResult: formatDriverOption,
-            templateSelection: formatDriverSelection
+            templateSelection: formatDriverSelection,
+            escapeMarkup: function(m) { return m; }
         });
         
         // Mobile menu toggle
@@ -1948,19 +2080,41 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         window.addEventListener('resize', handleSidebarResize);
     });
 
-    // Format driver options in Select2
+    // Format driver options in Select2 with enhanced styling
     function formatDriverOption(driver) {
         if (!driver.id) return driver.text;
         
         const element = $(driver.element);
+        const driverName = driver.text.split('<span')[0] || driver.text;
         const vehicle = element.data('vehicle') || 'No vehicle';
         const plate = element.data('plate') || 'No plate';
+        const pending = element.data('pending') || 0;
         
-        return $('<div><strong>' + driver.text.replace('Available', '').trim() + '</strong><br><small class="text-muted">' + vehicle + ' - ' + plate + '</small> <span class="badge bg-success">Available</span></div>');
+        let badge = '';
+        if (pending > 0) {
+            badge = `<span class="pending-count ms-2">${pending} pending</span>`;
+        } else {
+            badge = `<span class="available-badge ms-2">Available</span>`;
+        }
+        
+        return $(`
+            <div class="driver-option">
+                <span class="driver-name">${driverName}</span>
+                <span class="driver-vehicle">${vehicle} - ${plate}</span>
+                ${badge}
+            </div>
+        `);
     }
 
     function formatDriverSelection(driver) {
-        return driver.text ? driver.text.replace('Available', '').trim() : driver.text;
+        if (!driver.id) return driver.text;
+        
+        const element = $(driver.element);
+        const driverName = driver.text.split('<span')[0] || driver.text;
+        const vehicle = element.data('vehicle') || '';
+        const plate = element.data('plate') || '';
+        
+        return driverName + (vehicle ? ` (${vehicle} - ${plate})` : '');
     }
 
     // When order status changes
@@ -2020,12 +2174,15 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 
                 const select = $('#editDriverSelect');
                 select.empty();
-                select.append('<option value="">-- Choose Available Driver --</option>');
+                select.append('<option value="">-- Choose Driver --</option>');
                 
-                if (data.drivers.length === 0) {
-                    select.append('<option value="" disabled>No available drivers found</option>');
-                } else {
-                    data.drivers.forEach(driver => {
+                // Group drivers by pending status
+                const withPending = data.drivers.filter(d => d.pending_deliveries > 0);
+                const withoutPending = data.drivers.filter(d => d.pending_deliveries == 0);
+                
+                if (withPending.length > 0) {
+                    const group = $('<optgroup label="Drivers with existing deliveries (can be assigned)">');
+                    withPending.forEach(driver => {
                         const option = new Option(
                             driver.driver_name + ' - ' + (driver.vehicle_plate_number || 'No vehicle'),
                             driver.driver_id,
@@ -2034,8 +2191,26 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                         );
                         $(option).data('vehicle', driver.vehicle_type || 'N/A');
                         $(option).data('plate', driver.vehicle_plate_number || 'N/A');
-                        select.append(option);
+                        $(option).data('pending', driver.pending_deliveries);
+                        group.append(option);
                     });
+                    select.append(group);
+                }
+                
+                if (withoutPending.length > 0) {
+                    const group = $('<optgroup label="Available Drivers">');
+                    withoutPending.forEach(driver => {
+                        const option = new Option(
+                            driver.driver_name + ' - ' + (driver.vehicle_plate_number || 'No vehicle'),
+                            driver.driver_id,
+                            false,
+                            false
+                        );
+                        $(option).data('vehicle', driver.vehicle_type || 'N/A');
+                        $(option).data('plate', driver.vehicle_plate_number || 'N/A');
+                        group.append(option);
+                    });
+                    select.append(group);
                 }
                 
                 select.trigger('change');

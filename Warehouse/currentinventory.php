@@ -84,127 +84,9 @@ if ($check_inv_trans && $check_inv_trans->num_rows > 0) {
     $inventory_transactions_exists = true;
 }
 
-// Function to generate unique item code
-function generateUniqueItemCode($conn) {
-    // Try ITEM format first (ITEM001, ITEM002, etc.)
-    $prefix = 'ITEM';
-    $number = 1;
-    $max_attempts = 1000; // Prevent infinite loop
-    
-    for ($attempt = 0; $attempt < $max_attempts; $attempt++) {
-        $code = $prefix . str_pad($number, 3, '0', STR_PAD_LEFT);
-        
-        // Check if code exists
-        $check = $conn->prepare("SELECT item_id FROM items WHERE item_code = ?");
-        $check->bind_param("s", $code);
-        $check->execute();
-        $result = $check->get_result();
-        
-        if ($result->num_rows === 0) {
-            return $code; // Found unique code
-        }
-        $number++;
-    }
-    
-    // If ITEM format is exhausted, use timestamp-based code
-    return 'ITM' . date('YmdHis');
-}
-
-// Get next item code for display
-$next_item_code = generateUniqueItemCode($conn);
-
 // Handle form submissions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $response = ['success' => false, 'message' => ''];
-    
-    // Add item
-    if (isset($_POST['add_item'])) {
-        try {
-            $conn->begin_transaction();
-            
-            // Generate unique item code (don't rely on user input)
-            $item_code = generateUniqueItemCode($conn);
-            
-            $item_name = trim($_POST['item_name']);
-            $description = !empty($_POST['description']) ? trim($_POST['description']) : null;
-            
-            // Force category to user's assigned category
-            if (empty($user_category)) {
-                throw new Exception('You do not have a category assigned in the users table. Please contact administrator.');
-            }
-            
-            $category = $user_category; // Force to user's category
-            
-            $stock = (int)$_POST['stock'];
-            $unit_type = $_POST['unit_type'] ?? 'piece';
-            $unit_price = 0.00; // Default for warehouse (prices set by sales/admin)
-            $reorder_level = (int)$_POST['reorder_level'];
-            $status = 'active';
-            
-            // Validate
-            if (empty($item_name)) {
-                throw new Exception('Item name is required');
-            }
-            
-            if ($stock < 0) {
-                throw new Exception('Stock cannot be negative');
-            }
-            
-            if ($reorder_level < 0) {
-                throw new Exception('Reorder level cannot be negative');
-            }
-            
-            // Insert with branch_id if column exists and price columns
-            if ($items_branch_column_exists) {
-                if ($price_case_exists) {
-                    $stmt = $conn->prepare("INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, price_case, price_inner_pack, price_box, price_carton, reorder_level, status, branch_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
-                    $stmt->bind_param("ssssisdddddisi", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $unit_price * 12, $unit_price * 6, $unit_price * 24, $unit_price * 48, $reorder_level, $status, $branch_id);
-                } else {
-                    $stmt = $conn->prepare("INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, reorder_level, status, branch_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
-                    $stmt->bind_param("ssssisdisi", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status, $branch_id);
-                }
-            } else {
-                if ($price_case_exists) {
-                    $stmt = $conn->prepare("INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, price_case, price_inner_pack, price_box, price_carton, reorder_level, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
-                    $stmt->bind_param("ssssisdddddis", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $unit_price * 12, $unit_price * 6, $unit_price * 24, $unit_price * 48, $reorder_level, $status);
-                } else {
-                    $stmt = $conn->prepare("INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, reorder_level, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())");
-                    $stmt->bind_param("ssssisdis", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status);
-                }
-            }
-            
-            if (!$stmt->execute()) {
-                throw new Exception('Failed to add item: ' . $stmt->error);
-            }
-            
-            $item_id = $conn->insert_id;
-            
-            // Record inventory transaction if adding initial stock and table exists
-            if ($stock > 0 && $inventory_transactions_exists) {
-                $trans_query = "INSERT INTO inventory_transactions 
-                               (branch_id, item_id, transaction_type, quantity_changed, reference_type, reference_id, created_by, created_at) 
-                               VALUES (?, ?, 'in', ?, 'initial_stock', ?, ?, NOW())";
-                $trans_stmt = $conn->prepare($trans_query);
-                $trans_stmt->bind_param("iiiii", $branch_id, $item_id, $stock, $item_id, $user_id);
-                $trans_stmt->execute();
-            }
-            
-            $conn->commit();
-            
-            $response['success'] = true;
-            $response['message'] = 'Item added successfully';
-            $response['item_code'] = $item_code;
-            
-        } catch (Exception $e) {
-            $conn->rollback();
-            $response['message'] = $e->getMessage();
-        }
-        
-        // Return JSON for AJAX
-        header('Content-Type: application/json');
-        echo json_encode($response);
-        exit;
-    }
     
     // Edit item
     if (isset($_POST['edit_item'])) {
@@ -692,6 +574,28 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
     .category-info-alert {
         margin-bottom: 1rem;
     }
+
+    /* Search icon inside field */
+    .search-wrapper {
+        position: relative;
+        width: 100%;
+    }
+
+    .search-icon {
+        position: absolute;
+        left: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #6c757d;
+        z-index: 10;
+        font-size: 1rem;
+        pointer-events: none; /* Allows clicking through to the input */
+    }
+
+    .search-input {
+        padding-left: 35px !important; /* Make room for the icon */
+        width: 100%;
+    }
 </style>
 <body>
     <!-- MAIN APPLICATION -->
@@ -814,16 +718,14 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                 </div>
             </div>
 
-            <!-- Search and Filter with Add Button -->
+            <!-- Search and Filter - Icon inside the field -->
             <div class="card mb-4">
                 <div class="card-body">
                     <div class="row g-3">
-                        <div class="col-md-5 col-12">
-                            <div class="input-group">
-                                <span class="input-group-text">
-                                    <i class="bi bi-search"></i>
-                                </span>
-                                <input type="text" class="form-control" id="searchInput" placeholder="Search by item name or code...">
+                        <div class="col-md-8 col-12">
+                            <div class="search-wrapper">
+                                <i class="bi bi-search search-icon"></i>
+                                <input type="text" class="form-control search-input" id="searchInput" placeholder="Search by item name or code...">
                             </div>
                         </div>
                         <div class="col-md-4 col-12">
@@ -840,14 +742,6 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                                 <select class="form-select" id="categoryFilter" disabled>
                                     <option value="">No Category Assigned</option>
                                 </select>
-                            <?php endif; ?>
-                        </div>
-                        <div class="col-md-3 col-12">
-                            <button class="btn btn-outline-success w-100" onclick="showAddItemModal()" <?php echo empty($user_category) ? 'disabled' : ''; ?>>
-                                <i class="bi bi-plus-lg"></i> Add <?php echo !empty($user_category) ? htmlspecialchars($user_category) : ''; ?> Item
-                            </button>
-                            <?php if (empty($user_category)): ?>
-                                <small class="text-danger d-block mt-1">Cannot add items - no category assigned</small>
                             <?php endif; ?>
                         </div>
                     </div>
@@ -939,9 +833,6 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                                     $message = 'No items found - you need a category assigned';
                                 }
                                 echo '<tr><td colspan="' . $colspan . '" class="text-center py-4"><i class="bi bi-inbox fs-1 d-block text-muted mb-2"></i><p class="text-muted mb-0">' . $message . '</p>';
-                                if (!empty($user_category)) {
-                                    echo '<button class="btn btn-sm btn-primary mt-2" onclick="showAddItemModal()"><i class="bi bi-plus-circle"></i> Add Item</button>';
-                                }
                                 echo '</td></tr>';
                             }
                             ?>
@@ -1043,88 +934,7 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
         </div>
     </div>
 
-    <!-- Add Inventory Modal -->
-    <div class="modal fade" id="addInventoryModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Add New <?php echo !empty($user_category) ? htmlspecialchars($user_category) : ''; ?> Item</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="addInventoryForm">
-                        <input type="hidden" name="add_item" value="1">
-                        
-                        <div class="alert alert-info">
-                            <i class="bi bi-info-circle"></i> 
-                            Item code will be auto-generated and guaranteed unique.
-                            <?php if (!empty($user_category)): ?>
-                                <br><strong>Category will be set to: <?php echo htmlspecialchars($user_category); ?></strong> (based on your account)
-                                <input type="hidden" name="category" value="<?php echo htmlspecialchars($user_category); ?>">
-                            <?php endif; ?>
-                            <?php if ($items_branch_column_exists): ?>
-                                <br>This item will be assigned to Branch <?php echo $branch_id; ?>.
-                            <?php endif; ?>
-                        </div>
-                        
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Item Name <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" name="item_name" id="item_name" required placeholder="Enter item name">
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Category <span class="text-danger">*</span></label>
-                                <?php if (!empty($user_category)): ?>
-                                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($user_category); ?>" readonly disabled>
-                                    <small class="text-muted">Category is fixed based on your account - you can only add <?php echo htmlspecialchars($user_category); ?> items</small>
-                                <?php else: ?>
-                                    <input type="text" class="form-control" value="No category assigned" readonly disabled>
-                                    <small class="text-muted text-danger">You do not have a category assigned. Please contact administrator.</small>
-                                <?php endif; ?>
-                            </div>
-                        </div>
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Initial Stock <span class="text-danger">*</span></label>
-                                <input type="number" class="form-control" name="stock" required placeholder="0" min="0" value="0">
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Reorder Level <span class="text-danger">*</span></label>
-                                <input type="number" class="form-control" name="reorder_level" required placeholder="0" min="0" value="50">
-                            </div>
-                        </div>
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Unit Type <span class="text-danger">*</span></label>
-                                <select class="form-select" name="unit_type" required>
-                                    <option value="piece" selected>Piece</option>
-                                    <option value="case">Case</option>
-                                    <option value="inner-pack">Inner Pack</option>
-                                    <option value="box">Box</option>
-                                    <option value="carton">Carton</option>
-                                </select>
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Description</label>
-                            <textarea class="form-control" name="description" placeholder="Item description (optional)" rows="3"></textarea>
-                        </div>
-                        
-                        <?php if ($price_columns_available): ?>
-                        <div class="alert alert-light">
-                            <i class="bi bi-tag"></i> 
-                            <small>Price columns are available for multi-unit pricing. Please contact sales/admin to set prices.</small>
-                        </div>
-                        <?php endif; ?>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-primary" onclick="submitAddForm()">Add Item</button>
-                </div>
-            </div>
-        </div>
-    </div>
+    <!-- REMOVED: Add Inventory Modal -->
 
     <!-- View Item Details Modal -->
     <div class="modal fade" id="viewItemModal" tabindex="-1">
@@ -1359,68 +1169,8 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
         }
 
         // ================= INVENTORY FUNCTIONS =================
-        function showAddItemModal() {
-            if (!userCategory) {
-                Swal.fire('Error', 'You do not have a category assigned in the users table. Please contact administrator.', 'error');
-                return;
-            }
-            document.getElementById('addInventoryForm').reset();
-            new bootstrap.Modal(document.getElementById('addInventoryModal')).show();
-        }
-
-        function submitAddForm() {
-            if (!userCategory) {
-                Swal.fire('Error', 'You do not have a category assigned. Please contact administrator.', 'error');
-                return;
-            }
-            
-            const form = document.getElementById('addInventoryForm');
-            const formData = new FormData(form);
-            
-            // Validate required fields
-            const itemName = document.getElementById('item_name').value.trim();
-            if (!itemName) {
-                Swal.fire('Warning', 'Item Name is required', 'warning');
-                return;
-            }
-            
-            Swal.fire({
-                title: 'Adding Item...',
-                text: 'Please wait',
-                allowOutsideClick: false,
-                didOpen: () => {
-                    Swal.showLoading();
-                }
-            });
-            
-            fetch(window.location.href, {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                Swal.close();
-                
-                if (data.success) {
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Success!',
-                        text: data.message + ' (Code: ' + data.item_code + ')',
-                        timer: 2000,
-                        showConfirmButton: false
-                    }).then(() => {
-                        location.reload();
-                    });
-                } else {
-                    Swal.fire('Error', data.message, 'error');
-                }
-            })
-            .catch(error => {
-                Swal.close();
-                Swal.fire('Error', 'An error occurred while saving the item', 'error');
-                console.error('Error:', error);
-            });
-        }
+        // REMOVED: showAddItemModal function
+        // REMOVED: submitAddForm function
 
         function viewItem(itemId) {
             if (!userCategory) {
@@ -1961,10 +1711,6 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                 if (searchInput) {
                     searchInput.focus();
                 }
-            }
-            else if (e.ctrlKey && e.key === 'n') {
-                e.preventDefault();
-                showAddItemModal();
             }
         });
     </script>

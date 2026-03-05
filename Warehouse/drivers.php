@@ -203,6 +203,28 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
         .mobile-nav .nav-link.logout-btn:hover i {
             color: #dc3545;
         }
+
+        /* Search icon inside field */
+        .search-wrapper {
+            position: relative;
+            width: 100%;
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #6c757d;
+            z-index: 10;
+            font-size: 1rem;
+            pointer-events: none;
+        }
+
+        .search-input {
+            padding-left: 35px !important;
+            width: 100%;
+        }
     </style>
 </head>
 <body>
@@ -381,16 +403,14 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                 </div>
             </div>
 
-            <!-- Search and Filter -->
+            <!-- Search and Filter - Updated with icon inside field -->
             <div class="card mb-4">
                 <div class="card-body">
                     <div class="row g-3">
                         <div class="col-md-4">
-                            <div class="input-group">
-                                <span class="input-group-text">
-                                    <i class="bi bi-search"></i>
-                                </span>
-                                <input type="text" class="form-control" id="searchInput" placeholder="Search by name or driver ID...">
+                            <div class="search-wrapper">
+                                <i class="bi bi-search search-icon"></i>
+                                <input type="text" class="form-control search-input" id="searchInput" placeholder="Search by name or driver ID...">
                             </div>
                         </div>
                         <div class="col-md-3">
@@ -402,8 +422,9 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                             </select>
                         </div>
                         <div class="col-md-3">
-                            <div class="input-group">
-                                <input type="text" class="form-control" id="vehicleTypeFilter" placeholder="Filter by vehicle type...">
+                            <div class="search-wrapper">
+                                <i class="bi bi-truck search-icon"></i>
+                                <input type="text" class="form-control search-input" id="vehicleTypeFilter" placeholder="Filter by vehicle type...">
                             </div>
                         </div>
                         <div class="col-md-2">

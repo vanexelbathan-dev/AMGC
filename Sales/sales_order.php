@@ -31,6 +31,122 @@ if ($check_customers_column && $check_customers_column->num_rows > 0) {
     $customers_branch_column_exists = true;
 }
 
+// Handle AJAX request for Excel export data
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'export_excel_data') {
+    header('Content-Type: application/json');
+    
+    try {
+        // Get filter parameters
+        $status = isset($_POST['status']) && !empty($_POST['status']) && $_POST['status'] !== 'all' ? $_POST['status'] : '';
+        $start_date = isset($_POST['start_date']) && !empty($_POST['start_date']) ? $_POST['start_date'] : '';
+        $end_date = isset($_POST['end_date']) && !empty($_POST['end_date']) ? $_POST['end_date'] : '';
+        $search = isset($_POST['search']) && !empty($_POST['search']) ? $_POST['search'] : '';
+        
+        // Build WHERE conditions
+        $where_conditions = ["1=1"];
+        $params = [];
+        $param_types = "";
+        
+        // Branch filter
+        if ($branch_column_exists && !$view_all_branches) {
+            $where_conditions[] = "so.branch_id = ?";
+            $params[] = $branch_id;
+            $param_types .= "i";
+        }
+        
+        // Status filter
+        if (!empty($status)) {
+            $where_conditions[] = "so.order_status = ?";
+            $params[] = $status;
+            $param_types .= "s";
+        }
+        
+        // Date range filter
+        if (!empty($start_date)) {
+            $where_conditions[] = "DATE(so.order_date) >= ?";
+            $params[] = $start_date;
+            $param_types .= "s";
+        }
+        
+        if (!empty($end_date)) {
+            $where_conditions[] = "DATE(so.order_date) <= ?";
+            $params[] = $end_date;
+            $param_types .= "s";
+        }
+        
+        // Search filter
+        if (!empty($search)) {
+            $search_param = "%" . $search . "%";
+            $where_conditions[] = "(so.so_number LIKE ? OR c.customer_name LIKE ?)";
+            $params[] = $search_param;
+            $params[] = $search_param;
+            $param_types .= "ss";
+        }
+        
+        // Query to get individual order items (for Excel export)
+        $sql = "SELECT 
+                    so.so_id,
+                    so.so_number,
+                    so.order_date,
+                    so.total_amount as order_total,
+                    so.order_status,
+                    so.branch_id,
+                    c.customer_id,
+                    c.customer_name,
+                    c.email,
+                    c.phone_number,
+                    c.address,
+                    c.city,
+                    b.branch_name,
+                    soi.so_item_id,
+                    soi.item_id,
+                    soi.quantity_ordered,
+                    soi.unit_price,
+                    soi.line_total,
+                    i.item_name,
+                    i.item_code,
+                    i.category,
+                    i.unit_type
+                FROM sales_orders so
+                LEFT JOIN customers c ON so.customer_id = c.customer_id
+                LEFT JOIN branches b ON so.branch_id = b.branch_id
+                LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
+                LEFT JOIN items i ON soi.item_id = i.item_id
+                WHERE " . implode(" AND ", $where_conditions) . "
+                ORDER BY so.order_date DESC, so.so_id ASC, soi.so_item_id ASC";
+        
+        // Prepare and execute
+        if (!empty($params)) {
+            $stmt = $conn->prepare($sql);
+            if ($param_types && count($params) > 0) {
+                $stmt->bind_param($param_types, ...$params);
+            }
+        } else {
+            $stmt = $conn->prepare($sql);
+        }
+        
+        if (!$stmt) {
+            throw new Exception("Database prepare error: " . $conn->error);
+        }
+        
+        $stmt->execute();
+        $result = $stmt->get_result();
+        $items = $result->fetch_all(MYSQLI_ASSOC);
+        
+        echo json_encode([
+            'success' => true,
+            'items' => $items
+        ]);
+        
+    } catch (Exception $e) {
+        echo json_encode([
+            'success' => false,
+            'message' => $e->getMessage()
+        ]);
+    }
+    exit;
+}
+
 // Detect AJAX request
 $is_ajax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && 
            strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest';
@@ -191,7 +307,7 @@ if (isset($_GET['search']) && !empty($_GET['search'])) {
     $param_types .= "ss";
 }
 
-// Build query with branch information and FULL item names (no truncation)
+// Build query with branch information and FULL item names (no truncation) - FOR UI DISPLAY ONLY
 $sql = "SELECT 
             so.so_id,
             so.so_number,
@@ -577,6 +693,35 @@ if (file_exists($logo_path)) {
         .full-item-names {
             display: none;
         }
+        
+        /* Loading overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            flex-direction: column;
+        }
+        
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid #f3f3f3;
+            border-top: 5px solid var(--green);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body>
@@ -785,7 +930,8 @@ if (file_exists($logo_path)) {
                         </div>
                         <div class="col-md-3">
                             <label class="form-label fw-bold">Search</label>
-                            <input type="text" class="form-control" id="searchInput" placeholder="Order # or Customer...">
+                            <input type="text" class="form-control" id="searchInput" placeholder="Order # or Customer..." 
+                                   value="<?php echo isset($_GET['search']) ? htmlspecialchars($_GET['search']) : ''; ?>">
                         </div>
                     </div>
                 </div>
@@ -935,6 +1081,12 @@ if (file_exists($logo_path)) {
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="loading-spinner"></div>
+        <div class="mt-3 text-success">Generating Excel file...</div>
     </div>
 
     <!-- JavaScript -->
@@ -1777,122 +1929,239 @@ if (file_exists($logo_path)) {
             }
         }
         
-        // Export to Excel - UPDATED WITH FULL ITEM NAMES (NO TRUNCATION)
+        // Export to Excel - PURE BLACK & WHITE WITH INDIVIDUAL ITEM ROWS
         function exportToExcel() {
-            const rows = document.querySelectorAll('#ordersTable tbody tr');
-            const visibleRows = [];
+            // Get filter values
+            const status = document.getElementById('statusFilter')?.value || 'all';
+            const startDate = document.getElementById('startDate')?.value || '';
+            const endDate = document.getElementById('endDate')?.value || '';
+            const search = document.getElementById('searchInput')?.value || '';
             
-            rows.forEach(row => {
-                if (!row.querySelector('td[colspan]') && row.style.display !== 'none') {
-                    visibleRows.push(row);
+            // Show loading overlay
+            const loadingOverlay = document.getElementById('loadingOverlay');
+            if (loadingOverlay) loadingOverlay.style.display = 'flex';
+            
+            // Prepare request data
+            const formData = new FormData();
+            formData.append('action', 'export_excel_data');
+            formData.append('status', status);
+            formData.append('start_date', startDate);
+            formData.append('end_date', endDate);
+            formData.append('search', search);
+            
+            // Fetch detailed item data from server
+            fetch('', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.items && data.items.length > 0) {
+                    generateExcelFile(data.items);
+                } else {
+                    alert('No data to export');
                 }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error exporting data: ' + error.message);
+            })
+            .finally(() => {
+                // Hide loading overlay
+                if (loadingOverlay) loadingOverlay.style.display = 'none';
+            });
+        }
+        
+        // Generate Excel file with individual item rows - PURE BLACK & WHITE
+        function generateExcelFile(items) {
+            // Group items by order for summary
+            const ordersMap = new Map();
+            items.forEach(item => {
+                if (!ordersMap.has(item.so_id)) {
+                    ordersMap.set(item.so_id, {
+                        so_number: item.so_number,
+                        order_date: item.order_date,
+                        customer_name: item.customer_name,
+                        branch_name: item.branch_name || '',
+                        order_status: item.order_status,
+                        order_total: parseFloat(item.order_total) || 0,
+                        items: []
+                    });
+                }
+                ordersMap.get(item.so_id).items.push(item);
             });
             
-            if (visibleRows.length === 0) {
-                alert('No orders to export');
-                return;
-            }
+            // Calculate totals
+            const totalOrders = ordersMap.size;
+            const totalRevenue = Array.from(ordersMap.values()).reduce((sum, order) => sum + order.order_total, 0);
             
-            // Create Excel HTML content with FULL item names (no truncation)
+            // Create Excel HTML content - PURE BLACK & WHITE
             let excelContent = `
                 <html>
-                <head><meta charset="UTF-8"><title>Sales Orders Export</title></head>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>Sales Orders Export</title>
+                    <style>
+                        /* PURE BLACK & WHITE - NO COLORS */
+                        body { font-family: Arial, Helvetica, sans-serif; }
+                        table { border-collapse: collapse; width: 100%; font-size: 11px; }
+                        th, td { border: 1px solid #000000; padding: 6px; }
+                        th { background-color: #F0F0F0; font-weight: bold; text-align: left; }
+                        .order-header { background-color: #E0E0E0; font-weight: bold; }
+                        .order-total { background-color: #F5F5F5; font-weight: bold; }
+                        .grand-total { background-color: #D0D0D0; font-weight: bold; }
+                        .section-header { background-color: #E8E8E8; font-weight: bold; text-align: center; }
+                        .text-right { text-align: right; }
+                    </style>
+                </head>
                 <body>
-                    <table border="1">
-                        <tr><td colspan="${branchColumnExists && viewAllBranches ? '9' : '8'}" style="font-size:16px;font-weight:bold;text-align:center;background-color:#2E7D32;color:white;">SALES ORDERS REPORT</td></tr>
-                        <tr><td colspan="${branchColumnExists && viewAllBranches ? '9' : '8'}" style="text-align:center;background-color:#f0f0f0;">Export Date: ${new Date().toLocaleString()}</td></tr>
-                        <tr><td colspan="${branchColumnExists && viewAllBranches ? '9' : '8'}" style="text-align:center;background-color:#f0f0f0;">Total Orders: ${visibleRows.length} | Total Amount: ₱${calculateTotalAmount(visibleRows).toFixed(2)}</td></tr>
-                        <tr><td colspan="${branchColumnExists && viewAllBranches ? '9' : '8'}" style="background-color:#f0f0f0;"></td></tr>
-                        <tr style="background-color:#2E7D32;color:white;font-weight:bold;">
+                    <table>
+                        <!-- Report Header -->
+                        <tr>
+                            <td colspan="11" class="section-header" style="font-size: 16px;">
+                                SALES ORDERS REPORT - DETAILED BY ITEM
+                            </td>
+                        </tr>
+                        <tr>
+                            <td colspan="11" style="text-align: center; background-color: #F5F5F5;">
+                                Export Date: ${new Date().toLocaleString()}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td colspan="11" style="background-color: #F5F5F5;"></td>
+                        </tr>
+                        
+                        <!-- Summary Statistics -->
+                        <tr>
+                            <td colspan="2" class="section-header">Summary Statistics</td>
+                            <td colspan="9" class="section-header"></td>
+                        </tr>
+                        <tr>
+                            <td colspan="2"><strong>Total Orders:</strong></td>
+                            <td colspan="9">${totalOrders}</td>
+                        </tr>
+                        <tr>
+                            <td colspan="2"><strong>Total Revenue:</strong></td>
+                            <td colspan="9">₱${totalRevenue.toFixed(2)}</td>
+                        </tr>
+                        <tr>
+                            <td colspan="2"><strong>Average Order Value:</strong></td>
+                            <td colspan="9">₱${(totalRevenue / totalOrders).toFixed(2)}</td>
+                        </tr>
+                        <tr>
+                            <td colspan="2"><strong>Total Items Sold:</strong></td>
+                            <td colspan="9">${items.length}</td>
+                        </tr>
+                        <tr>
+                            <td colspan="2"><strong>Branch Filter:</strong></td>
+                            <td colspan="9">${!viewAllBranches && branchId > 0 ? `Branch ${branchId}` : 'All Branches'}</td>
+                        </tr>
+                        <tr>
+                            <td colspan="11" style="background-color: #F5F5F5;"></td>
+                        </tr>
+                        
+                        <!-- Column Headers -->
+                        <tr>
                             <th>Order #</th>
-                            <th>Date</th>
+                            <th>Order Date</th>
                             <th>Customer</th>
                             ${branchColumnExists && viewAllBranches ? '<th>Branch</th>' : ''}
-                            <th>Items Count</th>
-                            <th>Item Names (with Quantities)</th>
-                            <th>Amount</th>
-                            <th>Status</th>
+                            <th>Product Code</th>
+                            <th>Product Name</th>
+                            <th>Category</th>
+                            <th class="text-right">Quantity</th>
+                            <th class="text-right">Unit Price</th>
+                            <th class="text-right">Line Total</th>
+                            <th>Order Status</th>
                         </tr>
             `;
             
-            visibleRows.forEach(row => {
-                const cells = row.querySelectorAll('td');
-                const hasBranchColumn = branchColumnExists && viewAllBranches;
+            // Group items by order with clear separation
+            let currentOrderId = null;
+            
+            items.forEach((item, index) => {
+                const isNewOrder = item.so_id !== currentOrderId;
+                currentOrderId = item.so_id;
                 
-                // Get order number, date, customer
-                const orderNumber = cells[0].textContent.trim();
-                const date = cells[1].textContent.trim().replace(/\n/g, ' ');
-                const customer = cells[2].textContent.trim();
-                
-                // Get FULL item names from hidden span
-                let itemsCount, fullItemNames, amount, status;
-                
-                if (hasBranchColumn) {
-                    const branch = cells[3].textContent.trim();
-                    itemsCount = cells[4].textContent.trim();
+                // Add order header if new order
+                if (isNewOrder) {
+                    // Add a blank row between orders (except first)
+                    if (index > 0) {
+                        excelContent += `<tr><td colspan="${branchColumnExists && viewAllBranches ? '11' : '10'}" style="background-color: #F5F5F5; height: 5px;"></td></tr>`;
+                    }
                     
-                    // Get full item names from the hidden span
-                    const fullItemsSpan = cells[5].querySelector('.full-item-names');
-                    fullItemNames = fullItemsSpan ? fullItemsSpan.textContent.trim() : cells[5].textContent.trim();
-                    
-                    amount = cells[6].textContent.trim();
-                    status = cells[7].textContent.trim();
-                    
-                    excelContent += '<tr>';
-                    excelContent += `<td>${orderNumber}</td>`;
-                    excelContent += `<td>${date}</td>`;
-                    excelContent += `<td>${customer}</td>`;
-                    excelContent += `<td>${branch}</td>`;
-                    excelContent += `<td>${itemsCount}</td>`;
-                    excelContent += `<td>${fullItemNames}</td>`;
-                    excelContent += `<td>${amount}</td>`;
-                    excelContent += `<td>${status}</td>`;
-                    excelContent += '</tr>';
-                } else {
-                    itemsCount = cells[3].textContent.trim();
-                    
-                    // Get full item names from the hidden span
-                    const fullItemsSpan = cells[4].querySelector('.full-item-names');
-                    fullItemNames = fullItemsSpan ? fullItemsSpan.textContent.trim() : cells[4].textContent.trim();
-                    
-                    amount = cells[5].textContent.trim();
-                    status = cells[6].textContent.trim();
-                    
-                    excelContent += '<tr>';
-                    excelContent += `<td>${orderNumber}</td>`;
-                    excelContent += `<td>${date}</td>`;
-                    excelContent += `<td>${customer}</td>`;
-                    excelContent += `<td>${itemsCount}</td>`;
-                    excelContent += `<td>${fullItemNames}</td>`;
-                    excelContent += `<td>${amount}</td>`;
-                    excelContent += `<td>${status}</td>`;
-                    excelContent += '</tr>';
+                    // Order summary row
+                    excelContent += `<tr class="order-header">`;
+                    excelContent += `<td><strong>${item.so_number}</strong></td>`;
+                    excelContent += `<td>${new Date(item.order_date).toLocaleDateString()}</td>`;
+                    excelContent += `<td>${item.customer_name || ''}</td>`;
+                    if (branchColumnExists && viewAllBranches) {
+                        excelContent += `<td>${item.branch_name || ''}</td>`;
+                    }
+                    excelContent += `<td colspan="${branchColumnExists && viewAllBranches ? '6' : '5'}" class="text-right">Order Total: ₱${parseFloat(item.order_total).toFixed(2)}</td>`;
+                    excelContent += `<td>${item.order_status || ''}</td>`;
+                    excelContent += `</tr>`;
                 }
+                
+                // Item row
+                excelContent += '<tr>';
+                excelContent += `<td>${item.so_number}</td>`;
+                excelContent += `<td>${new Date(item.order_date).toLocaleDateString()}</td>`;
+                excelContent += `<td>${item.customer_name || ''}</td>`;
+                if (branchColumnExists && viewAllBranches) {
+                    excelContent += `<td>${item.branch_name || ''}</td>`;
+                }
+                excelContent += `<td>${item.item_code || ''}</td>`;
+                excelContent += `<td>${item.item_name || ''}</td>`;
+                excelContent += `<td>${item.category || ''}</td>`;
+                excelContent += `<td class="text-right">${parseInt(item.quantity_ordered) || 0}</td>`;
+                excelContent += `<td class="text-right">₱${parseFloat(item.unit_price).toFixed(2)}</td>`;
+                excelContent += `<td class="text-right">₱${parseFloat(item.line_total).toFixed(2)}</td>`;
+                excelContent += `<td>${item.order_status || ''}</td>`;
+                excelContent += '</tr>';
             });
             
+            // Grand Total Row
             excelContent += `
-                        <tr style="font-weight:bold;background-color:#f0f0f0;">
-                            <td colspan="${branchColumnExists && viewAllBranches ? '5' : '4'}" style="text-align:right;">GRAND TOTAL</td>
-                            <td>${visibleRows.length} orders</td>
-                            <td>₱${calculateTotalAmount(visibleRows).toFixed(2)}</td>
+                        <tr class="grand-total">
+                            <td colspan="${branchColumnExists && viewAllBranches ? '9' : '8'}" class="text-right">GRAND TOTAL</td>
+                            <td class="text-right">₱${totalRevenue.toFixed(2)}</td>
                             <td></td>
-                            ${branchColumnExists && viewAllBranches ? '<td></td>' : ''}
                         </tr>
                     </table>
+                    
+                    <!-- Additional Statistics -->
                     <br>
-                    <table border="1">
-                        <tr><td colspan="2" style="background-color:#2E7D32;color:white;font-weight:bold;">Summary Statistics</td></tr>
-                        <tr><td>Total Orders:</td><td>${visibleRows.length}</td></tr>
-                        <tr><td>Total Revenue:</td><td>₱${calculateTotalAmount(visibleRows).toFixed(2)}</td></tr>
-                        <tr><td>Average Order Value:</td><td>₱${(calculateTotalAmount(visibleRows) / visibleRows.length).toFixed(2)}</td></tr>
-                        <tr><td>Export Date:</td><td>${new Date().toLocaleString()}</td></tr>
-                        <tr><td>Branch Filter:</td><td>${!viewAllBranches && branchId > 0 ? `Branch ${branchId}` : 'All Branches'}</td></tr>
+                    <table>
+                        <tr>
+                            <td colspan="2" class="section-header">ORDER STATISTICS</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Total Orders:</strong></td>
+                            <td>${totalOrders}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Total Items Sold:</strong></td>
+                            <td>${items.length}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Total Revenue:</strong></td>
+                            <td>₱${totalRevenue.toFixed(2)}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Average Items per Order:</strong></td>
+                            <td>${(items.length / totalOrders).toFixed(2)}</td>
+                        </tr>
+                        <tr>
+                            <td><strong>Average Order Value:</strong></td>
+                            <td>₱${(totalRevenue / totalOrders).toFixed(2)}</td>
+                        </tr>
                     </table>
                 </body>
                 </html>
             `;
             
-            // Create Excel file
+            // Create and download Excel file
             const blob = new Blob([excelContent], { 
                 type: 'application/vnd.ms-excel' 
             });
@@ -1900,29 +2169,13 @@ if (file_exists($logo_path)) {
             const link = document.createElement('a');
             const url = URL.createObjectURL(blob);
             link.setAttribute('href', url);
-            link.setAttribute('download', 'sales_orders_' + new Date().toISOString().split('T')[0] + 
+            link.setAttribute('download', 'sales_orders_detailed_' + new Date().toISOString().split('T')[0] + 
                            (!viewAllBranches && branchId > 0 ? '_branch_' + branchId : '') + '.xls');
             link.style.visibility = 'hidden';
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
             URL.revokeObjectURL(url);
-        }
-        
-        // Helper function to calculate total amount
-        function calculateTotalAmount(rows) {
-            let total = 0;
-            rows.forEach(row => {
-                const cells = row.querySelectorAll('td');
-                const hasBranchColumn = branchColumnExists && viewAllBranches;
-                const amountIndex = hasBranchColumn ? 6 : 5;
-                
-                if (cells.length > amountIndex) {
-                    const amount = cells[amountIndex].textContent.trim();
-                    total += parseFloat(amount.replace('₱', '').replace(',', '')) || 0;
-                }
-            });
-            return total;
         }
 
         function logout() {

@@ -643,6 +643,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         .mobile-nav .nav-link.logout-btn:hover i {
             color: #dc3545;
         }
+
+        /* Search icon inside field */
+        .search-wrapper {
+            position: relative;
+            width: 100%;
+        }
+
+        .search-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #6c757d;
+            z-index: 10;
+            font-size: 1rem;
+            pointer-events: none;
+        }
+
+        .search-input {
+            padding-left: 35px !important;
+            width: 100%;
+        }
     </style>
 </head>
 <body>
@@ -828,16 +850,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 </div>
             </div>
 
-            <!-- Search and Filter -->
+            <!-- Search and Filter - Updated with icon inside field -->
             <div class="card mb-4">
                 <div class="card-body">
                     <div class="row g-3">
                         <div class="col-md-6">
-                            <div class="input-group">
-                                <span class="input-group-text">
-                                    <i class="bi bi-search"></i>
-                                </span>
-                                <input type="text" class="form-control" id="searchInput" placeholder="Search PO number or supplier...">
+                            <div class="search-wrapper">
+                                <i class="bi bi-search search-icon"></i>
+                                <input type="text" class="form-control search-input" id="searchInput" placeholder="Search PO number or supplier...">
                             </div>
                         </div>
                         <div class="col-md-6">
@@ -945,7 +965,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                                 echo '<p>No purchase orders found</p>';
                                 echo '</td></tr>';
                             }
-                            $po_stmt->close();
                             ?>
                         </tbody>
                     </table>
