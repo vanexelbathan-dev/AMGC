@@ -82,6 +82,20 @@ if ($check_inv_trans && $check_inv_trans->num_rows > 0) {
     $inventory_transactions_exists = true;
 }
 
+// IMPORTANT: Get user's category directly from database
+$user_category = '';
+$cat_query = "SELECT category FROM users WHERE user_id = ?";
+$cat_stmt = $conn->prepare($cat_query);
+if ($cat_stmt) {
+    $cat_stmt->bind_param("i", $user_id);
+    $cat_stmt->execute();
+    $cat_result = $cat_stmt->get_result();
+    if ($cat_row = $cat_result->fetch_assoc()) {
+        $user_category = $cat_row['category'];
+    }
+    $cat_stmt->close();
+}
+
 // Function to create delivery records for completed pick list
 function createDeliveriesForPickList($conn, $pick_list_id, $branch_id, $user_id) {
     try {
@@ -871,76 +885,61 @@ function formatLocation($row) {
             </div>
 
             <?php
-            // Get pick list statistics - filtered by branch
-            $stats = [];
-            $branch_filter = "";
-            $params = [];
-            $types = "";
-            
-            if (!$view_all_branches && $user_branch_id > 0) {
-                $branch_filter = " WHERE pl.branch_id = ? ";
-                $params[] = $user_branch_id;
-                $types .= "i";
+            // Get pick list statistics - filtered by branch and category
+            // Determine branch filter condition - same logic as currentinventory.php
+            $branch_condition = "";
+            if ($items_branch_column_exists && !$view_all_branches) {
+                $branch_condition = "AND i.branch_id = " . $user_branch_id;
             }
             
-            // Total items query with branch filter
+            // Determine category filter condition
+            $category_condition = "";
+            if (empty($user_category)) {
+                // If no category assigned, show nothing
+                $category_condition = "AND 1=0";
+            } else {
+                $category_condition = "AND i.category = '" . $conn->real_escape_string($user_category) . "'";
+            }
+            
+            $stats = [];
+            
+            // Total items query with branch and category filter
             $total_items_query = "SELECT COUNT(*) as count 
                                  FROM pick_list_items pli
-                                 JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id" . $branch_filter;
-            $stmt = $conn->prepare($total_items_query);
-            if (!empty($params)) {
-                $stmt->bind_param($types, ...$params);
-            }
-            $stmt->execute();
-            $result = $stmt->get_result();
+                                 JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
+                                 JOIN items i ON pli.item_id = i.item_id
+                                 WHERE 1=1 $branch_condition $category_condition";
+            $result = $conn->query($total_items_query);
             $stats['total_items'] = $result->fetch_assoc()['count'] ?? 0;
-            $stmt->close();
             
-            // Picked items query with branch filter
+            // Picked items query with branch and category filter
             $picked_query = "SELECT COUNT(*) as count 
                             FROM pick_list_items pli
                             JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
-                            WHERE pli.quantity_picked >= pli.quantity_to_pick" . 
-                            ($branch_filter ? str_replace("WHERE", "AND", $branch_filter) : "");
-            $stmt = $conn->prepare($picked_query);
-            if (!empty($params)) {
-                $stmt->bind_param($types, ...$params);
-            }
-            $stmt->execute();
-            $result = $stmt->get_result();
+                            JOIN items i ON pli.item_id = i.item_id
+                            WHERE pli.quantity_picked >= pli.quantity_to_pick $branch_condition $category_condition";
+            $result = $conn->query($picked_query);
             $stats['picked'] = $result->fetch_assoc()['count'] ?? 0;
-            $stmt->close();
             
-            // Pending items query with branch filter
+            // Pending items query with branch and category filter
             $pending_query = "SELECT COUNT(*) as count 
                              FROM pick_list_items pli
                              JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
-                             WHERE pli.quantity_picked = 0" . 
-                             ($branch_filter ? str_replace("WHERE", "AND", $branch_filter) : "");
-            $stmt = $conn->prepare($pending_query);
-            if (!empty($params)) {
-                $stmt->bind_param($types, ...$params);
-            }
-            $stmt->execute();
-            $result = $stmt->get_result();
+                             JOIN items i ON pli.item_id = i.item_id
+                             WHERE pli.quantity_picked = 0 $branch_condition $category_condition";
+            $result = $conn->query($pending_query);
             $stats['pending'] = $result->fetch_assoc()['count'] ?? 0;
-            $stmt->close();
             
-            // Total value query with branch filter
+            // Total value query with branch and category filter
             $check_price = $conn->query("SHOW COLUMNS FROM items LIKE 'unit_price'");
             if ($check_price && $check_price->num_rows > 0) {
                 $value_query = "SELECT SUM(pli.quantity_to_pick * i.unit_price) as total_value 
                                FROM pick_list_items pli
                                JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
-                               JOIN items i ON pli.item_id = i.item_id" . $branch_filter;
-                $stmt = $conn->prepare($value_query);
-                if (!empty($params)) {
-                    $stmt->bind_param($types, ...$params);
-                }
-                $stmt->execute();
-                $result = $stmt->get_result();
+                               JOIN items i ON pli.item_id = i.item_id
+                               WHERE 1=1 $branch_condition $category_condition";
+                $result = $conn->query($value_query);
                 $total_value = $result->fetch_assoc()['total_value'] ?? 0;
-                $stmt->close();
             } else {
                 $total_value = 0;
             }
@@ -1100,6 +1099,21 @@ function formatLocation($row) {
                         <tbody>
                             <?php
                             // Get pick list items with all necessary data
+                            // Determine branch filter condition - same logic as currentinventory.php
+                            $main_branch_condition = "";
+                            if ($items_branch_column_exists && !$view_all_branches) {
+                                $main_branch_condition = "AND i.branch_id = " . $user_branch_id;
+                            }
+                            
+                            // Determine category filter condition
+                            $main_category_condition = "";
+                            if (empty($user_category)) {
+                                // If no category assigned, show nothing
+                                $main_category_condition = "AND 1=0";
+                            } else {
+                                $main_category_condition = "AND i.category = '" . $conn->real_escape_string($user_category) . "'";
+                            }
+                            
                             $pick_list_items_query = "SELECT 
                                 pli.pick_item_id,
                                 pli.pick_list_id,
@@ -1114,6 +1128,7 @@ function formatLocation($row) {
                                 b.branch_name,
                                 i.item_name, 
                                 i.item_code,
+                                i.category,
                                 i.unit_price,
                                 i.price_case,
                                 i.price_inner_pack,
@@ -1136,32 +1151,17 @@ function formatLocation($row) {
                             INNER JOIN items i ON pli.item_id = i.item_id
                             LEFT JOIN drivers d ON pl.driver_id = d.driver_id
                             LEFT JOIN sales_orders so ON pl.so_id = so.so_id
-                            LEFT JOIN customers c ON so.customer_id = c.customer_id";
-
-                            if (!$view_all_branches && $user_branch_id > 0) {
-                                $pick_list_items_query .= " WHERE pl.branch_id = ?";
-                                $pick_list_items_query .= " ORDER BY 
-                                    CASE 
-                                        WHEN pl.pick_status IN ('open', 'in-progress') THEN 1
-                                        WHEN pl.pick_status = 'completed' THEN 2
-                                        ELSE 3
-                                    END,
-                                    pli.pick_item_id DESC";
-                                
-                                $stmt = $conn->prepare($pick_list_items_query);
-                                $stmt->bind_param("i", $user_branch_id);
-                            } else {
-                                $pick_list_items_query .= " ORDER BY 
-                                    CASE 
-                                        WHEN pl.pick_status IN ('open', 'in-progress') THEN 1
-                                        WHEN pl.pick_status = 'completed' THEN 2
-                                        ELSE 3
-                                    END,
-                                    pli.pick_item_id DESC";
-                                
-                                $stmt = $conn->prepare($pick_list_items_query);
-                            }
+                            LEFT JOIN customers c ON so.customer_id = c.customer_id
+                            WHERE 1=1 $main_branch_condition $main_category_condition
+                            ORDER BY 
+                                CASE 
+                                    WHEN pl.pick_status IN ('open', 'in-progress') THEN 1
+                                    WHEN pl.pick_status = 'completed' THEN 2
+                                    ELSE 3
+                                END,
+                                pli.pick_item_id DESC";
                             
+                            $stmt = $conn->prepare($pick_list_items_query);
                             $stmt->execute();
                             $result = $stmt->get_result();
                             

@@ -13,6 +13,20 @@ $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'warehouse';
 $user_branch_id = $_SESSION['branch_id'] ?? 0;
 $view_all_branches = $_SESSION['view_all_branches'] ?? false;
 
+// IMPORTANT: Get user's category directly from database
+$user_category = '';
+$cat_query = "SELECT category FROM users WHERE user_id = ?";
+$cat_stmt = $conn->prepare($cat_query);
+if ($cat_stmt) {
+    $cat_stmt->bind_param("i", $user_id);
+    $cat_stmt->execute();
+    $cat_result = $cat_stmt->get_result();
+    if ($cat_row = $cat_result->fetch_assoc()) {
+        $user_category = $cat_row['category'];
+    }
+    $cat_stmt->close();
+}
+
 // Get user's branch name for display
 $branch_name = 'All Branches';
 $branch_filter = "";
@@ -120,6 +134,36 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                 font-size: 0.75rem;
             }
         }
+
+        /* Category indicator - hidden by default, lalabas lang if may category */
+        .category-indicator {
+            display: inline-block;
+            padding: 4px 12px;
+            background-color: #e7f5ff;
+            color: #0d6efd;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 500;
+            margin-left: 10px;
+        }
+        
+        .category-indicator i {
+            margin-right: 5px;
+        }
+
+        /* User category in sidebar */
+        .user-category-sidebar {
+            font-size: 11px;
+            color: #0d6efd;
+            display: block;
+            margin-top: 2px;
+            font-weight: 500;
+        }
+
+        /* Category info alert */
+        .category-info-alert {
+            margin-bottom: 1rem;
+        }
     </style>
 </head>
 <body>
@@ -177,7 +221,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                     <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
                     <div class="user-details-sidebar">
                         <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-                    </div>
+                        </div>
                 </div>
                 <button class="logout-btn-sidebar" onclick="logout()">
                     <i class="bi bi-box-arrow-right"></i>
@@ -196,10 +240,6 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                 <div class="page-title">
                     <h2>
                         <i></i>Warehouse Dashboard
-                        <?php if (!$view_all_branches && $user_branch_id > 0): ?>
-                            <span class="branch-indicator">
-                            </span>
-                        <?php endif; ?>
                     </h2>
                     <p>Monitor inventory, shipments, and delivery operations</p>
                 </div>
@@ -213,6 +253,12 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
             $current_stock_query = "SELECT SUM(stock) as current_stock FROM items WHERE status = 'active'";
             $pending_deliveries_query = "SELECT COUNT(*) as count FROM trip_tickets WHERE trip_status IN ('planned', 'in-progress')";
             $active_drivers_query = "SELECT COUNT(*) as count FROM drivers WHERE status = 'active'";
+            
+            // Add category filter to items queries
+            if (!empty($user_category)) {
+                $total_items_query .= " AND category = '" . $conn->real_escape_string($user_category) . "'";
+                $current_stock_query .= " AND category = '" . $conn->real_escape_string($user_category) . "'";
+            }
             
             // Add branch filters if items table has branch_id column
             if (!$view_all_branches && $user_branch_id > 0) {
@@ -378,11 +424,25 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                 </thead>
                                 <tbody>
                                     <?php
-                                    $pick_lists_query = "SELECT pl.*, b.branch_name, 
+                                    // FIXED: Show pick lists that have items in user's category
+                                    $pick_lists_query = "SELECT DISTINCT pl.*, b.branch_name, 
                                                         (SELECT COUNT(*) FROM pick_list_items WHERE pick_list_id = pl.pick_list_id) as item_count
                                                         FROM pick_lists pl
-                                                        LEFT JOIN branches b ON pl.branch_id = b.branch_id
-                                                        WHERE pl.pick_status != 'cancelled'"; // EXCLUDE CANCELLED
+                                                        LEFT JOIN branches b ON pl.branch_id = b.branch_id";
+                                    
+                                    // Add condition to only show pick lists that have items in user's category
+                                    if (!empty($user_category)) {
+                                        $pick_lists_query .= " WHERE pl.pick_list_id IN (
+                                            SELECT DISTINCT pli.pick_list_id 
+                                            FROM pick_list_items pli 
+                                            JOIN items i ON pli.item_id = i.item_id 
+                                            WHERE i.category = '" . $conn->real_escape_string($user_category) . "'
+                                        )";
+                                    } else {
+                                        $pick_lists_query .= " WHERE 1=1";
+                                    }
+                                    
+                                    $pick_lists_query .= " AND pl.pick_status != 'cancelled'";
                                     
                                     if (!$view_all_branches && $user_branch_id > 0) {
                                         $pick_lists_query .= " AND pl.branch_id = ?";
@@ -392,34 +452,38 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                         $stmt = $conn->prepare($pick_lists_query . " ORDER BY pl.created_at DESC LIMIT 5");
                                     }
                                     
-                                    $stmt->execute();
-                                    $result = $stmt->get_result();
-                                    
-                                    if ($result->num_rows > 0) {
-                                        while($row = $result->fetch_assoc()) {
-                                            $status_badge = '';
-                                            switch($row['pick_status']) {
-                                                case 'completed': $status_badge = 'bg-success'; break;
-                                                case 'in-progress': $status_badge = 'bg-info'; break;
-                                                default: $status_badge = 'bg-warning';
+                                    if ($stmt) {
+                                        $stmt->execute();
+                                        $result = $stmt->get_result();
+                                        
+                                        if ($result->num_rows > 0) {
+                                            while($row = $result->fetch_assoc()) {
+                                                $status_badge = '';
+                                                switch($row['pick_status']) {
+                                                    case 'completed': $status_badge = 'bg-success'; break;
+                                                    case 'in-progress': $status_badge = 'bg-info'; break;
+                                                    default: $status_badge = 'bg-warning';
+                                                }
+                                                ?>
+                                                <tr>
+                                                    <td><span class="badge bg-light text-dark"><?php echo $row['pick_list_number']; ?></span></td>
+                                                    <?php if ($view_all_branches): ?>
+                                                        <td><span class="badge bg-info"><?php echo htmlspecialchars($row['branch_name']); ?></span></td>
+                                                    <?php endif; ?>
+                                                    <td><span class="badge <?php echo $status_badge; ?>"><?php echo ucfirst($row['pick_status']); ?></span></td>
+                                                    <td><?php echo date('Y-m-d', strtotime($row['pick_date'])); ?></td>
+                                                    <td><?php echo $row['item_count']; ?></td>
+                                                </tr>
+                                                <?php
                                             }
-                                            ?>
-                                            <tr>
-                                                <td><span class="badge bg-light text-dark"><?php echo $row['pick_list_number']; ?></span></td>
-                                                <?php if ($view_all_branches): ?>
-                                                    <td><span class="badge bg-info"><?php echo htmlspecialchars($row['branch_name']); ?></span></td>
-                                                <?php endif; ?>
-                                                <td><span class="badge <?php echo $status_badge; ?>"><?php echo ucfirst($row['pick_status']); ?></span></td>
-                                                <td><?php echo date('Y-m-d', strtotime($row['pick_date'])); ?></td>
-                                                <td><?php echo $row['item_count']; ?></td>
-                                            </tr>
-                                            <?php
+                                        } else {
+                                            $colspan = $view_all_branches ? 5 : 4;
+                                            echo '<tr><td colspan="' . $colspan . '" class="text-center">No pick lists found</td></tr>';
                                         }
+                                        $stmt->close();
                                     } else {
-                                        $colspan = $view_all_branches ? 5 : 4;
-                                        echo '<tr><td colspan="' . $colspan . '" class="text-center">No pick lists found for this branch</td></tr>';
+                                        echo '<tr><td colspan="' . ($view_all_branches ? 5 : 4) . '" class="text-center">No pick lists found</td></tr>';
                                     }
-                                    $stmt->close();
                                     ?>
                                 </tbody>
                             </table>
@@ -427,7 +491,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                     </div>
                 </div>
 
-                <!-- Recent Trip Tickets - UPDATED: Driver from Pick List (Plain Text Only) -->
+                <!-- Recent Trip Tickets -->
                 <div class="col-lg-6 mb-4">
                     <div class="card">
                         <div class="card-header">
@@ -446,7 +510,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                 </thead>
                                 <tbody>
                                     <?php
-                                    // UPDATED QUERY: Get driver from pick list through picklist_id
+                                    // FIXED: Show trip tickets that have pick lists with items in user's category
                                     $trip_tickets_query = "SELECT 
                                         tt.trip_id,
                                         tt.trip_number, 
@@ -455,7 +519,6 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                         tt.branch_id,
                                         b.branch_name,
                                         tt.picklist_id,
-                                        -- Get driver from pick list (priority) or fallback to trip ticket driver
                                         COALESCE(pl.driver_name, d.driver_name) as driver_name
                                     FROM trip_tickets tt
                                     LEFT JOIN drivers d ON tt.driver_id = d.driver_id
@@ -466,8 +529,21 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                             d.driver_name
                                         FROM pick_lists pl
                                         LEFT JOIN drivers d ON pl.driver_id = d.driver_id
-                                    ) pl ON tt.picklist_id = pl.pick_list_id
-                                    WHERE tt.trip_status != 'cancelled'"; // EXCLUDE CANCELLED
+                                    ) pl ON tt.picklist_id = pl.pick_list_id";
+                                    
+                                    // Add condition to only show trip tickets that have items in user's category
+                                    if (!empty($user_category)) {
+                                        $trip_tickets_query .= " WHERE tt.picklist_id IN (
+                                            SELECT DISTINCT pli.pick_list_id 
+                                            FROM pick_list_items pli 
+                                            JOIN items i ON pli.item_id = i.item_id 
+                                            WHERE i.category = '" . $conn->real_escape_string($user_category) . "'
+                                        )";
+                                    } else {
+                                        $trip_tickets_query .= " WHERE 1=1";
+                                    }
+                                    
+                                    $trip_tickets_query .= " AND tt.trip_status != 'cancelled'";
                                     
                                     // Check if trip_tickets has branch_id column
                                     $check_tt_branch = $conn->query("SHOW COLUMNS FROM trip_tickets LIKE 'branch_id'");
@@ -479,37 +555,40 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                                         $stmt = $conn->prepare($trip_tickets_query . " ORDER BY tt.trip_date DESC LIMIT 5");
                                     }
                                     
-                                    $stmt->execute();
-                                    $result = $stmt->get_result();
-                                    
-                                    if ($result->num_rows > 0) {
-                                        while($row = $result->fetch_assoc()) {
-                                            $status_badge = '';
-                                            switch($row['trip_status']) {
-                                                case 'completed': $status_badge = 'bg-success'; break;
-                                                case 'in-progress': $status_badge = 'bg-warning'; break;
-                                                default: $status_badge = 'bg-info';
+                                    if ($stmt) {
+                                        $stmt->execute();
+                                        $result = $stmt->get_result();
+                                        
+                                        if ($result->num_rows > 0) {
+                                            while($row = $result->fetch_assoc()) {
+                                                $status_badge = '';
+                                                switch($row['trip_status']) {
+                                                    case 'completed': $status_badge = 'bg-success'; break;
+                                                    case 'in-progress': $status_badge = 'bg-warning'; break;
+                                                    default: $status_badge = 'bg-info';
+                                                }
+                                                
+                                                $driver_display = !empty($row['driver_name']) ? $row['driver_name'] : 'N/A';
+                                                ?>
+                                                <tr>
+                                                    <td><span class="badge bg-light text-dark"><?php echo $row['trip_number']; ?></span></td>
+                                                    <?php if ($view_all_branches): ?>
+                                                        <td><span class="badge bg-info"><?php echo htmlspecialchars($row['branch_name'] ?? 'N/A'); ?></span></td>
+                                                    <?php endif; ?>
+                                                    <td><?php echo htmlspecialchars($driver_display); ?></td>
+                                                    <td><span class="badge <?php echo $status_badge; ?>"><?php echo ucfirst(str_replace('-', ' ', $row['trip_status'])); ?></span></td>
+                                                    <td><?php echo date('Y-m-d', strtotime($row['trip_date'])); ?></td>
+                                                </tr>
+                                                <?php
                                             }
-                                            
-                                            // Determine driver display (plain text only)
-                                            $driver_display = !empty($row['driver_name']) ? $row['driver_name'] : 'N/A';
-                                            ?>
-                                            <tr>
-                                                <td><span class="badge bg-light text-dark"><?php echo $row['trip_number']; ?></span></td>
-                                                <?php if ($view_all_branches): ?>
-                                                    <td><span class="badge bg-info"><?php echo htmlspecialchars($row['branch_name'] ?? 'N/A'); ?></span></td>
-                                                <?php endif; ?>
-                                                <td><?php echo htmlspecialchars($driver_display); ?></td>
-                                                <td><span class="badge <?php echo $status_badge; ?>"><?php echo ucfirst(str_replace('-', ' ', $row['trip_status'])); ?></span></td>
-                                                <td><?php echo date('Y-m-d', strtotime($row['trip_date'])); ?></td>
-                                            </tr>
-                                            <?php
+                                        } else {
+                                            $colspan = $view_all_branches ? 5 : 4;
+                                            echo '<tr><td colspan="' . $colspan . '" class="text-center">No trip tickets found</td></tr>';
                                         }
+                                        $stmt->close();
                                     } else {
-                                        $colspan = $view_all_branches ? 5 : 4;
-                                        echo '<tr><td colspan="' . $colspan . '" class="text-center">No trip tickets found for this branch</td></tr>';
+                                        echo '<tr><td colspan="' . ($view_all_branches ? 5 : 4) . '" class="text-center">No trip tickets found</td></tr>';
                                     }
-                                    $stmt->close();
                                     ?>
                                 </tbody>
                             </table>
@@ -525,38 +604,51 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                 </div>
                 <div class="card-body">
                     <?php
+                    // FIXED: Show low stock items in user's category
                     $low_stock_query = "SELECT i.item_name, i.stock, i.reorder_level, b.branch_name 
                                        FROM items i
                                        LEFT JOIN branches b ON i.branch_id = b.branch_id
                                        WHERE i.stock <= i.reorder_level AND i.status = 'active'";
                     
+                    if (!empty($user_category)) {
+                        $low_stock_query .= " AND i.category = '" . $conn->real_escape_string($user_category) . "'";
+                    }
+                    
                     if (!$view_all_branches && $user_branch_id > 0 && $items_branch_column_exists) {
                         $low_stock_query .= " AND i.branch_id = ?";
                         $stmt = $conn->prepare($low_stock_query . " LIMIT 5");
-                        $stmt->bind_param("i", $user_branch_id);
+                        if ($stmt) {
+                            $stmt->bind_param("i", $user_branch_id);
+                        }
                     } else {
                         $stmt = $conn->prepare($low_stock_query . " LIMIT 5");
                     }
                     
-                    $stmt->execute();
-                    $result = $stmt->get_result();
-                    
-                    if ($result->num_rows > 0) {
-                        while($row = $result->fetch_assoc()) {
-                            $branch_info = $view_all_branches ? ' [' . $row['branch_name'] . ']' : '';
-                            echo '<div class="alert alert-warning mb-2">';
-                            echo '<i class="bi bi-exclamation-triangle me-2"></i>';
-                            echo '<strong>' . htmlspecialchars($row['item_name'] . $branch_info) . ':</strong> ';
-                            echo 'Stock level at ' . $row['stock'] . ' units (Below threshold of ' . $row['reorder_level'] . ')';
+                    if ($stmt && $stmt->execute()) {
+                        $result = $stmt->get_result();
+                        
+                        if ($result->num_rows > 0) {
+                            while($row = $result->fetch_assoc()) {
+                                $branch_info = $view_all_branches ? ' [' . $row['branch_name'] . ']' : '';
+                                echo '<div class="alert alert-warning mb-2">';
+                                echo '<i class="bi bi-exclamation-triangle me-2"></i>';
+                                echo '<strong>' . htmlspecialchars($row['item_name'] . $branch_info) . ':</strong> ';
+                                echo 'Stock level at ' . $row['stock'] . ' units (Below threshold of ' . $row['reorder_level'] . ')';
+                                echo '</div>';
+                            }
+                        } else {
+                            echo '<div class="alert alert-success mb-0">';
+                            echo '<i class="bi bi-check-circle me-2"></i>';
+                            echo 'All items are adequately stocked';
                             echo '</div>';
                         }
+                        $stmt->close();
                     } else {
                         echo '<div class="alert alert-success mb-0">';
                         echo '<i class="bi bi-check-circle me-2"></i>';
                         echo 'All items are adequately stocked';
                         echo '</div>';
                     }
-                    $stmt->close();
                     ?>
                 </div>
             </div>
@@ -627,6 +719,9 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                     <!-- User Role -->
                     <p class="text-muted mb-3">
                         <span class="badge bg-success"><?php echo ucfirst($user_role); ?></span>
+                        <?php if (!empty($user_category)): ?>
+                            <span class="badge bg-info"><?php echo htmlspecialchars($user_category); ?></span>
+                        <?php endif; ?>
                     </p>
                     
                     <!-- Branch Info (if applicable) -->
@@ -649,6 +744,8 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
     <!-- JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        let userCategory = <?php echo !empty($user_category) ? json_encode($user_category) : 'null'; ?>;
+
         // ================= SIDEBAR FUNCTIONS =================
         // Toggle sidebar collapse/expand
         function toggleSidebar() {
@@ -895,7 +992,11 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
 
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', function() {
-            console.log("Warehouse Dashboard loaded!");
+            console.log("Warehouse Dashboard loaded! User Category: " + (userCategory || 'Not Assigned'));
+            
+            if (!userCategory) {
+                console.error("WARNING: User has no category assigned in users table!");
+            }
             
             // Initialize sidebar
             initializeSidebar();

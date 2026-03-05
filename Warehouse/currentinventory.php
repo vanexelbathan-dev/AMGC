@@ -12,6 +12,25 @@ $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'warehouse';
 $branch_id = $_SESSION['branch_id'] ?? 0;
 $view_all_branches = $_SESSION['view_all_branches'] ?? false;
 
+// IMPORTANT: Get user's category directly from database
+$user_category = '';
+$cat_query = "SELECT category FROM users WHERE user_id = ?";
+$cat_stmt = $conn->prepare($cat_query);
+if ($cat_stmt) {
+    $cat_stmt->bind_param("i", $user_id);
+    $cat_stmt->execute();
+    $cat_result = $cat_stmt->get_result();
+    if ($cat_row = $cat_result->fetch_assoc()) {
+        $user_category = $cat_row['category'];
+    }
+    $cat_stmt->close();
+}
+
+// Debug - you can remove this after testing
+if (empty($user_category)) {
+    error_log("WARNING: User ID $user_id has no category assigned in users table");
+}
+
 // Get branch name
 $branch_name = 'All Branches';
 if (!$view_all_branches && $branch_id > 0) {
@@ -108,7 +127,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             
             $item_name = trim($_POST['item_name']);
             $description = !empty($_POST['description']) ? trim($_POST['description']) : null;
-            $category = !empty($_POST['category']) ? trim($_POST['category']) : null;
+            
+            // Force category to user's assigned category
+            if (empty($user_category)) {
+                throw new Exception('You do not have a category assigned in the users table. Please contact administrator.');
+            }
+            
+            $category = $user_category; // Force to user's category
+            
             $stock = (int)$_POST['stock'];
             $unit_type = $_POST['unit_type'] ?? 'piece';
             $unit_price = 0.00; // Default for warehouse (prices set by sales/admin)
@@ -188,7 +214,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $item_id = (int)$_POST['item_id'];
             $item_name = trim($_POST['item_name']);
             $description = !empty($_POST['description']) ? trim($_POST['description']) : null;
-            $category = !empty($_POST['category']) ? trim($_POST['category']) : null;
+            
+            // Get the original item to check category
+            $check_category_query = "SELECT category, branch_id FROM items WHERE item_id = ?";
+            $check_category_stmt = $conn->prepare($check_category_query);
+            $check_category_stmt->bind_param("i", $item_id);
+            $check_category_stmt->execute();
+            $check_result = $check_category_stmt->get_result();
+            $original_item = $check_result->fetch_assoc();
+            $check_category_stmt->close();
+            
+            if (!$original_item) {
+                throw new Exception('Item not found');
+            }
+            
+            // Check branch access
+            if (!$view_all_branches && $original_item['branch_id'] != $branch_id) {
+                throw new Exception('You do not have permission to edit this item');
+            }
+            
+            // CRITICAL: Check if user's category matches item's category
+            if (empty($user_category)) {
+                throw new Exception('You do not have a category assigned in the users table. Please contact administrator.');
+            }
+            
+            if ($original_item['category'] != $user_category) {
+                throw new Exception('You can only edit items in your assigned category: ' . $user_category);
+            }
+            
+            // Force category to user's category (cannot change)
+            $category = $user_category;
+            
             $stock = (int)$_POST['stock'];
             $unit_type = $_POST['unit_type'] ?? 'piece';
             $reorder_level = (int)$_POST['reorder_level'];
@@ -214,14 +270,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stock_stmt->execute();
             $result = $stock_stmt->get_result();
             $old_stock = $result->fetch_assoc()['stock'];
-            
-            // Check if item exists
-            $check = $conn->prepare("SELECT item_id FROM items WHERE item_id = ?");
-            $check->bind_param("i", $item_id);
-            $check->execute();
-            if ($check->get_result()->num_rows === 0) {
-                throw new Exception('Item not found');
-            }
             
             // Update
             $stmt = $conn->prepare("UPDATE items SET item_name = ?, description = ?, category = ?, stock = ?, unit_type = ?, reorder_level = ?, status = ?, updated_at = NOW() WHERE item_id = ?");
@@ -263,6 +311,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Get item details
     if (isset($_POST['get_item'])) {
         $item_id = (int)$_POST['item_id'];
+        
+        // First check if user has access to this item based on category
+        if (empty($user_category)) {
+            echo json_encode(['success' => false, 'message' => 'You do not have a category assigned in the users table. Please contact administrator.']);
+            exit;
+        }
+        
+        $check_query = "SELECT category, branch_id FROM items WHERE item_id = ?";
+        $check_stmt = $conn->prepare($check_query);
+        $check_stmt->bind_param("i", $item_id);
+        $check_stmt->execute();
+        $check_result = $check_stmt->get_result();
+        $item_data = $check_result->fetch_assoc();
+        $check_stmt->close();
+        
+        if (!$item_data) {
+            echo json_encode(['success' => false, 'message' => 'Item not found']);
+            exit;
+        }
+        
+        // Check branch access
+        if (!$view_all_branches && $item_data['branch_id'] != $branch_id) {
+            echo json_encode(['success' => false, 'message' => 'You do not have permission to view this item']);
+            exit;
+        }
+        
+        // CRITICAL: Check if item category matches user's category
+        if ($item_data['category'] != $user_category) {
+            echo json_encode(['success' => false, 'message' => 'You can only view items in your assigned category: ' . $user_category]);
+            exit;
+        }
+        
         $stmt = $conn->prepare("SELECT * FROM items WHERE item_id = ?");
         $stmt->bind_param("i", $item_id);
         $stmt->execute();
@@ -280,6 +360,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Get inventory transactions
     if (isset($_POST['get_transactions']) && $inventory_transactions_exists) {
         $item_id = (int)$_POST['item_id'];
+        
+        // First check if user has access to this item based on category
+        if (empty($user_category)) {
+            echo json_encode(['success' => false, 'message' => 'You do not have a category assigned in the users table. Please contact administrator.']);
+            exit;
+        }
+        
+        $check_query = "SELECT category, branch_id FROM items WHERE item_id = ?";
+        $check_stmt = $conn->prepare($check_query);
+        $check_stmt->bind_param("i", $item_id);
+        $check_stmt->execute();
+        $check_result = $check_stmt->get_result();
+        $item_data = $check_result->fetch_assoc();
+        $check_stmt->close();
+        
+        if (!$item_data) {
+            echo json_encode(['success' => false, 'message' => 'Item not found']);
+            exit;
+        }
+        
+        // Check branch access
+        if (!$view_all_branches && $item_data['branch_id'] != $branch_id) {
+            echo json_encode(['success' => false, 'message' => 'You do not have permission to view this item']);
+            exit;
+        }
+        
+        // CRITICAL: Check if item category matches user's category
+        if ($item_data['category'] != $user_category) {
+            echo json_encode(['success' => false, 'message' => 'You can only view transactions for items in your assigned category: ' . $user_category]);
+            exit;
+        }
         
         $trans_query = "SELECT * FROM inventory_transactions 
                         WHERE item_id = ? 
@@ -302,28 +413,37 @@ if ($items_branch_column_exists && !$view_all_branches) {
     $branch_condition = "AND items.branch_id = $branch_id";
 }
 
+// Determine category filter condition for statistics
+$category_condition = "";
+if (empty($user_category)) {
+    // If no category assigned, show nothing
+    $category_condition = "AND 1=0"; // This will return no results
+} else {
+    $category_condition = "AND items.category = '" . $conn->real_escape_string($user_category) . "'";
+}
+
 // Get inventory statistics
 $stats = [];
 
 // Total Items
-$total_items_query = "SELECT COUNT(*) as total_items FROM items WHERE status = 'active' $branch_condition";
+$total_items_query = "SELECT COUNT(*) as total_items FROM items WHERE status = 'active' $branch_condition $category_condition";
 $result = $conn->query($total_items_query);
 $stats['total_items'] = $result->fetch_assoc()['total_items'] ?? 0;
 
 // Current Stock
-$current_stock_query = "SELECT SUM(stock) as current_stock FROM items WHERE status = 'active' $branch_condition";
+$current_stock_query = "SELECT SUM(stock) as current_stock FROM items WHERE status = 'active' $branch_condition $category_condition";
 $result = $conn->query($current_stock_query);
 $stats['current_stock'] = $result->fetch_assoc()['current_stock'] ?? 0;
 
 // Low Stock Items (stock <= reorder_level and stock > 0)
 $low_stock_query = "SELECT COUNT(*) as count FROM items 
-                   WHERE stock <= reorder_level AND stock > 0 AND status = 'active' $branch_condition";
+                   WHERE stock <= reorder_level AND stock > 0 AND status = 'active' $branch_condition $category_condition";
 $result = $conn->query($low_stock_query);
 $stats['low_stock'] = $result->fetch_assoc()['count'] ?? 0;
 
 // Out of Stock Items
 $out_of_stock_query = "SELECT COUNT(*) as count FROM items 
-                      WHERE stock <= 0 AND status = 'active' $branch_condition";
+                      WHERE stock <= 0 AND status = 'active' $branch_condition $category_condition";
 $result = $conn->query($out_of_stock_query);
 $stats['out_of_stock'] = $result->fetch_assoc()['count'] ?? 0;
 
@@ -355,6 +475,14 @@ if ($items_branch_column_exists && !$view_all_branches) {
     $inventory_query .= " AND i.branch_id = $branch_id";
 }
 
+// Add category filter based on user's assigned category
+if (empty($user_category)) {
+    // If no category assigned, show nothing
+    $inventory_query .= " AND 1=0";
+} else {
+    $inventory_query .= " AND i.category = '" . $conn->real_escape_string($user_category) . "'";
+}
+
 $inventory_query .= " ORDER BY i.item_name";
 
 $items_result = $conn->query($inventory_query);
@@ -363,19 +491,11 @@ if (!$items_result) {
 }
 $items = $items_result->fetch_all(MYSQLI_ASSOC);
 
-// Get unique categories for filter
-$categories_query = "
-    SELECT DISTINCT category 
-    FROM items 
-    WHERE category IS NOT NULL AND category != '' AND status = 'active'";
-    
-if ($items_branch_column_exists && !$view_all_branches) {
-    $categories_query .= " AND branch_id = $branch_id";
+// Get unique categories for filter - only show user's category
+$categories = [];
+if (!empty($user_category)) {
+    $categories[] = ['category' => $user_category];
 }
-$categories_query .= " ORDER BY category";
-
-$categories_result = $conn->query($categories_query);
-$categories = $categories_result->fetch_all(MYSQLI_ASSOC);
 
 // Get price columns info for UI
 $price_columns_available = $price_case_exists || $price_inner_exists || $price_box_exists || $price_carton_exists;
@@ -385,7 +505,7 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Current Inventory - Warehouse</title>
+    <title>Current Inventory - <?php echo !empty($user_category) ? htmlspecialchars($user_category) : 'Warehouse'; ?></title>
     <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
     <link rel="shortcut icon" href="../Pictures/favicon.ico" />
@@ -470,6 +590,22 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
         }
     }
 
+    /* Category indicator */
+    .category-indicator {
+        display: inline-block;
+        padding: 4px 12px;
+        background-color: #e7f5ff;
+        color: #0d6efd;
+        border-radius: 20px;
+        font-size: 13px;
+        font-weight: 500;
+        margin-left: 10px;
+    }
+    
+    .category-indicator i {
+        margin-right: 5px;
+    }
+
     /* Mobile Profile Modal Styles */
     .user-avatar-large {
         width: 100px;
@@ -541,6 +677,20 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
     #profileModal .btn-danger:hover {
         transform: translateY(-2px);
         box-shadow: 0 8px 20px rgba(220, 53, 69, 0.3);
+    }
+
+    /* User category in sidebar */
+    .user-category-sidebar {
+        font-size: 11px;
+        color: #0d6efd;
+        display: block;
+        margin-top: 2px;
+        font-weight: 500;
+    }
+
+    /* Category info alert */
+    .category-info-alert {
+        margin-bottom: 1rem;
     }
 </style>
 <body>
@@ -615,19 +765,12 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                     <i class="bi bi-list" id="toggleIcon"></i>
                 </button>
                 <div class="page-title">
-                    <h2>Current Inventory</h2>
-                    <p>Manage and view warehouse inventory</p>
+                    <h2>
+                        Current Inventory
+                    </h2>
+                    <p>Manage and view <?php echo !empty($user_category) ? strtolower($user_category) : ''; ?> inventory</p>
                 </div>
             </div>
-
-            <!-- Branch Info Alert -->
-            <?php if (!$items_branch_column_exists): ?>
-                <div class="alert alert-info alert-dismissible fade show" role="alert">
-                    <i class="bi bi-info-circle"></i> 
-                    <strong>Branch filtering for items not yet set up.</strong> Items will be visible to all branches.
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                </div>
-            <?php endif; ?>
 
             <!-- Inventory Stats -->
             <div class="row g-3 mb-4">
@@ -639,7 +782,7 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                         </div>
                         <div>
                             <div class="stat-value"><?php echo number_format($stats['total_items']); ?></div>
-                            <div class="stat-label">Total Items</div>
+                            <div class="stat-label">Total <?php echo !empty($user_category) ? htmlspecialchars($user_category) : ''; ?> Items</div>
                         </div>
                     </div>
                 </div>
@@ -652,7 +795,7 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                         </div>
                         <div>
                             <div class="stat-value"><?php echo number_format($stats['current_stock']); ?></div>
-                            <div class="stat-label">Current Stock</div>
+                            <div class="stat-label">Current <?php echo !empty($user_category) ? htmlspecialchars($user_category) : ''; ?> Stock</div>
                         </div>
                     </div>
                 </div>
@@ -684,19 +827,28 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                             </div>
                         </div>
                         <div class="col-md-4 col-12">
-                            <select class="form-select" id="categoryFilter">
-                                <option value="">All Categories</option>
-                                <?php foreach ($categories as $cat): ?>
-                                    <option value="<?php echo htmlspecialchars($cat['category']); ?>">
-                                        <?php echo htmlspecialchars($cat['category']); ?>
+                            <?php if (!empty($user_category)): ?>
+                                <!-- Show disabled category filter with user's category -->
+                                <select class="form-select" id="categoryFilter" disabled>
+                                    <option value="<?php echo htmlspecialchars($user_category); ?>" selected>
+                                        <?php echo htmlspecialchars($user_category); ?>
                                     </option>
-                                <?php endforeach; ?>
-                            </select>
+                                </select>
+                                <input type="hidden" id="userCategory" value="<?php echo htmlspecialchars($user_category); ?>">
+                            <?php else: ?>
+                                <!-- For users with no category, show error -->
+                                <select class="form-select" id="categoryFilter" disabled>
+                                    <option value="">No Category Assigned</option>
+                                </select>
+                            <?php endif; ?>
                         </div>
                         <div class="col-md-3 col-12">
-                            <button class="btn btn-outline-success w-100" onclick="showAddItemModal()">
-                                <i class="bi bi-plus-lg"></i> Add Item
+                            <button class="btn btn-outline-success w-100" onclick="showAddItemModal()" <?php echo empty($user_category) ? 'disabled' : ''; ?>>
+                                <i class="bi bi-plus-lg"></i> Add <?php echo !empty($user_category) ? htmlspecialchars($user_category) : ''; ?> Item
                             </button>
+                            <?php if (empty($user_category)): ?>
+                                <small class="text-danger d-block mt-1">Cannot add items - no category assigned</small>
+                            <?php endif; ?>
                         </div>
                     </div>
                 </div>
@@ -739,10 +891,16 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                                     <tr>
                                         <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($row['item_code']); ?></span></td>
                                         <td><?php echo htmlspecialchars($row['item_name']); ?></td>
-                                        <td><?php echo htmlspecialchars($row['category'] ?? 'N/A'); ?></td>
+                                        <td>
+                                            <?php if (!empty($row['category'])): ?>
+                                                <span class="badge bg-info"><?php echo htmlspecialchars($row['category']); ?></span>
+                                            <?php else: ?>
+                                                N/A
+                                            <?php endif; ?>
+                                        </td>
                                         <?php if ($view_all_branches && $items_branch_column_exists): ?>
                                             <td>
-                                                <span class="badge bg-info">
+                                                <span class="badge bg-secondary">
                                                     <?php echo htmlspecialchars($row['branch_name'] ?? 'Branch ' . $row['branch_id']); ?>
                                                 </span>
                                             </td>
@@ -757,14 +915,14 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                                         <td><span class="badge <?php echo $status_badge; ?>"><?php echo $status_text; ?></span></td>
                                         <td>
                                             <div class="action-buttons">
-                                                <button class="btn-action btn-view" onclick="viewItem(<?php echo $row['item_id']; ?>)" title="View">
+                                                <button class="btn-action btn-view" onclick="viewItem(<?php echo $row['item_id']; ?>)" title="View" <?php echo empty($user_category) ? 'disabled' : ''; ?>>
                                                     <i class="bi bi-eye"></i>
                                                 </button>
-                                                <button class="btn-action btn-edit" onclick="editItem(<?php echo $row['item_id']; ?>)" title="Edit">
+                                                <button class="btn-action btn-edit" onclick="editItem(<?php echo $row['item_id']; ?>)" title="Edit" <?php echo empty($user_category) ? 'disabled' : ''; ?>>
                                                     <i class="bi bi-pencil"></i>
                                                 </button>
                                                 <?php if ($inventory_transactions_exists): ?>
-                                                <button class="btn-action btn-history" onclick="viewTransactions(<?php echo $row['item_id']; ?>)" title="Transactions">
+                                                <button class="btn-action btn-history" onclick="viewTransactions(<?php echo $row['item_id']; ?>)" title="Transactions" <?php echo empty($user_category) ? 'disabled' : ''; ?>>
                                                     <i class="bi bi-clock-history"></i>
                                                 </button>
                                                 <?php endif; ?>
@@ -775,7 +933,16 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                                 }
                             } else {
                                 $colspan = $view_all_branches && $items_branch_column_exists ? 9 : 8;
-                                echo '<tr><td colspan="' . $colspan . '" class="text-center py-4"><i class="bi bi-inbox fs-1 d-block text-muted mb-2"></i><p class="text-muted mb-0">No inventory items found</p><button class="btn btn-sm btn-primary mt-2" onclick="showAddItemModal()"><i class="bi bi-plus-circle"></i> Add Item</button></td></tr>';
+                                if (!empty($user_category)) {
+                                    $message = 'No ' . htmlspecialchars($user_category) . ' items found';
+                                } else {
+                                    $message = 'No items found - you need a category assigned';
+                                }
+                                echo '<tr><td colspan="' . $colspan . '" class="text-center py-4"><i class="bi bi-inbox fs-1 d-block text-muted mb-2"></i><p class="text-muted mb-0">' . $message . '</p>';
+                                if (!empty($user_category)) {
+                                    echo '<button class="btn btn-sm btn-primary mt-2" onclick="showAddItemModal()"><i class="bi bi-plus-circle"></i> Add Item</button>';
+                                }
+                                echo '</td></tr>';
                             }
                             ?>
                         </tbody>
@@ -849,6 +1016,9 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                     <!-- User Role -->
                     <p class="text-muted mb-3">
                         <span class="badge bg-success"><?php echo ucfirst($user_role); ?></span>
+                        <?php if (!empty($user_category)): ?>
+                            <span class="badge bg-info"><?php echo htmlspecialchars($user_category); ?></span>
+                        <?php endif; ?>
                     </p>
                     
                     <!-- Branch Info (if applicable) -->
@@ -878,7 +1048,7 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Add New Inventory Item</h5>
+                    <h5 class="modal-title">Add New <?php echo !empty($user_category) ? htmlspecialchars($user_category) : ''; ?> Item</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
@@ -888,6 +1058,10 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                         <div class="alert alert-info">
                             <i class="bi bi-info-circle"></i> 
                             Item code will be auto-generated and guaranteed unique.
+                            <?php if (!empty($user_category)): ?>
+                                <br><strong>Category will be set to: <?php echo htmlspecialchars($user_category); ?></strong> (based on your account)
+                                <input type="hidden" name="category" value="<?php echo htmlspecialchars($user_category); ?>">
+                            <?php endif; ?>
                             <?php if ($items_branch_column_exists): ?>
                                 <br>This item will be assigned to Branch <?php echo $branch_id; ?>.
                             <?php endif; ?>
@@ -900,7 +1074,13 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                             </div>
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Category <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" name="category" required placeholder="e.g., Electronics, Furniture">
+                                <?php if (!empty($user_category)): ?>
+                                    <input type="text" class="form-control" value="<?php echo htmlspecialchars($user_category); ?>" readonly disabled>
+                                    <small class="text-muted">Category is fixed based on your account - you can only add <?php echo htmlspecialchars($user_category); ?> items</small>
+                                <?php else: ?>
+                                    <input type="text" class="form-control" value="No category assigned" readonly disabled>
+                                    <small class="text-muted text-danger">You do not have a category assigned. Please contact administrator.</small>
+                                <?php endif; ?>
                             </div>
                         </div>
                         <div class="row">
@@ -969,7 +1149,7 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Edit Inventory Item</h5>
+                    <h5 class="modal-title">Edit <?php echo !empty($user_category) ? htmlspecialchars($user_category) : ''; ?> Item</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body" id="editInventoryFormContent">
@@ -1002,6 +1182,8 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
     <!-- JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        let userCategory = <?php echo !empty($user_category) ? json_encode($user_category) : 'null'; ?>;
+
         // ================= SIDEBAR FUNCTIONS =================
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
@@ -1178,11 +1360,20 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
 
         // ================= INVENTORY FUNCTIONS =================
         function showAddItemModal() {
+            if (!userCategory) {
+                Swal.fire('Error', 'You do not have a category assigned in the users table. Please contact administrator.', 'error');
+                return;
+            }
             document.getElementById('addInventoryForm').reset();
             new bootstrap.Modal(document.getElementById('addInventoryModal')).show();
         }
 
         function submitAddForm() {
+            if (!userCategory) {
+                Swal.fire('Error', 'You do not have a category assigned. Please contact administrator.', 'error');
+                return;
+            }
+            
             const form = document.getElementById('addInventoryForm');
             const formData = new FormData(form);
             
@@ -1232,6 +1423,11 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
         }
 
         function viewItem(itemId) {
+            if (!userCategory) {
+                Swal.fire('Error', 'You do not have a category assigned. Please contact administrator.', 'error');
+                return;
+            }
+            
             Swal.fire({
                 title: 'Loading...',
                 text: 'Please wait',
@@ -1299,7 +1495,7 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                                     </tr>
                                     <tr>
                                         <th>Category:</th>
-                                        <td>${item.category || 'N/A'}</td>
+                                        <td><span class="badge bg-info">${item.category || 'N/A'}</span></td>
                                     </tr>
                                     <tr>
                                         <th>Description:</th>
@@ -1312,7 +1508,7 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                                     <?php if ($items_branch_column_exists): ?>
                                     <tr>
                                         <th>Branch:</th>
-                                        <td><span class="badge bg-info">Branch ${item.branch_id || 'N/A'}</span></td>
+                                        <td><span class="badge bg-secondary">Branch ${item.branch_id || 'N/A'}</span></td>
                                     </tr>
                                     <?php endif; ?>
                                 </table>
@@ -1348,7 +1544,7 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                     document.getElementById('itemDetailsContent').innerHTML = content;
                     new bootstrap.Modal(document.getElementById('viewItemModal')).show();
                 } else {
-                    Swal.fire('Error', 'Failed to load item details', 'error');
+                    Swal.fire('Error', data.message || 'Failed to load item details', 'error');
                 }
             })
             .catch(error => {
@@ -1359,6 +1555,11 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
         }
 
         function viewTransactions(itemId) {
+            if (!userCategory) {
+                Swal.fire('Error', 'You do not have a category assigned. Please contact administrator.', 'error');
+                return;
+            }
+            
             <?php if (!$inventory_transactions_exists): ?>
             Swal.fire('Info', 'Transaction history is not available', 'info');
             return;
@@ -1442,6 +1643,11 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
         }
 
         function editItem(itemId) {
+            if (!userCategory) {
+                Swal.fire('Error', 'You do not have a category assigned. Please contact administrator.', 'error');
+                return;
+            }
+            
             Swal.fire({
                 title: 'Loading...',
                 text: 'Please wait',
@@ -1466,6 +1672,12 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                 if (data.success) {
                     const item = data.item;
                     
+                    // Check if user can edit this item based on category
+                    if (item.category !== userCategory) {
+                        Swal.fire('Access Denied', 'You can only edit items in your assigned category: ' + userCategory, 'error');
+                        return;
+                    }
+                    
                     const content = `
                         <form id="editForm">
                             <input type="hidden" name="edit_item" value="1">
@@ -1484,7 +1696,9 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                             <div class="row">
                                 <div class="col-md-6 mb-3">
                                     <label class="form-label">Category <span class="text-danger">*</span></label>
-                                    <input type="text" class="form-control" name="category" value="${item.category ? item.category.replace(/"/g, '&quot;') : ''}" required>
+                                    <input type="text" class="form-control" value="${item.category}" readonly disabled>
+                                    <input type="hidden" name="category" value="${item.category}">
+                                    <small class="text-muted">Category cannot be changed</small>
                                 </div>
                                 <div class="col-md-6 mb-3">
                                     <label class="form-label">Current Stock <span class="text-danger">*</span></label>
@@ -1543,7 +1757,7 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                         document.querySelector('#editInventoryModal .modal-content').appendChild(footer);
                     }
                 } else {
-                    Swal.fire('Error', 'Failed to load item details', 'error');
+                    Swal.fire('Error', data.message || 'Failed to load item details', 'error');
                 }
             })
             .catch(error => {
@@ -1643,7 +1857,11 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
 
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
-            console.log("Inventory Items page loaded!");
+            console.log("Inventory Items page loaded! User Category from Database: " + (userCategory || 'Not Assigned'));
+            
+            if (!userCategory) {
+                console.error("WARNING: User has no category assigned in users table!");
+            }
             
             initializeSidebar();
             initMobileNav();
@@ -1705,9 +1923,9 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                 });
             }
 
-            // Category filter
+            // Category filter - disabled for users with category
             const categoryFilter = document.getElementById('categoryFilter');
-            if (categoryFilter) {
+            if (categoryFilter && !userCategory) {
                 categoryFilter.addEventListener('change', function() {
                     const filter = this.value.toLowerCase();
                     const rows = document.querySelectorAll('tbody tr');
