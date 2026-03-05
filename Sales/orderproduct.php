@@ -1,4 +1,12 @@
 <?php
+// Enable error reporting for debugging
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
+// Log errors to file
+ini_set('log_errors', 1);
+ini_set('error_log', '../logs/php_errors.log');
+
 require_once '../config/database.php';
 require_once '../config/session_handler.php';
 
@@ -7,11 +15,16 @@ requireLogin();
 requireRole(['sales']);
 
 // Get current user info and branch context
-$user_id = $_SESSION['user_id'];
+$user_id = $_SESSION['user_id'] ?? 0;
 $user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Sales User';
 $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'sales';
 $branch_id = $_SESSION['branch_id'] ?? 0;
 $view_all_branches = $_SESSION['view_all_branches'] ?? false;
+
+// Check database connection
+if (!$conn) {
+    die("Database connection failed: " . mysqli_connect_error());
+}
 
 // Check if branch_id column exists in customers table
 $branch_column_exists = false;
@@ -35,7 +48,9 @@ if ($items_branch_column_exists) {
     if ($view_all_branches) {
         // Admin sees all branches
         $items_query = "SELECT i.item_id, i.item_code, i.item_name, i.description, i.category, 
-                       i.stock, i.unit_type, i.unit_price, i.reorder_level, i.status,
+                       i.stock, i.unit_type, i.unit_price, i.price_case, i.price_inner_pack, 
+                       i.price_box, i.price_carton, i.reorder_level, i.status,
+                       i.product_image_url,
                        b.branch_name
                        FROM items i
                        LEFT JOIN branches b ON i.branch_id = b.branch_id
@@ -44,7 +59,9 @@ if ($items_branch_column_exists) {
     } else {
         // Regular user sees only their branch
         $items_query = "SELECT i.item_id, i.item_code, i.item_name, i.description, i.category, 
-                       i.stock, i.unit_type, i.unit_price, i.reorder_level, i.status,
+                       i.stock, i.unit_type, i.unit_price, i.price_case, i.price_inner_pack, 
+                       i.price_box, i.price_carton, i.reorder_level, i.status,
+                       i.product_image_url,
                        b.branch_name
                        FROM items i
                        LEFT JOIN branches b ON i.branch_id = b.branch_id
@@ -54,7 +71,9 @@ if ($items_branch_column_exists) {
 } else {
     // Branch column doesn't exist - show all items
     $items_query = "SELECT i.item_id, i.item_code, i.item_name, i.description, i.category, 
-                   i.stock, i.unit_type, i.unit_price, i.reorder_level, i.status
+                   i.stock, i.unit_type, i.unit_price, i.price_case, i.price_inner_pack, 
+                   i.price_box, i.price_carton, i.reorder_level, i.status,
+                   i.product_image_url
                    FROM items i
                    WHERE i.status = 'active'
                    ORDER BY i.item_code ASC";
@@ -63,6 +82,8 @@ if ($items_branch_column_exists) {
 $items_result = $conn->query($items_query);
 if ($items_result) {
     $items = $items_result->fetch_all(MYSQLI_ASSOC);
+} else {
+    error_log("Items query error: " . $conn->error);
 }
 
 // Get all customers - filter by branch if not admin AND if branch_id column exists
@@ -96,6 +117,8 @@ if ($branch_column_exists) {
 $customers_result = $conn->query($customers_query);
 if ($customers_result) {
     $customers = $customers_result->fetch_all(MYSQLI_ASSOC);
+} else {
+    error_log("Customers query error: " . $conn->error);
 }
 
 // Handle order submission via AJAX
@@ -103,10 +126,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     header('Content-Type: application/json');
     
     try {
+        if (!$conn) {
+            throw new Exception("Database connection failed");
+        }
+        
         $conn->begin_transaction();
         
         // Log incoming data for debugging
-        error_log("Order submission started");
+        error_log("========== ORDER SUBMISSION STARTED ==========");
         error_log("POST data: " . print_r($_POST, true));
         
         $customer_id = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
@@ -118,9 +145,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         
         error_log("Customer ID: $customer_id, Customer Name: $customer_name");
         error_log("Items data count: " . count($items_data));
+        error_log("Items data: " . print_r($items_data, true));
         
         if (empty($items_data)) {
             throw new Exception("No items in cart");
+        }
+        
+        // Get user ID and branch ID from session
+        $user_id = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : 0;
+        $branch_id = isset($_SESSION['branch_id']) ? (int)$_SESSION['branch_id'] : 0;
+        $view_all_branches = isset($_SESSION['view_all_branches']) ? $_SESSION['view_all_branches'] : false;
+        
+        error_log("User ID from session: $user_id, Branch ID: $branch_id");
+        
+        if ($user_id === 0) {
+            throw new Exception("User session invalid. Please log in again.");
         }
         
         // If customer_id is 0 and customer_name is provided, create new customer
@@ -131,14 +170,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             if ($branch_column_exists && !$view_all_branches) {
                 $check_sql = "SELECT customer_id FROM customers WHERE customer_name = ? AND branch_id = ? AND status = 'active'";
                 $check_stmt = $conn->prepare($check_sql);
+                if (!$check_stmt) {
+                    throw new Exception("Prepare failed: " . $conn->error);
+                }
                 $check_stmt->bind_param('si', $customer_name, $branch_id);
             } else {
                 $check_sql = "SELECT customer_id FROM customers WHERE customer_name = ? AND status = 'active'";
                 $check_stmt = $conn->prepare($check_sql);
+                if (!$check_stmt) {
+                    throw new Exception("Prepare failed: " . $conn->error);
+                }
                 $check_stmt->bind_param('s', $customer_name);
             }
             
-            $check_stmt->execute();
+            if (!$check_stmt->execute()) {
+                throw new Exception("Execute failed: " . $check_stmt->error);
+            }
             $check_result = $check_stmt->get_result();
             
             if ($check_result->num_rows > 0) {
@@ -148,6 +195,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 // Update existing customer info
                 $update_sql = "UPDATE customers SET email = ?, phone_number = ?, address = ? WHERE customer_id = ?";
                 $update_stmt = $conn->prepare($update_sql);
+                if (!$update_stmt) {
+                    throw new Exception("Prepare failed: " . $conn->error);
+                }
                 $update_stmt->bind_param('sssi', $email, $phone, $address, $customer_id);
                 if (!$update_stmt->execute()) {
                     throw new Exception("Failed to update customer: " . $update_stmt->error);
@@ -193,20 +243,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         foreach ($items_data as $item) {
             $item_id = (int)$item['id'];
             $quantity = (int)$item['quantity'];
+            $unit_type = isset($item['unit_type']) ? $item['unit_type'] : 'piece';
             
-            // Check current stock from items table with branch filter
+            // Fixed conversion rates (pieces per unit type)
+            $pieces_multiplier = 1; // default for piece
+            if ($unit_type === 'case') {
+                $pieces_multiplier = 12;
+            } elseif ($unit_type === 'inner-pack') {
+                $pieces_multiplier = 6;
+            } elseif ($unit_type === 'box') {
+                $pieces_multiplier = 24;
+            } elseif ($unit_type === 'carton') {
+                $pieces_multiplier = 48;
+            }
+            
+            // Check current stock
             if ($items_branch_column_exists && !$view_all_branches) {
-                $stock_check = $conn->query("SELECT stock FROM items WHERE item_id = $item_id AND branch_id = $branch_id");
+                $stock_check = $conn->query("SELECT COALESCE(stock, 0) as stock FROM items WHERE item_id = $item_id AND branch_id = $branch_id");
             } else {
-                $stock_check = $conn->query("SELECT stock FROM items WHERE item_id = $item_id");
+                $stock_check = $conn->query("SELECT COALESCE(stock, 0) as stock FROM items WHERE item_id = $item_id");
+            }
+            
+            if (!$stock_check) {
+                throw new Exception("Error checking stock: " . $conn->error);
             }
             
             $stock_row = $stock_check->fetch_assoc();
             $current_stock = $stock_row ? (int)$stock_row['stock'] : 0;
             
-            if ($quantity > $current_stock) {
+            $pieces_needed = $quantity * $pieces_multiplier;
+            
+            if ($pieces_needed > $current_stock) {
                 $item_name = isset($item['name']) ? $item['name'] : "Item ID: $item_id";
-                throw new Exception("Insufficient stock for $item_name. Available: $current_stock, Requested: $quantity");
+                throw new Exception("Insufficient stock for $item_name (Unit: $unit_type). Available: $current_stock pieces, Requested: $pieces_needed pieces");
             }
         }
         
@@ -218,20 +287,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         
         $so_number = 'SO-' . date('Ymd') . '-' . substr(time(), -4) . rand(100, 999);
         $order_date = date('Y-m-d H:i:s');
-        $user_id = getUserId();
-        $branch_id = getUserBranchId();
 
         error_log("Creating sales order: SO Number: $so_number, User ID: $user_id, Branch ID: $branch_id, Customer ID: $customer_id, Total: $total_amount");
 
-        if ($user_id === 0) {
-            throw new Exception("User session invalid. Please log in again.");
+        // First, check if sales_orders table exists and get its structure
+        $table_check = $conn->query("SHOW TABLES LIKE 'sales_orders'");
+        if ($table_check->num_rows == 0) {
+            throw new Exception("sales_orders table does not exist");
         }
-
+        
+        // Get the columns in sales_orders table
+        $columns_check = $conn->query("SHOW COLUMNS FROM sales_orders");
+        $columns = [];
+        while ($col = $columns_check->fetch_assoc()) {
+            $columns[] = $col['Field'];
+        }
+        error_log("sales_orders columns: " . print_r($columns, true));
+        
+        // Check if all required columns exist
+        $required_columns = ['so_number', 'customer_id', 'branch_id', 'order_date', 'total_amount', 'order_status', 'created_by'];
+        $missing_columns = array_diff($required_columns, $columns);
+        if (!empty($missing_columns)) {
+            throw new Exception("Missing columns in sales_orders table: " . implode(', ', $missing_columns));
+        }
+        
         $sql = "INSERT INTO sales_orders (so_number, customer_id, branch_id, order_date, total_amount, order_status, created_by)
                 VALUES (?, ?, ?, ?, ?, ?, ?)";
         $stmt = $conn->prepare($sql);
         if (!$stmt) {
-            throw new Exception("Prepare failed: " . $conn->error);
+            throw new Exception("Prepare failed for sales_orders: " . $conn->error);
         }
         
         $status = 'pending';
@@ -244,9 +328,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $so_id = $stmt->insert_id;
         error_log("Sales order created with ID: $so_id");
         
+        // Check if sales_order_items table exists
+        $table_check = $conn->query("SHOW TABLES LIKE 'sales_order_items'");
+        if ($table_check->num_rows == 0) {
+            throw new Exception("sales_order_items table does not exist");
+        }
+        
+        // Get the columns in sales_order_items table
+        $columns_check = $conn->query("SHOW COLUMNS FROM sales_order_items");
+        $columns = [];
+        while ($col = $columns_check->fetch_assoc()) {
+            $columns[] = $col['Field'];
+        }
+        error_log("sales_order_items columns: " . print_r($columns, true));
+        
+        // Check if unit_type column exists
+        if (!in_array('unit_type', $columns)) {
+            // Add the unit_type column if it doesn't exist
+            $alter_sql = "ALTER TABLE sales_order_items ADD COLUMN unit_type VARCHAR(50) DEFAULT 'piece' AFTER item_id";
+            if (!$conn->query($alter_sql)) {
+                throw new Exception("Failed to add unit_type column: " . $conn->error);
+            }
+            error_log("Added unit_type column to sales_order_items table");
+        }
+        
         // Insert order items and deduct inventory
-        $sql_items = "INSERT INTO sales_order_items (so_id, item_id, quantity_ordered, unit_price)
-                     VALUES (?, ?, ?, ?)";
+        $sql_items = "INSERT INTO sales_order_items (so_id, item_id, unit_type, quantity_ordered, unit_price)
+                     VALUES (?, ?, ?, ?, ?)";
         $stmt_items = $conn->prepare($sql_items);
         if (!$stmt_items) {
             throw new Exception("Prepare failed for order items: " . $conn->error);
@@ -258,35 +366,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $item_id = (int)$item['id'];
             $quantity = (int)$item['quantity'];
             $unit_price = (float)$item['price'];
+            $unit_type = isset($item['unit_type']) ? $item['unit_type'] : 'piece';
             
-            $stmt_items->bind_param('iiid', $so_id, $item_id, $quantity, $unit_price);
+            // Fixed conversion rates
+            $pieces_multiplier = 1; // default for piece
+            if ($unit_type === 'case') {
+                $pieces_multiplier = 12;
+            } elseif ($unit_type === 'inner-pack') {
+                $pieces_multiplier = 6;
+            } elseif ($unit_type === 'box') {
+                $pieces_multiplier = 24;
+            } elseif ($unit_type === 'carton') {
+                $pieces_multiplier = 48;
+            }
+            
+            // Calculate total pieces to deduct
+            $pieces_to_deduct = $quantity * $pieces_multiplier;
+            
+            $stmt_items->bind_param('iisid', $so_id, $item_id, $unit_type, $quantity, $unit_price);
             if (!$stmt_items->execute()) {
                 throw new Exception("Error adding order item: " . $stmt_items->error);
             }
             
-            error_log("Added order item: Item ID: $item_id, Qty: $quantity, Price: $unit_price");
+            error_log("Added order item: Item ID: $item_id, Unit Type: $unit_type, Qty: $quantity, Multiplier: $pieces_multiplier, Pieces to deduct: $pieces_to_deduct, Price: $unit_price");
             
             // Deduct inventory from items table stock column with branch filter
             if ($items_branch_column_exists && !$view_all_branches) {
                 $sql_deduct = "UPDATE items 
-                              SET stock = stock - ? 
+                              SET stock = COALESCE(stock, 0) - ? 
                               WHERE item_id = ? AND branch_id = ? 
-                              AND stock >= ?";
+                              AND COALESCE(stock, 0) >= ?";
                 $stmt_deduct = $conn->prepare($sql_deduct);
                 if (!$stmt_deduct) {
                     throw new Exception("Prepare failed for stock update: " . $conn->error);
                 }
-                $stmt_deduct->bind_param('iiii', $quantity, $item_id, $branch_id, $quantity);
+                $stmt_deduct->bind_param('iiii', $pieces_to_deduct, $item_id, $branch_id, $pieces_to_deduct);
             } else {
                 $sql_deduct = "UPDATE items 
-                              SET stock = stock - ? 
+                              SET stock = COALESCE(stock, 0) - ? 
                               WHERE item_id = ? 
-                              AND stock >= ?";
+                              AND COALESCE(stock, 0) >= ?";
                 $stmt_deduct = $conn->prepare($sql_deduct);
                 if (!$stmt_deduct) {
                     throw new Exception("Prepare failed for stock update: " . $conn->error);
                 }
-                $stmt_deduct->bind_param('iii', $quantity, $item_id, $quantity);
+                $stmt_deduct->bind_param('iii', $pieces_to_deduct, $item_id, $pieces_to_deduct);
             }
             
             if (!$stmt_deduct->execute()) {
@@ -299,11 +423,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             
             // Get updated stock for this item
             if ($items_branch_column_exists && !$view_all_branches) {
-                $stock_query = "SELECT stock FROM items WHERE item_id = ? AND branch_id = ?";
+                $stock_query = "SELECT COALESCE(stock, 0) as stock FROM items WHERE item_id = ? AND branch_id = ?";
                 $stock_stmt = $conn->prepare($stock_query);
                 $stock_stmt->bind_param('ii', $item_id, $branch_id);
             } else {
-                $stock_query = "SELECT stock FROM items WHERE item_id = ?";
+                $stock_query = "SELECT COALESCE(stock, 0) as stock FROM items WHERE item_id = ?";
                 $stock_stmt = $conn->prepare($stock_query);
                 $stock_stmt->bind_param('i', $item_id);
             }
@@ -316,11 +440,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 'stock' => (int)$stock_row['stock']
             ];
             
-            error_log("Updated item stock: Item ID: $item_id, Deducted: $quantity, New Stock: " . $stock_row['stock']);
+            error_log("Updated item stock: Item ID: $item_id, Deducted: $pieces_to_deduct pieces, New Stock: " . $stock_row['stock']);
         }
         
         $conn->commit();
         error_log("Order submitted successfully! SO Number: $so_number");
+        error_log("========== ORDER SUBMISSION COMPLETED ==========");
         
         echo json_encode([
             'success' => true, 
@@ -333,7 +458,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         
     } catch (Exception $e) {
         $conn->rollback();
+        error_log("========== ORDER SUBMISSION ERROR ==========");
         error_log("Order submission error: " . $e->getMessage());
+        error_log("Error trace: " . $e->getTraceAsString());
+        
         echo json_encode([
             'success' => false, 
             'message' => $e->getMessage()
@@ -369,7 +497,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
         
         // Get order items to restore stock
-        $items_sql = "SELECT soi.item_id, soi.quantity_ordered 
+        $items_sql = "SELECT soi.item_id, soi.quantity_ordered, soi.unit_type
                      FROM sales_order_items soi 
                      WHERE soi.so_id = ?";
         $items_stmt = $conn->prepare($items_sql);
@@ -384,20 +512,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         foreach ($order_items as $item) {
             $item_id = (int)$item['item_id'];
             $quantity = (int)$item['quantity_ordered'];
+            $unit_type = $item['unit_type'];
+            
+            // Fixed conversion rates
+            $pieces_multiplier = 1; // default for piece
+            if ($unit_type === 'case') {
+                $pieces_multiplier = 12;
+            } elseif ($unit_type === 'inner-pack') {
+                $pieces_multiplier = 6;
+            } elseif ($unit_type === 'box') {
+                $pieces_multiplier = 24;
+            } elseif ($unit_type === 'carton') {
+                $pieces_multiplier = 48;
+            }
+            
+            // Calculate total pieces to restore
+            $pieces_to_restore = $quantity * $pieces_multiplier;
             
             // Restore stock
             if ($items_branch_column_exists && !$view_all_branches) {
                 $sql_restore = "UPDATE items 
-                               SET stock = stock + ? 
+                               SET stock = COALESCE(stock, 0) + ? 
                                WHERE item_id = ? AND branch_id = ?";
                 $restore_stmt = $conn->prepare($sql_restore);
-                $restore_stmt->bind_param('iii', $quantity, $item_id, $branch_id);
+                $restore_stmt->bind_param('iii', $pieces_to_restore, $item_id, $branch_id);
             } else {
                 $sql_restore = "UPDATE items 
-                               SET stock = stock + ? 
+                               SET stock = COALESCE(stock, 0) + ? 
                                WHERE item_id = ?";
                 $restore_stmt = $conn->prepare($sql_restore);
-                $restore_stmt->bind_param('ii', $quantity, $item_id);
+                $restore_stmt->bind_param('ii', $pieces_to_restore, $item_id);
             }
             
             if (!$restore_stmt->execute()) {
@@ -406,11 +550,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             
             // Get updated stock
             if ($items_branch_column_exists && !$view_all_branches) {
-                $stock_query = "SELECT stock FROM items WHERE item_id = ? AND branch_id = ?";
+                $stock_query = "SELECT COALESCE(stock, 0) as stock FROM items WHERE item_id = ? AND branch_id = ?";
                 $stock_stmt = $conn->prepare($stock_query);
                 $stock_stmt->bind_param('ii', $item_id, $branch_id);
             } else {
-                $stock_query = "SELECT stock FROM items WHERE item_id = ?";
+                $stock_query = "SELECT COALESCE(stock, 0) as stock FROM items WHERE item_id = ?";
                 $stock_stmt = $conn->prepare($stock_query);
                 $stock_stmt->bind_param('i', $item_id);
             }
@@ -499,6 +643,120 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             top: 20px;
         }
         
+        /* Cart Icon Button in Header */
+        .navbar-top .btn-success {
+            padding: 8px 14px;
+            border-radius: 8px;
+            font-size: 18px;
+            transition: all 0.3s ease;
+            flex-shrink: 0;
+        }
+        
+        .navbar-top .btn-success:hover {
+            transform: scale(1.1);
+            box-shadow: 0 4px 12px rgba(46, 125, 50, 0.3);
+        }
+        
+        .navbar-top .btn-success .badge {
+            font-size: 11px;
+            padding: 2px 5px;
+            top: -5px;
+            right: -8px;
+        }
+        
+        /* Customer Information Card */
+        .customer-card {
+            border: 1px solid #e0e0e0;
+            border-radius: 10px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+            transition: all 0.3s ease;
+        }
+        
+        .customer-card .card-header {
+            background: linear-gradient(135deg, #2e7d32 0%, #1b5e20 100%);
+            color: white;
+            border: none;
+            padding: 18px 20px;
+        }
+        
+        .customer-card .card-header h5 {
+            font-weight: 600;
+            font-size: 16px;
+            margin: 0;
+        }
+        
+        .customer-card .card-header i {
+            margin-right: 8px;
+            font-size: 18px;
+        }
+        
+        .customer-card .card-body {
+            padding: 24px;
+            background: #fafafa;
+        }
+        
+        /* Customer Form Styling */
+        .customer-form {
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+        
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        
+        @media (max-width: 768px) {
+            .form-row {
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+        }
+        
+        .customer-form .form-label {
+            font-size: 13px;
+            font-weight: 600;
+            color: #333;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .customer-form .form-label i {
+            margin-right: 6px;
+            color: #2e7d32;
+        }
+        
+        .customer-form .form-select,
+        .customer-form .form-control {
+            padding: 10px 12px;
+            border: 1px solid #d0d0d0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: all 0.3s ease;
+            background-color: white;
+        }
+        
+        .customer-form .form-select:focus,
+        .customer-form .form-control:focus {
+            border-color: #2e7d32;
+            box-shadow: 0 0 0 3px rgba(46, 125, 50, 0.1);
+            outline: none;
+        }
+        
+        .customer-form textarea.form-control {
+            resize: vertical;
+            min-height: 100px;
+            font-family: inherit;
+        }
+        
         .error-message {
             color: #f87171;
             font-size: 0.875rem;
@@ -510,7 +768,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         .quantity-control {
             display: flex;
             align-items: center;
-            width: 100%;
+            width: 100% 
         }
         
         .quantity-control button {
@@ -553,8 +811,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
         
         .quantity-control input {
-            width: 50px;
-            height: 36px;
+            width: 60px;
+            height: 38px;
             text-align: center;
             border: 1px solid #dee2e6;
             font-size: 16px;
@@ -579,7 +837,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         
         /* Add to Cart Button */
         .btn-add-to-cart {
-            height: 36px;
+            height: 38px;
             font-size: 14px;
             padding: 6px 12px;
             border-radius: 6px;
@@ -592,7 +850,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             align-items: center;
             justify-content: center;
             gap: 5px;
-            margin-top: 8px;
+            margin-top: 12px;
             cursor: pointer;
         }
         
@@ -676,6 +934,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             margin-left: 5px;
         }
         
+        /* Navbar Top - Header Section */
+        .navbar-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 20px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        
+        .page-title {
+            flex: 1;
+        }
+        
+        .page-title h2 {
+            margin: 0;
+            font-size: 28px;
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .page-title p {
+            margin: 5px 0 0 0;
+            color: #666;
+            font-size: 14px;
+        }
+        
         /* Alert for missing branch column */
         .alert-info {
             background-color: #d1ecf1;
@@ -689,212 +974,192 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             border-radius: 4px;
             color: #c7254e;
         }
-        
-        /* MOBILE PREVIEW STYLES */
-        @media (max-width: 768px) {
+
+        /* ===== FIXED PRODUCT CONTAINER WIDTH - ONLY THIS SECTION CHANGED ===== */
+        .card-body.p-4 {
+            padding: 1.5rem !important;
+            width: 100%;
+        }
+
+        /* Products Container - Full width responsive grid within card bounds */
+        #productsContainer {
+            display: grid !important;
+            gap: 24px !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+
+        /* Desktop - 4 columns for larger cards */
+        @media (min-width: 1200px) {
             #productsContainer {
-                display: grid !important;
+                grid-template-columns: repeat(4, 1fr) !important;
+            }
+        }
+
+        /* Desktop - 3 columns for medium */
+        @media (min-width: 992px) and (max-width: 1199px) {
+            #productsContainer {
+                grid-template-columns: repeat(3, 1fr) !important;
+            }
+        }
+
+        /* Tablet - 2 columns */
+        @media (min-width: 768px) and (max-width: 991px) {
+            #productsContainer {
                 grid-template-columns: repeat(2, 1fr) !important;
-                gap: 12px !important;
-            }
-            
-            #productsContainer .col-md-6 {
-                width: 100% !important;
-                padding: 0 !important;
-                margin-bottom: 0 !important;
-            }
-            
-            .product-card-mobile {
-                margin-bottom: 0 !important;
-                height: 100% !important;
-                display: flex !important;
-                flex-direction: column !important;
-                border: 1px solid #dee2e6 !important;
-                border-radius: 8px !important;
-                overflow: hidden !important;
-                background: white !important;
-            }
-            
-            .product-card-mobile .card {
-                height: 100% !important;
-                border: none !important;
-                margin: 0 !important;
-            }
-            
-            .product-card-mobile .card-body {
-                flex: 1 !important;
-                padding: 15px !important;
-                display: flex !important;
-                flex-direction: column !important;
-            }
-            
-            .product-card-mobile .card-title {
-                font-size: 14px !important;
-                font-weight: 600 !important;
-                line-height: 1.4 !important;
-                height: 2.8em !important;
-                overflow: hidden !important;
-                display: -webkit-box !important;
-                -webkit-line-clamp: 2 !important;
-                -webkit-box-orient: vertical !important;
-                margin-bottom: 8px !important;
-                color: #333 !important;
-            }
-            
-            .product-card-mobile .badge {
-                font-size: 10px !important;
-                padding: 4px 8px !important;
-                background: #f8f9fa !important;
-                color: #666 !important;
-                border: 1px solid #dee2e6 !important;
-            }
-            
-            .product-stock-mobile {
-                font-size: 12px !important;
-                color: #6c757d !important;
-                margin-bottom: 8px !important;
-                line-height: 1.4 !important;
-            }
-            
-            .product-price-mobile {
-                font-size: 16px !important;
-                font-weight: 700 !important;
-                color: #28a745 !important;
-                margin-bottom: 12px !important;
-            }
-            
-            .product-input-group-mobile {
-                margin-top: auto !important;
-            }
-            
-            .product-input-group-mobile .error-message {
-                font-size: 11px !important;
-                text-align: center !important;
-                margin-top: 5px !important;
-                min-height: 16px !important;
-            }
-            
-            .order-summary {
-                position: static !important;
-                margin-top: 20px !important;
-                border-radius: 10px !important;
-            }
-            
-            .cart-item {
-                padding: 12px !important;
-                margin-bottom: 8px !important;
-                border-radius: 8px !important;
-            }
-            
-            .btn-group-mobile .btn {
-                padding: 12px !important;
-                font-size: 14px !important;
-                margin-bottom: 8px !important;
-                border-radius: 8px !important;
             }
         }
-        
-        /* DESKTOP VIEW */
-        @media (min-width: 769px) {
+
+        /* Mobile - 2 columns */
+        @media (max-width: 767px) {
             #productsContainer {
-                display: flex !important;
-                flex-wrap: wrap !important;
-            }
-            
-            #productsContainer .col-md-6 {
-                width: 50% !important;
-                padding: 10px !important;
-            }
-            
-            .product-card-mobile {
-                display: block !important;
-                height: 100%;
-            }
-            
-            .product-card-mobile .card {
-                height: 100%;
-                display: flex;
-                flex-direction: column;
-            }
-            
-            .product-card-mobile .card-body {
-                flex: 1;
-                display: flex;
-                flex-direction: column;
-            }
-            
-            .product-input-group-mobile {
-                margin-top: auto;
-                display: flex;
-                flex-direction: column;
-            }
-            
-            .quantity-control {
-                width: 100%;
-            }
-            
-            .btn-add-to-cart {
-                margin-top: auto;
-                align-self: flex-end;
-                width: auto;
-                min-width: 120px;
-            }
-            
-            .product-card-mobile .card-title {
-                font-size: 16px;
-                font-weight: 600;
-                line-height: 1.4;
-                margin-bottom: 10px;
-                color: #333;
-                min-height: 2.8em;
-            }
-            
-            .product-card-mobile .badge {
-                font-size: 12px;
-                padding: 4px 8px;
-            }
-            
-            .product-stock-mobile {
-                font-size: 14px;
-                margin-bottom: 10px;
-            }
-            
-            .product-price-mobile {
-                font-size: 18px;
-                margin-bottom: 15px;
+                grid-template-columns: repeat(2, 1fr) !important;
+                gap: 16px !important;
             }
         }
 
-        /* Cancel Order Button */
-        .btn-cancel-order {
-            background-color: #dc3545;
+        /* Very small mobile - 1 column */
+        @media (max-width: 480px) {
+            #productsContainer {
+                grid-template-columns: 1fr !important;
+            }
+        }
+
+        /* Product card styling */
+        .product-card-mobile {
+            width: 100% !important;
+            height: 100% !important;
+            display: flex !important;
+        }
+
+        .product-card-mobile .card {
+            width: 100% !important;
+            height: 100% !important;
+            display: flex;
+            flex-direction: column;
+            border: 1px solid #e0e0e0;
+            border-radius: 12px;
+            overflow: hidden;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+      
+        }
+
+        .product-card-mobile .card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+        }
+
+        .product-card-mobile .card-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            background: white;
+           
+        }
+
+        /* Product image container */
+        .product-image-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 1/1;
+            background: linear-gradient(135deg, #f5f5f5 0%, #e8e8e8 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .product-image {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: transform 0.4s ease;
+        }
+
+        .product-card-mobile .card:hover .product-image {
+            transform: scale(1.08);
+        }
+
+        /* Out of stock overlay */
+        .out-of-stock-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.65);
+            display: flex;
+            align-items: center;
+            justify-content: center;
             color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 14px;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-        
-        .btn-cancel-order:hover {
-            background-color: #c82333;
-        }
-        
-        .btn-cancel-order:disabled {
-            background-color: #6c757d;
-            cursor: not-allowed;
+            font-weight: bold;
+            font-size: 18px;
+            z-index: 10;
+            backdrop-filter: blur(2px);
         }
 
-        /* Restored stock highlight */
-        .stock-updated {
-            animation: highlight 1s ease-out;
+        /* Product card typography */
+        .product-card-mobile .card-title {
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 4px;
         }
         
-        @keyframes highlight {
-            0% { background-color: rgba(40, 167, 69, 0.3); }
-            100% { background-color: transparent; }
+        .product-card-mobile .badge {
+            font-size: 0.75rem;
+            padding: 4px 8px;
         }
+        
+        .product-stock-mobile {
+            font-size: 0.9rem;
+            margin: 8px 0;
+        }
+        
+        .product-price-mobile {
+            font-size: 1.3rem;
+            font-weight: 700;
+            margin: 8px 0 12px 0;
+        }
+        
+        .product-input-group-mobile .form-label {
+            font-size: 0.85rem;
+            margin-bottom: 4px;
+        }
+        
+        .product-input-group-mobile .form-select {
+            font-size: 0.9rem;
+            padding: 8px;
+            height: 38px;
+            margin-top: 4px;
+        }
+        
+        .error-message {
+            font-size: 0.8rem;
+            margin-top: 6px;
+        }
+        .product-input-group-mobile .form-label {
+    font-size: 0.85rem;
+    margin-bottom: 2px;
+}
+
+.quantity-control {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    margin-bottom: 2px;
+}
+
+.btn-add-to-cart {
+    margin-top: 6px;
+}
+
+.error-message {
+    margin-top: 2px;
+    min-height: 0;
+}
     </style>
 </head>
 <body>
@@ -971,6 +1236,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     <h2>Order Products</h2>
                     <p>Select products and quantities to create an order</p>
                 </div>
+                <button class="btn btn-success position-relative" type="button" data-bs-toggle="modal" data-bs-target="#cartSummaryModal" title="View Cart">
+                    <i class="bi bi-cart3"></i>
+                    <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" id="cartBadge" style="display: none;">
+                        <span id="cartItemCount">0</span>
+                    </span>
+                </button>
             </div>
 
             <!-- Branch Info Alert (if no branch_id column in items or customers) -->
@@ -1022,34 +1293,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 </script>
             <?php endif; ?>
 
-            <div class="row">
-                <!-- Products Section -->
-                <div class="col-lg-8">
-                    <!-- Available Products -->
-                    <div class="card mb-4">
-                        <div class="card-header d-flex justify-content-between align-items-center">
-                            <h5 class="mb-0">Available Products</h5>
-                            <?php if ($items_branch_column_exists && !$view_all_branches): ?>
-                            <?php elseif ($view_all_branches): ?>
-                                <span class="badge bg-success">All Branches</span>
-                            <?php endif; ?>
-                        </div>
-                        <div class="card-body">
-                            <?php if (count($items) === 0): ?>
-                                <div class="alert alert-warning">
-                                    <i class="bi bi-exclamation-triangle"></i> No products available for your branch.
-                                </div>
-                            <?php endif; ?>
-                            <div class="row g-3" id="productsContainer">
-                                <!-- Products will be populated here -->
-                            </div>
-                        </div>
-                    </div>
-
+            <!-- Customer Information Section -->
+            <div class="row g-3">
+                <div class="col-12">
                     <!-- Customer Information -->
-                    <div class="card">
+                    <div class="card customer-card">
                         <div class="card-header d-flex justify-content-between align-items-center">
-                            <h5 class="mb-0">Customer Information</h5>
+                            <h5 class="mb-0"><i class="bi bi-person-check"></i>Select Customer</h5>
                             <?php if ($branch_column_exists && !$view_all_branches): ?>
                             <?php elseif ($view_all_branches): ?>
                                 <span class="badge bg-success">All Branches</span>
@@ -1061,9 +1311,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                     <i class="bi bi-exclamation-triangle"></i> No customers found for your branch. You can add new customers.
                                 </div>
                             <?php endif; ?>
-                            <div class="row g-3">
-                                <div class="col-md-6">
-                                    <label class="form-label">Select Customer</label>
+                            <div class="customer-form">
+                                <div class="form-group">
                                     <select class="form-select" id="customerSelect">
                                         <option value="">-- Choose Customer --</option>
                                         <?php foreach ($customers as $customer): ?>
@@ -1079,24 +1328,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">Email</label>
-                                    <input type="email" class="form-control" id="customerEmail" placeholder="customer@example.com">
-                                </div>
-                                <div class="col-md-6">
-                                    <label class="form-label">Phone</label>
-                                    <input type="tel" class="form-control" id="customerPhone" placeholder="09XX-XXX-XXXX">
-                                </div>
-                                <div class="col-6">
-                                    <label class="form-label">Address</label>
-                                    <textarea class="form-control" id="customerAddress" rows="3" placeholder="Delivery address"></textarea>
-                                </div>
                             </div>
                         </div>
                     </div>
                 </div>
+            </div>
+            <!-- Products Section -->
+            <div class="col-12">
+                <!-- Available Products -->
+                <div class="card mb-4">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center gap-2">
+                            <h5 class="mb-0">Available Products</h5>
+                            <?php if ($items_branch_column_exists && !$view_all_branches): ?>
+                            <?php elseif ($view_all_branches): ?>
+                                <span class="badge bg-success">All Branches</span>
+                            <?php endif; ?>
+                        </div>
+                        <button type="button" class="btn btn-success btn-sm" onclick="addAllSelectedToCart()">
+                            <i class="bi bi-cart-check"></i> Add All to Cart
+                        </button>
+                    </div>
+                    <div class="card-body p-4">
+                        <?php if (count($items) === 0): ?>
+                            <div class="alert alert-warning">
+                                <i class="bi bi-exclamation-triangle"></i> No products available for your branch.
+                            </div>
+                        <?php endif; ?>
+                        <div class="row g-4" id="productsContainer">
+                            <!-- Products will be populated here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-                <!-- Cart Section -->
+            <!-- Cart Section - Hidden, shown in modal instead -->
+            <div class="row" style="display: none;">
                 <div class="col-lg-4">
                     <div class="order-summary">
                         <h5 class="mb-3"><i class="bi bi-cart3"></i> Order Summary</h5>
@@ -1178,6 +1445,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     <button type="button" class="btn btn-success" id="confirmOrderBtn" onclick="submitOrder()">
                         <i class="bi bi-check-circle"></i> Confirm & Submit Order
                     </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cart Summary Modal (Shopping Cart Icon) -->
+    <div class="modal fade" id="cartSummaryModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title"><i class="bi bi-cart3"></i> Order Summary</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="cartModalItems" class="mb-3">
+                        <p class="text-muted text-center">No items in cart</p>
+                    </div>
+
+                    <hr>
+
+                    <div class="mb-2">
+                        <div class="d-flex justify-content-between">
+                            <span><strong>Subtotal:</strong></span>
+                            <span id="cartModalSubtotal">₱0.00</span>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="d-flex justify-content-between">
+                            <span><strong>Total Items:</strong></span>
+                            <span id="cartModalTotalItems">0</span>
+                        </div>
+                    </div>
+
+                    <hr>
+
+                    <div class="mb-4">
+                        <h6 class="mb-2"><strong>Total</strong></h6>
+                        <h3 id="cartModalTotalPrice" class="mb-0 text-success">₱0.00</h3>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-success" onclick="viewCart()">
+                        <i class="bi bi-eye"></i> View & Confirm Order
+                    </button>
+                    <button type="button" class="btn btn-outline-danger" onclick="clearCart()">
+                        <i class="bi bi-trash"></i> Clear Cart
+                    </button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                 </div>
             </div>
         </div>
@@ -1389,14 +1704,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
         // ================= END SIDEBAR FUNCTIONS =================
 
+        // Fixed conversion rates (pieces per unit type)
+        const UNIT_CONVERSIONS = {
+            'piece': 1,
+            'case': 12,
+            'inner-pack': 6,
+            'box': 24,
+            'carton': 48
+        };
+
         // Inventory data from database with branch context
         const inventory = <?php echo json_encode(array_map(function($item) {
             return [
                 'id' => (int)$item['item_id'],
                 'name' => $item['item_name'],
                 'sku' => $item['item_code'],
-                'price' => (float)$item['unit_price'],
-                'stock' => (int)($item['stock'] ?? 0)
+                'unit_price' => (float)$item['unit_price'],
+                'price_case' => isset($item['price_case']) ? (float)$item['price_case'] : null,
+                'price_inner_pack' => isset($item['price_inner_pack']) ? (float)$item['price_inner_pack'] : null,
+                'price_box' => isset($item['price_box']) ? (float)$item['price_box'] : null,
+                'price_carton' => isset($item['price_carton']) ? (float)$item['price_carton'] : null,
+                'stock' => (int)($item['stock'] ?? 0),
+                'image' => $item['product_image_url'] ?? null
             ];
         }, $items)); ?>;
 
@@ -1411,28 +1740,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         // Initialize page
         function init() {
             renderProducts();
-            
-            // Add customer select change listener for autofill
-            const customerSelect = document.getElementById('customerSelect');
-            if (customerSelect) {
-                customerSelect.addEventListener('change', function() {
-                    const selectedOption = this.options[this.selectedIndex];
-                    if (this.value) {
-                        const email = selectedOption.getAttribute('data-email') || '';
-                        const phone = selectedOption.getAttribute('data-phone') || '';
-                        const address = selectedOption.getAttribute('data-address') || '';
-                        
-                        document.getElementById('customerEmail').value = email;
-                        document.getElementById('customerPhone').value = phone;
-                        document.getElementById('customerAddress').value = address;
-                    } else {
-                        document.getElementById('customerEmail').value = '';
-                        document.getElementById('customerPhone').value = '';
-                        document.getElementById('customerAddress').value = '';
-                    }
-                });
-            }
-            
             updateCart();
             
             // Check if we have a pending order to restore stock (from URL parameter)
@@ -1451,10 +1758,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             const product = inventory.find(p => p.id === productId);
             if (!product) return 0;
             
-            const cartItem = cart.find(item => item.id === productId);
-            const inCart = cartItem ? cartItem.quantity : 0;
+            // Calculate total pieces in cart for this product
+            const cartItems = cart.filter(item => item.id === productId);
+            const piecesInCart = cartItems.reduce((total, item) => {
+                return total + (item.quantity * UNIT_CONVERSIONS[item.unit_type]);
+            }, 0);
             
-            return Math.max(0, product.stock - inCart);
+            return Math.max(0, product.stock - piecesInCart);
         }
 
         // Render product cards with plus/minus buttons
@@ -1477,30 +1787,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             container.innerHTML = inventory.map(product => {
                 const availableStock = getAvailableStock(product.id);
                 const outOfStock = availableStock === 0;
-                const lowStock = availableStock > 0 && availableStock < 10;
+                const lowStock = availableStock > 0 && availableStock < 50;
+                const placeholderImage = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22%3E%3Crect fill=%22%23e0e0e0%22 width=%22200%22 height=%22200%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22 font-family=%22sans-serif%22 font-size=%2214%22%3ENo Image%3C/text%3E%3C/svg%3E';
+                const imageUrl = product.image || placeholderImage;
                 
                 return `
-                <div class="col-md-6 product-card-mobile" id="product-card-${product.id}">
+                <div class="product-card-mobile" id="product-card-${product.id}">
                     <div class="card h-100">
+                        <div class="product-image-container">
+                            <img src="${imageUrl}" alt="${product.name}" class="product-image" onerror="this.src='${placeholderImage}'">
+                            ${outOfStock ? '<div class="out-of-stock-overlay">Out of Stock</div>' : ''}
+                        </div>
                         <div class="card-body">
                             <div class="d-flex justify-content-between align-items-start mb-2">
                                 <h6 class="card-title mb-0">${product.name}</h6>
                                 <span class="badge bg-light text-dark">${product.sku}</span>
                             </div>
-                            <p class="text-muted small mb-1 product-stock-mobile" id="stock-info-${product.id}">
-                                Available: <strong class="${lowStock ? 'text-danger' : ''}">${availableStock} units</strong>
+                            <p class="text-muted small mb-2 product-stock-mobile" id="stock-info-${product.id}">
+                                Available: <strong class="${lowStock ? 'text-danger' : ''}">${availableStock} pieces</strong>
                                 ${lowStock && !outOfStock ? '<span class="stock-warning"> - Low Stock</span>' : ''}
                             </p>
-                            ${outOfStock ? '<div class="stock-warning mb-1">Out of Stock</div>' : ''}
-                            <p class="h5 text-success mb-3 product-price-mobile">₱${product.price.toFixed(2)}</p>
-                            
+                            <p class="h5 text-success mb-3 product-price-mobile">
+                                <span id="price-display-${product.id}">₱${product.unit_price.toFixed(2)}</span>
+                            </p>
                             <div class="product-input-group-mobile">
-                                <div class="quantity-control">
+                                <label class="form-label small text-muted">Unit Type:</label>
+                                <select class="form-select form-select-sm" id="unit-${product.id}" onchange="updateUnitPrice(${product.id})" ${outOfStock ? 'disabled' : ''}>
+                                    <option value="piece">piece (1 piece)</option>
+                                    ${product.price_case ? `<option value="case">case (12 pieces) - ₱${product.price_case.toFixed(2)}</option>` : ''}
+                                    ${product.price_inner_pack ? `<option value="inner-pack">inner-pack (6 pieces) - ₱${product.price_inner_pack.toFixed(2)}</option>` : ''}
+                                    ${product.price_box ? `<option value="box">box (24 pieces) - ₱${product.price_box.toFixed(2)}</option>` : ''}
+                                    ${product.price_carton ? `<option value="carton">carton (48 pieces) - ₱${product.price_carton.toFixed(2)}</option>` : ''}
+                                </select>
+                                
+                                <label class="form-label small text-muted mt-3">Quantity:</label>
+                                <div class="quantity-control" style="justify-content:center;">
                                     <button type="button" class="decrease-btn" onclick="decreaseQuantity(${product.id})" ${outOfStock ? 'disabled' : ''}>
                                         <i class="bi bi-dash-lg"></i>
                                     </button>
                                     <input type="number" class="form-control" id="qty-${product.id}" 
-                                           min="0" max="${availableStock}" value="0" 
+                                           min="0" max="999" value="0" 
                                            onchange="updateQuantityInput(${product.id})"
                                            oninput="validateQuantity(${product.id})"
                                            ${outOfStock ? 'disabled' : ''}>
@@ -1508,14 +1834,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                         <i class="bi bi-plus-lg"></i>
                                     </button>
                                 </div>
-                                
-                                <button class="btn-add-to-cart" type="button" 
-                                        onclick="addToCart(${product.id})"
-                                        id="btn-add-${product.id}"
-                                        ${outOfStock ? 'disabled' : ''}>
-                                    <i class="bi bi-cart-plus"></i> Add to Cart
-                                </button>
-                                
                                 <div class="error-message" id="error-${product.id}"></div>
                             </div>
                         </div>
@@ -1523,6 +1841,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 </div>
                 `;
             }).join('');
+        }
+
+        // Update unit price display when selection changes
+        function updateUnitPrice(productId) {
+            const product = inventory.find(p => p.id === productId);
+            const unitSelect = document.getElementById(`unit-${productId}`);
+            const priceDisplay = document.getElementById(`price-display-${productId}`);
+            
+            if (unitSelect && priceDisplay && product) {
+                const selectedUnit = unitSelect.value;
+                let price = product.unit_price;
+                
+                if (selectedUnit === 'case' && product.price_case) {
+                    price = product.price_case;
+                } else if (selectedUnit === 'inner-pack' && product.price_inner_pack) {
+                    price = product.price_inner_pack;
+                } else if (selectedUnit === 'box' && product.price_box) {
+                    price = product.price_box;
+                } else if (selectedUnit === 'carton' && product.price_carton) {
+                    price = product.price_carton;
+                }
+                
+                priceDisplay.textContent = `₱${price.toFixed(2)}`;
+            }
         }
 
         // Update product stock display after order
@@ -1542,14 +1884,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             
             if (stockInfo) {
                 const availableStock = getAvailableStock(itemId);
-                const lowStock = availableStock > 0 && availableStock < 10;
-                stockInfo.innerHTML = `Available: <strong class="${lowStock ? 'text-danger' : ''}">${availableStock} units</strong> ${lowStock ? '<span class="stock-warning"> - Low Stock</span>' : ''}`;
+                const lowStock = availableStock > 0 && availableStock < 50;
+                stockInfo.innerHTML = `Available: <strong class="${lowStock ? 'text-danger' : ''}">${availableStock} pieces</strong> ${lowStock ? '<span class="stock-warning"> - Low Stock</span>' : ''}`;
             }
             
             // Update input max and state
             if (qtyInput) {
                 const availableStock = getAvailableStock(itemId);
-                qtyInput.max = availableStock;
                 qtyInput.value = 0;
                 
                 if (availableStock === 0) {
@@ -1559,7 +1900,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     if (increaseBtn) increaseBtn.disabled = true;
                 } else {
                     qtyInput.disabled = false;
-                    if (addButton) addButton.disabled = true; // Still disabled until quantity > 0
+                    if (addButton) addButton.disabled = false;
                     if (decreaseBtn) decreaseBtn.disabled = false;
                     if (increaseBtn) increaseBtn.disabled = false;
                 }
@@ -1591,24 +1932,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         function increaseQuantity(productId) {
             const qtyInput = document.getElementById(`qty-${productId}`);
             if (qtyInput) {
-                const availableStock = getAvailableStock(productId);
                 let currentValue = parseInt(qtyInput.value) || 0;
-                if (currentValue < availableStock) {
-                    qtyInput.value = currentValue + 1;
-                    validateQuantity(productId);
-                } else {
-                    document.getElementById(`error-${productId}`).textContent = `Only ${availableStock} available`;
-                }
+                qtyInput.value = currentValue + 1;
+                validateQuantity(productId);
             }
         }
 
         // Update quantity input max value based on available stock
         function updateQuantityInput(productId) {
-            const qtyInput = document.getElementById(`qty-${productId}`);
-            if (qtyInput) {
-                const availableStock = getAvailableStock(productId);
-                qtyInput.max = availableStock;
-            }
+            validateQuantity(productId);
         }
 
         // Validate quantity input and update button state
@@ -1616,7 +1948,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             const qtyInput = document.getElementById(`qty-${productId}`);
             const addButton = document.getElementById(`btn-add-${productId}`);
             const errorDiv = document.getElementById(`error-${productId}`);
-            const availableStock = getAvailableStock(productId);
             
             if (!qtyInput) return 0;
             
@@ -1627,12 +1958,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 qtyInput.value = 0;
             }
             
-            if (value > availableStock) {
-                value = availableStock;
-                qtyInput.value = availableStock;
-                if (errorDiv) errorDiv.textContent = `Max ${availableStock} units`;
-                if (addButton) addButton.disabled = false;
-            } else if (value === 0) {
+            if (value === 0) {
                 if (errorDiv) errorDiv.textContent = '';
                 if (addButton) addButton.disabled = true;
             } else {
@@ -1646,37 +1972,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         // Add to cart with validation
         function addToCart(productId) {
             const product = inventory.find(p => p.id === productId);
-            const qtyInput = document.getElementById(`qty-${productId}`);
+            const qtyInput = document.getElementById(`qty-${product.id}`);
+            const unitSelect = document.getElementById(`unit-${product.id}`);
             const quantity = parseInt(qtyInput?.value) || 0;
-            const errorDiv = document.getElementById(`error-${productId}`);
-            const availableStock = getAvailableStock(productId);
+            const unitType = unitSelect?.value || 'piece';
+            const errorDiv = document.getElementById(`error-${product.id}`);
+            const availableStock = getAvailableStock(product.id);
 
             if (quantity <= 0) {
                 if (errorDiv) errorDiv.textContent = 'Please enter a quantity';
                 return;
             }
 
-            if (quantity > availableStock) {
-                if (errorDiv) errorDiv.textContent = `Only ${availableStock} available`;
+            // Calculate pieces needed based on unit type
+            const piecesPerUnit = UNIT_CONVERSIONS[unitType];
+            const piecesNeeded = quantity * piecesPerUnit;
+
+            if (piecesNeeded > availableStock) {
+                if (errorDiv) errorDiv.textContent = `Only ${availableStock} pieces available (${quantity} ${unitType} = ${piecesNeeded} pieces)`;
                 return;
             }
 
-            const existingItem = cart.find(item => item.id === productId);
+            // Get the correct price based on unit type
+            let unitPrice = product.unit_price;
+            if (unitType === 'case' && product.price_case) {
+                unitPrice = product.price_case;
+            } else if (unitType === 'inner-pack' && product.price_inner_pack) {
+                unitPrice = product.price_inner_pack;
+            } else if (unitType === 'box' && product.price_box) {
+                unitPrice = product.price_box;
+            } else if (unitType === 'carton' && product.price_carton) {
+                unitPrice = product.price_carton;
+            }
+
+            const existingItem = cart.find(item => item.id === productId && item.unit_type === unitType);
             
             if (existingItem) {
-                const newTotal = existingItem.quantity + quantity;
-                if (newTotal > product.stock) {
-                    if (errorDiv) errorDiv.textContent = `Cannot add more than ${product.stock} total`;
-                    return;
-                }
                 existingItem.quantity += quantity;
             } else {
                 cart.push({
                     id: productId,
                     name: product.name,
-                    price: product.price,
+                    price: unitPrice,
                     quantity: quantity,
-                    sku: product.sku
+                    sku: product.sku,
+                    unit_type: unitType
                 });
             }
 
@@ -1684,7 +2024,225 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             updateCart();
             renderProducts();
             
-            showToast(`${quantity} × ${product.name} added to cart!`);
+            if (piecesNeeded > quantity) {
+                showToast(`${quantity} × ${product.name} (${unitType} = ${piecesNeeded} pieces) added to cart!`);
+            } else {
+                showToast(`${quantity} × ${product.name} (${unitType}) added to cart!`);
+            }
+        }
+
+        // Add all selected products to cart at once
+        function addAllSelectedToCart() {
+            let totalAdded = 0;
+            let itemsAdded = [];
+            let hasErrors = false;
+            
+            // First, validate all items
+            for (const product of inventory) {
+                const qtyInput = document.getElementById(`qty-${product.id}`);
+                const unitSelect = document.getElementById(`unit-${product.id}`);
+                if (qtyInput) {
+                    const quantity = parseInt(qtyInput.value) || 0;
+                    
+                    if (quantity > 0) {
+                        const unitType = unitSelect?.value || 'piece';
+                        const piecesPerUnit = UNIT_CONVERSIONS[unitType];
+                        const piecesNeeded = quantity * piecesPerUnit;
+                        const availableStock = getAvailableStock(product.id);
+                        
+                        if (piecesNeeded > availableStock) {
+                            const errorDiv = document.getElementById(`error-${product.id}`);
+                            if (errorDiv) errorDiv.textContent = `Only ${availableStock} pieces available (${quantity} ${unitType} = ${piecesNeeded} pieces)`;
+                            hasErrors = true;
+                        }
+                    }
+                }
+            }
+            
+            if (hasErrors) {
+                showToast('Please fix quantity errors before adding to cart');
+                return;
+            }
+            
+            // If no errors, add all items to cart
+            for (const product of inventory) {
+                const qtyInput = document.getElementById(`qty-${product.id}`);
+                const unitSelect = document.getElementById(`unit-${product.id}`);
+                if (qtyInput) {
+                    const quantity = parseInt(qtyInput.value) || 0;
+                    
+                    if (quantity > 0) {
+                        const unitType = unitSelect?.value || 'piece';
+                        
+                        // Get the correct price based on unit type
+                        let unitPrice = product.unit_price;
+                        if (unitType === 'case' && product.price_case) {
+                            unitPrice = product.price_case;
+                        } else if (unitType === 'inner-pack' && product.price_inner_pack) {
+                            unitPrice = product.price_inner_pack;
+                        } else if (unitType === 'box' && product.price_box) {
+                            unitPrice = product.price_box;
+                        } else if (unitType === 'carton' && product.price_carton) {
+                            unitPrice = product.price_carton;
+                        }
+                        
+                        const existingItem = cart.find(item => item.id === product.id && item.unit_type === unitType);
+                        if (existingItem) {
+                            existingItem.quantity += quantity;
+                        } else {
+                            cart.push({
+                                id: product.id,
+                                name: product.name,
+                                price: unitPrice,
+                                quantity: quantity,
+                                sku: product.sku,
+                                unit_type: unitType
+                            });
+                        }
+                        
+                        const piecesNeeded = quantity * UNIT_CONVERSIONS[unitType];
+                        itemsAdded.push(`${quantity}× ${product.name} (${unitType} = ${piecesNeeded} pieces)`);
+                        totalAdded += quantity;
+                        qtyInput.value = '0';
+                        unitSelect.value = 'piece';
+                        updateUnitPrice(product.id);
+                    }
+                }
+            }
+            
+            if (totalAdded === 0) {
+                showToast('Please select quantities for products');
+                return;
+            }
+            
+            updateCart();
+            renderProducts();
+            
+            showToast(`${totalAdded} items added to cart!`);
+        }
+
+        // Update cart display
+        function updateCart() {
+            const cartItemsDiv = document.getElementById('cartItems');
+            const subtotalDiv = document.getElementById('subtotal');
+            const totalItemsDiv = document.getElementById('totalItems');
+            const totalPriceDiv = document.getElementById('totalPrice');
+            
+            // Modal elements
+            const cartModalItemsDiv = document.getElementById('cartModalItems');
+            const cartModalSubtotal = document.getElementById('cartModalSubtotal');
+            const cartModalTotalItems = document.getElementById('cartModalTotalItems');
+            const cartModalTotalPrice = document.getElementById('cartModalTotalPrice');
+            
+            // Badge elements
+            const cartBadge = document.getElementById('cartBadge');
+            const cartItemCount = document.getElementById('cartItemCount');
+
+            if (!cartItemsDiv) return;
+
+            const cartItemsHTML = cart.map(item => {
+                const product = inventory.find(p => p.id === item.id);
+                const piecesInCart = item.quantity * UNIT_CONVERSIONS[item.unit_type];
+                const remainingStock = product ? product.stock - piecesInCart : 0;
+                const lowStockWarning = remainingStock < 50 ? `<div class="text-warning small mt-1">${remainingStock} pieces left in stock</div>` : '';
+                const unitTypeDisplay = item.unit_type ? ` (${item.unit_type})` : '';
+                
+                return `
+                <div class="cart-item">
+                    <div style="flex: 1;">
+                        <div class="text-black-50 small">${item.name}${unitTypeDisplay}</div>
+                        <div class="text-black-50 small">${item.sku}</div>
+                        <div class="text-black-50 small">₱${item.price.toFixed(2)} × ${item.quantity}</div>
+                        <div class="text-black-50 small">Total pieces: ${piecesInCart}</div>
+                        ${lowStockWarning}
+                    </div>
+                    <div class="text-end">
+                        <div class="text-black fw-bold">₱${(item.price * item.quantity).toFixed(2)}</div>
+                        <button class="btn btn-sm btn-outline-light mt-1" onclick="removeFromCart(${item.id}, '${item.unit_type}')">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </div>
+                </div>
+                `;
+            }).join('');
+
+            const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+            const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
+
+            // Update sidebar cart (hidden)
+            if (cart.length === 0) {
+                cartItemsDiv.innerHTML = '<p class="text-white-50 text-center">No items in cart</p>';
+                if (subtotalDiv) subtotalDiv.textContent = '₱0.00';
+                if (totalItemsDiv) totalItemsDiv.textContent = '0';
+                if (totalPriceDiv) totalPriceDiv.textContent = '₱0.00';
+            } else {
+                cartItemsDiv.innerHTML = cartItemsHTML;
+                if (subtotalDiv) subtotalDiv.textContent = `₱${subtotal.toFixed(2)}`;
+                if (totalItemsDiv) totalItemsDiv.textContent = totalItems;
+                if (totalPriceDiv) totalPriceDiv.textContent = `₱${subtotal.toFixed(2)}`;
+            }
+
+            // Update modal cart
+            if (cart.length === 0) {
+                if (cartModalItemsDiv) cartModalItemsDiv.innerHTML = '<p class="text-muted text-center">No items in cart</p>';
+                if (cartModalSubtotal) cartModalSubtotal.textContent = '₱0.00';
+                if (cartModalTotalItems) cartModalTotalItems.textContent = '0';
+                if (cartModalTotalPrice) cartModalTotalPrice.textContent = '₱0.00';
+            } else {
+                if (cartModalItemsDiv) cartModalItemsDiv.innerHTML = cartItemsHTML;
+                if (cartModalSubtotal) cartModalSubtotal.textContent = `₱${subtotal.toFixed(2)}`;
+                if (cartModalTotalItems) cartModalTotalItems.textContent = totalItems;
+                if (cartModalTotalPrice) cartModalTotalPrice.textContent = `₱${subtotal.toFixed(2)}`;
+            }
+
+            // Update badge - FIXED: Hide badge when cart is empty
+            if (cartBadge && cartItemCount) {
+                if (totalItems > 0) {
+                    cartItemCount.textContent = totalItems;
+                    cartBadge.style.display = 'inline-block';
+                } else {
+                    cartBadge.style.display = 'none';
+                    cartItemCount.textContent = '0';
+                }
+            }
+        }
+
+        // Clear cart - FIXED: Ensure badge is hidden after clearing
+        function clearCart() {
+            if (cart.length === 0) {
+                showToast('Cart is already empty');
+                return;
+            }
+            
+            if (confirm('Clear all items from cart?')) {
+                cart = [];
+                updateCart();
+                renderProducts();
+                
+                // Force hide badge
+                const cartBadge = document.getElementById('cartBadge');
+                const cartItemCount = document.getElementById('cartItemCount');
+                if (cartBadge) {
+                    cartBadge.style.display = 'none';
+                }
+                if (cartItemCount) {
+                    cartItemCount.textContent = '0';
+                }
+                
+                showToast('Cart cleared');
+            }
+        }
+
+        // Remove from cart
+        function removeFromCart(productId, unitType = null) {
+            if (unitType) {
+                cart = cart.filter(item => !(item.id === productId && item.unit_type === unitType));
+            } else {
+                cart = cart.filter(item => item.id !== productId);
+            }
+            updateCart();
+            renderProducts();
+            showToast('Item removed from cart');
         }
 
         // Show toast notification
@@ -1711,77 +2269,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }, 3000);
         }
 
-        // Update cart display
-        function updateCart() {
-            const cartItemsDiv = document.getElementById('cartItems');
-            const subtotalDiv = document.getElementById('subtotal');
-            const totalItemsDiv = document.getElementById('totalItems');
-            const totalPriceDiv = document.getElementById('totalPrice');
-
-            if (!cartItemsDiv) return;
-
-            if (cart.length === 0) {
-                cartItemsDiv.innerHTML = '<p class="text-white-50 text-center">No items in cart</p>';
-                if (subtotalDiv) subtotalDiv.textContent = '₱0.00';
-                if (totalItemsDiv) totalItemsDiv.textContent = '0';
-                if (totalPriceDiv) totalPriceDiv.textContent = '₱0.00';
-                return;
-            }
-
-            cartItemsDiv.innerHTML = cart.map(item => {
-                const product = inventory.find(p => p.id === item.id);
-                const remainingStock = product ? product.stock - item.quantity : 0;
-                const lowStockWarning = remainingStock < 10 ? `<div class="text-warning small mt-1">${remainingStock} left in stock</div>` : '';
-                
-                return `
-                <div class="cart-item">
-                    <div style="flex: 1;">
-                        <div class="text-black-50 small">${item.name}</div>
-                        <div class="text-black-50 small">${item.sku}</div>
-                        <div class="text-black-50 small">₱${item.price.toFixed(2)} × ${item.quantity}</div>
-                        ${lowStockWarning}
-                    </div>
-                    <div class="text-end">
-                        <div class="text-black fw-bold">₱${(item.price * item.quantity).toFixed(2)}</div>
-                        <button class="btn btn-sm btn-outline-light mt-1" onclick="removeFromCart(${item.id})">
-                            <i class="bi bi-trash"></i>
-                        </button>
-                    </div>
-                </div>
-                `;
-            }).join('');
-
-            const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-            const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-
-            if (subtotalDiv) subtotalDiv.textContent = `₱${subtotal.toFixed(2)}`;
-            if (totalItemsDiv) totalItemsDiv.textContent = totalItems;
-            if (totalPriceDiv) totalPriceDiv.textContent = `₱${subtotal.toFixed(2)}`;
-        }
-
-        // Remove from cart
-        function removeFromCart(productId) {
-            cart = cart.filter(item => item.id !== productId);
-            updateCart();
-            renderProducts();
-            showToast('Item removed from cart');
-        }
-
-        // Clear cart
-        function clearCart() {
-            if (cart.length === 0) {
-                showToast('Cart is already empty');
-                return;
-            }
-            
-            if (confirm('Clear all items from cart?')) {
-                cart = [];
-                updateCart();
-                renderProducts();
-                showToast('Cart cleared');
-            }
-        }
-
         // View cart and confirm
         function viewCart() {
             if (cart.length === 0) {
@@ -1790,37 +2277,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             }
 
             const customerSelect = document.getElementById('customerSelect');
-            const email = document.getElementById('customerEmail')?.value.trim() || '';
-            const phone = document.getElementById('customerPhone')?.value.trim() || '';
-            const address = document.getElementById('customerAddress')?.value.trim() || '';
             
-            const selectedCustomer = customerSelect?.options[customerSelect.selectedIndex];
-            const customerName = selectedCustomer?.value ? selectedCustomer.text.split('(')[0].trim() : '';
-
-            if (!customerSelect?.value && !customerName) {
+            if (!customerSelect?.value) {
                 showToast('Please select a customer');
                 return;
             }
 
-            if (!email) {
-                showToast('Please enter customer email');
-                return;
-            }
+            const selectedCustomer = customerSelect?.options[customerSelect.selectedIndex];
+            const customerName = selectedCustomer?.text.split('(')[0].trim() || '';
+            const email = selectedCustomer?.getAttribute('data-email') || '';
+            const phone = selectedCustomer?.getAttribute('data-phone') || '';
+            const address = selectedCustomer?.getAttribute('data-address') || '';
 
-            if (!phone) {
-                showToast('Please enter customer phone');
-                return;
-            }
-
-            if (!address) {
-                showToast('Please enter delivery address');
-                return;
+            // Close the cart summary modal
+            const cartSummaryModal = bootstrap.Modal.getInstance(document.getElementById('cartSummaryModal'));
+            if (cartSummaryModal) {
+                cartSummaryModal.hide();
             }
 
             populateReviewModal(customerName, email, phone, address);
             
-            const modal = new bootstrap.Modal(document.getElementById('cartModal'));
-            modal.show();
+            // Open the review modal
+            const reviewModal = new bootstrap.Modal(document.getElementById('cartModal'));
+            reviewModal.show();
         }
 
         // Populate review modal
@@ -1834,7 +2313,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                 <tr>
                                     <th>Product</th>
                                     <th>SKU</th>
-                                    <th>Price</th>
+                                    <th>Unit</th>
+                                    <th>Pieces</th>
+                                    <th>Price per Unit</th>
                                     <th>Qty</th>
                                     <th>Total</th>
                                 </tr>
@@ -1842,15 +2323,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             <tbody>
                                 ${cart.map(item => {
                                     const product = inventory.find(p => p.id === item.id);
-                                    const remainingStock = product ? product.stock - item.quantity : 0;
+                                    const piecesInCart = item.quantity * UNIT_CONVERSIONS[item.unit_type];
+                                    const remainingStock = product ? product.stock - piecesInCart : 0;
                                     return `
                                     <tr>
                                         <td>
                                             ${item.name}
-                                            ${remainingStock < 10 ? 
-                                                `<br><small class="text-warning">${remainingStock} left in stock</small>` : ''}
+                                            ${remainingStock < 50 ? 
+                                                `<br><small class="text-warning">${remainingStock} pieces left</small>` : ''}
                                         </td>
                                         <td>${item.sku}</td>
+                                        <td>${item.unit_type || 'piece'}</td>
+                                        <td>${piecesInCart}</td>
                                         <td>₱${item.price.toFixed(2)}</td>
                                         <td>${item.quantity}</td>
                                         <td>₱${(item.price * item.quantity).toFixed(2)}</td>
@@ -1884,18 +2368,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         function submitOrder() {
             const customerSelect = document.getElementById('customerSelect');
             const customer_id = customerSelect?.value ? parseInt(customerSelect.value) : 0;
-            const customer_name = customerSelect?.options[customerSelect.selectedIndex]?.text.split('(')[0].trim() || '';
-            const email = document.getElementById('customerEmail')?.value.trim() || '';
-            const phone = document.getElementById('customerPhone')?.value.trim() || '';
-            const address = document.getElementById('customerAddress')?.value.trim() || '';
+            const selectedCustomer = customerSelect?.options[customerSelect.selectedIndex];
+            const customer_name = selectedCustomer?.text.split('(')[0].trim() || '';
+            const email = selectedCustomer?.getAttribute('data-email') || '';
+            const phone = selectedCustomer?.getAttribute('data-phone') || '';
+            const address = selectedCustomer?.getAttribute('data-address') || '';
             
-            if (!customer_id && !customer_name) {
+            if (!customer_id) {
                 showToast('Please select a customer');
-                return;
-            }
-            
-            if (!email || !phone || !address) {
-                showToast('Please fill in all customer information');
                 return;
             }
             
@@ -1909,7 +2389,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 name: item.name,
                 price: item.price,
                 quantity: item.quantity,
-                sku: item.sku
+                sku: item.sku,
+                unit_type: item.unit_type || 'piece'
             }));
             
             const formData = new FormData();
@@ -1995,14 +2476,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     // Reset customer form
                     setTimeout(() => {
                         const customerSelect = document.getElementById('customerSelect');
-                        const customerEmail = document.getElementById('customerEmail');
-                        const customerPhone = document.getElementById('customerPhone');
-                        const customerAddress = document.getElementById('customerAddress');
-                        
                         if (customerSelect) customerSelect.value = '';
-                        if (customerEmail) customerEmail.value = '';
-                        if (customerPhone) customerPhone.value = '';
-                        if (customerAddress) customerAddress.value = '';
                     }, 500);
                     
                 } else {
