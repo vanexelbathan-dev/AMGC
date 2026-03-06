@@ -1028,14 +1028,13 @@ function formatDate($dateStr) {
                                     data-id="<?= $user['user_id'] ?>"
                                     data-role="<?= $user['role'] ?>"
                                     data-status="<?= $user['user_status'] ?>">
-                                    <td class="col-name text-start">
+                                    <td class="col-name text-center">
                                         <strong><?= htmlspecialchars($user['full_name']) ?></strong>
                                         <br>
                                         <small class="text-muted"><?= htmlspecialchars($user['email']) ?></small>
                                     </td>
                                     <td class="col-role">
-                                        <span class="role-badge <?= getUserRoleBadge($user['role']) ?>">
-                                            <i class="bi <?= $user['role'] === 'delivery' ? 'bi-truck' : ($user['role'] === 'warehouse' ? 'bi-building' : 'bi-graph-up') ?>"></i>
+                                            <i class="bi <?= $user['role'] === 'delivery' ? '' : ($user['role'] === 'warehouse' ? '' : '') ?>"></i>
                                             <?= getUserRoleText($user['role']) ?>
                                         </span>
                                     </td>

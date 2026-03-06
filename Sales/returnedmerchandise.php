@@ -601,17 +601,6 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
                     </div>
                 </div>
                 <div class="col">
-                    <div class="stat-card processing">
-                        <div class="stat-icon">
-                            <i class="bi bi-gear"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $processing; ?></div>
-                            <div class="stat-label">Processing</div>
-                        </div>
-                    </div>
-                </div>
-                <div class="col">
                     <div class="stat-card complete">
                         <div class="stat-icon">
                             <i class="bi bi-check-circle"></i>

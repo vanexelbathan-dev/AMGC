@@ -1767,7 +1767,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             return Math.max(0, product.stock - piecesInCart);
         }
 
-        // Render product cards with plus/minus buttons
+        // Render product cards with plus/minus buttons - FIXED IMAGE PATH
         function renderProducts() {
             const container = document.getElementById('productsContainer');
             if (!container) return;
@@ -1789,7 +1789,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 const outOfStock = availableStock === 0;
                 const lowStock = availableStock > 0 && availableStock < 50;
                 const placeholderImage = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22200%22 height=%22200%22%3E%3Crect fill=%22%23e0e0e0%22 width=%22200%22 height=%22200%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22 font-family=%22sans-serif%22 font-size=%2214%22%3ENo Image%3C/text%3E%3C/svg%3E';
-                const imageUrl = product.image || placeholderImage;
+                
+                // FIXED: Use correct path to products folder
+                const imageUrl = product.image ? '../uploads/products/' + product.image : placeholderImage;
                 
                 return `
                 <div class="product-card-mobile" id="product-card-${product.id}">
@@ -1834,6 +1836,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                                         <i class="bi bi-plus-lg"></i>
                                     </button>
                                 </div>
+                                
+                                <button class="btn-add-to-cart" id="btn-add-${product.id}" onclick="addToCart(${product.id})" ${outOfStock ? 'disabled' : ''}>
+                                    <i class="bi bi-cart-plus"></i> Add to Cart
+                                </button>
                                 <div class="error-message" id="error-${product.id}"></div>
                             </div>
                         </div>
