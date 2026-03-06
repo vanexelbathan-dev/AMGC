@@ -868,8 +868,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                                 <th>Contact</th>
                                 <th>Items</th>
                                 <th>Status</th>
-                                <th>Stop</th>
-                                <th>Actions</th>
+                                <th style="text-align: center; vertical-align: middle;">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -931,13 +930,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                                     <span class="badge <?php echo $status_badge; ?>">
                                         <?php echo $status_text; ?>
                                     </span>
-                                </td>
-                                <td>
-                                    <?php if ($order['stop_sequence']): ?>
-                                        <span class="badge bg-secondary">Stop #<?php echo $order['stop_sequence']; ?></span>
-                                    <?php else: ?>
-                                        <span class="text-muted">-</span>
-                                    <?php endif; ?>
                                 </td>
                                 <td>
                                     <div class="action-buttons">

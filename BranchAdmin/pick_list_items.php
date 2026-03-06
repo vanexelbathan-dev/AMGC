@@ -1654,7 +1654,7 @@ function formatLocation($item) {
         </div>
     </div>
 
-    <!-- Add Item Modal - UPDATED WITH CUSTOMER LOCATION DISPLAY -->
+    <!-- Add Item Modal - UPDATED WITH CUSTOMER LOCATION DISPLAY (FIXED) -->
     <div class="modal fade" id="itemModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-xl">
             <div class="modal-content">
@@ -1727,7 +1727,7 @@ function formatLocation($item) {
                                 <?php endif; ?>
                             </div>
                             
-                            <!-- SO Details Preview with Location -->
+                            <!-- SO Details Preview with Location - FIXED: Only one map link -->
                             <div class="col-md-6">
                                 <div id="soDetailsPreview" style="display: none;" class="so-details">
                                     <div class="so-details-label">Sales Order Details</div>
@@ -1735,15 +1735,12 @@ function formatLocation($item) {
                                     <div class="so-details-value" id="previewCustomer">-</div>
                                     <div class="so-details-value" id="previewOrderDate">-</div>
                                     <div class="so-details-value" id="previewSoBranch">-</div>
-                                    <div class="mt-2 p-2 bg-white rounded" id="previewLocation">
-                                        <i class="bi bi-geo-alt-fill text-primary"></i>
-                                        <span id="previewAddress" class="small">No location data</span>
-                                    </div>
+                                    <div class="mt-2 p-2 bg-white rounded" id="previewAddress"></div>
                                     <div id="previewMap" class="map-container" style="display: none;"></div>
                                 </div>
                             </div>
                             
-                            <!-- Item Selection - Multi-Select Table with Location Info -->
+                            <!-- Item Selection - Multi-Select Table with Location Info (FIXED) -->
                             <div class="col-12">
                                 <label class="form-label fw-bold mb-2">Select Items to Pick</label>
                                 <div class="alert alert-info mb-2">
@@ -2355,6 +2352,7 @@ function formatLocation($item) {
         modal.show();
     }
 
+    // FIXED: onSOSelected function - only one map link
     function onSOSelected() {
         const select = document.getElementById('soIdSelect');
         const selectedOption = select.options[select.selectedIndex];
@@ -2390,26 +2388,29 @@ function formatLocation($item) {
             document.getElementById('soNumber').value = soNumber;
             document.getElementById('branchId').value = branchId || userBranchId;
             
-            // Show SO details with location
+            // Show SO details with location - FIXED: Only one map link
             document.getElementById('previewSoNumber').textContent = 'SO #: ' + soNumber;
             document.getElementById('previewCustomer').textContent = 'Customer: ' + customerName;
             document.getElementById('previewOrderDate').textContent = 'Order Date: ' + new Date(orderDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
             document.getElementById('previewSoBranch').textContent = 'Branch: ' + (branchName || 'Branch ' + branchId);
             
-            // Show location info
+            // Show location info - FIXED: Only one link
             let locationText = '';
             if (latitude && longitude) {
-                locationText = `Coordinates: ${parseFloat(latitude).toFixed(6)}, ${parseFloat(longitude).toFixed(6)}`;
+                locationText = `📍 Coordinates: ${parseFloat(latitude).toFixed(6)}, ${parseFloat(longitude).toFixed(6)}`;
                 if (address) {
-                    locationText += `<br>Address: ${address}`;
+                    locationText += `<br>🏠 Address: ${address}`;
                 }
-                document.getElementById('previewAddress').innerHTML = locationText;
                 
-                // Show map link
+                // Create map link - ONLY ONE
                 const mapLink = `https://www.google.com/maps?q=${latitude},${longitude}`;
-                document.getElementById('previewLocation').innerHTML += `<br><a href="${mapLink}" target="_blank" class="map-link"><i class="bi bi-box-arrow-up-right"></i> View on Google Maps</a>`;
+                locationText += `<br><a href="${mapLink}" target="_blank" class="map-link mt-1 d-inline-block">
+                    <i class="bi bi-box-arrow-up-right"></i> View on Google Maps
+                </a>`;
+                
+                document.getElementById('previewAddress').innerHTML = locationText;
             } else if (address) {
-                locationText = `Address: ${address}`;
+                locationText = `🏠 Address: ${address}`;
                 document.getElementById('previewAddress').innerHTML = locationText;
             } else {
                 document.getElementById('previewAddress').innerHTML = 'No location data available';
@@ -2449,6 +2450,7 @@ function formatLocation($item) {
         }
     }
 
+    // FIXED: populateItemsForSO function - no map links in table
     function populateItemsForSO(soId, latitude, longitude, address) {
         const items = soItemsData[soId] || [];
         availableItems = items;
@@ -2466,17 +2468,18 @@ function formatLocation($item) {
             return;
         }
         
-        // Format location string for display
+        // Format location string for display - FIXED: No links in table
         let locationDisplay = '';
         if (latitude && longitude) {
-            locationDisplay = `${parseFloat(latitude).toFixed(6)}, ${parseFloat(longitude).toFixed(6)}`;
+            // Show coordinates but don't add link here (will be in the main preview)
+            locationDisplay = `<i class="bi bi-geo-alt-fill text-primary"></i> ${parseFloat(latitude).toFixed(6)}, ${parseFloat(longitude).toFixed(6)}`;
             if (address) {
-                locationDisplay += `<br><small>${address.substring(0, 50)}${address.length > 50 ? '...' : ''}</small>`;
+                locationDisplay += `<br><small class="text-muted">${address.substring(0, 50)}${address.length > 50 ? '...' : ''}</small>`;
             }
         } else if (address) {
-            locationDisplay = address.substring(0, 70) + (address.length > 70 ? '...' : '');
+            locationDisplay = `<i class="bi bi-pin-map-fill text-primary"></i> ${address.substring(0, 70)}${address.length > 70 ? '...' : ''}`;
         } else {
-            locationDisplay = '<span class="text-warning">No location data</span>';
+            locationDisplay = '<span class="text-warning"><i class="bi bi-exclamation-triangle"></i> No location data</span>';
         }
         
         let html = '';
@@ -2521,8 +2524,7 @@ function formatLocation($item) {
                     </td>
                     <td>
                         <div class="location-preview" data-item-id="${item.item_id}">
-                            <i class="bi bi-geo-alt-fill text-primary"></i>
-                            <small>${locationDisplay}</small>
+                            ${locationDisplay}
                             <input type="hidden" class="item-location-hidden" value="${latitude && longitude ? latitude + ',' + longitude : (address || 'No location')}">
                         </div>
                     </td>
