@@ -30,6 +30,20 @@ $branch_id = $_SESSION['branch_id'] ?? 0;
 // Global users can view all branches
 $view_all_branches = true; // Always true for Global
 
+// Get user's branch name for display (if applicable - though Global sees all)
+$branch_name = 'All Branches';
+if (!$view_all_branches && $branch_id > 0) {
+    $branch_query = "SELECT branch_name FROM branches WHERE branch_id = ?";
+    $branch_stmt = $conn->prepare($branch_query);
+    $branch_stmt->bind_param("i", $branch_id);
+    $branch_stmt->execute();
+    $branch_result = $branch_stmt->get_result();
+    if ($branch_row = $branch_result->fetch_assoc()) {
+        $branch_name = $branch_row['branch_name'];
+    }
+    $branch_stmt->close();
+}
+
 // Check if branch_id column exists in drivers table
 $drivers_branch_column_exists = false;
 $check_column = $conn->query("SHOW COLUMNS FROM drivers LIKE 'branch_id'");
@@ -470,8 +484,6 @@ $total_sales = count($sales_agents);
 $active_users = count(array_filter($users, function($u) { return $u['user_status'] === 'active'; }));
 
 // Helper functions - EXACTLY the same as users.php
-
-
 function getUserRoleText($role) {
     switch($role) {
         case 'branch_admin':
@@ -531,7 +543,7 @@ if (empty($user_initials)) {
     <link rel="shortcut icon" href="../Pictures/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="../Pictures/apple-touch-icon.png" />
     <link rel="manifest" href="../Pictures/site.webmanifest" />
-    <link rel="stylesheet" href="../css/current_inventory.css">
+    <link rel="stylesheet" href="../css/global.css">
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
@@ -542,7 +554,7 @@ if (empty($user_initials)) {
     <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-        /* Branch badge styling - EXACTLY the same as users.php */
+        /* ===== BRANCH BADGE ===== */
         .branch-badge {
             background-color: #e7f1ff;
             color: #0d6efd;
@@ -553,7 +565,7 @@ if (empty($user_initials)) {
             margin-left: 5px;
         }
         
-        /* Table styles - EXACTLY the same as users.php */
+        /* ===== TABLE STYLES ===== */
         .user-table {
             width: 100%;
             border-collapse: collapse;
@@ -617,6 +629,7 @@ if (empty($user_initials)) {
         .col-branch { width: 12%; }
         .col-actions { width: 18%; }
         
+        /* Status Badge */
         .status-badge {
             display: inline-block;
             padding: 4px 8px;
@@ -630,6 +643,7 @@ if (empty($user_initials)) {
         .status-active { background-color: #d4edda; color: #155724; }
         .status-inactive { background-color: #f8d7da; color: #721c24; }
         
+        /* Role Badge */
         .role-badge {
             display: inline-block;
             padding: 4px 8px;
@@ -644,6 +658,7 @@ if (empty($user_initials)) {
             margin-right: 4px;
         }
         
+        /* Empty State */
         .empty-state-table {
             text-align: center;
             padding: 40px 20px;
@@ -667,7 +682,7 @@ if (empty($user_initials)) {
             margin-bottom: 20px;
         }
         
-        /* Filter section - EXACTLY the same as users.php */
+        /* ===== FILTER SECTION - UNIFIED VERSION ===== */
         .filter-section {
             display: flex;
             flex-wrap: wrap;
@@ -680,18 +695,10 @@ if (empty($user_initials)) {
             border-radius: 8px;
         }
         
+        /* Filter Controls - Left side */
         .filter-controls {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 12px;
-            flex: 1;
-        }
-        
-        .filter-actions {
-            display: flex;
-            align-items: center;
-            gap: 10px;
+            flex: 1 1 auto;
+            min-width: 0;
         }
         
         .filter-dropdowns {
@@ -701,22 +708,11 @@ if (empty($user_initials)) {
             align-items: center;
         }
         
-        .filter-dropdown {
-            min-width: 160px;
-        }
-        
-        .filter-dropdown .form-select {
-            font-size: 13px;
-            padding: 8px 12px;
-            border-radius: 6px;
-            border: 1px solid #ced4da;
-            background-color: white;
-            cursor: pointer;
-        }
-        
+        /* Search Box */
         .search-box {
             position: relative;
             min-width: 250px;
+            flex: 2 1 250px;
         }
         
         .search-box i {
@@ -737,32 +733,157 @@ if (empty($user_initials)) {
             border-radius: 6px;
             height: 40px;
             font-size: 14px;
+            transition: all 0.2s ease;
         }
         
+        .search-box input:focus {
+            border-color: #44D34E;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(68, 211, 78, 0.15);
+        }
+        
+        /* Branch Filter Dropdown */
+        .filter-dropdown {
+            min-width: 180px;
+            flex: 1 1 180px;
+        }
+        
+        .filter-dropdown .form-select {
+            width: 100%;
+            font-size: 13px;
+            padding: 8px 30px 8px 12px;
+            border-radius: 6px;
+            border: 1px solid #ced4da;
+            background-color: white;
+            cursor: pointer;
+            height: 40px;
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23343a40' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right 0.75rem center;
+            background-size: 16px 12px;
+        }
+        
+        .filter-dropdown .form-select:focus {
+            border-color: #44D34E;
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(68, 211, 78, 0.15);
+        }
+        
+        /* Filter Actions - Right side */
+        .filter-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+        
+        /* Export Button */
+        .btn-outline-success {
+            background: white;
+            border: 1px solid #44D34E;
+            color: #44D34E;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            transition: all 0.2s ease;
+            height: 40px;
+            display: inline-flex;
+            align-items: center;
+            white-space: nowrap;
+            cursor: pointer;
+        }
+        
+        .btn-outline-success:hover {
+            background: #44D34E;
+            color: white;
+            border-color: #44D34E;
+        }
+        
+        .btn-outline-success i {
+            font-size: 14px;
+        }
+        
+        /* Add User Buttons Container */
+        .add-user-buttons {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        
+        .add-user-buttons button {
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            display: inline-flex;
+            align-items: center;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            white-space: nowrap;
+            height: 40px;
+        }
+        
+        .add-user-buttons button i {
+            margin-right: 6px;
+            font-size: 14px;
+        }
+        
+        /* Individual Button Colors */
+        .btn-add-branch-admin {
+            background-color: #dc3545;
+            color: white;
+        }
+        
+        .btn-add-driver {
+            background-color: #0d6efd;
+            color: white;
+        }
+        
+        .btn-add-warehouse {
+            background-color: #198754;
+            color: white;
+        }
+        
+        .btn-add-sales {
+            background-color: #ffc107;
+            color: #212529;
+        }
+        
+        /* Button Hover Effects */
+        .btn-add-branch-admin:hover {
+            background-color: #bb2d3b;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 5px rgba(220, 53, 69, 0.3);
+        }
+        
+        .btn-add-driver:hover {
+            background-color: #0b5ed7;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 5px rgba(13, 110, 253, 0.3);
+        }
+        
+        .btn-add-warehouse:hover {
+            background-color: #157347;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 5px rgba(25, 135, 84, 0.3);
+        }
+        
+        .btn-add-sales:hover {
+            background-color: #ffb300;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 5px rgba(255, 193, 7, 0.3);
+        }
+        
+        /* ===== ACTION BUTTONS ===== */
         .action-buttons {
             display: flex;
             gap: 5px;
             justify-content: center;
             align-items: center;
             flex-wrap: nowrap;
-        }
-        
-        .table-btn {
-            background: none;
-            border: none;
-            padding: 6px 8px;
-            border-radius: 4px;
-            transition: all 0.2s;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            font-size: 12px;
-            white-space: nowrap;
-        }
-        
-        .table-btn i {
-            margin-right: 3px;
         }
         
         .table-btn:hover {
@@ -782,66 +903,12 @@ if (empty($user_initials)) {
             border: 1px solid #dc3545;
         }
         
-        .btn-view:hover { 
-            background-color: #0d6efd;
-            color: white;
-        }
-        .btn-edit:hover { 
-            background-color: #198754;
-            color: white;
-        }
         .btn-delete:hover { 
             background-color: #dc3545;
             color: white;
         }
         
-        /* Add User Buttons - EXACTLY the same as users.php */
-        .add-user-buttons {
-            display: flex;
-            gap: 8px;
-        }
-        
-        .btn-add-branch-admin {
-            background-color: #dc3545;
-            color: white;
-            font-size: 13px;
-            padding: 8px 12px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-        }
-        
-        .btn-add-driver {
-            background-color: #0d6efd;
-            color: white;
-            font-size: 13px;
-            padding: 8px 12px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-        }
-        
-        .btn-add-warehouse {
-            background-color: #198754;
-            color: white;
-            font-size: 13px;
-            padding: 8px 12px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-        }
-        
-        .btn-add-sales {
-            background-color: #ffc107;
-            color: #212529;
-            font-size: 13px;
-            padding: 8px 12px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-        }
-        
-        /* Modal styling - EXACTLY the same as users.php */
+        /* ===== MODAL STYLING ===== */
         .detail-label {
             font-size: 12px;
             color: #6c757d;
@@ -891,16 +958,281 @@ if (empty($user_initials)) {
             margin-right: 4px;
         }
         
-        /* Responsive adjustments */
-        @media (max-width: 1200px) {
-            .add-user-buttons {
-                flex-wrap: wrap;
+        /* ===== MOBILE PROFILE MODAL ===== */
+        .user-avatar-large {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #047857, #44D34E);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin: 0 auto;
+            border: 4px solid #d1fae5;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+        
+        #profileModal .modal-content {
+            border: none;
+            border-radius: 20px;
+            overflow: hidden;
+        }
+        
+        #profileModal .modal-header {
+            background: linear-gradient(135deg, #047857, #44D34E);
+            color: white;
+            border-bottom: none;
+            padding: 1.5rem;
+        }
+        
+        #profileModal .modal-header .modal-title {
+            color: white;
+            font-weight: 600;
+        }
+        
+        #profileModal .modal-header .btn-close {
+            filter: brightness(0) invert(1);
+            opacity: 0.9;
+        }
+        
+        #profileModal .modal-header .btn-close:hover {
+            opacity: 1;
+            transform: rotate(90deg);
+        }
+        
+        #profileModal .modal-body {
+            padding: 2rem;
+            background: linear-gradient(135deg, #f9fefc 0%, #f0fdf4 100%);
+        }
+        
+        #profileModal .branch-info {
+            background: #d1fae5;
+            color: #047857;
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+            display: inline-block;
+            font-weight: 500;
+        }
+        
+        #profileModal .btn-danger {
+            background: linear-gradient(135deg, #dc3545, #f87171);
+            border: none;
+            padding: 1rem;
+            border-radius: 50px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        #profileModal .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(220, 53, 69, 0.3);
+        }
+        
+        /* Mobile Logout Button */
+        .mobile-nav .nav-link.logout-btn {
+            color: #dc3545;
+        }
+        
+        .mobile-nav .nav-link.logout-btn i {
+            color: #dc3545;
+        }
+        
+        .mobile-nav .nav-link.logout-btn.active,
+        .mobile-nav .nav-link.logout-btn:hover {
+            background: rgba(220, 53, 69, 0.1);
+            color: #dc3545;
+        }
+        
+        .mobile-nav .nav-link.logout-btn.active i,
+        .mobile-nav .nav-link.logout-btn:hover i {
+            color: #dc3545;
+        }
+        
+        /* ===== RESPONSIVE BREAKPOINTS ===== */
+        
+        /* Large Desktop (≥1200px) */
+        @media (min-width: 1200px) {
+            .filter-controls {
+                max-width: 60%;
             }
             
-            .action-buttons {
-                flex-wrap: wrap;
+            .filter-actions {
+                max-width: 40%;
             }
         }
+        
+        /* Desktop (992px - 1199px) */
+        @media (min-width: 992px) and (max-width: 1199px) {
+            .filter-dropdowns {
+                flex-wrap: nowrap;
+            }
+            
+            .search-box {
+                min-width: 200px;
+            }
+            
+            .filter-dropdown {
+                min-width: 150px;
+            }
+            
+            .add-user-buttons button {
+                padding: 8px 10px;
+                font-size: 12px;
+            }
+        }
+        
+        /* Tablet (768px - 991px) */
+        @media (min-width: 768px) and (max-width: 991px) {
+            .filter-section {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 15px;
+            }
+            
+            .filter-controls {
+                width: 100%;
+            }
+            
+            .filter-dropdowns {
+                width: 100%;
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 12px;
+            }
+            
+            .search-box {
+                min-width: 100%;
+                grid-column: span 2;
+            }
+            
+            .filter-dropdown {
+                min-width: 100%;
+            }
+            
+            .filter-actions {
+                width: 100%;
+                justify-content: space-between;
+            }
+            
+            .add-user-buttons {
+                flex: 1;
+                justify-content: flex-end;
+            }
+        }
+      /* DESKTOP STYLES (default) */
+    .search-input {
+        width: 100%;
+        padding: 10px 10px 10px 35px;
+        border: 1px solid #ced4da;
+        border-radius: 6px;
+        height: 44px;
+        font-size: 14px;
+    }
+    
+    .branch-select {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid #ced4da;
+        border-radius: 6px;
+        height: 44px;
+        font-size: 14px;
+    }
+    
+    .buttons-container {
+        display: flex;
+        flex-wrap: nowrap;
+        gap: 6px;
+        width: 100%;
+    }
+    
+    .action-btn {
+        flex: 1;
+        border: none;
+        padding: 10px 5px;
+        border-radius: 6px;
+        height: 44px;
+        font-size: 14px;
+        font-weight: 500;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 5px;
+        white-space: nowrap;
+        cursor: pointer;
+    }
+    
+    .export-btn {
+        background: white;
+        border: 1px solid #44D34E;
+        color: #44D34E;
+    }
+    
+    .admin-btn { background: #dc3545; color: white; }
+    .driver-btn { background: #0d6efd; color: white; }
+    .warehouse-btn { background: #198754; color: white; }
+    .sales-btn { background: #ffc107; color: #212529; }
+    
+    /* MOBILE STYLES - 768px below */
+    @media (max-width: 768px) {
+        .search-input {
+            height: 38px;
+            font-size: 13px;
+            padding: 8px 8px 8px 32px;
+        }
+        
+        .branch-select {
+            height: 38px;
+            font-size: 13px;
+            padding: 8px;
+        }
+        
+        .search-icon {
+            font-size: 13px !important;
+        }
+        
+        .action-btn {
+            height: 36px;
+            font-size: 12px;
+            padding: 6px 3px;
+            gap: 3px;
+        }
+        
+        .action-btn i {
+            font-size: 14px;
+        }
+    }
+    
+    /* SMALL MOBILE - 480px below */
+    @media (max-width: 480px) {
+        .action-btn {
+            height: 34px;
+            font-size: 11px;
+            padding: 5px 2px;
+        }
+        
+        .action-btn i {
+            font-size: 13px;
+        }
+    }
+    
+    /* EXTRA SMALL - icons na lang */
+    @media (max-width: 360px) {
+        .action-btn span {
+            display: none;
+        }
+        
+        .action-btn {
+            font-size: 0;
+            padding: 5px 0;
+        }
+        
+        .action-btn i {
+            font-size: 16px;
+        }
+    }
     </style>
 </head>
 <body>
@@ -980,7 +1312,7 @@ if (empty($user_initials)) {
             <div id="dashboardContent" class="page-content active">
                 <!-- Navbar Top -->
                 <div class="navbar-top">
-                    <button class="mobile-menu-btn" id="mobileMenuBtn">
+                    <button class="mobile-toggle-btn" id="mobileToggleBtn">
                         <i class="bi bi-list"></i>
                     </button>
                     <div class="page-title">
@@ -991,87 +1323,98 @@ if (empty($user_initials)) {
                     </div>
                 </div>
 
-                <!-- Stats Cards - Updated to include Branch Admins -->
-                <div class="row g-3 mb-4">
-                    <div class="col-md-3 mb-3">
-                        <div class="stat-card" style="background: linear-gradient(135deg, #dc3545, #bb2d3b);">
-                            <i class="bi bi-person-badge stat-icon"></i>
-                            <div class="stat-value"><?= $total_branch_admins ?></div>
-                            <div class="stat-label">Branch Admins</div>
-                        </div>
-                    </div>
-                    <div class="col-md-3 mb-3">
-                        <div class="stat-card" style="background: linear-gradient(135deg, #0d6efd, #0b5ed7);">
-                            <i class="bi bi-truck stat-icon"></i>
-                            <div class="stat-value"><?= $total_drivers ?></div>
-                            <div class="stat-label">Drivers</div>
-                        </div>
-                    </div>
-                    <div class="col-md-3 mb-3">
-                        <div class="stat-card" style="background: linear-gradient(135deg, #198754, #157347);">
-                            <i class="bi bi-building stat-icon"></i>
-                            <div class="stat-value"><?= $total_warehouse ?></div>
-                            <div class="stat-label">Warehouse</div>
-                        </div>
-                    </div>
-                    <div class="col-md-3 mb-3">
-                        <div class="stat-card" style="background: linear-gradient(135deg, #ffc107, #ffb300);">
-                            <i class="bi bi-graph-up stat-icon"></i>
-                            <div class="stat-value"><?= $total_sales ?></div>
-                            <div class="stat-label">Sales Agents</div>
-                        </div>
-                    </div>
-                </div>
+             <!-- Stats Cards - Using row-cols para iisang linya -->
+<div class="row row-cols-4 g-1 mb-3 flex-nowrap overflow-auto">
+    <div class="col">
+        <div class="stat-card bg-danger">
+            <i class="bi bi-person-badge"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?= $total_branch_admins ?></div>
+                <div class="stat-label">Branch Admins</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col">
+        <div class="stat-card bg-primary">
+            <i class="bi bi-truck"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?= $total_drivers ?></div>
+                <div class="stat-label">Drivers</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col">
+        <div class="stat-card bg-success">
+            <i class="bi bi-building"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?= $total_warehouse ?></div>
+                <div class="stat-label">Warehouse</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col">
+        <div class="stat-card bg-warning">
+            <i class="bi bi-graph-up"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?= $total_sales ?></div>
+                <div class="stat-label">Sales Agents</div>
+            </div>
+        </div>
+    </div>
+</div>
 
-                <!-- FILTER SECTION AND ADD BUTTONS - REMOVED USER TYPE FILTER, ONLY SEARCH AND BRANCH -->
-                <div class="filter-section">
-                    <div class="filter-controls">
-                        <div class="filter-dropdowns">
-                            <!-- Search Box -->
-                            <div class="search-box">
-                                <i class="bi bi-search"></i>
-                                <input type="text" id="searchInput" placeholder="Search by name, email, role..." onkeyup="filterUsers()">
-                            </div>
-
-                            <!-- Branch Filter (for Global) -->
-                            <div class="filter-dropdown">
-                                <select class="form-select" id="branchFilter" onchange="filterUsers()">
-                                    <option value="all">All Branches</option>
-                                    <?php foreach ($branches as $branch): ?>
-                                        <option value="<?php echo $branch['branch_id']; ?>">
-                                            <?php echo htmlspecialchars($branch['branch_name']); ?>
-                                        </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="filter-actions">
-                        <button class="btn btn-outline-success me-2" onclick="exportToExcel()">
-                            <i class="bi bi-file-earmark-excel me-1"></i> Export
-                        </button>
-                        
-                        <div class="add-user-buttons">
-                            <button class="btn-add-branch-admin" onclick="showAddBranchAdminModal()">
-                                <i class="bi bi-person-badge me-1"></i> Add Admin
-                            </button>
-                            <button class="btn-add-driver" onclick="showAddDriverModal()">
-                                <i class="bi bi-truck me-1"></i> Add Driver
-                            </button>
-                            <button class="btn-add-warehouse" onclick="showAddWarehouseModal()">
-                                <i class="bi bi-building me-1"></i> Add Warehouse
-                            </button>
-                            <button class="btn-add-sales" onclick="showAddSalesModal()">
-                                <i class="bi bi-graph-up me-1"></i> Add Sales
-                            </button>
-                        </div>
-                    </div>
-                </div>
-
+<!-- FILTER SECTION - BUTTONS LAGING MAGKAKATABI (NO SCROLLBAR) -->
+<div style="margin-bottom: 20px; background: #f8f9fa; padding: 10px; border-radius: 8px;">
+    
+    <!-- Row 1: Search and Branch -->
+    <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px;">
+        <!-- Search Box -->
+        <div style="position: relative; flex: 2; min-width: 150px;">
+            <i class="bi bi-search" style="position: absolute; left: 8px; top: 50%; transform: translateY(-50%); color: #6c757d; font-size: 12px;"></i>
+            <input type="text" id="searchInput" placeholder="Search..." 
+                   style="width: 100%; padding: 6px 6px 6px 28px; border: 1px solid #ced4da; border-radius: 5px; height: 34px; font-size: 12px;"
+                   onkeyup="filterUsers()">
+        </div>
+        
+        <!-- Branch Filter -->
+        <div style="flex: 1; min-width: 120px;">
+            <select id="branchFilter" onchange="filterUsers()" 
+                    style="width: 100%; padding: 6px; border: 1px solid #ced4da; border-radius: 5px; height: 34px; font-size: 12px;">
+                <option value="all">All Branches</option>
+                <?php foreach ($branches as $branch): ?>
+                    <option value="<?php echo $branch['branch_id']; ?>">
+                        <?php echo htmlspecialchars($branch['branch_name']); ?>
+                    </option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+    </div>
+    
+      <!-- Row 2: Buttons - MAGKAKATABI LAGI -->
+    <div class="buttons-container">
+        <button onclick="exportToExcel()" class="action-btn export-btn">
+            <i class="bi bi-file-earmark-excel"></i> <span>Export</span>
+        </button>
+        <button onclick="showAddBranchAdminModal()" class="action-btn admin-btn">
+            <i class="bi bi-person-badge"></i> <span>Admin</span>
+        </button>
+        <button onclick="showAddDriverModal()" class="action-btn driver-btn">
+            <i class="bi bi-truck"></i> <span>Driver</span>
+        </button>
+        <button onclick="showAddWarehouseModal()" class="action-btn warehouse-btn">
+            <i class="bi bi-building"></i> <span>Warehouse</span>
+        </button>
+        <button onclick="showAddSalesModal()" class="action-btn sales-btn">
+            <i class="bi bi-graph-up"></i> <span>Sales</span>
+        </button>
+    </div>
+</div>
                 <!-- USERS TABLE - Fixed role badge HTML -->
-                <div class="table-responsive">
-                    <table class="table user-table" id="usersTable">
+                <div class="table-container">
+                    <table class="table custom-table compact-table" id="usersTable">
                         <thead>
                             <tr>
                                 <th class="col-name">NAME</th>
@@ -1136,23 +1479,110 @@ if (empty($user_initials)) {
                                         </span>
                                     </td>
                                     <td class="col-actions">
-                                        <div class="action-buttons">
-                                            <button class="table-btn btn-view" onclick="viewUser(<?= $user['user_id'] ?>)" title="View">
-                                                <i class="bi bi-eye"></i> View
+                                            <button class="btn-action btn-view" onclick="viewUser(<?= $user['user_id'] ?>)" title="View">
+                                                <i class="bi bi-eye"></i>
                                             </button>
-                                            <button class="table-btn btn-edit" onclick="editUser(<?= $user['user_id'] ?>)" title="Edit">
-                                                <i class="bi bi-pencil"></i> Edit
+                                            <button class="btn-action btn-edit" onclick="editUser(<?= $user['user_id'] ?>)" title="Edit">
+                                                <i class="bi bi-pencil"></i>
                                             </button>
-                                            <button class="table-btn btn-delete" onclick="deleteUser(<?= $user['user_id'] ?>, '<?= $user['role'] ?>', <?= $user['driver_id'] ?? 'null' ?>)" title="Delete">
-                                                <i class="bi bi-trash"></i> Delete
+                                            <button class="btn-action btn-delete" onclick="deleteUser(<?= $user['user_id'] ?>, '<?= $user['role'] ?>', <?= $user['driver_id'] ?? 'null' ?>)" title="Delete">
+                                                <i class="bi bi-trash"></i>
                                             </button>
-                                        </div>
                                     </td>
                                 </tr>
                                 <?php endforeach; ?>
                             <?php endif; ?>
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile Bottom Navigation -->
+    <div class="mobile-nav" id="mobileNav">
+        <ul class="nav">
+            <li class="nav-item">
+                <a class="nav-link" href="sales_reports.php">
+                    <i class="bi bi-graph-up"></i>
+                    <span>Reports</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="branch_records.php">
+                    <i class="bi bi-file-text"></i>
+                    <span>Records</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="all_items.php">
+                    <i class="bi bi-box"></i>
+                    <span>Items</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link active" href="drivers.php">
+                    <i class="bi bi-people"></i>
+                    <span>Users</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="trip_tickets.php">
+                    <i class="bi bi-ticket-perforated"></i>
+                    <span>Tickets</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="driver_tracking.php">
+                    <i class="bi bi-geo-alt"></i>
+                    <span>Tracking</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link logout-btn" href="#" onclick="showProfileModal(); return false;">
+                    <i class="bi bi-box-arrow-right"></i>
+                    <span>Logout</span>
+                </a>
+            </li>
+        </ul>
+    </div>
+
+    <!-- Mobile Profile/Logout Modal -->
+    <div class="modal fade" id="profileModal" tabindex="-1" aria-labelledby="profileModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="profileModalLabel">
+                        <i class="bi bi-person-circle me-2"></i>User Profile
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <!-- User Avatar -->
+                    <div class="user-avatar-large mb-3">
+                        <?php echo $user_initials; ?>
+                    </div>
+                    
+                    <!-- User Name -->
+                    <h4 class="mb-1"><?php echo htmlspecialchars($user_name); ?></h4>
+                    
+                    <!-- User Role -->
+                    <p class="text-muted mb-3">
+                        <span class="badge bg-success"><?php echo ucfirst($user_role); ?></span>
+                    </p>
+                    
+                    <!-- Branch Info (if applicable) -->
+                    <?php if (!$view_all_branches && $branch_id > 0): ?>
+                    <div class="branch-info mb-3">
+                        <i class="bi bi-building me-1"></i>
+                        <span><?php echo htmlspecialchars($branch_name); ?></span>
+                    </div>
+                    <?php endif; ?>
+                    
+                    <!-- Logout Button -->
+                    <button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()">
+                        <i class="bi bi-box-arrow-right me-2"></i>Logout
+                    </button>
                 </div>
             </div>
         </div>
@@ -1600,6 +2030,60 @@ if (empty($user_initials)) {
         }
     }
 
+    // ========== MOBILE NAVIGATION FUNCTIONS =================
+    function initMobileNav() {
+        const mobileNav = document.getElementById('mobileNav');
+        const isMobile = window.innerWidth <= 992;
+        
+        if (isMobile) {
+            mobileNav.style.display = 'block';
+            
+            // Set active state based on current page (excluding logout)
+            const currentPage = window.location.pathname.split('/').pop();
+            const navLinks = mobileNav.querySelectorAll('.nav-link:not(.logout-btn)');
+            
+            navLinks.forEach(link => {
+                link.classList.remove('active');
+                const href = link.getAttribute('href');
+                if (currentPage === href) {
+                    link.classList.add('active');
+                }
+            });
+        } else {
+            mobileNav.style.display = 'none';
+        }
+    }
+
+    // ========== PROFILE/LOGOUT FUNCTIONS =================
+    function showProfileModal() {
+        const profileModal = new bootstrap.Modal(document.getElementById('profileModal'));
+        profileModal.show();
+    }
+
+    function confirmLogout() {
+        // Close the modal first
+        const modal = bootstrap.Modal.getInstance(document.getElementById('profileModal'));
+        if (modal) {
+            modal.hide();
+        }
+        
+        // Show confirmation dialog
+        Swal.fire({
+            title: 'Are you sure?',
+            text: 'You will be logged out of the system',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#dc3545',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Yes, logout'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                localStorage.removeItem('sidebarCollapsed');
+                window.location.href = '../logout.php';
+            }
+        });
+    }
+
     // ========== LOGOUT WITH SWEETALERT2 ==========
     function logout() {
         Swal.fire({
@@ -1633,22 +2117,11 @@ if (empty($user_initials)) {
     // ========== DOM READY ==========
     document.addEventListener('DOMContentLoaded', function() {
         initializeSidebar();
+        initMobileNav();
         
         // Mobile menu toggle
-        document.getElementById('mobileMenuBtn').addEventListener('click', function() {
-            const sidebar = document.getElementById('sidebar');
-            if (window.innerWidth <= 992) {
-                sidebar.classList.toggle('active');
-                if (!document.querySelector('.sidebar-overlay')) {
-                    const overlay = document.createElement('div');
-                    overlay.className = 'sidebar-overlay';
-                    document.body.appendChild(overlay);
-                    overlay.addEventListener('click', closeMobileSidebar);
-                    setTimeout(() => overlay.classList.add('active'), 10);
-                }
-            } else {
-                toggleSidebar();
-            }
+        document.getElementById('mobileToggleBtn').addEventListener('click', function() {
+            toggleSidebar();
         });
         
         const desktopToggleBtn = document.getElementById('desktopToggleBtn');
@@ -1665,8 +2138,28 @@ if (empty($user_initials)) {
             });
         });
 
+        // Close sidebar when clicking outside on mobile
+        document.addEventListener('click', function(event) {
+            const sidebar = document.getElementById('sidebar');
+            const mobileBtn = document.getElementById('mobileToggleBtn');
+            const overlay = document.querySelector('.sidebar-overlay');
+            const isMobile = window.innerWidth <= 992;
+            
+            if (isMobile && sidebar && sidebar.classList.contains('active') && 
+                !sidebar.contains(event.target) && 
+                (!mobileBtn || !mobileBtn.contains(event.target)) &&
+                (!overlay || !overlay.contains(event.target))) {
+                closeMobileSidebar();
+            }
+        });
+
+        window.addEventListener('resize', function() {
+            handleSidebarResize();
+            initMobileNav();
+        });
+
         // Fix modal backdrop issue
-        const modals = ['branchAdminModal', 'driverModal', 'warehouseModal', 'salesModal', 'viewUserModal', 'deleteUserModal'];
+        const modals = ['branchAdminModal', 'driverModal', 'warehouseModal', 'salesModal', 'viewUserModal', 'deleteUserModal', 'profileModal'];
         modals.forEach(modalId => {
             const modal = document.getElementById(modalId);
             if (modal) {
@@ -1688,6 +2181,36 @@ if (empty($user_initials)) {
             document.getElementById('licenseExpiry').value = oneYearFromNow.toISOString().split('T')[0];
         }
     });
+
+    function handleSidebarResize() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.querySelector('.sidebar-overlay');
+        
+        if (window.innerWidth > 992) {
+            if (overlay) {
+                overlay.remove();
+            }
+            sidebar.classList.remove('active');
+            
+            const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+            if (savedCollapsed === 'true') {
+                sidebar.classList.add('collapsed');
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'none';
+                });
+            } else {
+                sidebar.classList.remove('collapsed');
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'inline-block';
+                });
+            }
+        } else {
+            sidebar.classList.remove('collapsed');
+            document.querySelectorAll('.nav-text').forEach(text => {
+                text.style.display = 'inline-block';
+            });
+        }
+    }
 
     // ========== FILTER FUNCTIONS (UPDATED - ONLY SEARCH AND BRANCH) ==========
     function filterUsers() {
@@ -2319,6 +2842,13 @@ if (empty($user_initials)) {
         if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
             e.preventDefault();
             toggleSidebar();
+        } else if (e.key === 'Escape' && window.innerWidth <= 992) {
+            closeMobileSidebar();
+        } else if (e.key === 'Escape') {
+            const profileModal = document.getElementById('profileModal');
+            if (profileModal.classList.contains('show')) {
+                bootstrap.Modal.getInstance(profileModal).hide();
+            }
         } else if (e.ctrlKey && e.key === '1') {
             e.preventDefault();
             showAddBranchAdminModal();

@@ -8,6 +8,27 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
+// Get user info for display
+$user_id = $_SESSION['user_id'];
+$user_name = $_SESSION['user_name'] ?? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] ?? 'Quality Control';
+$user_role = $_SESSION['role'] ?? 'global';
+$view_all_branches = $_SESSION['view_all_branches'] ?? true;
+
+// Get user's branch name for display (if applicable)
+$branch_name = 'All Branches';
+$user_branch_id = $_SESSION['branch_id'] ?? 0;
+if (!$view_all_branches && $user_branch_id > 0) {
+    $branch_query = "SELECT branch_name FROM branches WHERE branch_id = ?";
+    $branch_stmt = $conn->prepare($branch_query);
+    $branch_stmt->bind_param("i", $user_branch_id);
+    $branch_stmt->execute();
+    $branch_result = $branch_stmt->get_result();
+    if ($branch_row = $branch_result->fetch_assoc()) {
+        $branch_name = $branch_row['branch_name'];
+    }
+    $branch_stmt->close();
+}
+
 // Get filter parameters
 $category = isset($_GET['category']) ? $_GET['category'] : '';
 $stock = isset($_GET['stock']) ? $_GET['stock'] : '';
@@ -20,6 +41,16 @@ $types = "";
 
 // Base condition - only show active items
 $where_conditions[] = "i.status = 'active'";
+
+// Add branch filter if user doesn't have view_all_branches permission and branch_id column exists
+$check_items_branch = $conn->query("SHOW COLUMNS FROM items LIKE 'branch_id'");
+$items_branch_exists = ($check_items_branch && $check_items_branch->num_rows > 0);
+
+if (!$view_all_branches && $user_branch_id > 0 && $items_branch_exists) {
+    $where_conditions[] = "i.branch_id = ?";
+    $params[] = $user_branch_id;
+    $types .= "i";
+}
 
 // Category filter
 if (!empty($category)) {
@@ -67,7 +98,8 @@ $sql = "SELECT
             i.reorder_level, 
             i.status,
             i.created_at,
-            i.updated_at
+            i.updated_at,
+            i.branch_id
         FROM items i
         $where_clause
         ORDER BY i.item_id DESC";
@@ -90,6 +122,12 @@ $stats_sql = "SELECT
                 SUM(CASE WHEN stock <= 0 THEN 1 ELSE 0 END) as outOfStockItems
               FROM items
               WHERE status = 'active'";
+
+// Add branch filter to stats
+if (!$view_all_branches && $user_branch_id > 0 && $items_branch_exists) {
+    $stats_sql .= " AND branch_id = $user_branch_id";
+}
+
 $stats_result = $conn->query($stats_sql);
 $stats = $stats_result->fetch_assoc();
 
@@ -98,16 +136,21 @@ $inStockItems = $stats['inStockItems'] ?? 0;
 $outOfStockItems = $stats['outOfStockItems'] ?? 0;
 
 // Get unique categories for filter dropdown
-$categories_sql = "SELECT DISTINCT category FROM items WHERE status = 'active' AND category IS NOT NULL ORDER BY category";
+$categories_sql = "SELECT DISTINCT category FROM items WHERE status = 'active' AND category IS NOT NULL";
+
+// Add branch filter to categories
+if (!$view_all_branches && $user_branch_id > 0 && $items_branch_exists) {
+    $categories_sql .= " AND branch_id = $user_branch_id";
+}
+
+$categories_sql .= " ORDER BY category";
 $categories_result = $conn->query($categories_sql);
 $categories = [];
 while ($cat_row = $categories_result->fetch_assoc()) {
     $categories[] = $cat_row['category'];
 }
 
-// Get user info from session
-$user_name = $_SESSION['user_name'] ?? 'Quality Control';
-$user_role = $_SESSION['user_role'] ?? 'QC Officer';
+// Get user initials for avatar
 $user_initials = '';
 if (!empty($user_name)) {
     $name_parts = explode(' ', $user_name);
@@ -136,7 +179,8 @@ if (isset($_GET['ajax']) && isset($_GET['id'])) {
                     i.reorder_level, 
                     i.status,
                     i.created_at,
-                    i.updated_at
+                    i.updated_at,
+                    i.branch_id
                  FROM items i 
                  WHERE i.item_id = ? AND i.status = 'active'";
     $item_stmt = $conn->prepare($item_sql);
@@ -146,6 +190,19 @@ if (isset($_GET['ajax']) && isset($_GET['id'])) {
     
     if ($item_result->num_rows > 0) {
         $item = $item_result->fetch_assoc();
+        
+        // Get branch name if available
+        if (!empty($item['branch_id'])) {
+            $branch_sql = "SELECT branch_name FROM branches WHERE branch_id = ?";
+            $branch_stmt = $conn->prepare($branch_sql);
+            $branch_stmt->bind_param("i", $item['branch_id']);
+            $branch_stmt->execute();
+            $branch_result = $branch_stmt->get_result();
+            if ($branch_row = $branch_result->fetch_assoc()) {
+                $item['branch_name'] = $branch_row['branch_name'];
+            }
+        }
+        
         header('Content-Type: application/json');
         echo json_encode(['success' => true, 'item' => $item]);
     } else {
@@ -174,92 +231,465 @@ if (isset($_GET['ajax']) && isset($_GET['id'])) {
     <!-- SweetAlert2 -->
     <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-</head>
-<style>
-      /* Additional responsive styles for filter section */
-@media (max-width: 768px) {
+    <style>
+        /* ===== FILTER REPORTS & DROPDOWN - UNIFIED RESPONSIVE CSS ===== */
+
+/* Form Card - Base */
+.form-card {
+    background: white;
+    border-radius: clamp(14px, 3vw, 20px);
+    padding: clamp(0.8rem, 3vw, 1.5rem);
+    box-shadow: 0 8px 20px -5px rgba(4, 120, 87, 0.12);
+    border: 1px solid rgba(68, 211, 78, 0.2);
+    margin-bottom: clamp(1rem, 2vw, 1.5rem);
+    transition: all 0.3s ease;
+    width: 100%;
+}
+
+/* Card Header */
+.form-card h5 {
+    color: var(--dark-green);
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: clamp(1rem, 4vw, 1.3rem);
+    margin-bottom: clamp(0.5rem, 2vw, 1rem);
+    padding-bottom: clamp(0.3rem, 1.5vw, 0.5rem);
+    border-bottom: 2px solid rgba(68, 211, 78, 0.2);
+    width: 100%;
+}
+
+.form-card h5 i {
+    color: var(--primary-green);
+    background: rgba(68, 211, 78, 0.1);
+    padding: clamp(0.3rem, 1.5vw, 0.5rem);
+    border-radius: clamp(6px, 2vw, 10px);
+    font-size: clamp(0.9rem, 3.5vw, 1.2rem);
+}
+
+/* Form Labels */
+.form-label {
+    font-weight: 600;
+    color: var(--dark-color);
+    margin-bottom: clamp(0.2rem, 1vw, 0.4rem);
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: clamp(0.75rem, 3vw, 0.9rem);
+}
+
+.form-label i {
+    color: var(--primary-green);
+    font-size: clamp(0.8rem, 3.5vw, 1rem);
+}
+
+/* FORM CONTROLS - UNIFIED (SELECT & INPUT) */
+.form-select, 
+.form-control {
+    border: 2px solid #e5e7eb;
+    border-radius: clamp(6px, 2vw, 10px);
+    padding: clamp(0.35rem, 2vw, 0.7rem) clamp(0.7rem, 3vw, 1rem);
+    font-size: clamp(0.75rem, 3.5vw, 0.95rem);
+    height: auto;
+    min-height: clamp(32px, 7vw, 42px);
+    width: 100%;
+    background-color: white;
+    transition: all 0.2s ease;
+    line-height: 1.4;
+    box-sizing: border-box;
+    /* REMOVED: white-space, overflow, text-overflow - hindi dapat sa select/input mismo */
+}
+
+/* SELECT SPECIFIC - WITH CUSTOM ARROW */
+.form-select {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23047857' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right clamp(0.5rem, 2vw, 0.75rem) center;
+    background-size: clamp(10px, 2.5vw, 14px) clamp(8px, 2vw, 12px);
+    padding-right: clamp(1.8rem, 6vw, 2.2rem);
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    /* REMOVED: white-space, overflow, text-overflow */
+}
+
+/* INPUT SPECIFIC */
+.form-control {
+    padding-right: clamp(0.7rem, 3vw, 1rem);
+}
+
+/* Focus States */
+.form-select:focus, 
+.form-control:focus {
+    border-color: var(--primary-green);
+    box-shadow: 0 0 0 3px rgba(68, 211, 78, 0.15);
+    outline: none;
+}
+
+/* Hover States */
+.form-select:hover, 
+.form-control:hover {
+    border-color: var(--primary-green);
+    background-color: rgba(68, 211, 78, 0.02);
+}
+
+/* Calendar Icon */
+input[type="month"]::-webkit-calendar-picker-indicator {
+    width: clamp(14px, 3.5vw, 18px);
+    height: clamp(14px, 3.5vw, 18px);
+    padding: clamp(1px, 0.5vw, 3px);
+    cursor: pointer;
+    opacity: 0.6;
+    transition: all 0.2s ease;
+}
+
+input[type="month"]::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+    background: rgba(68, 211, 78, 0.1);
+    transform: scale(1.1);
+}
+
+/* ===== RESPONSIVE BREAKPOINTS - SMOOTH TRANSITIONS ===== */
+
+/* Extra Small (below 400px) - 1 column */
+@media (max-width: 399px) {
     .form-card {
-        padding: 15px;
+        padding: 0.7rem;
     }
     
-    .form-card .row.mt-3 {
-        margin-top: 10px !important;
+    .form-card h5 {
+        font-size: 0.95rem;
     }
     
-    .col-md-4 {
-        width: 100%;
-        margin-bottom: 12px;
-        padding-left: 8px;
-        padding-right: 8px;
-    }
-    
-    .col-md-4:last-child {
-        margin-bottom: 0;
+    .form-card h5 i {
+        font-size: 0.85rem;
+        padding: 0.25rem;
     }
     
     .form-label {
-        font-size: 0.9rem;
-        margin-bottom: 5px;
-        font-weight: 500;
+        font-size: 0.7rem;
+    }
+    
+    .form-label i {
+        font-size: 0.75rem;
+    }
+    
+    .form-select, 
+    .form-control {
+        font-size: 0.7rem;
+        padding: 0.25rem 0.5rem;
+        min-height: 30px;
     }
     
     .form-select {
-        font-size: 0.95rem;
-        padding: 10px 12px;
-        height: auto;
-        min-height: 45px;
-        width: 100%;
-        border-radius: 8px;
+        padding-right: 1.6rem;
+        background-position: right 0.4rem center;
+        background-size: 10px 8px;
+    }
+    
+    .col-12, .col-sm-6 {
+        width: 100% !important;
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+    
+    .row.g-3 {
+        --bs-gutter-y: 0.5rem;
+    }
+}
+
+/* Small (400px - 575px) - 1 column para hindi mag-break */
+@media (min-width: 400px) and (max-width: 575px) {
+    .form-card {
+        padding: 0.8rem;
+    }
+    
+    .form-card h5 {
+        font-size: 1rem;
+    }
+    
+    .form-card h5 i {
+        font-size: 0.9rem;
+        padding: 0.3rem;
+    }
+    
+    .form-label {
+        font-size: 0.75rem;
+    }
+    
+    .form-label i {
+        font-size: 0.8rem;
+    }
+    
+    .form-select, 
+    .form-control {
+        font-size: 0.75rem;
+        padding: 0.3rem 0.6rem;
+        min-height: 32px;
+    }
+    
+    .form-select {
+        padding-right: 1.8rem;
+        background-position: right 0.5rem center;
+        background-size: 11px 9px;
+    }
+    
+    .col-12, .col-sm-6 {
+        width: 100% !important;
+        flex: 0 0 100%;
+        max-width: 100%;
+    }
+    
+    .row.mt-3 > [class*="col-"] {
+        margin-bottom: 0.8rem;
+    }
+    
+    .row.mt-3 > [class*="col-"]:last-child {
+        margin-bottom: 0;
+    }
+}
+
+/* Medium (576px - 767px) - 2 columns na */
+@media (min-width: 576px) and (max-width: 767px) {
+    .form-card {
+        padding: 1rem;
     }
     
     .form-card h5 {
         font-size: 1.1rem;
     }
     
-    .d-flex.justify-content-between.align-items-center {
-        flex-wrap: wrap;
-        gap: 10px;
+    .form-card h5 i {
+        font-size: 1rem;
+        padding: 0.35rem;
+    }
+    
+    .form-label {
+        font-size: 0.8rem;
+    }
+    
+    .form-label i {
+        font-size: 0.85rem;
+    }
+    
+    .form-select, 
+    .form-control {
+        font-size: 0.8rem;
+        padding: 0.35rem 0.65rem;
+        min-height: 34px;
+    }
+    
+    .form-select {
+        padding-right: 2rem;
+        background-size: 12px 10px;
+    }
+    
+    .col-sm-6 {
+        width: 50% !important;
+        flex: 0 0 50%;
+        max-width: 50%;
     }
 }
 
-@media (max-width: 576px) {
+/* Tablet (768px - 991px) */
+@media (min-width: 768px) and (max-width: 991px) {
     .form-card {
-        padding: 12px;
+        padding: 1.2rem;
     }
     
-    .col-md-4 {
-        margin-bottom: 10px;
+    .form-card h5 {
+        font-size: 1.2rem;
+    }
+    
+    .form-card h5 i {
+        font-size: 1.1rem;
+        padding: 0.4rem;
     }
     
     .form-label {
         font-size: 0.85rem;
-        margin-bottom: 4px;
     }
     
-    .form-select {
+    .form-label i {
         font-size: 0.9rem;
-        padding: 8px 10px;
-        min-height: 42px;
     }
     
-    .form-card h5 {
-        font-size: 1rem;
+    .form-select, 
+    .form-control {
+        font-size: 0.85rem;
+        padding: 0.4rem 0.7rem;
+        min-height: 36px;
+    }
+    
+    .col-md-6 {
+        width: 50% !important;
     }
 }
 
-/* Optional: Para sa mas maayos na display sa landscape orientation */
-@media (max-width: 768px) and (orientation: landscape) {
-    .col-md-4 {
-        width: 33.33%;
-        margin-bottom: 0;
+/* Small Desktop (992px - 1199px) */
+@media (min-width: 992px) and (max-width: 1199px) {
+    .form-card {
+        padding: 1.3rem;
     }
     
-    .form-select {
-        min-height: 40px;
-        padding: 8px 10px;
+    .form-card h5 {
+        font-size: 1.3rem;
+    }
+    
+    .form-label {
+        font-size: 0.9rem;
+    }
+    
+    .form-select, 
+    .form-control {
+        font-size: 0.9rem;
+        padding: 0.5rem 0.8rem;
+        min-height: 38px;
     }
 }
-</style>
+
+/* Large Desktop (1200px and up) */
+@media (min-width: 1200px) {
+    .form-card {
+        padding: 1.5rem;
+    }
+    
+    .form-card h5 {
+        font-size: 1.4rem;
+    }
+    
+    .form-label {
+        font-size: 0.95rem;
+    }
+    
+    .form-select, 
+    .form-control {
+        font-size: 0.95rem;
+        padding: 0.6rem 0.9rem;
+        min-height: 40px;
+    }
+}
+
+/* Extra Large Desktop (1400px and up) */
+@media (min-width: 1400px) {
+    .form-card {
+        padding: 1.8rem;
+    }
+    
+    .form-card h5 {
+        font-size: 1.5rem;
+    }
+    
+    .form-label {
+        font-size: 1rem;
+    }
+    
+    .form-select, 
+    .form-control {
+        font-size: 1rem;
+        padding: 0.7rem 1rem;
+        min-height: 42px;
+    }
+}
+
+/* ===== CONTAINER FIXES - PARA HINDI MAG-BREAK ===== */
+.row.mt-3 {
+    display: flex;
+    flex-wrap: wrap;
+    margin-right: -0.5rem;
+    margin-left: -0.5rem;
+}
+
+.row.mt-3 > [class*="col-"] {
+    padding-right: 0.5rem;
+    padding-left: 0.5rem;
+    box-sizing: border-box;
+}
+
+/* Fix para sa Bootstrap grid */
+.g-3 {
+    --bs-gutter-x: 1rem;
+    --bs-gutter-y: 1rem;
+}
+
+@media (max-width: 575px) {
+    .g-3 {
+        --bs-gutter-y: 0.75rem;
+    }
+}
+
+/* ===== DROPDOWN OPTIONS ===== */
+.form-select option {
+    font-size: inherit;
+    padding: clamp(0.2rem, 1vw, 0.4rem);
+    /* REMOVED: white-space, overflow, text-overflow - sa options lang dapat */
+}
+
+/* ===== ANIMATION ===== */
+.form-card {
+    animation: fadeInUp 0.3s ease-out;
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+/* I-add ito sa loob ng <style> tag */
+.stat-card-row {
+    margin-bottom: 1.5rem !important;
+}
+
+/* Para sa mobile, ensure na may space */
+@media (max-width: 768px) {
+    .stat-card-row {
+        margin-bottom: 1rem !important;
+    }
+    
+    .form-card {
+        margin-top: 0.5rem;
+    }
+}
+/* ===== SPACING BETWEEN SECTIONS ===== */
+
+/* Space between Filter and Table */
+.data-table {
+    margin-top: -2rem !important; /* dagdag space sa taas ng table */
+}
+
+/* Alternative kung gusto mo sa filter mismo ang space */
+.form-card {
+    margin-bottom: 2rem !important; /* space sa baba ng filter */
+}
+
+/* Responsive spacing */
+@media (max-width: 768px) {
+    .data-table {
+        margin-top: -1.5rem !important;
+    }
+    
+    .form-card {
+        margin-bottom: 1.5rem !important;
+    }
+}
+
+@media (max-width: 576px) {
+    .data-table {
+        margin-top: -1rem !important;
+    }
+    
+    .form-card {
+        margin-bottom: 1rem !important;
+    }
+}
+    </style>
+</head>
 <body>
     <!-- MAIN APPLICATION -->
     <div id="appPage">
@@ -298,7 +728,7 @@ if (isset($_GET['ajax']) && isset($_GET['id'])) {
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="drivers.php">
-                            <i class="bi bi-person-badge"></i>
+                            <i class="bi bi-people"></i>
                             <span class="nav-text">User Management</span>
                         </a>
                     </li>
@@ -337,78 +767,93 @@ if (isset($_GET['ajax']) && isset($_GET['id'])) {
             <!-- ALL ITEMS PAGE -->
             <div id="itemsContent" class="page-content active">
                 <div class="navbar-top">
-                        <button class="mobile-toggle-btn" id="mobileToggleBtn">
-                            <i class="bi bi-list"></i>
-                        </button>
+                    <button class="mobile-toggle-btn" id="mobileToggleBtn">
+                        <i class="bi bi-list"></i>
+                    </button>
 
-                        <div class="page-title">
+                    <div class="page-title">
                         <h2>All Items Catalog</h2>
                         <p>View all items across the system, including out-of-stock items</p>
                     </div>
                 </div>
+<div class="row stat-card-row g-1 g-sm-2">
+    <!-- Card 1 - Total Items -->
+    <div class="col">
+        <div class="stat-card total">
+            <i class="bi bi-box"></i>
+            <div class="stat-content">
+                <div class="stat-value" id="totalItems"><?php echo number_format($totalItems); ?></div>
+                <div class="stat-label">Total Items</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Card 2 - In Stock -->
+    <div class="col">
+        <div class="stat-card sales">
+            <i class="bi bi-cart"></i>
+            <div class="stat-content">
+                <div class="stat-value" id="inStockItems"><?php echo number_format($inStockItems); ?></div>
+                <div class="stat-label">In Stock</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Card 3 - Out of Stock -->
+    <div class="col">
+        <div class="stat-card complete">
+            <i class="bi bi-x-circle"></i>
+            <div class="stat-content">
+                <div class="stat-value" id="outOfStockItems"><?php echo number_format($outOfStockItems); ?></div>
+                <div class="stat-label">Out of Stock</div>
+            </div>
+        </div>
+    </div>
+</div> <!-- Isang closing div lang dito -->
 
-                <div class="row g-3 mb-4">
-                    <div class="col-md-4">
-                        <div class="stat-card total">
-                            <div class="stat-value" id="totalItems"><?php echo number_format($totalItems); ?></div>
-                            <div class="stat-label">Total Items</div>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="stat-card sales">
-                            <div class="stat-value" id="inStockItems"><?php echo number_format($inStockItems); ?></div>
-                            <div class="stat-label">In Stock</div>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="stat-card complete">
-                            <div class="stat-value" id="outOfStockItems"><?php echo number_format($outOfStockItems); ?></div>
-                            <div class="stat-label">Out of Stock</div>
-                        </div>
-                    </div>
+<!-- Filter Section - Hiwalay na row -->
+<div class="row g-3 mb-4">
+    <div class="col-12">
+        <div class="form-card">
+            <div class="d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Filter Items</h5>
+            </div>
+            <div class="row mt-3">
+                <!-- Filter options here -->
+                <div class="col-md-4">
+                    <label class="form-label">Category</label>
+                    <select class="form-select" id="categoryFilter" onchange="applyFilters()">
+                        <option value="">All Categories</option>
+                        <?php foreach ($categories as $cat): ?>
+                            <option value="<?php echo htmlspecialchars($cat); ?>" <?php echo $category == $cat ? 'selected' : ''; ?>>
+                                <?php echo htmlspecialchars($cat); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
                 </div>
-
-                <div class="row g-3 mb-4">
-                    <div class="col-12">
-                        <div class="form-card">
-                            <div class="d-flex justify-content-between align-items-center">
-                                <h5 class="mb-0">Filter Items</h5>
-                            </div>
-                            <div class="row mt-3">
-                                <div class="col-md-4">
-                                    <label class="form-label">Category</label>
-                                    <select class="form-select" id="categoryFilter" onchange="applyFilters()">
-                                        <option value="">All Categories</option>
-                                        <?php foreach ($categories as $cat): ?>
-                                            <option value="<?php echo htmlspecialchars($cat); ?>" <?php echo $category == $cat ? 'selected' : ''; ?>>
-                                                <?php echo htmlspecialchars($cat); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </div>
-                                <div class="col-md-4">
-                                    <label class="form-label">Stock Status</label>
-                                    <select class="form-select" id="stockFilter" onchange="applyFilters()">
-                                        <option value="">All Items</option>
-                                        <option value="in_stock" <?php echo $stock == 'in_stock' ? 'selected' : ''; ?>>In Stock</option>
-                                        <option value="low_stock" <?php echo $stock == 'low_stock' ? 'selected' : ''; ?>>Low Stock</option>
-                                        <option value="out_of_stock" <?php echo $stock == 'out_of_stock' ? 'selected' : ''; ?>>Out of Stock</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-4">
-                                    <label class="form-label">Price Range</label>
-                                    <select class="form-select" id="priceFilter" onchange="applyFilters()">
-                                        <option value="">All Prices</option>
-                                        <option value="0-50" <?php echo $price == '0-50' ? 'selected' : ''; ?>>₱0 - ₱50</option>
-                                        <option value="50-100" <?php echo $price == '50-100' ? 'selected' : ''; ?>>₱50 - ₱100</option>
-                                        <option value="100-500" <?php echo $price == '100-500' ? 'selected' : ''; ?>>₱100 - ₱500</option>
-                                        <option value="500+" <?php echo $price == '500+' ? 'selected' : ''; ?>>₱500+</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                <div class="col-md-4">
+                    <label class="form-label">Stock Status</label>
+                    <select class="form-select" id="stockFilter" onchange="applyFilters()">
+                        <option value="">All Items</option>
+                        <option value="in_stock" <?php echo $stock == 'in_stock' ? 'selected' : ''; ?>>In Stock</option>
+                        <option value="low_stock" <?php echo $stock == 'low_stock' ? 'selected' : ''; ?>>Low Stock</option>
+                        <option value="out_of_stock" <?php echo $stock == 'out_of_stock' ? 'selected' : ''; ?>>Out of Stock</option>
+                    </select>
                 </div>
+                <div class="col-md-4">
+                    <label class="form-label">Price Range</label>
+                    <select class="form-select" id="priceFilter" onchange="applyFilters()">
+                        <option value="">All Prices</option>
+                        <option value="0-50" <?php echo $price == '0-50' ? 'selected' : ''; ?>>₱0 - ₱50</option>
+                        <option value="50-100" <?php echo $price == '50-100' ? 'selected' : ''; ?>>₱50 - ₱100</option>
+                        <option value="100-500" <?php echo $price == '100-500' ? 'selected' : ''; ?>>₱100 - ₱500</option>
+                        <option value="500+" <?php echo $price == '500+' ? 'selected' : ''; ?>>₱500+</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+</div> <!-- Eto ang closing div para sa filter section -->
 
                 <div class="data-table">
                     <div class="table-header">
@@ -472,6 +917,95 @@ if (isset($_GET['ajax']) && isset($_GET['id'])) {
                             </tbody>
                         </table>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile Bottom Navigation -->
+    <div class="mobile-nav" id="mobileNav">
+        <ul class="nav">
+            <li class="nav-item">
+                <a class="nav-link" href="sales_reports.php">
+                    <i class="bi bi-graph-up"></i>
+                    <span>Reports</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="branch_records.php">
+                    <i class="bi bi-file-text"></i>
+                    <span>Records</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="all_items.php">
+                    <i class="bi bi-box"></i>
+                    <span>Items</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link active" href="drivers.php">
+                    <i class="bi bi-people"></i>
+                    <span>Users</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="trip_tickets.php">
+                    <i class="bi bi-ticket-perforated"></i>
+                    <span>Tickets</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="driver_tracking.php">
+                    <i class="bi bi-geo-alt"></i>
+                    <span>Tracking</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link logout-btn" href="#" onclick="showProfileModal(); return false;">
+                    <i class="bi bi-box-arrow-right"></i>
+                    <span>Logout</span>
+                </a>
+            </li>
+        </ul>
+    </div>
+
+    <!-- Mobile Profile/Logout Modal -->
+    <div class="modal fade" id="profileModal" tabindex="-1" aria-labelledby="profileModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="profileModalLabel">
+                        <i class="bi bi-person-circle me-2"></i>User Profile
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <!-- User Avatar -->
+                    <div class="user-avatar-large mb-3">
+                        <?php echo $user_initials; ?>
+                    </div>
+                    
+                    <!-- User Name -->
+                    <h4 class="mb-1"><?php echo htmlspecialchars($user_name); ?></h4>
+                    
+                    <!-- User Role -->
+                    <p class="text-muted mb-3">
+                        <span class="badge bg-success"><?php echo ucfirst($user_role); ?></span>
+                    </p>
+                    
+                    <!-- Branch Info (if applicable) -->
+                    <?php if (!$view_all_branches && $user_branch_id > 0): ?>
+                    <div class="branch-info mb-3">
+                        <i class="bi bi-building me-1"></i>
+                        <span><?php echo htmlspecialchars($branch_name); ?></span>
+                    </div>
+                    <?php endif; ?>
+                    
+                    <!-- Logout Button -->
+                    <button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()">
+                        <i class="bi bi-box-arrow-right me-2"></i>Logout
+                    </button>
                 </div>
             </div>
         </div>
@@ -670,21 +1204,61 @@ if (isset($_GET['ajax']) && isset($_GET['id'])) {
         }
         // ================= END SIDEBAR FUNCTIONS =================
 
-        // Apply filters by submitting form
-        function applyFilters() {
-            const category = document.getElementById('categoryFilter').value;
-            const stock = document.getElementById('stockFilter').value;
-            const price = document.getElementById('priceFilter').value;
+        // ================= MOBILE NAVIGATION FUNCTIONS =================
+        function initMobileNav() {
+            const mobileNav = document.getElementById('mobileNav');
+            const isMobile = window.innerWidth <= 992;
             
-            const params = new URLSearchParams();
-            if (category) params.append('category', category);
-            if (stock) params.append('stock', stock);
-            if (price) params.append('price', price);
-            
-            window.location.href = 'all_items.php?' + params.toString();
+            if (isMobile) {
+                mobileNav.style.display = 'block';
+                
+                // Set active state based on current page (excluding logout)
+                const currentPage = window.location.pathname.split('/').pop();
+                const navLinks = mobileNav.querySelectorAll('.nav-link:not(.logout-btn)');
+                
+                navLinks.forEach(link => {
+                    link.classList.remove('active');
+                    const href = link.getAttribute('href');
+                    if (currentPage === href) {
+                        link.classList.add('active');
+                    }
+                });
+            } else {
+                mobileNav.style.display = 'none';
+            }
         }
 
-        // Logout function with SweetAlert2 confirmation
+        // ================= PROFILE/LOGOUT FUNCTIONS =================
+        function showProfileModal() {
+            const profileModal = new bootstrap.Modal(document.getElementById('profileModal'));
+            profileModal.show();
+        }
+
+        function confirmLogout() {
+            // Close the modal first
+            const modal = bootstrap.Modal.getInstance(document.getElementById('profileModal'));
+            if (modal) {
+                modal.hide();
+            }
+            
+            // Show confirmation dialog
+            Swal.fire({
+                title: 'Are you sure?',
+                text: 'You will be logged out of the system',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#dc3545',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, logout'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    localStorage.removeItem('sidebarCollapsed');
+                    window.location.href = '../logout.php';
+                }
+            });
+        }
+
+        // Original logout function for sidebar
         function logout() {
             Swal.fire({
                 title: 'Are you sure?',
@@ -700,6 +1274,20 @@ if (isset($_GET['ajax']) && isset($_GET['id'])) {
                     window.location.href = '../logout.php';
                 }
             });
+        }
+
+        // Apply filters by submitting form
+        function applyFilters() {
+            const category = document.getElementById('categoryFilter').value;
+            const stock = document.getElementById('stockFilter').value;
+            const price = document.getElementById('priceFilter').value;
+            
+            const params = new URLSearchParams();
+            if (category) params.append('category', category);
+            if (stock) params.append('stock', stock);
+            if (price) params.append('price', price);
+            
+            window.location.href = 'all_items.php?' + params.toString();
         }
 
         // View item details via AJAX
@@ -721,13 +1309,13 @@ if (isset($_GET['ajax']) && isset($_GET['id'])) {
                                 <dt class="col-sm-4">Item Code:</dt>
                                 <dd class="col-sm-8">${item.item_code || 'N/A'}</dd>
                                 <dt class="col-sm-4">Item Name:</dt>
-                                <dd class="col-sm-8">${item.item_name}</dd>
+                                <dd class="col-sm-8">${escapeHtml(item.item_name)}</dd>
                                 <dt class="col-sm-4">Category:</dt>
-                                <dd class="col-sm-8">${item.category || 'N/A'}</dd>
+                                <dd class="col-sm-8">${escapeHtml(item.category || 'N/A')}</dd>
                                 <dt class="col-sm-4">Description:</dt>
-                                <dd class="col-sm-8">${item.description || 'No description'}</dd>
+                                <dd class="col-sm-8">${escapeHtml(item.description || 'No description')}</dd>
                                 <dt class="col-sm-4">Unit Type:</dt>
-                                <dd class="col-sm-8">${item.unit_type || 'piece'}</dd>
+                                <dd class="col-sm-8">${escapeHtml(item.unit_type || 'piece')}</dd>
                                 <dt class="col-sm-4">Unit Price:</dt>
                                 <dd class="col-sm-8">₱${parseFloat(item.unit_price || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</dd>
                                 <dt class="col-sm-4">Stock Quantity:</dt>
@@ -735,7 +1323,8 @@ if (isset($_GET['ajax']) && isset($_GET['id'])) {
                                 <dt class="col-sm-4">Reorder Level:</dt>
                                 <dd class="col-sm-8">${Number(item.reorder_level || 50).toLocaleString()}</dd>
                                 <dt class="col-sm-4">Status:</dt>
-                                <dd class="col-sm-8"><span class="badge ${item.status === 'active' ? 'bg-success' : 'bg-secondary'}">${item.status || 'active'}</span></dd>
+                                <dd class="col-sm-8"><span class="badge ${item.status === 'active' ? 'bg-success' : 'bg-secondary'}">${escapeHtml(item.status || 'active')}</span></dd>
+                                ${item.branch_id ? `<dt class="col-sm-4">Branch:</dt><dd class="col-sm-8">${escapeHtml(item.branch_name || 'Branch ' + item.branch_id)}</dd>` : ''}
                                 <dt class="col-sm-4">Created At:</dt>
                                 <dd class="col-sm-8">${item.created_at ? new Date(item.created_at).toLocaleString() : 'N/A'}</dd>
                                 <dt class="col-sm-4">Updated At:</dt>
@@ -752,12 +1341,22 @@ if (isset($_GET['ajax']) && isset($_GET['id'])) {
                 });
         }
 
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', function() {
             console.log("Items Management page loaded!");
             
             // Initialize sidebar
             initializeSidebar();
+            
+            // Initialize mobile navigation
+            initMobileNav();
             
             // Setup mobile toggle button
             const mobileToggleBtn = document.getElementById('mobileToggleBtn');
@@ -802,7 +1401,10 @@ if (isset($_GET['ajax']) && isset($_GET['id'])) {
             });
 
             // Add resize event listener
-            window.addEventListener('resize', handleSidebarResize);
+            window.addEventListener('resize', function() {
+                handleSidebarResize();
+                initMobileNav();
+            });
         });
 
         // Keyboard shortcuts
@@ -815,6 +1417,17 @@ if (isset($_GET['ajax']) && isset($_GET['id'])) {
             // Escape to close sidebar on mobile
             else if (e.key === 'Escape' && window.innerWidth <= 992) {
                 closeMobileSidebar();
+            }
+            // Escape to close modal
+            else if (e.key === 'Escape') {
+                const profileModal = document.getElementById('profileModal');
+                if (profileModal.classList.contains('show')) {
+                    bootstrap.Modal.getInstance(profileModal).hide();
+                }
+                const itemModal = document.getElementById('itemModal');
+                if (itemModal.classList.contains('show')) {
+                    bootstrap.Modal.getInstance(itemModal).hide();
+                }
             }
         });
     </script>

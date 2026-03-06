@@ -8,6 +8,27 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
+// Get user info for display
+$user_id = $_SESSION['user_id'];
+$user_name = $_SESSION['user_name'] ?? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] ?? 'Quality Control';
+$user_role = $_SESSION['role'] ?? 'global';
+$view_all_branches = $_SESSION['view_all_branches'] ?? true;
+
+// Get user's branch name for display (if applicable)
+$branch_name = 'All Branches';
+$user_branch_id = $_SESSION['branch_id'] ?? 0;
+if (!$view_all_branches && $user_branch_id > 0) {
+    $branch_query = "SELECT branch_name FROM branches WHERE branch_id = ?";
+    $branch_stmt = $conn->prepare($branch_query);
+    $branch_stmt->bind_param("i", $user_branch_id);
+    $branch_stmt->execute();
+    $branch_result = $branch_stmt->get_result();
+    if ($branch_row = $branch_result->fetch_assoc()) {
+        $branch_name = $branch_row['branch_name'];
+    }
+    $branch_stmt->close();
+}
+
 // Get filter parameters
 $status = isset($_GET['status']) ? $_GET['status'] : '';
 $origin = isset($_GET['origin']) ? $_GET['origin'] : '';
@@ -34,6 +55,13 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
     $params = [];
     $types = "";
 
+    // Add branch filter based on user permissions
+    if (!$view_all_branches && $user_branch_id > 0) {
+        $where_conditions[] = "tt.branch_id = ?";
+        $params[] = $user_branch_id;
+        $types .= "i";
+    }
+
     // Status filter
     if (!empty($status)) {
         $where_conditions[] = "tt.trip_status = ?";
@@ -55,7 +83,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
         $types .= "s";
     }
 
-    // Build WHERE clause - if no filters, get ALL records
+    // Build WHERE clause - if no filters, get ALL records (but with branch filter if applicable)
     $where_clause = "";
     if (!empty($where_conditions)) {
         $where_clause = "WHERE " . implode(" AND ", $where_conditions);
@@ -382,9 +410,7 @@ while ($row = $branches_result->fetch_assoc()) {
     $branches[] = $row;
 }
 
-// Get user info from session
-$user_name = $_SESSION['user_name'] ?? 'Quality Control';
-$user_role = $_SESSION['user_role'] ?? 'QC Officer';
+// Get user initials for avatar
 $user_initials = '';
 if (!empty($user_name)) {
     $name_parts = explode(' ', $user_name);
@@ -430,30 +456,322 @@ $default_date = isset($_GET['date']) ? $_GET['date'] : '';
         .text-start {
             text-align: left !important;
         }
-        .stat-value {
-            font-size: 1.8rem;
+        /* Mobile Profile Modal Styles */
+        .user-avatar-large {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #047857, #44D34E);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin: 0 auto;
+            border: 4px solid #d1fae5;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        #profileModal .modal-content {
+            border: none;
+            border-radius: 20px;
+            overflow: hidden;
+        }
+
+        #profileModal .modal-header {
+            background: linear-gradient(135deg, #047857, #44D34E);
+            color: white;
+            border-bottom: none;
+            padding: 1.5rem;
+        }
+
+        #profileModal .modal-header .modal-title {
+            color: white;
             font-weight: 600;
-            line-height: 1.2;
         }
-        /* Mobile responsive adjustments */
-        @media (max-width: 768px) {
-            .stat-card {
-                padding: 12px;
-                min-height: 85px;
-                margin-bottom: 8px;
-            }
-            .stat-value {
-                font-size: 1.5rem;
-            }
-            .stat-label {
-                font-size: 0.8rem;
-            }
-            .col-md-3 {
-                width: 50%;
-                padding-left: 8px;
-                padding-right: 8px;
-            }
+
+        #profileModal .modal-header .btn-close {
+            filter: brightness(0) invert(1);
+            opacity: 0.9;
         }
+
+        #profileModal .modal-header .btn-close:hover {
+            opacity: 1;
+            transform: rotate(90deg);
+        }
+
+        #profileModal .modal-body {
+            padding: 2rem;
+            background: linear-gradient(135deg, #f9fefc 0%, #f0fdf4 100%);
+        }
+
+        #profileModal .branch-info {
+            background: #d1fae5;
+            color: #047857;
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+            display: inline-block;
+            font-weight: 500;
+        }
+
+        #profileModal .btn-danger {
+            background: linear-gradient(135deg, #dc3545, #f87171);
+            border: none;
+            padding: 1rem;
+            border-radius: 50px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        #profileModal .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(220, 53, 69, 0.3);
+        }
+
+        /* Mobile Logout Button in Bottom Nav */
+        .mobile-nav .nav-link.logout-btn {
+            color: #dc3545;
+        }
+
+        .mobile-nav .nav-link.logout-btn i {
+            color: #dc3545;
+        }
+
+        .mobile-nav .nav-link.logout-btn.active,
+        .mobile-nav .nav-link.logout-btn:hover {
+            background: rgba(220, 53, 69, 0.1);
+            color: #dc3545;
+        }
+
+        .mobile-nav .nav-link.logout-btn.active i,
+        .mobile-nav .nav-link.logout-btn:hover i {
+            color: #dc3545;
+        }
+        /* ===== FILTER REPORTS & DROPDOWN - GAYA SA BRANCH RECORDS ===== */
+
+/* Form Card - Base */
+.form-card {
+    background: white;
+    border-radius: clamp(14px, 3vw, 20px);
+    padding: clamp(0.8rem, 3vw, 1.5rem);
+    box-shadow: 0 8px 20px -5px rgba(4, 120, 87, 0.12);
+    border: 1px solid rgba(68, 211, 78, 0.2);
+    margin-bottom: clamp(1rem, 2vw, 1.5rem);
+    transition: all 0.3s ease;
+    width: 100%;
+}
+
+/* Card Header */
+.form-card h5 {
+    color: var(--dark-green);
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: clamp(1rem, 4vw, 1.3rem);
+    margin-bottom: clamp(0.5rem, 2vw, 1rem);
+    padding-bottom: clamp(0.3rem, 1.5vw, 0.5rem);
+    border-bottom: 2px solid rgba(68, 211, 78, 0.2);
+    width: 100%;
+}
+
+.form-card h5 i {
+    color: var(--primary-green);
+    background: rgba(68, 211, 78, 0.1);
+    padding: clamp(0.3rem, 1.5vw, 0.5rem);
+    border-radius: clamp(6px, 2vw, 10px);
+    font-size: clamp(0.9rem, 3.5vw, 1.2rem);
+}
+
+/* Form Labels */
+.form-label {
+    font-weight: 600;
+    color: var(--dark-color);
+    margin-bottom: clamp(0.2rem, 1vw, 0.4rem);
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+    font-size: clamp(0.75rem, 3vw, 0.9rem);
+}
+
+.form-label i {
+    color: var(--primary-green);
+    font-size: clamp(0.8rem, 3.5vw, 1rem);
+}
+
+/* FORM CONTROLS - UNIFIED (SELECT & INPUT) */
+.form-select, 
+.form-control {
+    border: 2px solid #e5e7eb;
+    border-radius: clamp(6px, 2vw, 10px);
+    padding: clamp(0.35rem, 2vw, 0.7rem) clamp(0.7rem, 3vw, 1rem);
+    font-size: clamp(0.75rem, 3.5vw, 0.95rem);
+    height: auto;
+    min-height: clamp(32px, 7vw, 42px);
+    width: 100%;
+    background-color: white;
+    transition: all 0.2s ease;
+    line-height: 1.4;
+    box-sizing: border-box;
+}
+
+/* SELECT SPECIFIC - WITH CUSTOM ARROW */
+.form-select {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23047857' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+    background-repeat: no-repeat;
+    background-position: right clamp(0.5rem, 2vw, 0.75rem) center;
+    background-size: clamp(10px, 2.5vw, 14px) clamp(8px, 2vw, 12px);
+    padding-right: clamp(1.8rem, 6vw, 2.2rem);
+    appearance: none;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+}
+
+/* INPUT SPECIFIC */
+.form-control {
+    padding-right: clamp(0.7rem, 3vw, 1rem);
+}
+
+/* Focus States */
+.form-select:focus, 
+.form-control:focus {
+    border-color: var(--primary-green);
+    box-shadow: 0 0 0 3px rgba(68, 211, 78, 0.15);
+    outline: none;
+}
+
+/* Hover States */
+.form-select:hover, 
+.form-control:hover {
+    border-color: var(--primary-green);
+    background-color: rgba(68, 211, 78, 0.02);
+}
+
+/* Calendar Icon */
+input[type="date"]::-webkit-calendar-picker-indicator,
+input[type="month"]::-webkit-calendar-picker-indicator {
+    width: clamp(14px, 3.5vw, 18px);
+    height: clamp(14px, 3.5vw, 18px);
+    padding: clamp(1px, 0.5vw, 3px);
+    cursor: pointer;
+    opacity: 0.6;
+    transition: all 0.2s ease;
+}
+
+input[type="date"]::-webkit-calendar-picker-indicator:hover,
+input[type="month"]::-webkit-calendar-picker-indicator:hover {
+    opacity: 1;
+    background: rgba(68, 211, 78, 0.1);
+    transform: scale(1.1);
+}
+
+/* ===== RESPONSIVE GRID - FIXED VERSION ===== */
+
+/* Remove conflicting row styles */
+.form-card .row {
+    display: flex;
+    flex-wrap: wrap;
+    margin-right: -0.5rem;
+    margin-left: -0.5rem;
+}
+
+.form-card .row > [class*="col-"] {
+    padding-right: 0.5rem;
+    padding-left: 0.5rem;
+    margin-bottom: 1rem;
+}
+
+/* Gutter spacing */
+.g-3 {
+    --bs-gutter-x: 1rem;
+    --bs-gutter-y: 1rem;
+}
+
+/* ===== MOBILE (below 768px) - 2 COLUMNS ===== */
+@media (max-width: 767px) {
+    /* Force 2 columns sa mobile */
+    .form-card .row > .col-12,
+    .form-card .row > .col-sm-6,
+    .form-card .row > .col-md-3 {
+        flex: 0 0 50% !important;
+        max-width: 50% !important;
+    }
+    
+    /* Adjust spacing */
+    .form-card {
+        padding: 1rem;
+    }
+    
+    .form-card h5 {
+        font-size: 1.1rem;
+        margin-bottom: 0.8rem;
+    }
+    
+    .form-label {
+        font-size: 0.8rem;
+        margin-bottom: 0.2rem;
+    }
+    
+    .form-select, 
+    .form-control {
+        font-size: 0.8rem;
+        padding: 0.35rem 0.6rem;
+        min-height: 36px;
+    }
+}
+
+/* ===== TABLET TO DESKTOP (768px and up) - 4 COLUMNS ===== */
+@media (min-width: 768px) {
+    .form-card .row > .col-md-3 {
+        flex: 0 0 25%;
+        max-width: 25%;
+    }
+}
+
+/* ===== EXTRA SMALL (below 400px) ===== */
+@media (max-width: 399px) {
+    .form-card {
+        padding: 0.7rem;
+    }
+    
+    .form-card h5 {
+        font-size: 1rem;
+    }
+    
+    .form-label {
+        font-size: 0.7rem;
+    }
+    
+    .form-select, 
+    .form-control {
+        font-size: 0.7rem;
+        padding: 0.25rem 0.5rem;
+        min-height: 32px;
+    }
+}
+
+/* ===== DROPDOWN OPTIONS ===== */
+.form-select option {
+    font-size: inherit;
+    padding: clamp(0.2rem, 1vw, 0.4rem);
+}
+
+/* ===== ANIMATION ===== */
+.form-card {
+    animation: fadeInUp 0.3s ease-out;
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
     </style>
 </head>
 <body>
@@ -493,7 +811,7 @@ $default_date = isset($_GET['date']) ? $_GET['date'] : '';
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="drivers.php">
-                            <i class="bi bi-person-badge"></i>
+                            <i class="bi bi-people"></i>
                             <span class="nav-text">User Management</span>
                         </a>
                     </li>
@@ -541,75 +859,112 @@ $default_date = isset($_GET['date']) ? $_GET['date'] : '';
                     </div>
                 </div>
 
-                <div class="row g-3 mb-4">
-                    <div class="col-md-3">
-                        <div class="stat-card total">
-                            <div class="stat-value" id="totalTrips">0</div>
-                            <div class="stat-label">Total Trips</div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="stat-card sales">
-                            <div class="stat-value" id="completedTrips">0</div>
-                            <div class="stat-label">Completed</div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="stat-card complete">
-                            <div class="stat-value" id="inProgressTrips">0</div>
-                            <div class="stat-label">In Progress</div>
-                        </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="stat-card total">
-                            <div class="stat-value" id="delayedTrips">0</div>
-                            <div class="stat-label">Delayed</div>
-                        </div>
-                    </div>
+              <div class="row stat-card-row g-1 g-sm-2 mb-4">
+    <!-- Card 1 - Total Trips -->
+    <div class="col">
+        <div class="stat-card total">
+            <i class="bi bi-truck"></i>
+            <div class="stat-content">
+                <div class="stat-value" id="totalTrips">0</div>
+                <div class="stat-label">Total Trips</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Card 2 - Completed -->
+    <div class="col">
+        <div class="stat-card sales">
+            <i class="bi bi-check-circle"></i>
+            <div class="stat-content">
+                <div class="stat-value" id="completedTrips">0</div>
+                <div class="stat-label">Completed</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Card 3 - In Progress -->
+    <div class="col">
+        <div class="stat-card complete">
+            <i class="bi bi-gear"></i>
+            <div class="stat-content">
+                <div class="stat-value" id="inProgressTrips">0</div>
+                <div class="stat-label">In Progress</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Card 4 - Delayed -->
+    <div class="col">
+        <div class="stat-card total">
+            <i class="bi bi-exclamation-triangle"></i>
+            <div class="stat-content">
+                <div class="stat-value" id="delayedTrips">0</div>
+                <div class="stat-label">Delayed</div>
+            </div>
+        </div>
+    </div>
+</div>
+               <!-- FILTER SECTION - TRIP TICKETS (GAYA SA BRANCH RECORDS) -->
+<div class="row g-3 mb-4">
+    <div class="col-12">
+        <div class="form-card">
+            <h5 class="mb-3">
+                <i class="bi bi-funnel"></i> Filter Trip Tickets
+            </h5>
+            <div class="row g-3">
+                <!-- Status Filter -->
+                <div class="col-12 col-sm-6 col-md-3">
+                    <label class="form-label">
+                        <i class="bi bi-flag"></i> Status
+                    </label>
+                    <select class="form-select" id="statusFilter" onchange="loadTrips()">
+                        <option value="">All Status</option>
+                        <option value="planned">Planned</option>
+                        <option value="in-progress">In Progress</option>
+                        <option value="completed">Completed</option>
+                        <option value="delayed">Delayed</option>
+                        <option value="cancelled">Cancelled</option>
+                    </select>
                 </div>
-
-                <div class="row g-3 mb-4">
-                    <div class="col-12">
-                        <div class="form-card">
-                            <div class="row mt-3">
-                                <div class="col-md-3">
-                                    <label class="form-label">Status</label>
-                                    <select class="form-select" id="statusFilter" onchange="loadTrips()">
-                                        <option value="">All Status</option>
-                                        <option value="planned">Planned</option>
-                                        <option value="in-progress">In Progress</option>
-                                        <option value="completed">Completed</option>
-                                        <option value="delayed">Delayed</option>
-                                        <option value="cancelled">Cancelled</option>
-                                    </select>
-                                </div>
-                                <div class="col-md-3">
-                                    <label class="form-label">Origin/Branch</label>
-                                    <select class="form-select" id="originFilter" onchange="loadTrips()">
-                                        <option value="">All Origins</option>
-                                        <?php foreach ($branches as $branch): ?>
-                                            <option value="<?php echo $branch['branch_id']; ?>">
-                                                <?php echo htmlspecialchars($branch['branch_name']); ?>
-                                            </option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </div>
-                                <div class="col-md-3">
-                                    <label class="form-label">Trip Date</label>
-                                    <input type="date" class="form-control" id="dateFilter" value="<?php echo $default_date; ?>" placeholder="Select date" onchange="loadTrips()">
-                                </div>
-                                <div class="col-md-3">
-                                    <label class="form-label">Sort By</label>
-                                    <select class="form-select" id="sortFilter" onchange="loadTrips()">
-                                        <option value="date">Date (Newest First)</option>
-                                        <option value="status">Status</option>
-                                        <option value="driver">Driver Name</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
+                
+                <!-- Origin/Branch Filter -->
+                <div class="col-12 col-sm-6 col-md-3">
+                    <label class="form-label">
+                        <i class="bi bi-building"></i> Origin/Branch
+                    </label>
+                    <select class="form-select" id="originFilter" onchange="loadTrips()">
+                        <option value="">All Origins</option>
+                        <?php foreach ($branches as $branch): ?>
+                            <option value="<?php echo $branch['branch_id']; ?>">
+                                <?php echo htmlspecialchars($branch['branch_name']); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
                 </div>
+                
+                <!-- Trip Date Filter -->
+                <div class="col-12 col-sm-6 col-md-3">
+                    <label class="form-label">
+                        <i class="bi bi-calendar"></i> Trip Date
+                    </label>
+                    <input type="date" class="form-control" id="dateFilter" value="<?php echo $default_date; ?>" placeholder="Select date" onchange="loadTrips()">
+                </div>
+                
+                <!-- Sort By Filter -->
+                <div class="col-12 col-sm-6 col-md-3">
+                    <label class="form-label">
+                        <i class="bi bi-sort-down"></i> Sort By
+                    </label>
+                    <select class="form-select" id="sortFilter" onchange="loadTrips()">
+                        <option value="date">Date (Newest First)</option>
+                        <option value="status">Status</option>
+                        <option value="driver">Driver Name</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
                 <div class="data-table">
                     <div class="table-header">
@@ -643,6 +998,95 @@ $default_date = isset($_GET['date']) ? $_GET['date'] : '';
                             </tbody>
                         </table>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile Bottom Navigation -->
+    <div class="mobile-nav" id="mobileNav">
+        <ul class="nav">
+            <li class="nav-item">
+                <a class="nav-link" href="sales_reports.php">
+                    <i class="bi bi-graph-up"></i>
+                    <span>Reports</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="branch_records.php">
+                    <i class="bi bi-file-text"></i>
+                    <span>Records</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="all_items.php">
+                    <i class="bi bi-box"></i>
+                    <span>Items</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="drivers.php">
+                    <i class="bi bi-people"></i>
+                    <span>Users</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link active" href="trip_tickets.php">
+                    <i class="bi bi-ticket-perforated"></i>
+                    <span>Tickets</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="driver_tracking.php">
+                    <i class="bi bi-geo-alt"></i>
+                    <span>Tracking</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link logout-btn" href="#" onclick="showProfileModal(); return false;">
+                    <i class="bi bi-box-arrow-right"></i>
+                    <span>Logout</span>
+                </a>
+            </li>
+        </ul>
+    </div>
+
+    <!-- Mobile Profile/Logout Modal -->
+    <div class="modal fade" id="profileModal" tabindex="-1" aria-labelledby="profileModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="profileModalLabel">
+                        <i class="bi bi-person-circle me-2"></i>User Profile
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <!-- User Avatar -->
+                    <div class="user-avatar-large mb-3">
+                        <?php echo $user_initials; ?>
+                    </div>
+                    
+                    <!-- User Name -->
+                    <h4 class="mb-1"><?php echo htmlspecialchars($user_name); ?></h4>
+                    
+                    <!-- User Role -->
+                    <p class="text-muted mb-3">
+                        <span class="badge bg-success"><?php echo ucfirst($user_role); ?></span>
+                    </p>
+                    
+                    <!-- Branch Info (if applicable) -->
+                    <?php if (!$view_all_branches && $user_branch_id > 0): ?>
+                    <div class="branch-info mb-3">
+                        <i class="bi bi-building me-1"></i>
+                        <span><?php echo htmlspecialchars($branch_name); ?></span>
+                    </div>
+                    <?php endif; ?>
+                    
+                    <!-- Logout Button -->
+                    <button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()">
+                        <i class="bi bi-box-arrow-right me-2"></i>Logout
+                    </button>
                 </div>
             </div>
         </div>
@@ -765,7 +1209,61 @@ $default_date = isset($_GET['date']) ? $_GET['date'] : '';
         }
         // ================= END SIDEBAR FUNCTIONS =================
 
-        // Logout function with SweetAlert2 confirmation
+        // ================= MOBILE NAVIGATION FUNCTIONS =================
+        function initMobileNav() {
+            const mobileNav = document.getElementById('mobileNav');
+            const isMobile = window.innerWidth <= 992;
+            
+            if (isMobile) {
+                mobileNav.style.display = 'block';
+                
+                // Set active state based on current page (excluding logout)
+                const currentPage = window.location.pathname.split('/').pop();
+                const navLinks = mobileNav.querySelectorAll('.nav-link:not(.logout-btn)');
+                
+                navLinks.forEach(link => {
+                    link.classList.remove('active');
+                    const href = link.getAttribute('href');
+                    if (currentPage === href) {
+                        link.classList.add('active');
+                    }
+                });
+            } else {
+                mobileNav.style.display = 'none';
+            }
+        }
+
+        // ================= PROFILE/LOGOUT FUNCTIONS =================
+        function showProfileModal() {
+            const profileModal = new bootstrap.Modal(document.getElementById('profileModal'));
+            profileModal.show();
+        }
+
+        function confirmLogout() {
+            // Close the modal first
+            const modal = bootstrap.Modal.getInstance(document.getElementById('profileModal'));
+            if (modal) {
+                modal.hide();
+            }
+            
+            // Show confirmation dialog
+            Swal.fire({
+                title: 'Are you sure?',
+                text: 'You will be logged out of the system',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#dc3545',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, logout'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    localStorage.removeItem('sidebarCollapsed');
+                    window.location.href = '../logout.php';
+                }
+            });
+        }
+
+        // Original logout function for sidebar
         function logout() {
             Swal.fire({
                 title: 'Are you sure?',
@@ -783,6 +1281,7 @@ $default_date = isset($_GET['date']) ? $_GET['date'] : '';
             });
         }
 
+        // ================= TRIP FUNCTIONS =================
         // Load trips
         async function loadTrips() {
             const tbody = document.getElementById('tripsTable');
@@ -1004,9 +1503,10 @@ $default_date = isset($_GET['date']) ? $_GET['date'] : '';
             return div.innerHTML;
         }
 
-        // Initialize when page loads
+        // ================= INITIALIZATION =================
         document.addEventListener('DOMContentLoaded', function() {
             initializeSidebar();
+            initMobileNav();
             
             const mobileToggleBtn = document.getElementById('mobileToggleBtn');
             if (mobileToggleBtn) {
@@ -1046,7 +1546,10 @@ $default_date = isset($_GET['date']) ? $_GET['date'] : '';
                 }
             });
 
-            window.addEventListener('resize', handleSidebarResize);
+            window.addEventListener('resize', function() {
+                handleSidebarResize();
+                initMobileNav();
+            });
             
             // Load trips on page load
             loadTrips();
@@ -1060,6 +1563,16 @@ $default_date = isset($_GET['date']) ? $_GET['date'] : '';
             }
             else if (e.key === 'Escape' && window.innerWidth <= 992) {
                 closeMobileSidebar();
+            }
+            else if (e.key === 'Escape') {
+                const profileModal = document.getElementById('profileModal');
+                if (profileModal.classList.contains('show')) {
+                    bootstrap.Modal.getInstance(profileModal).hide();
+                }
+                const tripModal = document.getElementById('tripModal');
+                if (tripModal.classList.contains('show')) {
+                    bootstrap.Modal.getInstance(tripModal).hide();
+                }
             }
             else if (e.ctrlKey && e.key === 'r') {
                 e.preventDefault();

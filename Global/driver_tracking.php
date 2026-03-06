@@ -9,8 +9,25 @@ if (!isset($_SESSION['user_id'])) {
 }
 
 // Get user info for display
+$user_id = $_SESSION['user_id'];
 $user_name = $_SESSION['user_name'] ?? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] ?? 'User';
 $user_role = $_SESSION['role'] ?? 'global';
+$view_all_branches = $_SESSION['view_all_branches'] ?? true;
+
+// Get user's branch name for display (if applicable)
+$branch_name = 'All Branches';
+$user_branch_id = $_SESSION['branch_id'] ?? 0;
+if (!$view_all_branches && $user_branch_id > 0) {
+    $branch_query = "SELECT branch_name FROM branches WHERE branch_id = ?";
+    $branch_stmt = $conn->prepare($branch_query);
+    $branch_stmt->bind_param("i", $user_branch_id);
+    $branch_stmt->execute();
+    $branch_result = $branch_stmt->get_result();
+    if ($branch_row = $branch_result->fetch_assoc()) {
+        $branch_name = $branch_row['branch_name'];
+    }
+    $branch_stmt->close();
+}
 
 // Get initials for avatar
 $name_parts = explode(' ', $user_name);
@@ -87,6 +104,13 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
                         LEFT JOIN trip_tickets tt ON d.driver_id = tt.driver_id 
                             AND tt.trip_status IN ('in-progress', 'planned')
                         WHERE 1=1";
+        
+        // Apply branch filter based on user permissions
+        if (!$view_all_branches && $user_branch_id > 0) {
+            $drivers_sql .= " AND d.branch_id = ?";
+            $params[] = $user_branch_id;
+            $types .= "i";
+        }
         
         // Apply filters
         $params = [];
@@ -218,13 +242,26 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
                     FROM trip_tickets tt
                     JOIN drivers d ON tt.driver_id = d.driver_id
                     JOIN branches b ON tt.branch_id = b.branch_id
-                    LEFT JOIN deliveries del ON tt.trip_id = del.trip_id
-                    WHERE tt.trip_status IN ('in-progress', 'planned')
-                    GROUP BY tt.trip_id
-                    ORDER BY tt.start_time DESC
-                    LIMIT 20";
+                    LEFT JOIN deliveries del ON tt.trip_id = del.trip_id";
         
-        $trips_result = $conn->query($trips_sql);
+        // Apply branch filter to trips based on user permissions
+        if (!$view_all_branches && $user_branch_id > 0) {
+            $trips_sql .= " WHERE tt.branch_id = ?";
+            $trip_params[] = $user_branch_id;
+        }
+        
+        $trips_sql .= " GROUP BY tt.trip_id
+                        ORDER BY tt.start_time DESC
+                        LIMIT 20";
+        
+        $trip_stmt = $conn->prepare($trips_sql);
+        
+        if (!$view_all_branches && $user_branch_id > 0 && isset($trip_params)) {
+            $trip_stmt->bind_param("i", $user_branch_id);
+        }
+        
+        $trip_stmt->execute();
+        $trips_result = $trip_stmt->get_result();
         
         if ($trips_result) {
             while ($row = $trips_result->fetch_assoc()) {
@@ -251,6 +288,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
                 ];
             }
         }
+        
+        $trip_stmt->close();
         
         $response['stats'] = [
             'totalDrivers' => $total_drivers,
@@ -521,373 +560,29 @@ if (isset($_GET['ajax_trip']) && isset($_GET['id'])) {
     <!-- Leaflet CSS -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
-        /* Global Styles */
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #f8f9fa;
-            overflow-x: hidden;
-        }
-        
-        #appPage {
-            display: flex;
-            min-height: 100vh;
-        }
-        
-        /* Sidebar */
-        .sidebar {
-            width: 250px;
-            background: linear-gradient(180deg, #2c3e50 0%, #1a2634 100%);
-            color: white;
-            height: 100vh;
-            position: fixed;
-            left: 0;
-            top: 0;
-            transition: width 0.3s ease;
-            z-index: 1000;
-            overflow-y: auto;
-            box-shadow: 2px 0 10px rgba(0,0,0,0.1);
-        }
-        
-        .sidebar.collapsed {
-            width: 80px;
-        }
-        
-        .sidebar.collapsed .nav-text,
-        .sidebar.collapsed .user-name-sidebar,
-        .sidebar.collapsed .logout-text {
-            display: none;
-        }
-        
-        .sidebar-header {
-            padding: 20px;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
-        }
-        
-        .sidebar-header h3 {
-            margin: 0;
-            font-size: 1.2rem;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            color: white;
-        }
-        
-        .logo-icon {
-            width: 32px;
-            height: 32px;
-            object-fit: contain;
-        }
-        
-        .desktop-toggle-btn {
-            background: transparent;
-            border: none;
-            color: white;
-            font-size: 1.2rem;
-            cursor: pointer;
-            padding: 5px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .sidebar-menu {
-            flex: 1;
-            padding: 20px 0;
-        }
-        
-        .sidebar-menu .nav-link {
-            color: rgba(255,255,255,0.7);
-            padding: 12px 20px;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            text-decoration: none;
-            transition: all 0.3s;
-            border-left: 3px solid transparent;
-        }
-        
-        .sidebar-menu .nav-link i {
-            font-size: 1.2rem;
-            width: 24px;
-            text-align: center;
-        }
-        
-        .sidebar-menu .nav-link:hover {
-            background: rgba(255,255,255,0.1);
-            color: white;
-        }
-        
-        .sidebar-menu .nav-link.active {
-            background: rgba(255,255,255,0.15);
-            color: white;
-            border-left-color: #FF6B35;
-        }
-        
-        .sidebar-footer {
-            padding: 20px;
-            border-top: 1px solid rgba(255,255,255,0.1);
-        }
-        
-        .user-profile-sidebar {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 15px;
-        }
-        
-        .user-avatar-sidebar {
-            width: 40px;
-            height: 40px;
-            background: #FF6B35;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 600;
-            font-size: 1.1rem;
-            color: white;
-        }
-        
-        .user-details-sidebar {
-            overflow: hidden;
-        }
-        
-        .user-name-sidebar {
-            font-weight: 500;
-            font-size: 0.9rem;
-            white-space: nowrap;
-        }
-        
-        .logout-btn-sidebar {
-            width: 100%;
-            padding: 10px;
-            background: rgba(255,255,255,0.1);
-            border: 1px solid rgba(255,255,255,0.2);
-            border-radius: 8px;
-            color: white;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-            transition: all 0.3s;
-            cursor: pointer;
-            border: none;
-        }
-        
-        .logout-btn-sidebar:hover {
-            background: rgba(255,255,255,0.2);
-        }
-        
-        /* Main Content */
-        .main-content {
-            flex: 1;
-            margin-left: 250px;
-            transition: margin-left 0.3s ease;
-            padding: 20px;
-        }
-        
-        .navbar-top {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            margin-bottom: 25px;
-            background: white;
-            padding: 12px 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-        }
-        
-        .mobile-toggle-btn {
-            display: none;
-            background: transparent;
-            border: 1px solid #dee2e6;
-            border-radius: 8px;
-            padding: 8px 12px;
-            cursor: pointer;
-        }
-        
-        .page-title h2 {
-            margin: 0;
-            font-size: 1.4rem;
-            font-weight: 600;
-            color: #333;
-        }
-        
-        .page-title p {
-            margin: 5px 0 0;
-            font-size: 0.85rem;
-            color: #666;
-        }
-        
-        /* Stat Cards */
-        .stats-row {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 15px;
-            margin-bottom: 20px;
-        }
-        
-        .stat-card {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-            display: flex;
-            align-items: center;
-            gap: 15px;
-        }
-        
-        .stat-card.total .stat-icon { color: #6c5ce7; }
-        .stat-card.sales .stat-icon { color: #00b894; }
-        .stat-card.complete .stat-icon { color: #0984e3; }
-        
-        .stat-icon {
-            font-size: 2.5rem;
-        }
-        
-        .stat-value {
-            font-size: 1.8rem;
-            font-weight: 600;
-            color: #333;
-            line-height: 1.2;
-        }
-        
-        .stat-label {
-            font-size: 0.9rem;
-            color: #666;
-        }
-        
-        /* Form Card */
-        .form-card {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-        }
-        
-        /* Data Table */
-        .data-table {
-            background: white;
-            border-radius: 10px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-            overflow: hidden;
-            margin-bottom: 20px;
-        }
-        
-        .table-header {
-            padding: 15px 20px;
-            border-bottom: 1px solid #dee2e6;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .table-header h5 {
-            margin: 0;
-            font-size: 1.1rem;
-            font-weight: 600;
-            color: #333;
-        }
-        
-        .custom-table {
-            width: 100%;
-            margin: 0;
-        }
-        
-        .custom-table thead th {
-            background: #f8f9fa;
-            padding: 12px 15px;
-            font-size: 0.85rem;
-            font-weight: 600;
-            color: #333;
-            border-bottom: 2px solid #dee2e6;
-        }
-        
-        .custom-table tbody td {
-            padding: 12px 15px;
-            font-size: 0.9rem;
-            border-bottom: 1px solid #dee2e6;
-            vertical-align: middle;
-        }
-        
-        .id-column {
-            width: 80px;
-        }
-        
         /* Status badges */
         .badge.bg-success {
             background-color: #28a745 !important;
+            color: #fff !important;
         }
         .badge.bg-warning {
             background-color: #ffc107 !important;
-            color: #212529 !important;
+            color: #fff !important;
         }
         .badge.bg-secondary {
             background-color: #6c757d !important;
+            color: #fff !important;
         }
         .badge.bg-info {
             background-color: #17a2b8 !important;
+            color: #fff !important;
         }
-        
-        /* Location update indicator */
-        .location-indicator {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            margin-right: 5px;
-        }
-        .location-indicator.online {
-            background-color: #28a745;
-            box-shadow: 0 0 8px #28a745;
-            animation: pulse 1.5s infinite;
-        }
-        .location-indicator.idle {
-            background-color: #ffc107;
-            box-shadow: 0 0 8px #ffc107;
-        }
-        .location-indicator.offline {
-            background-color: #6c757d;
-        }
+
         
         @keyframes pulse {
             0% { opacity: 1; transform: scale(1); }
             50% { opacity: 0.5; transform: scale(1.2); }
             100% { opacity: 1; transform: scale(1); }
-        }
-        
-        /* Action buttons */
-        .btn-action {
-            width: 32px;
-            height: 32px;
-            border: none;
-            border-radius: 6px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 2px;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-        
-        .btn-action.btn-map {
-            background: #e3f2fd;
-            color: #1976d2;
-        }
-        
-        .btn-action.btn-view {
-            background: #e8f5e9;
-            color: #388e3c;
-        }
-        
-        .btn-action:hover {
-            transform: scale(1.1);
         }
         
         /* Map Container */
@@ -897,56 +592,354 @@ if (isset($_GET['ajax_trip']) && isset($_GET['id'])) {
             border-radius: 8px;
             overflow: hidden;
         }
-        
         /* Mobile responsive */
-        @media (max-width: 992px) {
-            .sidebar {
-                left: -250px;
-            }
-            .sidebar.active {
-                left: 0;
-            }
-            .main-content {
-                margin-left: 0 !important;
-            }
-            .mobile-toggle-btn {
-                display: block;
-            }
-            .stats-row {
-                grid-template-columns: repeat(2, 1fr);
-            }
-        }
-        
         @media (max-width: 768px) {
-            .stats-row {
-                grid-template-columns: 1fr;
-            }
             .stat-card {
-                padding: 15px;
+                padding: 12px;
+                min-height: 85px;
+                margin-bottom: 8px;
             }
+            
             .stat-icon {
                 font-size: 2rem;
+                margin-right: 12px;
             }
+            
             .stat-value {
                 font-size: 1.5rem;
             }
-        }
-
-        .filter-badge {
-            cursor: pointer;
-            padding: 5px 10px;
-            border-radius: 20px;
-            background: #f8f9fa;
-            border: 1px solid #dee2e6;
-            margin-right: 5px;
-            display: inline-block;
+            
+            .stat-label {
+                font-size: 0.8rem;
+            }
+            
+            .col-md-3 {
+                width: 50%;
+                padding-left: 8px;
+                padding-right: 8px;
+            }
+            
+            .row.g-3 {
+                margin-left: -8px;
+                margin-right: -8px;
+            }
         }
         
-        .filter-badge.active {
-            background: #007bff;
-            color: white;
-            border-color: #007bff;
+        @media (max-width: 576px) {
+            .stat-card {
+                min-height: 80px;
+                padding: 10px;
+            }
+            
+            .stat-icon {
+                font-size: 1.8rem;
+                margin-right: 10px;
+            }
+            
+            .stat-value {
+                font-size: 1.3rem;
+            }
+            
+            .stat-label {
+                font-size: 0.75rem;
+            }
         }
+
+        /* Mobile Profile Modal Styles */
+        .user-avatar-large {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #047857, #44D34E);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin: 0 auto;
+            border: 4px solid #d1fae5;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        #profileModal .modal-content {
+            border: none;
+            border-radius: 20px;
+            overflow: hidden;
+        }
+
+        #profileModal .modal-header {
+            background: linear-gradient(135deg, #047857, #44D34E);
+            color: white;
+            border-bottom: none;
+            padding: 1.5rem;
+        }
+
+        #profileModal .modal-header .modal-title {
+            color: white;
+            font-weight: 600;
+        }
+
+        #profileModal .modal-header .btn-close {
+            filter: brightness(0) invert(1);
+            opacity: 0.9;
+        }
+
+        #profileModal .modal-header .btn-close:hover {
+            opacity: 1;
+            transform: rotate(90deg);
+        }
+
+        #profileModal .modal-body {
+            padding: 2rem;
+            background: linear-gradient(135deg, #f9fefc 0%, #f0fdf4 100%);
+        }
+
+        #profileModal .branch-info {
+            background: #d1fae5;
+            color: #047857;
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+            display: inline-block;
+            font-weight: 500;
+        }
+
+        #profileModal .btn-danger {
+            background: linear-gradient(135deg, #dc3545, #f87171);
+            border: none;
+            padding: 1rem;
+            border-radius: 50px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        #profileModal .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(220, 53, 69, 0.3);
+        }
+
+        /* Mobile Logout Button in Bottom Nav */
+        .mobile-nav .nav-link.logout-btn {
+            color: #dc3545;
+        }
+
+        .mobile-nav .nav-link.logout-btn i {
+            color: #dc3545;
+        }
+
+        .mobile-nav .nav-link.logout-btn.active,
+        .mobile-nav .nav-link.logout-btn:hover {
+            background: rgba(220, 53, 69, 0.1);
+            color: #dc3545;
+        }
+
+        .mobile-nav .nav-link.logout-btn.active i,
+        .mobile-nav .nav-link.logout-btn:hover i {
+            color: #dc3545;
+        }
+        /* ===== UNIFIED STAT CARD STYLES - PARA MAGKAPAREHO LAHAT ===== */
+
+/* Base styles - gaya ng sa All Items Catalog */
+.stat-card {
+    border: none;
+    border-radius: 12px;
+    color: white;
+    padding: 1rem;
+    margin: 0;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+    height: 100%;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 1rem;
+}
+
+/* Icons - gaya ng sa All Items Catalog */
+.stat-card i {
+    font-size: 2rem;
+    opacity: 0.9;
+}
+
+/* Content container */
+.stat-content {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Value - gaya ng sa All Items Catalog (mas maliit) */
+.stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    line-height: 1.2;
+    margin: 0;
+}
+
+/* Label - gaya ng sa All Items Catalog */
+.stat-label {
+    font-size: 0.8rem;
+    font-weight: 500;
+    opacity: 0.9;
+    margin-top: 0.1rem;
+}
+
+/* ===== RESPONSIVE ADJUSTMENTS ===== */
+
+/* Tablet */
+@media (max-width: 768px) {
+    .stat-card {
+        padding: 0.8rem;
+        gap: 0.8rem;
+    }
+    .stat-card i {
+        font-size: 1.6rem;
+    }
+    .stat-value {
+        font-size: 1.3rem;
+    }
+    .stat-label {
+        font-size: 0.7rem;
+    }
+}
+
+/* Mobile */
+@media (max-width: 576px) {
+    .stat-card {
+        padding: 0.6rem;
+        gap: 0.6rem;
+    }
+    .stat-card i {
+        font-size: 1.4rem;
+    }
+    .stat-value {
+        font-size: 1.1rem;
+    }
+    .stat-label {
+        font-size: 0.65rem;
+    }
+}
+
+/* Small mobile */
+@media (max-width: 400px) {
+    .stat-card {
+        padding: 0.5rem;
+        gap: 0.5rem;
+    }
+    .stat-card i {
+        font-size: 1.2rem;
+    }
+    .stat-value {
+        font-size: 1rem;
+    }
+    .stat-label {
+        font-size: 0.6rem;
+    }
+}
+
+/* Landscape mode */
+@media (max-height: 500px) and (orientation: landscape) {
+    .stat-card {
+        padding: 0.4rem;
+        gap: 0.4rem;
+    }
+    .stat-card i {
+        font-size: 1rem;
+    }
+    .stat-value {
+        font-size: 0.9rem;
+    }
+    .stat-label {
+        font-size: 0.55rem;
+    }
+}
+/* Mobile responsive filters - gaya ng nasa image */
+@media (max-width: 768px) {
+    .form-card {
+        padding: 1rem;
+    }
+    
+    .form-card .row {
+        margin-left: -5px;
+        margin-right: -5px;
+    }
+    
+    .form-card [class*="col-"] {
+        padding-left: 5px;
+        padding-right: 5px;
+        margin-bottom: 10px;
+    }
+    
+    .form-label {
+        font-size: 0.85rem;
+        margin-bottom: 0.25rem;
+    }
+    
+    .form-control, 
+    .form-select {
+        padding: 0.6rem 0.75rem;
+        font-size: 0.9rem;
+    }
+    
+    /* Full width buttons sa mobile */
+    .btn {
+        width: 100%;
+        padding: 0.6rem 1rem;
+        font-size: 0.9rem;
+    }
+    
+    /* Spacing for buttons */
+    .row.mt-3 {
+        margin-top: 0.5rem !important;
+    }
+    
+    .row.mt-3 [class*="col-"] {
+        margin-bottom: 8px;
+    }
+    
+    /* Last button walang margin-bottom */
+    .row.mt-3 [class*="col-"]:last-child {
+        margin-bottom: 0;
+    }
+}
+
+/* Para sa sobrang liit na phones */
+@media (max-width: 576px) {
+    .form-card {
+        padding: 0.75rem;
+    }
+    
+    .form-label {
+        font-size: 0.8rem;
+    }
+    
+    .form-control, 
+    .form-select {
+        padding: 0.5rem 0.65rem;
+        font-size: 0.85rem;
+    }
+    
+    .btn {
+        padding: 0.5rem 0.75rem;
+        font-size: 0.85rem;
+    }
+}
+
+/* Landscape mode fix */
+@media (max-height: 500px) and (orientation: landscape) {
+    .form-card {
+        padding: 0.75rem;
+    }
+    
+    .row.g-3 {
+        --bs-gutter-y: 0.5rem;
+    }
+    
+    .form-control, 
+    .form-select {
+        padding: 0.4rem 0.6rem;
+    }
+}
     </style>
 </head>
 <body>
@@ -985,7 +978,7 @@ if (isset($_GET['ajax_trip']) && isset($_GET['id'])) {
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="drivers.php">
-                            <i class="bi bi-person-badge"></i>
+                            <i class="bi bi-people"></i>
                             <span class="nav-text">User Management</span>
                         </a>
                     </li>
@@ -1032,92 +1025,97 @@ if (isset($_GET['ajax_trip']) && isset($_GET['id'])) {
                 </div>
             </div>
 
-            <!-- Stats Cards -->
-            <div class="stats-row">
-                <div class="stat-card total">
-                    <div class="stat-icon">
-                        <i class="bi bi-people"></i>
-                    </div>
-                    <div>
-                        <div class="stat-value" id="totalDrivers">0</div>
-                        <div class="stat-label">Total Drivers</div>
-                    </div>
-                </div>
-                
-                <div class="stat-card sales">
-                    <div class="stat-icon">
-                        <i class="bi bi-wifi"></i>
-                    </div>
-                    <div>
-                        <div class="stat-value" id="onlineDrivers">0</div>
-                        <div class="stat-label">Online Now</div>
-                    </div>
-                </div>
-                
-                <div class="stat-card complete">
-                    <div class="stat-icon">
-                        <i class="bi bi-truck"></i>
-                    </div>
-                    <div>
-                        <div class="stat-value" id="activeDrivers">0</div>
-                        <div class="stat-label">On Delivery</div>
-                    </div>
-                </div>
-                
-                <div class="stat-card inventory">
-                    <div class="stat-icon">
-                        <i class="bi bi-clock-history"></i>
-                    </div>
-                    <div>
-                        <div class="stat-value" id="updateTime">-</div>
-                        <div class="stat-label">Last Update</div>
-                    </div>
-                </div>
+          <!-- Stats Cards -->
+<div class="row stat-card-row g-1 g-sm-2 mb-4">
+    <!-- Total Drivers -->
+    <div class="col">
+        <div class="stat-card total">
+            <i class="bi bi-people"></i>
+            <div class="stat-content">
+                <div class="stat-value" id="totalDrivers">0</div>
+                <div class="stat-label">Total Drivers</div>
             </div>
-
-            <!-- Filter Card -->
-            <div class="form-card mb-4">
-                <h5 class="mb-3">Filter Drivers</h5>
-                <div class="row g-3">
-                    <div class="col-md-3">
-                        <label class="form-label">Driver Name</label>
-                        <input type="text" class="form-control" id="filterName" placeholder="Enter driver name...">
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label">Branch</label>
-                        <select class="form-select" id="filterBranch">
-                            <option value="">All Branches</option>
-                            <?php foreach ($branches as $branch): ?>
-                            <option value="<?php echo htmlspecialchars($branch['branch_name']); ?>"><?php echo htmlspecialchars($branch['branch_name']); ?></option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label">Trip Ticket</label>
-                        <input type="text" class="form-control" id="filterTrip" placeholder="Enter trip number...">
-                    </div>
-                    <div class="col-md-3">
-                        <label class="form-label">Status</label>
-                        <select class="form-select" id="filterStatus">
-                            <option value="">All Status</option>
-                            <option value="active">Active (On Delivery)</option>
-                            <option value="idle">Idle (Online)</option>
-                            <option value="offline">Offline</option>
-                        </select>
-                    </div>
-                </div>
-                <div class="row mt-3">
-                    <div class="col-12">
-                        <button class="btn btn-primary" onclick="applyFilters()">
-                            <i class="bi bi-search"></i> Apply Filters
-                        </button>
-                        <button class="btn btn-secondary" onclick="clearFilters()">
-                            <i class="bi bi-x-circle"></i> Clear Filters
-                        </button>
-                    </div>
-                </div>
+        </div>
+    </div>
+    
+    <!-- Online Now -->
+    <div class="col">
+        <div class="stat-card sales">
+            <i class="bi bi-wifi"></i>
+            <div class="stat-content">
+                <div class="stat-value" id="onlineDrivers">0</div>
+                <div class="stat-label">Online Now</div>
             </div>
+        </div>
+    </div>
+    
+    <!-- On Delivery -->
+    <div class="col">
+        <div class="stat-card complete">
+            <i class="bi bi-truck"></i>
+            <div class="stat-content">
+                <div class="stat-value" id="activeDrivers">0</div>
+                <div class="stat-label">On Delivery</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Last Update -->
+    <div class="col">
+        <div class="stat-card inventory">
+            <i class="bi bi-clock-history"></i>
+            <div class="stat-content">
+                <div class="stat-value" id="updateTime">-</div>
+                <div class="stat-label">Last Update</div>
+            </div>
+        </div>
+    </div>
+</div>
 
+          <!-- Filter Card -->
+<div class="form-card mb-4">
+    <h5 class="mb-3">Filter Drivers</h5>
+    <div class="row g-3">
+        <div class="col-12 col-md-6 col-lg-3">
+            <label class="form-label">Driver Name</label>
+            <input type="text" class="form-control" id="filterName" placeholder="Enter driver name...">
+        </div>
+        <div class="col-12 col-md-6 col-lg-3">
+            <label class="form-label">Branch</label>
+            <select class="form-select" id="filterBranch">
+                <option value="">All Branches</option>
+                <?php foreach ($branches as $branch): ?>
+                <option value="<?php echo htmlspecialchars($branch['branch_name']); ?>"><?php echo htmlspecialchars($branch['branch_name']); ?></option>
+                <?php endforeach; ?>
+            </select>
+        </div>
+        <div class="col-12 col-md-6 col-lg-3">
+            <label class="form-label">Trip Ticket</label>
+            <input type="text" class="form-control" id="filterTrip" placeholder="Enter trip number...">
+        </div>
+        <div class="col-12 col-md-6 col-lg-3">
+            <label class="form-label">Status</label>
+            <select class="form-select" id="filterStatus">
+                <option value="">All Status</option>
+                <option value="active">Active (On Delivery)</option>
+                <option value="idle">Idle (Online)</option>
+                <option value="offline">Offline</option>
+            </select>
+        </div>
+    </div>
+    <div class="row mt-3">
+        <div class="col-12 col-sm-6 col-md-4 col-lg-3">
+            <button class="btn btn-primary w-100 mb-2 mb-sm-0" onclick="applyFilters()">
+                <i class="bi bi-search"></i> Apply Filters
+            </button>
+        </div>
+        <div class="col-12 col-sm-6 col-md-4 col-lg-3">
+            <button class="btn btn-secondary w-100" onclick="clearFilters()">
+                <i class="bi bi-x-circle"></i> Clear Filters
+            </button>
+        </div>
+    </div>
+</div>
             <!-- Map Container -->
             <div class="data-table mb-4">
                 <div class="table-header">
@@ -1137,8 +1135,8 @@ if (isset($_GET['ajax_trip']) && isset($_GET['id'])) {
                     <h5><i class="bi bi-list"></i> Live Driver Locations</h5>
                     <span class="badge bg-primary" id="driverCount">0</span>
                 </div>
-                <div class="table-responsive">
-                    <table class="table custom-table">
+                 <div class="table-container">
+                        <table class="table custom-table compact-table" id="itemsTable">
                         <thead>
                             <tr>
                                 <th>ID</th>
@@ -1170,8 +1168,8 @@ if (isset($_GET['ajax_trip']) && isset($_GET['id'])) {
                 <div class="table-header">
                     <h5><i class="bi bi-truck"></i> Active Trips</h5>
                 </div>
-                <div class="table-responsive">
-                    <table class="table custom-table">
+                 <div class="table-container">
+                        <table class="table custom-table compact-table" id="itemsTable">
                         <thead>
                             <tr>
                                 <th>Trip #</th>
@@ -1192,6 +1190,95 @@ if (isset($_GET['ajax_trip']) && isset($_GET['id'])) {
                             </tr>
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mobile Bottom Navigation -->
+    <div class="mobile-nav" id="mobileNav">
+        <ul class="nav">
+            <li class="nav-item">
+                <a class="nav-link" href="sales_reports.php">
+                    <i class="bi bi-graph-up"></i>
+                    <span>Reports</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="branch_records.php">
+                    <i class="bi bi-file-text"></i>
+                    <span>Records</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="all_items.php">
+                    <i class="bi bi-box"></i>
+                    <span>Items</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link active" href="drivers.php">
+                    <i class="bi bi-people"></i>
+                    <span>Users</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="trip_tickets.php">
+                    <i class="bi bi-ticket-perforated"></i>
+                    <span>Tickets</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="driver_tracking.php">
+                    <i class="bi bi-geo-alt"></i>
+                    <span>Tracking</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link logout-btn" href="#" onclick="showProfileModal(); return false;">
+                    <i class="bi bi-box-arrow-right"></i>
+                    <span>Logout</span>
+                </a>
+            </li>
+        </ul>
+    </div>
+
+    <!-- Mobile Profile/Logout Modal -->
+    <div class="modal fade" id="profileModal" tabindex="-1" aria-labelledby="profileModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="profileModalLabel">
+                        <i class="bi bi-person-circle me-2"></i>User Profile
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <!-- User Avatar -->
+                    <div class="user-avatar-large mb-3">
+                        <?php echo $initials; ?>
+                    </div>
+                    
+                    <!-- User Name -->
+                    <h4 class="mb-1"><?php echo htmlspecialchars($user_name); ?></h4>
+                    
+                    <!-- User Role -->
+                    <p class="text-muted mb-3">
+                        <span class="badge bg-success"><?php echo ucfirst($user_role); ?></span>
+                    </p>
+                    
+                    <!-- Branch Info (if applicable) -->
+                    <?php if (!$view_all_branches && $user_branch_id > 0): ?>
+                    <div class="branch-info mb-3">
+                        <i class="bi bi-building me-1"></i>
+                        <span><?php echo htmlspecialchars($branch_name); ?></span>
+                    </div>
+                    <?php endif; ?>
+                    
+                    <!-- Logout Button -->
+                    <button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()">
+                        <i class="bi bi-box-arrow-right me-2"></i>Logout
+                    </button>
                 </div>
             </div>
         </div>
@@ -1238,6 +1325,7 @@ if (isset($_GET['ajax_trip']) && isset($_GET['id'])) {
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     
     <script>
         // ============== GLOBAL VARIABLES ==============
@@ -1381,7 +1469,7 @@ if (isset($_GET['ajax_trip']) && isset($_GET['id'])) {
                     Speed: ${speed}<br>
                     Last Seen: ${lastSeen}<br>
                     Status: <span class="badge ${driver.status_badge}">${statusText}</span><br>
-                    <button onclick="viewDriver(${driver.id})" class="btn btn-sm btn-primary mt-2 w-100">
+                    <button onclick="viewDriver(${driver.id})" class="btn-action btn-view">
                         View Details
                     </button>
                 </div>
@@ -1454,7 +1542,7 @@ if (isset($_GET['ajax_trip']) && isset($_GET['id'])) {
                         <td>${escapeHtml(trip.origin)}</td>
                         <td><span class="badge ${trip.status_badge}">${escapeHtml(trip.status_text)}</span></td>
                         <td>
-                            <button class="btn btn-sm btn-primary" onclick="viewTrip(${trip.trip_id})">
+                            <button class="btn-action btn-view" onclick="viewTrip(${trip.trip_id})">
                                 <i class="bi bi-eye"></i>
                             </button>
                         </td>
@@ -1612,8 +1700,49 @@ if (isset($_GET['ajax_trip']) && isset($_GET['id'])) {
                 .replace(/'/g, '&#039;');
         }
 
+        // ============== PROFILE/LOGOUT FUNCTIONS ==============
+        function showProfileModal() {
+            const profileModal = new bootstrap.Modal(document.getElementById('profileModal'));
+            profileModal.show();
+        }
+
+        function confirmLogout() {
+            // Close the modal first
+            const modal = bootstrap.Modal.getInstance(document.getElementById('profileModal'));
+            if (modal) {
+                modal.hide();
+            }
+            
+            // Show confirmation dialog
+            Swal.fire({
+                title: 'Are you sure?',
+                text: 'You will be logged out of the system',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#dc3545',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, logout'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    window.location.href = '../logout.php';
+                }
+            });
+        }
+
         function logout() {
-            window.location.href = '../logout.php';
+            Swal.fire({
+                title: 'Are you sure?',
+                text: 'You will be logged out of the system',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#07d826',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, logout'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    window.location.href = '../logout.php';
+                }
+            });
         }
 
         // ============== SIDEBAR FUNCTIONS ==============
@@ -1650,9 +1779,34 @@ if (isset($_GET['ajax_trip']) && isset($_GET['id'])) {
             }
         }
 
+        // ============== MOBILE NAVIGATION FUNCTIONS =================
+        function initMobileNav() {
+            const mobileNav = document.getElementById('mobileNav');
+            const isMobile = window.innerWidth <= 992;
+            
+            if (isMobile) {
+                mobileNav.style.display = 'block';
+                
+                // Set active state based on current page (excluding logout)
+                const currentPage = window.location.pathname.split('/').pop();
+                const navLinks = mobileNav.querySelectorAll('.nav-link:not(.logout-btn)');
+                
+                navLinks.forEach(link => {
+                    link.classList.remove('active');
+                    const href = link.getAttribute('href');
+                    if (currentPage === href) {
+                        link.classList.add('active');
+                    }
+                });
+            } else {
+                mobileNav.style.display = 'none';
+            }
+        }
+
         // ============== INITIALIZATION ==============
         document.addEventListener('DOMContentLoaded', function() {
             initializeSidebar();
+            initMobileNav();
             
             document.getElementById('mobileToggleBtn').addEventListener('click', toggleSidebar);
             document.getElementById('desktopToggleBtn').addEventListener('click', toggleSidebar);
@@ -1670,8 +1824,9 @@ if (isset($_GET['ajax_trip']) && isset($_GET['id'])) {
                 }
             });
             
-            window.addEventListener('resize', () => {
+            window.addEventListener('resize', function() {
                 if (window.innerWidth > 992) closeMobileSidebar();
+                initMobileNav();
             });
             
             initMap();
@@ -1687,6 +1842,26 @@ if (isset($_GET['ajax_trip']) && isset($_GET['id'])) {
 
         window.addEventListener('beforeunload', () => {
             if (refreshInterval) clearInterval(refreshInterval);
+        });
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            // Ctrl + B to toggle sidebar (desktop only)
+            if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
+                e.preventDefault();
+                toggleSidebar();
+            }
+            // Escape to close sidebar on mobile
+            else if (e.key === 'Escape' && window.innerWidth <= 992) {
+                closeMobileSidebar();
+            }
+            // Escape to close modals
+            else if (e.key === 'Escape') {
+                const profileModal = document.getElementById('profileModal');
+                if (profileModal.classList.contains('show')) {
+                    bootstrap.Modal.getInstance(profileModal).hide();
+                }
+            }
         });
     </script>
 </body>

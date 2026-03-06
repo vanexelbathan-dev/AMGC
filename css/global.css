@@ -432,92 +432,126 @@ a:hover {
     transform: rotate(90deg);
 }
 
-/* Mobile Responsiveness */
+/* ===== MOBILE BOTTOM NAVIGATION ===== */
+.mobile-nav {
+    display: none; /* Hidden on desktop by default */
+}
+
 @media (max-width: 992px) {
-    .mobile-menu-btn {
-        display: flex;
-    }
-    
     /* Hide desktop toggle button on mobile */
     .desktop-toggle-btn {
         display: none;
     }
     
-    /* Sidebar with mobile-specific styling */
-    .sidebar {
-        transform: translateX(-100%);
-        width: var(--sidebar-width);
-        box-shadow: 5px 0 25px rgba(0, 0, 0, 0.2);
+    /* Mobile bottom navigation bar */
+    .mobile-nav {
+        display: block !important;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: white;
+        box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.1);
+        z-index: 1050;
+        border-top: 2px solid var(--light-green);
+        padding: 6px 4px;
     }
     
-    /* When sidebar is active on mobile */
-    .sidebar.active {
-        transform: translateX(0);
+    .mobile-nav .nav {
+        display: flex;
+        justify-content: space-around;
+        align-items: center;
+        margin: 0;
+        padding: 0;
+        list-style: none;
     }
     
-    /* Hide button when sidebar is active on mobile */
-    .sidebar.active ~ .mobile-menu-btn {
-        visibility: hidden;
-        opacity: 0;
-        transform: translateX(-50px);
-        pointer-events: none;
-    }
-
-    /* Show button with delay when sidebar closes */
-    .sidebar:not(.active) ~ .mobile-menu-btn {
-        visibility: visible;
-        opacity: 1;
-        transform: translateX(0);
-        transition-delay: 0.3s;
+    .mobile-nav .nav-item {
+        flex: 1;
+        text-align: center;
     }
     
+    .mobile-nav .nav-link {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 6px 2px;
+        color: #6b7280;
+        font-size: 0.7rem;
+        transition: all 0.2s ease;
+        border-radius: 8px;
+        background: transparent;
+        border: none;
+    }
+    
+    .mobile-nav .nav-link i {
+        font-size: 1.4rem;
+        margin-bottom: 2px;
+        color: #6b7280;
+        transition: all 0.2s ease;
+    }
+    
+    .mobile-nav .nav-link span {
+        font-size: 0.65rem;
+        font-weight: 500;
+        display: block;
+    }
+    
+    .mobile-nav .nav-link.active {
+        color: var(--primary-green);
+        background: rgba(68, 211, 78, 0.1);
+    }
+    
+    .mobile-nav .nav-link.active i {
+        color: var(--primary-green);
+    }
+    
+    .mobile-nav .nav-link:hover {
+        color: var(--primary-green);
+        background: rgba(68, 211, 78, 0.05);
+    }
+    
+    .mobile-nav .nav-link:hover i {
+        color: var(--primary-green);
+    }
+    
+    /* Adjust main content to account for bottom nav */
     .main-content {
         margin-left: 0;
-        padding: 10px 15px 15px;
-        padding-top: 10px;
+        padding-bottom: 75px;
+        margin-bottom: 0;
     }
     
+    /* Hide the mobile toggle button since we have bottom nav */
+    .mobile-toggle-btn {
+        display: none !important;
+    }
+    
+    /* Adjust navbar top for mobile */
     .navbar-top {
-        flex-wrap: nowrap;
-        padding: 0.5rem 1rem;
-        gap: 8px;
-        margin-bottom: 0.75rem;
-    }
-    
-    .page-title {
-        margin-left: 0;
-        flex: 1;
-        min-width: 0;
+        margin-bottom: 16px;
+        padding: 12px;
+        border-radius: 10px;
     }
     
     .page-title h2 {
-        font-size: 1.3rem;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        font-size: 1.2rem;
     }
     
     .page-title p {
         font-size: 0.8rem;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
     }
     
-    .user-info-top {
-        justify-content: space-between;
-        width: 100%;
+    /* Adjust sidebar for mobile */
+    .sidebar {
+        transform: translateX(-100%);
+        width: var(--sidebar-width);
+        box-shadow: 5px 0 25px rgba(0, 0, 0, 0.2);
+        z-index: 1060;
     }
     
-    /* Adjust padding for mobile */
-    .sidebar .nav-link {
-        padding: 12px 20px;
-        margin: 4px 15px;
-        justify-content: flex-start;
-    }
-    
-    .sidebar .nav-link i {
-        margin-right: 12px;
+    .sidebar.active {
+        transform: translateX(0);
     }
     
     /* Mobile overlay when sidebar is open */
@@ -528,7 +562,7 @@ a:hover {
         width: 100%;
         height: 100%;
         background: rgba(0, 0, 0, 0.5);
-        z-index: 999;
+        z-index: 1055;
         opacity: 0;
         visibility: hidden;
         transition: all 0.3s ease;
@@ -538,94 +572,248 @@ a:hover {
         opacity: 1;
         visibility: visible;
     }
-    
-    /* Fix sidebar header position in mobile */
-    .sidebar .sidebar-header {
-        padding: 15px;
-        position: relative;
-    }
-    
-    .sidebar .sidebar-header h3 {
-        display: flex;
-        align-items: center;
-        width: 100%;
-    }
-    
-    /* Ensure logo and text are visible */
-    .sidebar .sidebar-header h3 .logo-icon {
-        margin-right: 10px;
-    }
-    
-    .sidebar .sidebar-header h3 .nav-text {
-        flex: 1;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
 }
 
-/* Para sa mas maliit na screen, lalo pang bawasan */
+/* For very small screens */
 @media (max-width: 576px) {
+    .mobile-nav .nav-link i {
+        font-size: 1.3rem;
+    }
+    
+    .mobile-nav .nav-link span {
+        font-size: 0.6rem;
+    }
+    
     .main-content {
-        padding: 8px 10px 10px;
-        padding-top: 8px;
+        padding-bottom: 70px;
+        padding-left: 12px;
+        padding-right: 12px;
     }
     
-    .navbar-top {
-        padding: 0.4rem 0.75rem;
-        gap: 6px;
-        margin-bottom: 0.5rem;
+    .stat-card {
+        min-height: 90px;
     }
     
-    .page-title h2 {
-        font-size: 1.1rem;
-        margin-bottom: 2px;
+    .stat-icon {
+        font-size: 1.8rem;
     }
     
-    .page-title p {
-        font-size: 0.75rem;
-        margin-top: 0;
+    .stat-value {
+        font-size: 1.3rem;
+    }
+    
+    .stat-label {
+        font-size: 0.7rem;
     }
 }
 
-/* Extra small devices */
-@media (max-width: 400px) {
-    .navbar-top {
-        padding: 0.5rem;
-        gap: 5px;
+/* For extra small devices */
+@media (max-width: 380px) {
+    .mobile-nav .nav-link i {
+        font-size: 1.2rem;
     }
     
-    .mobile-menu-btn {
-        width: 36px;
-        height: 36px;
-        padding: 5px;
-        margin-right: 5px;
-        flex-shrink: 0;
+    .mobile-nav .nav-link span {
+        font-size: 0.55rem;
+    }
+    
+    .main-content {
+        padding-bottom: 65px;
     }
     
     .page-title h2 {
         font-size: 1rem;
-        letter-spacing: -0.5px;
     }
     
     .page-title p {
-        font-size: 0.8rem;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
+        font-size: 0.7rem;
     }
 }
 
-/* Very small screens */
-@media (max-width: 350px) {
-    .page-title h2 {
-        font-size: 0.9rem;
+/* ===== PROFILE MODAL STYLES ===== */
+.user-avatar-large {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green));
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.5rem;
+    font-weight: bold;
+    margin: 0 auto;
+    border: 4px solid var(--light-green);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+#profileModal .modal-content {
+    border: none;
+    border-radius: 20px;
+    overflow: hidden;
+}
+
+#profileModal .modal-header {
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green));
+    color: white;
+    border-bottom: none;
+    padding: 1.5rem;
+}
+
+#profileModal .modal-header .modal-title {
+    color: white;
+    font-weight: 600;
+}
+
+#profileModal .modal-header .btn-close {
+    filter: brightness(0) invert(1);
+    opacity: 0.9;
+}
+
+#profileModal .modal-header .btn-close:hover {
+    opacity: 1;
+    transform: rotate(90deg);
+}
+
+#profileModal .modal-body {
+    padding: 2rem;
+    background: linear-gradient(135deg, #f9fefc 0%, #f0fdf4 100%);
+}
+
+#profileModal .branch-info {
+    background: var(--light-green);
+    color: var(--dark-green);
+    padding: 0.5rem 1rem;
+    border-radius: 50px;
+    display: inline-block;
+    font-weight: 500;
+}
+
+#profileModal .btn-danger {
+    background: linear-gradient(135deg, #dc3545, #f87171);
+    border: none;
+    padding: 1rem;
+    border-radius: 50px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+#profileModal .btn-danger:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(220, 53, 69, 0.3);
+}
+
+/* Mobile Logout Button in Bottom Nav */
+.mobile-nav .nav-link.logout-btn {
+    color: #dc3545;
+}
+
+.mobile-nav .nav-link.logout-btn i {
+    color: #dc3545;
+}
+
+.mobile-nav .nav-link.logout-btn.active,
+.mobile-nav .nav-link.logout-btn:hover {
+    background: rgba(220, 53, 69, 0.1);
+    color: #dc3545;
+}
+
+.mobile-nav .nav-link.logout-btn.active i,
+.mobile-nav .nav-link.logout-btn:hover i {
+    color: #dc3545;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .stat-card {
+        padding: 12px;
+        min-height: 85px;
+        margin-bottom: 8px;
     }
     
-    .mobile-menu-btn {
-        width: 34px;
-        height: 34px;
-        padding: 4px;
-        margin-right: 4px;
+    .stat-icon {
+        font-size: 2rem;
+        margin-right: 12px;
+    }
+    
+    .stat-value {
+        font-size: 1.5rem;
+    }
+    
+    .stat-label {
+        font-size: 0.8rem;
+    }
+    
+    .col-md-3 {
+        width: 50%;
+        padding-left: 8px;
+        padding-right: 8px;
+    }
+    
+    .row.g-3 {
+        margin-left: -8px;
+        margin-right: -8px;
+    }
+    
+    .mb-3 {
+        margin-bottom: 8px !important;
+    }
+}
+
+/* Mobile responsive adjustments ONLY */
+@media (max-width: 768px) {
+    .stat-card {
+        padding: 12px;
+        min-height: 85px;
+        margin-bottom: 8px;
+    }
+    .stat-icon {
+        font-size: 2rem;
+        margin-right: 12px;
+    }
+    .stat-value {
+        font-size: 1.5rem;
+    }
+    .stat-label {
+        font-size: 0.8rem;
+    }
+    .col-md-3 {
+        width: 50%;
+        padding-left: 8px;
+        padding-right: 8px;
+    }
+    .row.g-3 {
+        margin-left: -8px;
+        margin-right: -8px;
+    }
+    .mb-3 {
+        margin-bottom: 8px !important;
+    }
+}
+
+@media (max-width: 576px) {
+    .stat-card {
+        min-height: 80px;
+        padding: 10px;
+    }
+    .stat-icon {
+        font-size: 1.8rem;
+        margin-right: 10px;
+    }
+    .stat-value {
+        font-size: 1.3rem;
+    }
+    .stat-label {
+        font-size: 0.75rem;
+    }
+    .col-md-3 {
+        width: 50%;
+        padding-left: 6px;
+        padding-right: 6px;
+    }
+    .row.g-3 {
+        margin-left: -6px;
+        margin-right: -6px;
     }
 }
 
@@ -1117,15 +1305,15 @@ a:hover {
     gap: 0.5rem;
 }
 .btn-action {
-            width: 36px;
-            height: 36px;
-            border-radius: 8px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.2s;
-            border: 1px solid transparent;
-        }
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    border: 1px solid transparent;
+}
 
 /* Action buttons container */
 .action-buttons {
@@ -1142,10 +1330,10 @@ a:hover {
     border: 1px solid #3b82f6;
 }
 
- .btn-view:hover {
-            background-color: #bbdefb;
-            transform: translateY(-2px);
-        }
+.btn-view:hover {
+    background-color: #bbdefb;
+}
+
 .btn-action.btn-map {
     background: #fbbe2422;
     color: #fbbf24;
@@ -1157,20 +1345,21 @@ a:hover {
     color: #7b1fa2;
     border-color: #e1bee7;
 }
-        
+
 .btn-edit:hover {
     background-color: #e1bee7;
     transform: translateY(-2px);
 }
 
 .btn-action.btn-delete {
-            background-color: #f5e5e5;
-            color:  rgba(211, 46, 46, 0.871);
-            border-color: rgba(212, 130, 130, 0.871);
+    background-color: #f5e5e5;
+    color: rgba(211, 46, 46, 0.871);
+    border-color: rgba(212, 130, 130, 0.871);
 }
+
 .btn-delete:hover {
-     background-color: #dfa1a1;
-     transform: translateY(-2px);
+    background-color: #dfa1a1;
+    transform: translateY(-2px);
 }
 
 /* Table cell alignment - IMPORTANTE ITO */
@@ -1182,6 +1371,7 @@ a:hover {
     vertical-align: middle !important;
     white-space: nowrap !important;
 }
+
 /* Page Content */
 .page-content {
     display: none;
@@ -1215,26 +1405,7 @@ a:hover {
 .status-dot.inactive { background-color: #9ca3af; }
 .status-dot.pending { background-color: #f59e0b; }
 
-/* Search Box */
-.search-box {
-    position: relative;
-}
 
-.search-box input {
-    padding-left: 2.75rem;
-    border-radius: 8px;
-    border: 2px solid #e5e7eb;
-    width: 100%;
-    font-size: 0.95rem;
-}
-
-.search-box i {
-    position: absolute;
-    left: 1rem;
-    top: 50%;
-    transform: translateY(-50%);
-    color: #9ca3af;
-}
 
 /* Access Restricted Message */
 .access-restricted {
@@ -1725,6 +1896,7 @@ a:hover {
     color: var(--dark-color);
     margin-bottom: 0.5rem;
 }
+
 /* Sidebar overlay for mobile */
 .sidebar-overlay {
     position: fixed;
@@ -1926,6 +2098,7 @@ a:hover {
 .table-responsive::-webkit-scrollbar-thumb:hover {
     background: var(--dark-green);
 }
+
 /* Card Header - Green Gradient */
 .card {
     border: none !important; /* Remove card outline */
@@ -2377,6 +2550,7 @@ a:hover {
 .compact-table tbody tr:last-child td {
     border-bottom: none !important;
 }
+
 /* ===== RECORD DETAILS MODAL STYLES ===== */
 
 /* Modal Container */
@@ -3097,59 +3271,526 @@ a:hover {
         display: none !important;
     }
 }
-  /* Mobile responsive adjustments ONLY */
-        @media (max-width: 768px) {
-            .stat-card {
-                padding: 12px;
-                min-height: 85px;
-                margin-bottom: 8px;
-            }
-            .stat-icon {
-                font-size: 2rem;
-                margin-right: 12px;
-            }
-            .stat-value {
-                font-size: 1.5rem;
-            }
-            .stat-label {
-                font-size: 0.8rem;
-            }
-            .col-md-3 {
-                width: 50%;
-                padding-left: 8px;
-                padding-right: 8px;
-            }
-            .row.g-3 {
-                margin-left: -8px;
-                margin-right: -8px;
-            }
-            .mb-3 {
-                margin-bottom: 8px !important;
-            }
-        }
-        @media (max-width: 576px) {
-            .stat-card {
-                min-height: 80px;
-                padding: 10px;
-            }
-            .stat-icon {
-                font-size: 1.8rem;
-                margin-right: 10px;
-            }
-            .stat-value {
-                font-size: 1.3rem;
-            }
-            .stat-label {
-                font-size: 0.75rem;
-            }
-            .col-md-3 {
-                width: 50%;
-                padding-left: 6px;
-                padding-right: 6px;
-            }
-            .row.g-3 {
-                margin-left: -6px;
-                margin-right: -6px;
-            }
-        }
-        
+
+/* ===== DRIVER TRACKING - BADGE AND STATUS INDICATORS STYLE ONLY (RIGHT SIDE) ===== */
+
+/* Position driver count badge to the right */
+.data-table .table-header {
+    position: relative !important;
+}
+
+.data-table .table-header #driverCount {
+    position: absolute !important;
+    right: 20px !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    background: #00ff3c8d  !important;
+    color: white !important;
+    font-size: 0.8rem !important;
+    padding: 0.3rem 1rem !important;
+    border-radius: 50px !important;
+    font-weight: 600 !important;
+    box-shadow: 0 2px 5px #00ff3c7d !important;
+    border: 1px solid rgb(255, 255, 255) !important;
+    z-index: 10 !important;
+}
+
+/* Position status indicators to the right - DESKTOP */
+.data-table.mb-4 .table-header {
+    position: relative !important;
+}
+
+.data-table.mb-4 .table-header > div:last-child {
+    position: absolute !important;
+    right: 20px !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    display: flex !important;
+    gap: 15px !important;
+    background: rgba(255, 255, 255, 0.1) !important;
+    padding: 5px 15px !important;
+    border-radius: 30px !important;
+    backdrop-filter: blur(3px) !important;
+    z-index: 10 !important;
+}
+
+/* Style for each status text */
+.data-table.mb-4 .table-header > div:last-child span {
+    color: white !important;
+    font-size: 0.8rem !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 5px !important;
+    font-weight: 400 !important;
+    white-space: nowrap !important;
+}
+
+/* Smaller location indicators */
+.location-indicator {
+    width: 8px !important;
+    height: 8px !important;
+    border-radius: 50% !important;
+    display: inline-block !important;
+}
+
+/* Colors with glow effect */
+.location-indicator.online {
+    background-color: #00ff3c !important;
+    animation: pulse 1.5s infinite !important;
+    box-shadow: 0 0 10px #00ff3c, 0 0 20px rgba(40, 167, 69, 0.5) !important;
+}
+
+.location-indicator.idle {
+    background-color: #ffc107 !important;
+    box-shadow: 0 0 10px #ffc107, 0 0 20px rgba(255, 193, 7, 0.5) !important;
+}
+
+.location-indicator.offline {
+    background-color: #6c757d !important;
+    box-shadow: 0 0 8px #6c757d, 0 0 15px rgba(108, 117, 125, 0.4) !important;
+}
+
+/* Enhanced pulse animation with glow */
+@keyframes pulse {
+    0% { 
+        opacity: 1; 
+        box-shadow: 0 0 5px #00ff3c, 0 0 15px #00ff3c;
+    }
+    50% { 
+        opacity: 0.8; 
+        box-shadow: 0 0 15px #00ff3c, 0 0 30px #00ff3c, 0 0 45px #00ff3c;
+    }
+    100% { 
+        opacity: 1; 
+        box-shadow: 0 0 5px #00ff3c, 0 0 15px #00ff3c;
+    }
+}
+
+/* Optional: Different glow intensity for different states */
+.location-indicator.online {
+    background-color: #00ff3c !important;
+    animation: pulse 1.5s infinite !important;
+}
+
+.location-indicator.idle {
+    background-color: #ffc107 !important;
+    box-shadow: 0 0 8px #ffc107, 0 0 15px rgba(255, 193, 7, 0.6) !important;
+}
+
+.location-indicator.offline {
+    background-color: #6c757d !important;
+    box-shadow: 0 0 5px #6c757d, 0 0 10px rgba(108, 117, 125, 0.3) !important;
+}
+
+/* Mobile responsive - adjust glow for smaller screens */
+@media (max-width: 768px) {
+    .location-indicator.online {
+        box-shadow: 0 0 8px #28a745, 0 0 15px rgba(40, 167, 69, 0.5) !important;
+    }
+    
+    .location-indicator.idle {
+        box-shadow: 0 0 6px #ffc107, 0 0 12px rgba(255, 193, 7, 0.5) !important;
+    }
+    
+    .location-indicator.offline {
+        box-shadow: 0 0 4px #6c757d, 0 0 8px rgba(108, 117, 125, 0.3) !important;
+    }
+}
+
+/* Simple pulse animation */
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.6; }
+    100% { opacity: 1; }
+}
+
+/* ===== SUPER RESPONSIVE STAT CARDS - ONE CSS TO RULE THEM ALL ===== */
+
+/* Base styles - mobile first approach */
+.stat-card {
+    border: none;
+    border-radius: 12px;
+    color: white;
+    padding: 1rem;
+    margin: 0;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+    height: 100%;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center; /* Center for mobile */
+    justify-content: center;
+    text-align: center; /* Center for mobile */
+}
+
+/* Fluid typography - AUTO LUMILITI ANG TEXT AT ICONS */
+.stat-card i {
+    font-size: clamp(1.2rem, 6vw, 2.2rem);
+    margin-bottom: 0.25rem;
+    transition: font-size 0.2s ease;
+}
+
+.stat-value {
+    font-size: clamp(0.9rem, 5vw, 1.8rem);
+    font-weight: 700;
+    line-height: 1.2;
+    margin: 0.1rem 0;
+    transition: font-size 0.2s ease;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+.stat-label {
+    font-size: clamp(0.6rem, 3vw, 0.875rem);
+    font-weight: 500;
+    opacity: 0.95;
+    transition: font-size 0.2s ease;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+.stat-content {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center; /* Center for mobile */
+    justify-content: center;
+}
+
+/* Row and column system - para sa STAT CARDS LANG */
+.row.stat-card-row {
+    display: flex;
+    flex-wrap: wrap;
+    margin-right: -6px;
+    margin-left: -6px;
+}
+
+.row.stat-card-row [class*="col-"] {
+    padding-right: 6px;
+    padding-left: 6px;
+    margin-bottom: 12px;
+}
+
+/* Responsive column system - para sa STAT CARDS LANG */
+.row.stat-card-row .col-12 { width: 100%; }
+.row.stat-card-row .col-6 { width: 50%; }
+.row.stat-card-row .col-4 { width: 33.333%; }
+.row.stat-card-row .col-3 { width: 25%; }
+.row.stat-card-row .col-2 { width: 16.666%; }
+
+/* Ultra small phones (below 400px) */
+@media (max-width: 399px) {
+    .stat-card {
+        padding: 0.4rem;
+    }
+    .stat-card i { 
+        font-size: 1.1rem; 
+        margin-bottom: 0.1rem;
+    }
+    .stat-value { 
+        font-size: 0.8rem; 
+        margin: 0;
+    }
+    .stat-label { 
+        font-size: 0.5rem; 
+    }
+    
+    .row.stat-card-row {
+        margin-right: -3px;
+        margin-left: -3px;
+    }
+    
+    .row.stat-card-row [class*="col-"] {
+        padding-right: 3px;
+        padding-left: 3px;
+        margin-bottom: 6px;
+        width: 50% !important;
+    }
+}
+
+/* Small phones (400px - 575px) */
+@media (min-width: 400px) and (max-width: 575px) {
+    .stat-card {
+        padding: 0.5rem;
+    }
+    .stat-card i { 
+        font-size: 1.2rem; 
+    }
+    .stat-value { 
+        font-size: 0.9rem; 
+    }
+    .stat-label { 
+        font-size: 0.55rem; 
+    }
+    
+    .row.stat-card-row {
+        margin-right: -4px;
+        margin-left: -4px;
+    }
+    
+    .row.stat-card-row [class*="col-"] {
+        padding-right: 4px;
+        padding-left: 4px;
+        margin-bottom: 8px;
+        width: 50% !important;
+    }
+}
+
+/* Medium phones (576px - 767px) */
+@media (min-width: 576px) and (max-width: 767px) {
+    .stat-card {
+        padding: 0.6rem;
+    }
+    .stat-card i { 
+        font-size: 1.4rem; 
+    }
+    .stat-value { 
+        font-size: 1.1rem; 
+    }
+    .stat-label { 
+        font-size: 0.65rem; 
+    }
+    
+    .row.stat-card-row {
+        margin-right: -5px;
+        margin-left: -5px;
+    }
+    
+    .row.stat-card-row [class*="col-"] {
+        padding-right: 5px;
+        padding-left: 5px;
+        margin-bottom: 10px;
+        width: 33.333% !important;
+    }
+}
+
+/* Tablets (768px - 991px) */
+@media (min-width: 768px) and (max-width: 991px) {
+    .stat-card {
+        padding: 0.8rem;
+    }
+    .stat-card i { 
+        font-size: 1.7rem; 
+    }
+    .stat-value { 
+        font-size: 1.4rem; 
+    }
+    .stat-label { 
+        font-size: 0.75rem; 
+    }
+    
+    .row.stat-card-row {
+        margin-right: -6px;
+        margin-left: -6px;
+    }
+    
+    .row.stat-card-row [class*="col-"] {
+        padding-right: 6px;
+        padding-left: 6px;
+        margin-bottom: 12px;
+        width: 25% !important;
+    }
+}
+
+/* ===== DESKTOP MODE (992px and above) ===== */
+@media (min-width: 992px) {
+    /* Left alignment para sa desktop */
+    .stat-card {
+        align-items: flex-start !important;
+        text-align: left !important;
+        padding: 1rem; /* Mas maliit na padding sa desktop */
+    }
+    
+    .stat-content {
+        align-items: flex-start !important;
+        text-align: left !important;
+    }
+    
+    /* Mas maliit na height sa desktop */
+    .stat-card {
+        min-height: 100px;
+        max-height: 130px;
+    }
+    
+    /* I-compress ang spacing */
+    .stat-card i {
+        margin-bottom: 0.15rem;
+        font-size: 1.8rem; /* Fixed size sa desktop */
+    }
+    
+    .stat-value {
+        margin: 0.05rem 0;
+        font-size: 1.5rem;
+        line-height: 1.1;
+    }
+    
+    .stat-label {
+        font-size: 0.8rem;
+        margin-top: 0.1rem;
+    }
+}
+
+/* Small desktop (992px - 1199px) */
+@media (min-width: 992px) and (max-width: 1199px) {
+    .stat-card {
+        padding: 0.9rem;
+        min-height: 95px;
+        max-height: 120px;
+    }
+    .stat-card i { 
+        font-size: 1.7rem; 
+    }
+    .stat-value { 
+        font-size: 1.4rem; 
+    }
+    .stat-label { 
+        font-size: 0.75rem; 
+    }
+    
+    .row.stat-card-row {
+        margin-right: -7px;
+        margin-left: -7px;
+    }
+    
+    .row.stat-card-row [class*="col-"] {
+        padding-right: 7px;
+        padding-left: 7px;
+        margin-bottom: 14px;
+        width: 20% !important; /* 5 columns */
+    }
+}
+
+/* Large desktop (1200px - 1399px) */
+@media (min-width: 1200px) and (max-width: 1399px) {
+    .stat-card {
+        padding: 1rem;
+        min-height: 105px;
+        max-height: 135px;
+    }
+    .stat-card i { 
+        font-size: 1.9rem; 
+    }
+    .stat-value { 
+        font-size: 1.6rem; 
+    }
+    .stat-label { 
+        font-size: 0.8rem; 
+    }
+    
+    .row.stat-card-row {
+        margin-right: -8px;
+        margin-left: -8px;
+    }
+    
+    .row.stat-card-row [class*="col-"] {
+        padding-right: 8px;
+        padding-left: 8px;
+        margin-bottom: 16px;
+        width: 16.666% !important; /* 6 columns */
+    }
+}
+
+/* Extra large desktop (1400px and above) */
+@media (min-width: 1400px) {
+    .stat-card {
+        padding: 1.1rem;
+        min-height: 115px;
+        max-height: 145px;
+    }
+    .stat-card i { 
+        font-size: 2.1rem; 
+    }
+    .stat-value { 
+        font-size: 1.8rem; 
+    }
+    .stat-label { 
+        font-size: 0.875rem; 
+    }
+    
+    .row.stat-card-row {
+        margin-right: -10px;
+        margin-left: -10px;
+    }
+    
+    .row.stat-card-row [class*="col-"] {
+        padding-right: 10px;
+        padding-left: 10px;
+        margin-bottom: 20px;
+        width: 16.666% !important;
+    }
+}
+
+/* Ultra large desktop (1600px and above) */
+@media (min-width: 1600px) {
+    .stat-card {
+        padding: 1.2rem;
+        min-height: 125px;
+        max-height: 155px;
+    }
+    .stat-card i { 
+        font-size: 2.3rem; 
+    }
+    .stat-value { 
+        font-size: 2rem; 
+    }
+    .stat-label { 
+        font-size: 0.95rem; 
+    }
+}
+
+/* Landscape mode for phones */
+@media (max-height: 500px) and (orientation: landscape) {
+    .stat-card {
+        padding: 0.3rem;
+        min-height: 60px;
+        max-height: 80px;
+    }
+    .stat-card i { 
+        font-size: 1rem; 
+        margin-bottom: 0.1rem;
+    }
+    .stat-value { 
+        font-size: 0.8rem; 
+        margin: 0;
+    }
+    .stat-label { 
+        font-size: 0.5rem; 
+    }
+    
+    .row.stat-card-row {
+        margin-right: -3px;
+        margin-left: -3px;
+    }
+    
+    .row.stat-card-row [class*="col-"] {
+        padding-right: 3px;
+        padding-left: 3px;
+        margin-bottom: 6px;
+        width: 20% !important;
+    }
+}
+
+/* Para sa sobrang daming cards */
+.row.stat-card-row > [class*="col-"] {
+    flex: 1 0 auto;
+}
+/* I-add ito sa loob ng <style> tag */
+.stat-card-row {
+    margin-bottom: 1.5rem !important;
+}
+
+/* Para sa mobile, ensure na may space */
+@media (max-width: 768px) {
+    .stat-card-row {
+        margin-bottom: 1rem !important;
+    }
+    
+    .form-card {
+        margin-top: 0.5rem;
+    }
+}
