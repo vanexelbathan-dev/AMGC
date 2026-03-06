@@ -29,6 +29,43 @@ if ($items_branch_column_exists && !$view_all_branches) {
     $branch_condition = "AND branch_id = $branch_id";
 }
 
+// ========== IMAGE UPLOAD HANDLER ==========
+function handleImageUpload($file) {
+    // Validate file
+    $allowed_extensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+    $max_file_size = 5 * 1024 * 1024; // 5MB
+    
+    // Check file size
+    if ($file['size'] > $max_file_size) {
+        return false;
+    }
+    
+    // Check file type
+    $file_info = pathinfo($file['name']);
+    $extension = strtolower($file_info['extension']);
+    
+    if (!in_array($extension, $allowed_extensions)) {
+        return false;
+    }
+    
+    // Create uploads directory if it doesn't exist
+    $upload_dir = '../uploads/products/';
+    if (!is_dir($upload_dir)) {
+        mkdir($upload_dir, 0755, true);
+    }
+    
+    // Generate unique filename
+    $filename = 'item_' . time() . '_' . uniqid() . '.' . $extension;
+    $filepath = $upload_dir . $filename;
+    
+    // Move uploaded file
+    if (move_uploaded_file($file['tmp_name'], $filepath)) {
+        return $filename;
+    }
+    
+    return false;
+}
+
 // ========== HANDLE AJAX REQUESTS ==========
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     header('Content-Type: application/json');
@@ -36,17 +73,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     try {
         $conn->begin_transaction();
         
-        // ADD ITEM
+        // ADD ITEM - FIXED VERSION
         if ($_POST['action'] === 'add_item') {
             $item_code = $_POST['item_code'];
             $item_name = $_POST['item_name'];
             $description = $_POST['description'] ?? null;
-            $category = $_POST['category'] ?? null;
+            $category = $_POST['category'] ?? 'General';
             $stock = (int)$_POST['stock'];
+            
+            // FIXED: Convert unit_type to match database enum (replace hyphen with underscore)
             $unit_type = $_POST['unit_type'];
+            if ($unit_type === 'inner-pack') {
+                $unit_type = 'inner_pack';
+            }
+            
             $unit_price = (float)$_POST['unit_price'];
             $reorder_level = (int)$_POST['reorder_level'];
             $status = $_POST['status'] ?? 'active';
+            $picture_filename = null;
+            
+            // Handle image upload
+            if (isset($_FILES['itemPicture']) && $_FILES['itemPicture']['size'] > 0) {
+                $picture_filename = handleImageUpload($_FILES['itemPicture']);
+                if (!$picture_filename) {
+                    throw new Exception('Failed to upload image. Please check file format and size.');
+                }
+            }
             
             // Check if item code already exists
             $check_query = "SELECT item_id FROM items WHERE item_code = ?";
@@ -59,37 +111,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 throw new Exception('Item code already exists');
             }
             
-            // Insert new item with branch_id and price columns
+            // Calculate price multipliers
+            $price_case = $unit_price * 12;
+            $price_inner_pack = $unit_price * 6;
+            $price_box = $unit_price * 24;
+            $price_carton = $unit_price * 48;
+            
+            // Insert new item - FIXED: Correct column names and parameter counts
             if ($items_branch_column_exists) {
-                if ($price_case_exists) {
-                    $insert_query = "INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, price_case, price_inner_pack, price_box, price_carton, reorder_level, status, branch_id, created_at, updated_at) 
-                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
-                    $insert_stmt = $conn->prepare($insert_query);
-                    $insert_stmt->bind_param("ssssisdddddisi", 
-                        $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, 
-                        $unit_price * 12, $unit_price * 6, $unit_price * 24, $unit_price * 48, 
-                        $reorder_level, $status, $branch_id);
-                } else {
-                    $insert_query = "INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, reorder_level, status, branch_id, created_at, updated_at) 
-                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
-                    $insert_stmt = $conn->prepare($insert_query);
-                    $insert_stmt->bind_param("ssssisdisi", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status, $branch_id);
-                }
+                $insert_query = "INSERT INTO items (
+                    item_code, item_name, description, category, stock, unit_type, unit_price, 
+                    price_case, price_inner_pack, price_box, price_carton, reorder_level, status, 
+                    branch_id, product_image_url, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
+                
+                $insert_stmt = $conn->prepare($insert_query);
+                $insert_stmt->bind_param("ssssisdddddisss", 
+                    $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price,
+                    $price_case, $price_inner_pack, $price_box, $price_carton,
+                    $reorder_level, $status, $branch_id, $picture_filename
+                );
             } else {
-                if ($price_case_exists) {
-                    $insert_query = "INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, price_case, price_inner_pack, price_box, price_carton, reorder_level, status, created_at, updated_at) 
-                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
-                    $insert_stmt = $conn->prepare($insert_query);
-                    $insert_stmt->bind_param("ssssisdddddis", 
-                        $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, 
-                        $unit_price * 12, $unit_price * 6, $unit_price * 24, $unit_price * 48, 
-                        $reorder_level, $status);
-                } else {
-                    $insert_query = "INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, reorder_level, status, created_at, updated_at) 
-                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
-                    $insert_stmt = $conn->prepare($insert_query);
-                    $insert_stmt->bind_param("ssssisdis", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status);
-                }
+                $insert_query = "INSERT INTO items (
+                    item_code, item_name, description, category, stock, unit_type, unit_price, 
+                    price_case, price_inner_pack, price_box, price_carton, reorder_level, status, 
+                    product_image_url, created_at, updated_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
+                
+                $insert_stmt = $conn->prepare($insert_query);
+                $insert_stmt->bind_param("ssssisdddddsss", 
+                    $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price,
+                    $price_case, $price_inner_pack, $price_box, $price_carton,
+                    $reorder_level, $status, $picture_filename
+                );
             }
             
             if (!$insert_stmt->execute()) {
@@ -108,14 +162,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             exit;
         }
         
-        // UPDATE ITEM
+        // UPDATE ITEM - FIXED VERSION
         elseif ($_POST['action'] === 'update_item') {
             $item_id = (int)$_POST['item_id'];
             $item_name = $_POST['item_name'];
             $description = $_POST['description'] ?? null;
-            $category = $_POST['category'] ?? null;
+            $category = $_POST['category'] ?? 'General';
             $stock = (int)$_POST['stock'];
+            
+            // FIXED: Convert unit_type to match database enum (replace hyphen with underscore)
             $unit_type = $_POST['unit_type'];
+            if ($unit_type === 'inner-pack') {
+                $unit_type = 'inner_pack';
+            }
+            
             $unit_price = (float)$_POST['unit_price'];
             $reorder_level = (int)$_POST['reorder_level'];
             $status = $_POST['status'] ?? 'active';
@@ -133,25 +193,47 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
             }
             
-            // Update with price columns if they exist
-            if ($price_case_exists) {
-                $update_query = "UPDATE items 
-                               SET item_name = ?, description = ?, category = ?, stock = ?, unit_type = ?, 
-                                   unit_price = ?, price_case = ?, price_inner_pack = ?, price_box = ?, price_carton = ?,
-                                   reorder_level = ?, status = ?, updated_at = NOW() 
-                               WHERE item_id = ?";
-                $update_stmt = $conn->prepare($update_query);
-                $update_stmt->bind_param("sssisdddddisi", 
-                    $item_name, $description, $category, $stock, $unit_type, $unit_price,
-                    $unit_price * 12, $unit_price * 6, $unit_price * 24, $unit_price * 48,
-                    $reorder_level, $status, $item_id);
+            // Handle image upload if a new image is provided
+            $picture_filename = null;
+            $current_picture = null;
+            
+            // Get current picture filename if exists
+            $pic_query = "SELECT product_image_url FROM items WHERE item_id = ?";
+            $pic_stmt = $conn->prepare($pic_query);
+            $pic_stmt->bind_param("i", $item_id);
+            $pic_stmt->execute();
+            $pic_result = $pic_stmt->get_result();
+            $pic_row = $pic_result->fetch_assoc();
+            $current_picture = $pic_row['product_image_url'] ?? null;
+            
+            if (isset($_FILES['editItemPicture']) && $_FILES['editItemPicture']['size'] > 0) {
+                $picture_filename = handleImageUpload($_FILES['editItemPicture']);
+                if (!$picture_filename) {
+                    throw new Exception('Failed to upload image. Please check file format and size.');
+                }
             } else {
-                $update_query = "UPDATE items 
-                               SET item_name = ?, description = ?, category = ?, stock = ?, unit_type = ?, unit_price = ?, reorder_level = ?, status = ?, updated_at = NOW() 
-                               WHERE item_id = ?";
-                $update_stmt = $conn->prepare($update_query);
-                $update_stmt->bind_param("sssisdsii", $item_name, $description, $category, $stock, $unit_type, $unit_price, $reorder_level, $status, $item_id);
+                $picture_filename = $current_picture;
             }
+            
+            // Calculate price multipliers
+            $price_case = $unit_price * 12;
+            $price_inner_pack = $unit_price * 6;
+            $price_box = $unit_price * 24;
+            $price_carton = $unit_price * 48;
+            
+            // Update item - FIXED: Correct parameter types
+            $update_query = "UPDATE items 
+                           SET item_name = ?, description = ?, category = ?, stock = ?, unit_type = ?, 
+                               unit_price = ?, price_case = ?, price_inner_pack = ?, price_box = ?, price_carton = ?,
+                               reorder_level = ?, status = ?, product_image_url = ?, updated_at = NOW() 
+                           WHERE item_id = ?";
+            
+            $update_stmt = $conn->prepare($update_query);
+            $update_stmt->bind_param("sssisddddddssi", 
+                $item_name, $description, $category, $stock, $unit_type, $unit_price,
+                $price_case, $price_inner_pack, $price_box, $price_carton,
+                $reorder_level, $status, $picture_filename, $item_id
+            );
             
             if (!$update_stmt->execute()) {
                 throw new Exception('Failed to update item: ' . $update_stmt->error);
@@ -310,53 +392,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 }
 
 // FETCH ALL ITEMS FROM items TABLE WITH BRANCH FILTERING
-if ($price_case_exists) {
-    $items_query = "
-        SELECT 
-            item_id,
-            item_code,
-            item_name,
-            description,
-            category,
-            stock as quantity_on_hand,
-            unit_type,
-            unit_price,
-            price_case,
-            price_inner_pack,
-            price_box,
-            price_carton,
-            reorder_level,
-            status,
-            branch_id,
-            created_at,
-            updated_at
-        FROM items
-        WHERE 1=1
-        $branch_condition
-        ORDER BY item_code ASC
-    ";
-} else {
-    $items_query = "
-        SELECT 
-            item_id,
-            item_code,
-            item_name,
-            description,
-            category,
-            stock as quantity_on_hand,
-            unit_type,
-            unit_price,
-            reorder_level,
-            status,
-            branch_id,
-            created_at,
-            updated_at
-        FROM items
-        WHERE 1=1
-        $branch_condition
-        ORDER BY item_code ASC
-    ";
-}
+$items_query = "
+    SELECT 
+        item_id,
+        item_code,
+        item_name,
+        description,
+        category,
+        stock as quantity_on_hand,
+        unit_type,
+        unit_price,
+        price_case,
+        price_inner_pack,
+        price_box,
+        price_carton,
+        reorder_level,
+        status,
+        branch_id,
+        product_image_url,
+        created_at,
+        updated_at
+    FROM items
+    WHERE 1=1
+    $branch_condition
+    ORDER BY item_code ASC
+";
 
 $items_result = $conn->query($items_query);
 $items = $items_result->fetch_all(MYSQLI_ASSOC);
@@ -768,7 +828,7 @@ function getStockStatus($stock, $reorder_level) {
                                             </span>
                                             <span class="badge <?= $stock_status['class'] ?> ms-1"><?= $stock_status['label'] ?></span>
                                         </td>
-                                        <td><?= ucfirst(str_replace('-', ' ', $item['unit_type'])) ?></td>
+                                        <td><?= ucfirst(str_replace('_', ' ', $item['unit_type'])) ?></td>
                                         <td>₱<?= number_format($item['unit_price'], 2) ?></td>
                                         <td><?= $item['reorder_level'] ?></td>
                                         <td>
@@ -862,7 +922,17 @@ function getStockStatus($stock, $reorder_level) {
                             </div>
                             <div class="col-md-4">
                                 <label for="category" class="form-label">Category</label>
-                                <input type="text" class="form-control" id="category">
+                                <select class="form-select" id="category">
+                                    <option value="">Select Category</option>
+                                    <option value="Cement">Cement</option>
+                                    <option value="Oil">Oil</option>
+                                    <option value="General">General</option>
+                                </select>
+                            </div>
+                            <div class="col-md-8">
+                                <label for="itemPicture" class="form-label">Item Picture (Optional)</label>
+                                <input type="file" class="form-control" id="itemPicture" accept="image/*">
+                                <small class="text-muted">Supported formats: JPG, PNG, GIF, WebP (Max 5MB)</small>
                             </div>
                             <div class="col-md-4">
                                 <label for="stock" class="form-label">Current Stock *</label>
@@ -928,7 +998,7 @@ function getStockStatus($stock, $reorder_level) {
 
    <!-- EDIT ITEM MODAL - CORRECTED VERSION -->
 <div class="modal fade" id="editItemModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg"> <!-- Ito ang dapat na class -->
+    <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header bg-warning text-dark">
                 <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Edit Item</h5>
@@ -953,7 +1023,20 @@ function getStockStatus($stock, $reorder_level) {
                         </div>
                         <div class="col-md-4">
                             <label for="editCategory" class="form-label">Category</label>
-                            <input type="text" class="form-control" id="editCategory">
+                            <select class="form-select" id="editCategory">
+                                <option value="">Select Category</option>
+                                <option value="Cement">Cement</option>
+                                <option value="Oil">Oil</option>
+                                <option value="General">General</option>
+                            </select>
+                        </div>
+                        <div class="col-md-8">
+                            <label for="editItemPicture" class="form-label">Item Picture (Optional)</label>
+                            <input type="file" class="form-control" id="editItemPicture" accept="image/*">
+                            <small class="text-muted">Supported formats: JPG, PNG, GIF, WebP (Max 5MB)</small>
+                            <div id="currentItemPictureDiv" class="mt-2" style="display:none;">
+                                <img id="currentItemPicture" src="" alt="Current item picture" style="max-width: 100px; max-height: 100px; border-radius: 4px;">
+                            </div>
                         </div>
                         <div class="col-md-4">
                             <label for="editStock" class="form-label">Current Stock *</label>
@@ -1174,6 +1257,7 @@ function getStockStatus($stock, $reorder_level) {
             if (data.success) {
                 const item = data.item;
                 
+                // FIXED: Use correct field name 'stock' instead of 'quantity_on_hand'
                 const content = document.getElementById('viewItemContent');
                 content.innerHTML = `
                     <div class="col-md-6">
@@ -1262,7 +1346,7 @@ function getStockStatus($stock, $reorder_level) {
         }, 300);
     }
 
-    // Edit Item
+    // Edit Item - FIXED: Convert unit_type from database to select value
     function editItem(id) {
         showLoading();
         
@@ -1288,10 +1372,27 @@ function getStockStatus($stock, $reorder_level) {
                 document.getElementById('editDescription').value = item.description || '';
                 document.getElementById('editCategory').value = item.category || '';
                 document.getElementById('editStock').value = item.stock;
-                document.getElementById('editUnitType').value = item.unit_type;
+                
+                // FIXED: Convert unit_type from database (inner_pack) to select value (inner-pack)
+                let unitType = item.unit_type;
+                if (unitType === 'inner_pack') {
+                    unitType = 'inner-pack';
+                }
+                document.getElementById('editUnitType').value = unitType;
+                
                 document.getElementById('editUnitPrice').value = item.unit_price;
                 document.getElementById('editReorderLevel').value = item.reorder_level;
                 document.getElementById('editStatus').value = item.status;
+                
+                // Display current picture if exists
+                if (item.product_image_url) {
+                    const picDiv = document.getElementById('currentItemPictureDiv');
+                    const picImg = document.getElementById('currentItemPicture');
+                    picImg.src = '../uploads/item_pictures/' + item.product_image_url;
+                    picDiv.style.display = 'block';
+                } else {
+                    document.getElementById('currentItemPictureDiv').style.display = 'none';
+                }
                 
                 currentItemId = id;
                 new bootstrap.Modal(document.getElementById('editItemModal')).show();
@@ -1305,16 +1406,22 @@ function getStockStatus($stock, $reorder_level) {
         });
     }
 
-    // Save Item (Add)
+    // Save Item (Add) - FIXED VERSION
     function saveItem() {
         // Validate required fields
         const itemName = document.getElementById('itemName').value;
         const stock = document.getElementById('stock').value;
         const unitPrice = document.getElementById('unitPrice').value;
         const reorderLevel = document.getElementById('reorderLevel').value;
+        const itemCode = document.getElementById('itemCode').value;
         
         if (!itemName) {
             Swal.fire('Warning', 'Item Name is required', 'warning');
+            return;
+        }
+        
+        if (!itemCode) {
+            Swal.fire('Warning', 'Item Code is required', 'warning');
             return;
         }
         
@@ -1335,15 +1442,35 @@ function getStockStatus($stock, $reorder_level) {
         
         showLoading();
         
-        // Prepare form data
-        const formData = new FormData(document.getElementById('itemForm'));
+        // Prepare form data - FIXED: Include all fields properly
+        const formData = new FormData();
         formData.append('action', 'add_item');
+        formData.append('item_code', document.getElementById('itemCode').value);
+        formData.append('item_name', document.getElementById('itemName').value);
+        formData.append('description', document.getElementById('description').value || '');
+        formData.append('category', document.getElementById('category').value || 'General');
+        formData.append('stock', document.getElementById('stock').value);
+        formData.append('unit_type', document.getElementById('unitType').value);
+        formData.append('unit_price', document.getElementById('unitPrice').value);
+        formData.append('reorder_level', document.getElementById('reorderLevel').value);
+        formData.append('status', document.getElementById('status').value || 'active');
+        
+        // Handle file upload - FIXED: Append file if exists
+        const pictureInput = document.getElementById('itemPicture');
+        if (pictureInput && pictureInput.files.length > 0) {
+            formData.append('itemPicture', pictureInput.files[0]);
+        }
         
         fetch('current_inventory.php', {
             method: 'POST',
             body: formData
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
         .then(data => {
             Swal.close();
             
@@ -1355,7 +1482,8 @@ function getStockStatus($stock, $reorder_level) {
                     timer: 2000,
                     showConfirmButton: false
                 }).then(() => {
-                    bootstrap.Modal.getInstance(document.getElementById('itemModal')).hide();
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('itemModal'));
+                    if (modal) modal.hide();
                     location.reload();
                 });
             } else {
@@ -1364,20 +1492,27 @@ function getStockStatus($stock, $reorder_level) {
         })
         .catch(error => {
             Swal.close();
-            Swal.fire('Error', 'An error occurred while saving the item', 'error');
+            console.error('Error:', error);
+            Swal.fire('Error', 'An error occurred while saving the item: ' + error.message, 'error');
         });
     }
 
-    // Update Item
+    // Update Item - FIXED VERSION
     function updateItem() {
         // Validate required fields
         const itemName = document.getElementById('editItemName').value;
         const stock = document.getElementById('editStock').value;
         const unitPrice = document.getElementById('editUnitPrice').value;
         const reorderLevel = document.getElementById('editReorderLevel').value;
+        const itemCode = document.getElementById('editItemCode').value;
         
         if (!itemName) {
             Swal.fire('Warning', 'Item Name is required', 'warning');
+            return;
+        }
+        
+        if (!itemCode) {
+            Swal.fire('Warning', 'Item Code is required', 'warning');
             return;
         }
         
@@ -1398,16 +1533,36 @@ function getStockStatus($stock, $reorder_level) {
         
         showLoading();
         
-        // Prepare form data
-        const formData = new FormData(document.getElementById('editItemForm'));
+        // Prepare form data - FIXED: Include all fields properly
+        const formData = new FormData();
         formData.append('action', 'update_item');
         formData.append('item_id', document.getElementById('editItemId').value);
+        formData.append('item_code', document.getElementById('editItemCode').value);
+        formData.append('item_name', document.getElementById('editItemName').value);
+        formData.append('description', document.getElementById('editDescription').value || '');
+        formData.append('category', document.getElementById('editCategory').value || 'General');
+        formData.append('stock', document.getElementById('editStock').value);
+        formData.append('unit_type', document.getElementById('editUnitType').value);
+        formData.append('unit_price', document.getElementById('editUnitPrice').value);
+        formData.append('reorder_level', document.getElementById('editReorderLevel').value);
+        formData.append('status', document.getElementById('editStatus').value || 'active');
+        
+        // Handle file upload - FIXED: Append file if exists
+        const pictureInput = document.getElementById('editItemPicture');
+        if (pictureInput && pictureInput.files.length > 0) {
+            formData.append('editItemPicture', pictureInput.files[0]);
+        }
         
         fetch('current_inventory.php', {
             method: 'POST',
             body: formData
         })
-        .then(response => response.json())
+        .then(response => {
+            if (!response.ok) {
+                throw new Error('Network response was not ok');
+            }
+            return response.json();
+        })
         .then(data => {
             Swal.close();
             
@@ -1419,7 +1574,8 @@ function getStockStatus($stock, $reorder_level) {
                     timer: 2000,
                     showConfirmButton: false
                 }).then(() => {
-                    bootstrap.Modal.getInstance(document.getElementById('editItemModal')).hide();
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('editItemModal'));
+                    if (modal) modal.hide();
                     location.reload();
                 });
             } else {
@@ -1428,7 +1584,8 @@ function getStockStatus($stock, $reorder_level) {
         })
         .catch(error => {
             Swal.close();
-            Swal.fire('Error', 'An error occurred while updating the item', 'error');
+            console.error('Error:', error);
+            Swal.fire('Error', 'An error occurred while updating the item: ' + error.message, 'error');
         });
     }
 
@@ -1564,13 +1721,18 @@ function getStockStatus($stock, $reorder_level) {
                 const value = stock * price;
                 const branch = row.dataset.branch;
                 
+                // FIXED: Convert unit type display
+                let unitDisplay = unit;
+                if (unitDisplay === 'inner_pack') unitDisplay = 'Inner Pack';
+                else unitDisplay = unitDisplay.charAt(0).toUpperCase() + unitDisplay.slice(1);
+                
                 const rowData = [
                     code,
                     name,
                     category,
                     ...(itemsBranchColumnExists && viewAllBranches ? [`Branch ${branch || 'N/A'}`] : []),
                     stock,
-                    unit,
+                    unitDisplay,
                     price,
                     reorder,
                     status.charAt(0).toUpperCase() + status.slice(1),
