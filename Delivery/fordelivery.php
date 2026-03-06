@@ -231,7 +231,9 @@ if ($user_role == 'delivery' && $driver_id > 0) {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <!-- Leaflet CSS for maps -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <!-- Leaflet Routing Machine for directions -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         .branch-badge {
             background-color: #e7f1ff;
@@ -592,6 +594,17 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             padding: 8px 12px;
             border-radius: 20px;
             font-size: 0.85rem;
+            transition: all 0.3s ease;
+        }
+        
+        #locationIndicator.bg-success {
+            animation: pulse-green 2s infinite;
+        }
+        
+        @keyframes pulse-green {
+            0% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.4); }
+            70% { box-shadow: 0 0 0 10px rgba(40, 167, 69, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); }
         }
         
         .update-counter {
@@ -599,8 +612,469 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             margin-left: 5px;
             opacity: 0.8;
         }
+
+        /* Tracking Modal Styles - Taller modal */
+        #trackingModal .modal-dialog {
+            max-width: 1200px;
+            margin: 10px auto;
+            height: 95vh; /* Almost full height on all devices */
+        }
         
+        #trackingModal .modal-content {
+            border: none;
+            border-radius: 12px;
+            overflow: hidden;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #trackingModal .modal-body {
+            flex: 1;
+            padding: 0;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        #trackingMap {
+            height: 100%;
+            width: 100%;
+        }
+        
+        /* Status Panel - Collapsible & Draggable on desktop */
+        .status-panel {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            width: 320px;
+            background: rgba(255, 255, 255, 0.98);
+            backdrop-filter: blur(5px);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            z-index: 1000;
+            border: 1px solid rgba(0,0,0,0.1);
+            transition: all 0.3s ease;
+            max-height: calc(100% - 40px);
+            overflow-y: auto;
+        }
+        
+        .status-panel.collapsed {
+            padding: 10px 20px;
+            width: auto;
+            min-width: 200px;
+        }
+        
+        .status-panel.collapsed .panel-content {
+            display: none;
+        }
+        
+        .status-panel h6 {
+            color: #333;
+            font-weight: 600;
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: move; /* draggable on desktop */
+        }
+        
+        .status-panel.collapsed h6 {
+            margin-bottom: 0;
+        }
+        
+        .status-panel h6 i:first-child {
+            color: #0d6efd;
+        }
+        
+        .toggle-panel-btn {
+            background: transparent;
+            border: none;
+            color: #6c757d;
+            font-size: 1.2rem;
+            padding: 0 5px;
+            margin-left: auto;
+            cursor: pointer;
+            transition: color 0.2s;
+        }
+        
+        .toggle-panel-btn:hover {
+            color: #0d6efd;
+        }
+        
+        .panel-content {
+            margin-top: 15px;
+        }
+        
+        .info-row {
+            margin-bottom: 12px;
+        }
+        
+        .info-label {
+            font-size: 0.8rem;
+            color: #6c757d;
+            margin-bottom: 2px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .info-value {
+            font-weight: 600;
+            color: #333;
+            font-size: 0.95rem;
+        }
+        
+        .coordinates-text {
+            font-family: monospace;
+            font-size: 0.8rem;
+            color: #6c757d;
+            margin-top: 2px;
+        }
+        
+        .progress {
+            background-color: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            height: 8px;
+        }
+        
+        .progress-bar {
+            transition: width 0.3s ease;
+        }
+        
+        .progress-bar.bg-success { background-color: #28a745 !important; }
+        .progress-bar.bg-info { background-color: #17a2b8 !important; }
+        .progress-bar.bg-warning { background-color: #ffc107 !important; }
+        .progress-bar.bg-danger { background-color: #dc3545 !important; }
+        
+        .custom-user-icon {
+            background-color: #007bff;
+            border: 3px solid white;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+            animation: pulse-blue 1.5s infinite;
+        }
+        
+        .custom-destination-icon {
+            background-color: #dc3545;
+            border: 3px solid white;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        
+        @keyframes pulse-blue {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.3); opacity: 0.8; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        
+        /* Mobile adjustments */
         @media (max-width: 768px) {
+            #trackingModal .modal-dialog {
+                height: 100vh;
+                margin: 0;
+                max-width: 100%;
+            }
+            
+            #trackingModal .modal-content {
+                border-radius: 0;
+            }
+            
+            .status-panel {
+                position: absolute;
+                top: auto !important;
+                bottom: 0 !important;
+                left: 0 !important;
+                right: 0 !important;
+                width: 100%;
+                max-width: 100%;
+                border-radius: 16px 16px 0 0;
+                padding: 16px;
+                box-shadow: 0 -4px 20px rgba(0,0,0,0.15);
+                max-height: 50%; /* Limit height on mobile */
+                overflow-y: auto;
+            }
+            
+            .status-panel.collapsed {
+                padding: 10px 16px;
+                height: auto;
+                min-height: 50px;
+            }
+            
+            .status-panel h6 {
+                cursor: default; /* not draggable on mobile */
+            }
+            
+            /* Stack distance/time boxes */
+            .status-panel .row.g-2 {
+                flex-direction: column;
+            }
+            .status-panel .col-6 {
+                width: 100%;
+                max-width: 100%;
+                flex: 0 0 100%;
+                margin-bottom: 8px;
+            }
+            
+            /* Make buttons stack */
+            .status-panel .d-grid.gap-2.mt-3 {
+                display: flex;
+                flex-direction: column;
+            }
+            .status-panel .d-grid.gap-2.mt-3 .btn {
+                width: 100%;
+                margin-bottom: 5px;
+            }
+            
+            /* Smaller text */
+            .status-panel .info-label {
+                font-size: 0.75rem;
+            }
+            .status-panel .info-value {
+                font-size: 0.85rem;
+            }
+            .status-panel .coordinates-text {
+                font-size: 0.7rem;
+            }
+            
+            /* Adjust distance/time boxes */
+            .status-panel .bg-light.p-2.rounded {
+                padding: 10px !important;
+            }
+            .status-panel .info-value[style*="font-size: 1.2rem"] {
+                font-size: 1rem !important;
+            }
+            
+            /* Smaller retry button */
+            .status-panel .retry-btn {
+                padding: 2px 8px;
+                font-size: 0.7rem;
+            }
+        }
+
+        /* Extra small devices */
+        @media (max-width: 576px) {
+            .status-panel {
+                padding: 12px;
+            }
+            .status-panel h6 {
+                font-size: 0.9rem;
+            }
+        }
+        
+        .btn-tracking {
+            background-color: #28a745;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .btn-tracking:hover {
+            background-color: #218838;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(40, 167, 69, 0.3);
+        }
+        
+        .btn-tracking i {
+            font-size: 1rem;
+        }
+
+        /* Navigation Status Bar (main page) */
+        .navigation-status-bar {
+            background: white;
+            border-radius: 12px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            border: 1px solid #e9ecef;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 15px;
+        }
+        
+        .location-info-group {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .location-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .location-icon {
+            width: 32px;
+            height: 32px;
+            background: #f8f9fa;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #0d6efd;
+        }
+        
+        .location-details {
+            line-height: 1.3;
+        }
+        
+        .location-label {
+            font-size: 0.7rem;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .location-address {
+            font-weight: 600;
+            font-size: 0.9rem;
+            color: #212529;
+        }
+        
+        .location-coords {
+            font-family: monospace;
+            font-size: 0.8rem;
+            color: #6c757d;
+        }
+        
+        .distance-time-group {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            background: #f8f9fa;
+            padding: 8px 15px;
+            border-radius: 30px;
+        }
+        
+        .distance-time-item {
+            text-align: center;
+            min-width: 70px;
+        }
+        
+        .distance-time-label {
+            font-size: 0.7rem;
+            color: #6c757d;
+            text-transform: uppercase;
+        }
+        
+        .distance-time-value {
+            font-weight: 700;
+            font-size: 1.1rem;
+            color: #212529;
+            line-height: 1.2;
+        }
+        
+        .distance-time-unit {
+            font-size: 0.7rem;
+            color: #6c757d;
+            font-weight: normal;
+        }
+        
+        .gps-accuracy-badge {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #f8f9fa;
+            padding: 5px 12px;
+            border-radius: 30px;
+        }
+        
+        .accuracy-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+        
+        .accuracy-dot.high { background-color: #28a745; }
+        .accuracy-dot.medium { background-color: #ffc107; }
+        .accuracy-dot.low { background-color: #dc3545; }
+        
+        .nav-actions {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .nav-action-btn {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 30px;
+            padding: 6px 15px;
+            font-size: 0.85rem;
+            color: #495057;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            transition: all 0.2s;
+        }
+        
+        .nav-action-btn:hover {
+            background: #f8f9fa;
+            border-color: #0d6efd;
+            color: #0d6efd;
+        }
+        
+        .nav-action-btn i {
+            font-size: 1rem;
+        }
+        
+        .retry-btn {
+            background: #e7f1ff;
+            color: #0d6efd;
+            border: none;
+            padding: 4px 12px;
+            border-radius: 30px;
+            font-size: 0.75rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .retry-btn:hover {
+            background: #0d6efd;
+            color: white;
+        }
+        
+        /* General mobile adjustments (for main page) */
+        @media (max-width: 768px) {
+            .navigation-status-bar {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .location-info-group {
+                justify-content: space-between;
+            }
+            
+            .distance-time-group {
+                justify-content: center;
+            }
+            
+            .nav-actions {
+                justify-content: center;
+            }
+        }
+        
+        @media (max-width: 576px) {
             .location-map {
                 height: 300px;
             }
@@ -641,6 +1115,16 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             }
             .mb-3 {
                 margin-bottom: 8px !important;
+            }
+            
+            .location-info-group {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 10px;
+            }
+            
+            .location-item {
+                width: 100%;
             }
         }
         
@@ -752,7 +1236,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 </div>
                 <!-- GPS Tracking Button with Shift Management -->
                 <div style="margin-left: auto; display: flex; gap: 10px; align-items: center;">
-                    <button class="btn btn-success btn-sm" id="trackingBtn" onclick="toggleTracking()">
+                    <button class="btn btn-success btn-sm" id="trackingBtn">
                         <i class="bi bi-play-circle"></i> Start Tracking
                     </button>
                     <div id="locationIndicator" class="badge bg-secondary" style="padding: 8px 12px;">
@@ -868,7 +1352,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                                 <th>Contact</th>
                                 <th>Items</th>
                                 <th>Status</th>
-                                <th style="text-align: center; vertical-align: middle;">Actions</th>
+                                <th class="text-center align-middle">Actions</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -931,8 +1415,8 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                                         <?php echo $status_text; ?>
                                     </span>
                                 </td>
-                                <td>
-                                    <div class="action-buttons">
+                                <td class="text-center align-middle">
+                                    <div class="action-buttons" style="display: flex; justify-content: center; gap: 8px;">
                                         <button class="btn-action btn-view" title="View Details" onclick="viewDeliveryDetails(<?php echo $order['delivery_id']; ?>)">
                                             <i class="bi bi-eye"></i>
                                         </button>
@@ -950,21 +1434,31 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                                             )">
                                                 <i class="bi bi-geo-alt-fill"></i>
                                             </button>
+                                            
+                                            <!-- Live Tracking Button -->
+                                            <button class="btn-action btn-tracking" title="Navigate to Customer" onclick="startTracking(
+                                                <?php echo $order['latitude']; ?>, 
+                                                <?php echo $order['longitude']; ?>, 
+                                                '<?php echo htmlspecialchars(addslashes($order['customer_name'])); ?>', 
+                                                '<?php echo htmlspecialchars(addslashes($order['address'] . ', ' . $order['city'])); ?>'
+                                            )">
+                                                <i class="bi bi-navigation"></i>
+                                            </button>
                                         <?php endif; ?>
                                         
                                         <?php if ($order['delivery_status'] == 'pending'): ?>
-                                            <button class="btn btn-sm btn-primary" title="Start Delivery" onclick="updateDeliveryStatus(<?php echo $order['delivery_id']; ?>, 'in-transit')">
+                                            <button class="btn-action btn-start" title="Start Delivery" onclick="updateDeliveryStatus(<?php echo $order['delivery_id']; ?>, 'in-transit')">
                                                 <i class="bi bi-truck"></i>
                                             </button>
                                         <?php elseif ($order['delivery_status'] == 'in-transit'): ?>
-                                            <button class="btn btn-sm btn-success" title="Mark as Delivered" onclick="showDeliveryModal(<?php echo $order['delivery_id']; ?>, <?php echo $order['so_id']; ?>, '<?php echo htmlspecialchars(addslashes($order['so_number'])); ?>')">
+                                            <button class="btn-action btn-success" title="Mark as Delivered" onclick="showDeliveryModal(<?php echo $order['delivery_id']; ?>, <?php echo $order['so_id']; ?>, '<?php echo htmlspecialchars(addslashes($order['so_number'])); ?>')">
                                                 <i class="bi bi-check-lg"></i>
                                             </button>
-                                            <button class="btn btn-sm btn-warning" title="Mark as Partial" onclick="updateDeliveryStatus(<?php echo $order['delivery_id']; ?>, 'partial')">
+                                            <button class="btn-action btn-warning" title="Mark as Partial" onclick="updateDeliveryStatus(<?php echo $order['delivery_id']; ?>, 'partial')">
                                                 <i class="bi bi-exclamation-triangle"></i>
                                             </button>
                                         <?php elseif ($order['delivery_status'] == 'partial'): ?>
-                                            <button class="btn btn-sm btn-success" title="Complete Remaining Items" onclick="showDeliveryModal(<?php echo $order['delivery_id']; ?>, <?php echo $order['so_id']; ?>, '<?php echo htmlspecialchars(addslashes($order['so_number'])); ?>')">
+                                            <button class="btn-action btn-success" title="Complete Remaining Items" onclick="showDeliveryModal(<?php echo $order['delivery_id']; ?>, <?php echo $order['so_id']; ?>, '<?php echo htmlspecialchars(addslashes($order['so_number'])); ?>')">
                                                 <i class="bi bi-check-lg"></i>
                                             </button>
                                         <?php endif; ?>
@@ -988,6 +1482,110 @@ if ($user_role == 'delivery' && $driver_id > 0) {
 
     <!-- Hidden thermal receipt container -->
     <div id="thermalReceipt" style="display: none;"></div>
+
+    <!-- Live Tracking Modal (taller, collapsible panel, draggable on desktop) -->
+    <div class="modal fade" id="trackingModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title">
+                        <i class="bi bi-navigation me-2"></i>
+                        Live Navigation to Customer
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-0 position-relative">
+                    <div id="trackingMap" class="location-map"></div>
+                    
+                    <!-- Navigation Status Panel (collapsible, draggable on desktop) -->
+                    <div class="status-panel" id="navigationStatusPanel">
+                        <h6>
+                            <i class="bi bi-info-circle-fill text-primary me-2"></i>
+                            Navigation Status
+                            <button class="toggle-panel-btn" id="toggleStatusPanel" title="Expand/Collapse">
+                                <i class="bi bi-chevron-up"></i>
+                            </button>
+                        </h6>
+                        
+                        <div class="panel-content">
+                            <!-- Your Location -->
+                            <div class="info-row">
+                                <div class="info-label">
+                                    <i class="bi bi-geo-alt-fill text-primary"></i>
+                                    Your Location:
+                                </div>
+                                <div class="info-value" id="yourLocationText">Acquiring GPS...</div>
+                                <div class="coordinates-text" id="yourCoordinates">--</div>
+                            </div>
+                            
+                            <!-- Destination -->
+                            <div class="info-row">
+                                <div class="info-label">
+                                    <i class="bi bi-pin-map-fill text-danger"></i>
+                                    Destination:
+                                </div>
+                                <div class="info-value" id="destinationText">Customer Location</div>
+                                <div class="coordinates-text" id="destinationCoordinates">--</div>
+                            </div>
+                            
+                            <!-- Distance & Time -->
+                            <div class="row g-2 mb-3">
+                                <div class="col-6">
+                                    <div class="bg-light p-2 rounded text-center">
+                                        <div class="info-label">Distance</div>
+                                        <div class="info-value" style="font-size: 1.2rem;">
+                                            <span id="distanceText">--</span> <small>km</small>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="bg-light p-2 rounded text-center">
+                                        <div class="info-label">Est. Time</div>
+                                        <div class="info-value" style="font-size: 1.2rem;">
+                                            <span id="timeText">--</span> <small>min</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <!-- GPS Accuracy -->
+                            <div class="info-row">
+                                <div class="info-label">
+                                    <i class="bi bi-satellite me-1"></i>
+                                    GPS Accuracy:
+                                </div>
+                                <div class="progress mb-1" style="height: 8px;">
+                                    <div id="accuracyBar" class="progress-bar bg-success" style="width: 100%"></div>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <small id="accuracyText" class="text-muted">High accuracy</small>
+                                    <button class="retry-btn" onclick="retryGPSTracking()" title="Retry GPS">
+                                        <i class="bi bi-arrow-repeat"></i> Retry
+                                    </button>
+                                </div>
+                            </div>
+                            
+                            <!-- Navigation Actions -->
+                            <div class="d-grid gap-2 mt-3">
+                                <button class="btn btn-sm btn-success" onclick="centerOnYourLocation()">
+                                    <i class="bi bi-crosshair me-2"></i>Center on Me
+                                </button>
+                                <button class="btn btn-sm btn-outline-primary" onclick="openGoogleMaps()">
+                                    <i class="bi bi-google me-2"></i>Open in Google Maps
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-danger" onclick="stopLiveTracking()">
+                        <i class="bi bi-stop-circle me-2"></i>Stop Navigation
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
     <!-- View Details Modal -->
     <div class="modal fade" id="viewDetailsModal" tabindex="-1" aria-labelledby="viewDetailsModalLabel" aria-hidden="true">
@@ -1211,6 +1809,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
     <script>
         const branchId = <?php echo $branch_id; ?>;
         const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
@@ -1229,6 +1828,24 @@ if ($user_role == 'delivery' && $driver_id > 0) {
         let currentPartialDeliveryId = null;
         let currentItems = [];
         let currentThermalReceipt = '';
+
+        // ================= GPS TRACKING VARIABLES =================
+        let watchId = null;
+        let trackingActive = false;
+        let updateCount = 0;
+        let retryCount = 0;
+        let currentDriverId = <?php echo $driver_id ?: 0; ?>;
+
+        // ================= LIVE TRACKING VARIABLES =================
+        let liveTrackingMap = null;
+        let routingControl = null;
+        let userMarker = null;
+        let destinationMarker = null;
+        let watchPositionId = null;
+        let currentPosition = null;
+        let destinationPosition = null;
+        let accuracyCircle = null;
+        let gpsRetryTimeout = null;
 
         // ================= SIDEBAR FUNCTIONS =================
         function toggleSidebar() {
@@ -1378,67 +1995,701 @@ if ($user_role == 'delivery' && $driver_id > 0) {
         }
         // ================= END SIDEBAR FUNCTIONS =================
 
-        // Search functionality
-        const searchInput = document.getElementById('searchInput');
-        if (searchInput) {
-            searchInput.addEventListener('keyup', function() {
-                const filter = this.value.toLowerCase();
-                const rows = document.querySelectorAll('tbody tr');
-                
-                rows.forEach(row => {
-                    const text = row.textContent.toLowerCase();
-                    row.style.display = text.includes(filter) ? '' : 'none';
-                });
-            });
-        }
+        // ================= GPS TRACKING FUNCTIONS =================
+        function toggleTracking() {
+            if (!navigator.geolocation) {
+                Swal.fire('Error', 'Geolocation is not supported by your browser.', 'error');
+                return;
+            }
 
-        // Status filter
-        const statusFilter = document.getElementById('statusFilter');
-        if (statusFilter) {
-            statusFilter.addEventListener('change', function() {
-                const filter = this.value.toLowerCase();
+            if (trackingActive) {
+                // Check for active deliveries before stopping
                 const rows = document.querySelectorAll('tbody tr');
+                let hasActiveDelivery = false;
                 
                 rows.forEach(row => {
                     const statusCell = row.cells[5];
                     if (statusCell) {
                         const status = statusCell.textContent.toLowerCase().trim();
-                        row.style.display = (filter === '' || status.includes(filter)) ? '' : 'none';
+                        if (status.includes('in transit') || status.includes('partial')) {
+                            hasActiveDelivery = true;
+                        }
                     }
                 });
+                
+                if (hasActiveDelivery) {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Cannot Stop Tracking',
+                        text: 'You have active deliveries. Please complete all deliveries first.',
+                        confirmButtonColor: '#28a745'
+                    });
+                    return;
+                }
+                
+                stopTracking();
+            } else {
+                startTracking();
+            }
+        }
+
+        function startTracking() {
+            updateUI('requesting', 'Starting shift...');
+            startShift();
+        }
+
+        function startShift() {
+            fetch('../Global/gps_shift_start.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'start_shift',
+                    driver_id: currentDriverId,
+                    force: true
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('Shift started:', data);
+                    updateUI('success', 'Shift started');
+                    startGPSTracking();
+                } else {
+                    console.error('Failed to start shift:', data.error);
+                    updateUI('error', 'Shift failed: ' + data.error);
+                    
+                    if (data.error && data.error.includes('active shift')) {
+                        Swal.fire({
+                            title: 'Active Shift Found',
+                            text: 'You have an active shift. Do you want to end it?',
+                            icon: 'warning',
+                            showCancelButton: true,
+                            confirmButtonColor: '#dc3545',
+                            cancelButtonColor: '#6c757d',
+                            confirmButtonText: 'Yes, End Shift'
+                        }).then((result) => {
+                            if (result.isConfirmed) {
+                                endExistingShift();
+                            }
+                        });
+                    }
+                }
+            })
+            .catch(error => {
+                console.error('Error starting shift:', error);
+                updateUI('error', 'Connection error');
             });
         }
 
-        // Update delivery status (for start and partial)
+        function endExistingShift() {
+            updateUI('requesting', 'Ending previous shift...');
+            
+            fetch('../Global/gps_shift_start.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'force_end_shift',
+                    driver_id: currentDriverId
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('Previous shift ended:', data);
+                    startShift();
+                } else {
+                    updateUI('error', 'Failed to end shift');
+                }
+            });
+        }
+
+        function startGPSTracking() {
+            updateUI('requesting', 'Getting GPS location...');
+            
+            navigator.geolocation.getCurrentPosition(
+                function(position) {
+                    sendLocation(position.coords);
+                    startWatching();
+                },
+                function(error) {
+                    console.log('GPS Error:', error.code, error.message);
+                    retryCount++;
+                    
+                    if (retryCount <= 3) {
+                        updateUI('retry', 'Retrying GPS... (' + retryCount + '/3)');
+                        
+                        setTimeout(function() {
+                            startGPSTracking();
+                        }, 2000);
+                    } else {
+                        updateUI('error', 'GPS Error: ' + getErrorMessage(error));
+                        retryCount = 0;
+                    }
+                },
+                {
+                    enableHighAccuracy: false,
+                    timeout: 10000,
+                    maximumAge: 60000
+                }
+            );
+        }
+
+        function getErrorMessage(error) {
+            switch(error.code) {
+                case error.PERMISSION_DENIED:
+                    return 'Please enable location permissions';
+                case error.POSITION_UNAVAILABLE:
+                    return 'Location unavailable - check GPS';
+                case error.TIMEOUT:
+                    return 'GPS timeout - try again';
+                default:
+                    return error.message;
+            }
+        }
+
+        function updateUI(status, message) {
+            let indicator = document.getElementById('locationIndicator');
+            let statusSpan = document.getElementById('locationStatus');
+            let updateSpan = document.getElementById('updateCount');
+            
+            switch(status) {
+                case 'requesting':
+                    indicator.className = 'badge bg-warning';
+                    statusSpan.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>' + message;
+                    break;
+                case 'retry':
+                    indicator.className = 'badge bg-info';
+                    statusSpan.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>' + message;
+                    break;
+                case 'success':
+                    indicator.className = 'badge bg-success';
+                    statusSpan.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>' + message;
+                    break;
+                case 'error':
+                    indicator.className = 'badge bg-danger';
+                    statusSpan.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>' + message;
+                    break;
+                default:
+                    indicator.className = 'badge bg-secondary';
+                    statusSpan.innerHTML = message || 'Offline';
+            }
+            
+            if (updateSpan) {
+                updateSpan.innerHTML = updateCount > 0 ? '(' + updateCount + ')' : '';
+            }
+        }
+
+        function startWatching() {
+            if (watchId) return;
+
+            watchId = navigator.geolocation.watchPosition(
+                function(position) {
+                    sendLocation(position.coords);
+                    updateCount++;
+                    
+                    updateUI('success', 'LIVE');
+                },
+                function(error) {
+                    console.log('Watch error:', error.message);
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 15000,
+                    maximumAge: 10000
+                }
+            );
+
+            trackingActive = true;
+            
+            let btn = document.getElementById('trackingBtn');
+            btn.innerHTML = '<i class="bi bi-stop-circle"></i> Stop Tracking';
+            btn.classList.remove('btn-success');
+            btn.classList.add('btn-danger');
+        }
+
+        function stopTracking() {
+            if (watchId) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+            }
+            
+            fetch('../Global/gps_shift_start.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'end_shift',
+                    driver_id: currentDriverId
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Shift ended:', data);
+            })
+            .catch(error => {
+                console.error('Error ending shift:', error);
+            });
+            
+            trackingActive = false;
+            updateCount = 0;
+            retryCount = 0;
+            
+            let btn = document.getElementById('trackingBtn');
+            btn.innerHTML = '<i class="bi bi-play-circle"></i> Start Tracking';
+            btn.classList.remove('btn-danger');
+            btn.classList.add('btn-success');
+            
+            updateUI('offline', 'Offline');
+        }
+
+        function sendLocation(coords) {
+            let data = {
+                action: 'update_location',
+                driver_id: currentDriverId,
+                latitude: coords.latitude,
+                longitude: coords.longitude,
+                accuracy: coords.accuracy,
+                speed: coords.speed || 0,
+                heading: coords.heading || 0,
+                timestamp: new Date().toISOString()
+            };
+
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+            fetch('../Global/gps_shift_start.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(data),
+                signal: controller.signal
+            })
+            .then(response => {
+                clearTimeout(timeoutId);
+                if (!response.ok) {
+                    throw new Error('HTTP ' + response.status);
+                }
+                return response.json();
+            })
+            .then(result => {
+                if (!result.success) {
+                    console.log('Location update failed:', result.error);
+                }
+            })
+            .catch(error => {
+                if (error.name === 'AbortError') {
+                    console.log('Location update timeout');
+                } else {
+                    console.log('Location update error:', error.message);
+                }
+            });
+        }
+
+        // ================= LIVE TRACKING FUNCTIONS =================
+        function startTracking(destLat, destLng, customerName, address) {
+            // Check if browser supports geolocation
+            if (!navigator.geolocation) {
+                Swal.fire('Error', 'Geolocation is not supported by your browser.', 'error');
+                return;
+            }
+
+            // Store destination
+            destinationPosition = { lat: parseFloat(destLat), lng: parseFloat(destLng) };
+
+            // Show modal
+            const modal = new bootstrap.Modal(document.getElementById('trackingModal'));
+            modal.show();
+
+            // Update destination info
+            document.getElementById('destinationText').textContent = customerName || 'Customer Location';
+            document.getElementById('destinationCoordinates').textContent = 
+                `${destinationPosition.lat.toFixed(6)}, ${destinationPosition.lng.toFixed(6)}`;
+
+            // Initialize map after modal is shown
+            setTimeout(() => {
+                initLiveTrackingMap(destinationPosition.lat, destinationPosition.lng, customerName, address);
+                startLiveWatching();
+            }, 500);
+        }
+
+        function initLiveTrackingMap(destLat, destLng, customerName, address) {
+            // Remove existing map if any
+            if (liveTrackingMap) {
+                liveTrackingMap.remove();
+            }
+
+            // Create map centered on destination first
+            liveTrackingMap = L.map('trackingMap').setView([destLat, destLng], 13);
+
+            // Add OpenStreetMap tiles
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '© OpenStreetMap contributors'
+            }).addTo(liveTrackingMap);
+
+            // Add destination marker (red)
+            destinationMarker = L.marker([destLat, destLng], {
+                icon: L.divIcon({
+                    className: 'custom-destination-icon',
+                    html: '<div class="custom-destination-icon"></div>',
+                    iconSize: [20, 20],
+                    iconAnchor: [10, 10]
+                })
+            }).addTo(liveTrackingMap);
+            
+            destinationMarker.bindPopup(`
+                <b>${customerName || 'Customer'}</b><br>
+                ${address || 'Destination'}<br>
+                <small>${destLat.toFixed(6)}, ${destLng.toFixed(6)}</small>
+            `).openPopup();
+
+            // Add user marker (blue) - will be updated with GPS
+            userMarker = L.marker([destLat, destLng], {
+                icon: L.divIcon({
+                    className: 'custom-user-icon',
+                    html: '<div class="custom-user-icon"></div>',
+                    iconSize: [20, 20],
+                    iconAnchor: [10, 10]
+                })
+            }).addTo(liveTrackingMap);
+            
+            userMarker.bindPopup('<b>Your Location</b><br>Waiting for GPS...');
+
+            // Add accuracy circle
+            accuracyCircle = L.circle([destLat, destLng], {
+                color: '#007bff',
+                fillColor: '#007bff',
+                fillOpacity: 0.1,
+                radius: 100
+            }).addTo(liveTrackingMap);
+        }
+
+        function startLiveWatching() {
+            // Clear any existing watch
+            if (watchPositionId) {
+                navigator.geolocation.clearWatch(watchPositionId);
+            }
+            
+            // Options for high accuracy
+            const options = {
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 0
+            };
+
+            watchPositionId = navigator.geolocation.watchPosition(
+                livePositionSuccess,
+                livePositionError,
+                options
+            );
+            
+            // Also try to get immediate position
+            navigator.geolocation.getCurrentPosition(
+                livePositionSuccess,
+                livePositionError,
+                options
+            );
+        }
+
+        function livePositionSuccess(position) {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            const accuracy = position.coords.accuracy;
+
+            currentPosition = { lat, lng, accuracy };
+
+            // Update user marker position
+            if (userMarker) {
+                userMarker.setLatLng([lat, lng]);
+                userMarker.setPopupContent(`
+                    <b>Your Location</b><br>
+                    <small>${lat.toFixed(6)}, ${lng.toFixed(6)}</small><br>
+                    <small>Accuracy: ${accuracy.toFixed(1)}m</small>
+                `);
+            }
+
+            // Update accuracy circle
+            if (accuracyCircle) {
+                accuracyCircle.setLatLng([lat, lng]);
+                accuracyCircle.setRadius(accuracy);
+            }
+
+            // Update UI with location info (no error message)
+            document.getElementById('yourLocationText').innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i> Location acquired';
+            document.getElementById('yourCoordinates').innerHTML = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+
+            // Update or create route
+            if (destinationPosition) {
+                if (!routingControl) {
+                    // Create route for the first time
+                    routingControl = L.Routing.control({
+                        waypoints: [
+                            L.latLng(lat, lng),
+                            L.latLng(destinationPosition.lat, destinationPosition.lng)
+                        ],
+                        routeWhileDragging: false,
+                        showAlternatives: false,
+                        fitSelectedRoutes: true,
+                        lineOptions: {
+                            styles: [{ color: '#007bff', opacity: 0.8, weight: 5 }]
+                        },
+                        createMarker: function() { return null; } // Don't create markers (we have our own)
+                    }).addTo(liveTrackingMap);
+
+                    // Listen for route calculation
+                    routingControl.on('routesfound', function(e) {
+                        const routes = e.routes;
+                        const summary = routes[0].summary;
+
+                        // Update distance and time
+                        const distance = (summary.totalDistance / 1000).toFixed(2);
+                        const time = Math.round(summary.totalTime / 60);
+
+                        document.getElementById('distanceText').textContent = distance;
+                        document.getElementById('timeText').textContent = time;
+                    });
+                } else {
+                    // Update waypoints for existing route
+                    routingControl.setWaypoints([
+                        L.latLng(lat, lng),
+                        L.latLng(destinationPosition.lat, destinationPosition.lng)
+                    ]);
+                }
+            }
+
+            // Update accuracy bar and text
+            const accuracyPercent = Math.max(0, Math.min(100, 100 - (accuracy / 10)));
+            document.getElementById('accuracyBar').style.width = accuracyPercent + '%';
+
+            let accuracyClass = 'bg-success';
+            let accuracyText = 'High accuracy';
+            
+            if (accuracy < 10) {
+                accuracyClass = 'bg-success';
+                accuracyText = 'Excellent accuracy';
+            } else if (accuracy < 30) {
+                accuracyClass = 'bg-info';
+                accuracyText = 'Good accuracy';
+            } else if (accuracy < 100) {
+                accuracyClass = 'bg-warning';
+                accuracyText = 'Fair accuracy';
+            } else {
+                accuracyClass = 'bg-danger';
+                accuracyText = 'Poor accuracy';
+            }
+            
+            document.getElementById('accuracyBar').className = 'progress-bar ' + accuracyClass;
+            document.getElementById('accuracyText').innerHTML = `<i class="bi bi-${accuracyClass === 'bg-success' ? 'check-circle' : accuracyClass === 'bg-info' ? 'info-circle' : accuracyClass === 'bg-warning' ? 'exclamation-triangle' : 'x-circle'} me-1"></i> ${accuracyText}`;
+
+            // Center map on user if this is the first fix
+            if (liveTrackingMap && routingControl === null) {
+                liveTrackingMap.setView([lat, lng], 15);
+            }
+        }
+
+        function livePositionError(error) {
+            // Don't show error message, just update the UI with retry option
+            let accuracyClass = 'bg-warning';
+            let accuracyText = 'Waiting for GPS...';
+            
+            document.getElementById('yourLocationText').innerHTML = '<i class="bi bi-hourglass-split me-1"></i> Acquiring GPS...';
+            document.getElementById('yourCoordinates').innerHTML = '--';
+            document.getElementById('accuracyBar').className = 'progress-bar bg-warning';
+            document.getElementById('accuracyText').innerHTML = '<i class="bi bi-hourglass-split me-1"></i> Acquiring GPS signal...';
+        }
+
+        function retryGPSTracking() {
+            if (watchPositionId) {
+                navigator.geolocation.clearWatch(watchPositionId);
+            }
+            
+            document.getElementById('yourLocationText').innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> Retrying GPS...';
+            document.getElementById('yourCoordinates').innerHTML = '--';
+            document.getElementById('accuracyBar').className = 'progress-bar bg-info';
+            document.getElementById('accuracyText').innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> Retrying...';
+            
+            // Restart watching
+            startLiveWatching();
+        }
+
+        function stopLiveTracking() {
+            // Clear watch position
+            if (watchPositionId) {
+                navigator.geolocation.clearWatch(watchPositionId);
+                watchPositionId = null;
+            }
+
+            // Clear any pending retry timeout
+            if (gpsRetryTimeout) {
+                clearTimeout(gpsRetryTimeout);
+                gpsRetryTimeout = null;
+            }
+
+            // Remove routing control
+            if (routingControl && liveTrackingMap) {
+                liveTrackingMap.removeControl(routingControl);
+                routingControl = null;
+            }
+
+            // Close modal
+            const modal = bootstrap.Modal.getInstance(document.getElementById('trackingModal'));
+            if (modal) {
+                modal.hide();
+            }
+        }
+
+        function centerOnYourLocation() {
+            if (currentPosition && liveTrackingMap) {
+                liveTrackingMap.setView([currentPosition.lat, currentPosition.lng], 16);
+            } else {
+                // If no current position, try to get one
+                retryGPSTracking();
+            }
+        }
+
+        function openGoogleMaps() {
+            if (currentPosition && destinationPosition) {
+                const url = `https://www.google.com/maps/dir/${currentPosition.lat},${currentPosition.lng}/${destinationPosition.lat},${destinationPosition.lng}`;
+                window.open(url, '_blank');
+            } else if (destinationPosition) {
+                const url = `https://www.google.com/maps?q=${destinationPosition.lat},${destinationPosition.lng}`;
+                window.open(url, '_blank');
+            }
+        }
+
+        // ================= DELIVERY FUNCTIONS WITH GPS VALIDATION =================
+
+        // Update delivery status (for start and partial) - WITH GPS VALIDATION
         function updateDeliveryStatus(deliveryId, newStatus) {
             if (newStatus === 'in-transit') {
-                if (confirm('Start this delivery?')) {
-                    const formData = new FormData();
-                    formData.append('delivery_id', deliveryId);
-                    formData.append('status', newStatus);
-                    formData.append('branch_id', branchId);
-                    
-                    fetch('update_delivery_status.php', {
-                        method: 'POST',
-                        body: formData
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.success) {
-                            location.reload();
-                        } else {
-                            alert('Error: ' + data.message);
+                // Check if GPS tracking is active
+                if (!trackingActive) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'GPS Tracking Required',
+                        text: 'Please start GPS tracking before starting delivery.',
+                        confirmButtonColor: '#28a745',
+                        confirmButtonText: 'Start Tracking Now'
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            toggleTracking();
                         }
-                    })
-                    .catch(error => {
-                        console.error('Error:', error);
-                        alert('Error updating status');
                     });
+                    return;
                 }
+                
+                Swal.fire({
+                    title: 'Start Delivery?',
+                    text: 'Make sure you have loaded all items for this delivery.',
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonColor: '#28a745',
+                    cancelButtonColor: '#6c757d',
+                    confirmButtonText: 'Yes, Start Delivery'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        const formData = new FormData();
+                        formData.append('delivery_id', deliveryId);
+                        formData.append('status', newStatus);
+                        formData.append('branch_id', branchId);
+                        
+                        Swal.fire({
+                            title: 'Starting Delivery...',
+                            text: 'Please wait',
+                            allowOutsideClick: false,
+                            didOpen: () => {
+                                Swal.showLoading();
+                            }
+                        });
+                        
+                        fetch('update_delivery_status.php', {
+                            method: 'POST',
+                            body: formData
+                        })
+                        .then(response => response.json())
+                        .then(data => {
+                            Swal.close();
+                            
+                            if (data.success) {
+                                Swal.fire({
+                                    icon: 'success',
+                                    title: 'Delivery Started!',
+                                    text: 'You are now on your way.',
+                                    timer: 1500,
+                                    showConfirmButton: false
+                                }).then(() => {
+                                    location.reload();
+                                });
+                            } else {
+                                Swal.fire('Error', data.message || 'Failed to start delivery', 'error');
+                            }
+                        })
+                        .catch(error => {
+                            Swal.close();
+                            console.error('Error:', error);
+                            Swal.fire('Error', 'Error updating status', 'error');
+                        });
+                    }
+                });
             } else if (newStatus === 'partial') {
+                // Check if GPS tracking is active
+                if (!trackingActive) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'GPS Tracking Required',
+                        text: 'Please enable GPS tracking to record partial delivery.',
+                        confirmButtonColor: '#28a745',
+                        confirmButtonText: 'Start Tracking Now'
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            toggleTracking();
+                        }
+                    });
+                    return;
+                }
+                
                 // Load items for partial delivery
                 loadItemsForPartial(deliveryId);
             }
+        }
+
+        // Show delivery modal - WITH GPS VALIDATION
+        function showDeliveryModal(deliveryId, soId, orderNumber) {
+            // Check if GPS tracking is active
+            if (!trackingActive) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'GPS Tracking Required',
+                    text: 'Please keep GPS tracking active to complete delivery.',
+                    confirmButtonColor: '#28a745',
+                    confirmButtonText: 'Start Tracking Now'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        toggleTracking();
+                    }
+                });
+                return;
+            }
+            
+            currentDeliveryId = deliveryId;
+            currentSoId = soId;
+            currentOrderNumber = orderNumber;
+            
+            document.getElementById('orderIdDisplay').textContent = orderNumber;
+            document.getElementById('modalDeliveryId').value = deliveryId;
+            document.getElementById('modalSoId').value = soId;
+            document.getElementById('modalSoNumber').value = orderNumber;
+            document.getElementById('deliveryForm').reset();
+            
+            const now = new Date();
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            document.querySelector('input[name="delivery_date"]').value = `${year}-${month}-${day}T${hours}:${minutes}`;
+            
+            const modal = new bootstrap.Modal(document.getElementById('deliveryModal'));
+            modal.show();
         }
 
         // Load items for partial delivery
@@ -1455,12 +2706,12 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                         const modal = new bootstrap.Modal(document.getElementById('partialModal'));
                         modal.show();
                     } else {
-                        alert('Error loading items: ' + data.message);
+                        Swal.fire('Error', 'Error loading items: ' + data.message, 'error');
                     }
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    alert('Error loading items');
+                    Swal.fire('Error', 'Error loading items', 'error');
                 });
         }
 
@@ -1483,13 +2734,29 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             itemsDiv.innerHTML = html;
         }
 
-        // Submit Partial Delivery
+        // Submit Partial Delivery - WITH GPS VALIDATION
         function submitPartialDelivery() {
+            // Check if GPS tracking is still active
+            if (!trackingActive) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'GPS Tracking Stopped',
+                    text: 'GPS tracking was turned off. Please restart tracking to record partial delivery.',
+                    confirmButtonColor: '#28a745',
+                    confirmButtonText: 'Restart Tracking'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        toggleTracking();
+                    }
+                });
+                return;
+            }
+            
             const reason = document.getElementById('partialReason').value;
             let details = document.getElementById('partialDetails').value;
             
             if (!reason) {
-                alert('Please select a reason');
+                Swal.fire('Warning', 'Please select a reason', 'warning');
                 return;
             }
             
@@ -1497,7 +2764,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             if (reason === 'Other') {
                 const otherReason = document.getElementById('otherReason').value;
                 if (!otherReason) {
-                    alert('Please specify the reason');
+                    Swal.fire('Warning', 'Please specify the reason', 'warning');
                     return;
                 }
                 finalReason = otherReason;
@@ -1506,7 +2773,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             // Get selected items
             const checkboxes = document.querySelectorAll('#itemsList input[type="checkbox"]:checked');
             if (checkboxes.length === 0) {
-                alert('Please select at least one item that was delivered');
+                Swal.fire('Warning', 'Please select at least one item that was delivered', 'warning');
                 return;
             }
             
@@ -1517,6 +2784,15 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             }
             
             finalReason += ` [Delivered items: ${checkboxes.length} of ${currentItems.length}]`;
+            
+            Swal.fire({
+                title: 'Submitting Partial Delivery...',
+                text: 'Please wait',
+                allowOutsideClick: false,
+                didOpen: () => {
+                    Swal.showLoading();
+                }
+            });
             
             const formData = new FormData();
             formData.append('delivery_id', currentPartialDeliveryId);
@@ -1530,17 +2806,29 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             })
             .then(response => response.json())
             .then(data => {
+                Swal.close();
+                
                 if (data.success) {
                     const modal = bootstrap.Modal.getInstance(document.getElementById('partialModal'));
                     modal.hide();
-                    location.reload();
+                    
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Partial Delivery Recorded',
+                        text: 'You can complete the remaining items later.',
+                        timer: 2000,
+                        showConfirmButton: false
+                    }).then(() => {
+                        location.reload();
+                    });
                 } else {
-                    alert('Error: ' + data.message);
+                    Swal.fire('Error', data.message || 'Failed to update status', 'error');
                 }
             })
             .catch(error => {
+                Swal.close();
                 console.error('Error:', error);
-                alert('Error updating status');
+                Swal.fire('Error', 'Error updating status', 'error');
             });
         }
 
@@ -1592,30 +2880,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             downloadBtn.href = photoUrl;
             
             const modal = new bootstrap.Modal(document.getElementById('photoModal'));
-            modal.show();
-        }
-
-        // Show delivery modal
-        function showDeliveryModal(deliveryId, soId, orderNumber) {
-            currentDeliveryId = deliveryId;
-            currentSoId = soId;
-            currentOrderNumber = orderNumber;
-            
-            document.getElementById('orderIdDisplay').textContent = orderNumber;
-            document.getElementById('modalDeliveryId').value = deliveryId;
-            document.getElementById('modalSoId').value = soId;
-            document.getElementById('modalSoNumber').value = orderNumber;
-            document.getElementById('deliveryForm').reset();
-            
-            const now = new Date();
-            const year = now.getFullYear();
-            const month = String(now.getMonth() + 1).padStart(2, '0');
-            const day = String(now.getDate()).padStart(2, '0');
-            const hours = String(now.getHours()).padStart(2, '0');
-            const minutes = String(now.getMinutes()).padStart(2, '0');
-            document.querySelector('input[name="delivery_date"]').value = `${year}-${month}-${day}T${hours}:${minutes}`;
-            
-            const modal = new bootstrap.Modal(document.getElementById('deliveryModal'));
             modal.show();
         }
 
@@ -1850,6 +3114,195 @@ if ($user_role == 'delivery' && $driver_id > 0) {
         });
         }
 
+        // Search functionality
+        const searchInput = document.getElementById('searchInput');
+        if (searchInput) {
+            searchInput.addEventListener('keyup', function() {
+                const filter = this.value.toLowerCase();
+                const rows = document.querySelectorAll('tbody tr');
+                
+                rows.forEach(row => {
+                    const text = row.textContent.toLowerCase();
+                    row.style.display = text.includes(filter) ? '' : 'none';
+                });
+            });
+        }
+
+        // Status filter
+        const statusFilter = document.getElementById('statusFilter');
+        if (statusFilter) {
+            statusFilter.addEventListener('change', function() {
+                const filter = this.value.toLowerCase();
+                const rows = document.querySelectorAll('tbody tr');
+                
+                rows.forEach(row => {
+                    const statusCell = row.cells[5];
+                    if (statusCell) {
+                        const status = statusCell.textContent.toLowerCase().trim();
+                        row.style.display = (filter === '' || status.includes(filter)) ? '' : 'none';
+                    }
+                });
+            });
+        }
+
+        // ================= COLLAPSIBLE PANEL & DRAGGABLE =================
+        function initCollapsiblePanel() {
+            const panel = document.getElementById('navigationStatusPanel');
+            const toggleBtn = document.getElementById('toggleStatusPanel');
+            if (!panel || !toggleBtn) return;
+
+            let isCollapsed = false;
+
+            // Prevent drag from starting when clicking the toggle button
+            toggleBtn.addEventListener('mousedown', function(e) {
+                e.stopPropagation(); // Stop event from reaching the h6 drag handler
+            });
+            toggleBtn.addEventListener('touchstart', function(e) {
+                e.stopPropagation(); // For mobile touch
+            });
+
+            toggleBtn.addEventListener('click', function() {
+                isCollapsed = !isCollapsed;
+                panel.classList.toggle('collapsed', isCollapsed);
+                const icon = toggleBtn.querySelector('i');
+                if (isCollapsed) {
+                    icon.classList.remove('bi-chevron-up');
+                    icon.classList.add('bi-chevron-down');
+                } else {
+                    icon.classList.remove('bi-chevron-down');
+                    icon.classList.add('bi-chevron-up');
+                }
+                // Notify map to resize
+                if (liveTrackingMap) {
+                    setTimeout(() => liveTrackingMap.invalidateSize(), 200);
+                }
+            });
+        }
+
+        function makePanelDraggable() {
+            const panel = document.getElementById('navigationStatusPanel');
+            if (!panel) return;
+
+            const handle = panel.querySelector('h6');
+            const container = panel.parentElement;
+
+            function resetPosition() {
+                const containerRect = container.getBoundingClientRect();
+                const panelWidth = panel.offsetWidth;
+                const isMobile = window.innerWidth <= 768;
+
+                if (isMobile) {
+                    // On mobile: stick to bottom (handled by CSS)
+                    panel.style.left = '';
+                    panel.style.top = '';
+                    panel.style.right = '';
+                } else {
+                    // Desktop: 20px from right edge
+                    const defaultLeft = containerRect.width - panelWidth - 20;
+                    const defaultTop = 20;
+                    panel.style.left = defaultLeft + 'px';
+                    panel.style.top = defaultTop + 'px';
+                    panel.style.right = 'auto';
+                }
+            }
+
+            // Reset position when modal opens
+            const trackingModal = document.getElementById('trackingModal');
+            trackingModal.addEventListener('shown.bs.modal', resetPosition);
+
+            // Only enable dragging on desktop
+            function enableDragging() {
+                if (window.innerWidth <= 768) return; // no dragging on mobile
+
+                let isDragging = false;
+                let startX, startY, startLeft, startTop;
+
+                function startDrag(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    isDragging = true;
+
+                    const panelRect = panel.getBoundingClientRect();
+                    startLeft = panelRect.left;
+                    startTop = panelRect.top;
+
+                    if (e.type === 'mousedown') {
+                        startX = e.clientX;
+                        startY = e.clientY;
+                    } else {
+                        startX = e.touches[0].clientX;
+                        startY = e.touches[0].clientY;
+                    }
+
+                    document.addEventListener('mousemove', drag);
+                    document.addEventListener('mouseup', stopDrag);
+                    document.addEventListener('touchmove', drag, { passive: false });
+                    document.addEventListener('touchend', stopDrag);
+                    document.addEventListener('touchcancel', stopDrag);
+                }
+
+                function drag(e) {
+                    if (!isDragging) return;
+                    e.preventDefault();
+
+                    let clientX, clientY;
+                    if (e.type === 'mousemove') {
+                        clientX = e.clientX;
+                        clientY = e.clientY;
+                    } else {
+                        clientX = e.touches[0].clientX;
+                        clientY = e.touches[0].clientY;
+                    }
+
+                    const dx = clientX - startX;
+                    const dy = clientY - startY;
+                    let newLeft = startLeft + dx;
+                    let newTop = startTop + dy;
+
+                    const containerRect = container.getBoundingClientRect();
+                    const panelWidth = panel.offsetWidth;
+                    const panelHeight = panel.offsetHeight;
+
+                    const minLeft = containerRect.left;
+                    const maxLeft = containerRect.right - panelWidth;
+                    const minTop = containerRect.top;
+                    const maxTop = containerRect.bottom - panelHeight;
+
+                    newLeft = Math.max(minLeft, Math.min(newLeft, maxLeft));
+                    newTop = Math.max(minTop, Math.min(newTop, maxTop));
+
+                    const relativeLeft = newLeft - containerRect.left;
+                    const relativeTop = newTop - containerRect.top;
+
+                    panel.style.left = relativeLeft + 'px';
+                    panel.style.top = relativeTop + 'px';
+                    panel.style.right = 'auto';
+                }
+
+                function stopDrag() {
+                    isDragging = false;
+                    document.removeEventListener('mousemove', drag);
+                    document.removeEventListener('mouseup', stopDrag);
+                    document.removeEventListener('touchmove', drag);
+                    document.removeEventListener('touchend', stopDrag);
+                    document.removeEventListener('touchcancel', stopDrag);
+                }
+
+                // Attach drag start to handle
+                handle.addEventListener('mousedown', startDrag);
+                handle.addEventListener('touchstart', startDrag, { passive: false });
+            }
+
+            // Initial enable
+            enableDragging();
+
+            // Re-evaluate on resize
+            window.addEventListener('resize', function() {
+                resetPosition();
+                // Could also dynamically remove/add listeners, but not strictly necessary
+            });
+        }
+
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', function() {
             initializeSidebar();
@@ -1903,289 +3356,64 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                     }
                 });
             }
-        });
 
-        
-        // Keyboard shortcuts
-        document.addEventListener('keydown', function(e) {
-            if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
-                e.preventDefault();
-                toggleSidebar();
-            }
-            else if (e.key === 'Escape' && window.innerWidth <= 992) {
-                closeMobileSidebar();
-            }
-            else if (e.ctrlKey && e.key === 'f' && !e.target.matches('input, textarea')) {
-                e.preventDefault();
-                const searchInput = document.getElementById('searchInput');
-                if (searchInput) {
-                    searchInput.focus();
-                }
-            }
-        });
-
-        // ============ GPS TRACKING WITH SHIFT MANAGEMENT ============
-        let watchId = null;
-        let trackingActive = false;
-        let updateCount = 0;
-        let retryCount = 0;
-        let currentDriverId = <?php echo $driver_id ?: 0; ?>;
-
-        function toggleTracking() {
-            if (!navigator.geolocation) {
-                alert('Geolocation is not supported by your browser.');
-                return;
-            }
-
-            if (trackingActive) {
-                stopTracking();
-                return;
-            }
-
-            updateUI('requesting', 'Starting shift...');
-            startShift();
-        }
-
-        function startShift() {
-            fetch('../Global/gps_shift_start.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: 'start_shift',
-                    driver_id: currentDriverId,
-                    force: true
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    console.log('Shift started:', data);
-                    updateUI('success', 'Shift started');
-                    startGPSTracking();
-                } else {
-                    console.error('Failed to start shift:', data.error);
-                    updateUI('error', 'Shift failed: ' + data.error);
-                    
-                    if (data.error.includes('active shift')) {
-                        if (confirm('May active shift ka pa. Gusto mo bang i-end muna?')) {
-                            endExistingShift();
-                        }
+            // Clean up live tracking on modal close
+            const trackingModal = document.getElementById('trackingModal');
+            if (trackingModal) {
+                trackingModal.addEventListener('hidden.bs.modal', function () {
+                    stopLiveTracking();
+                    if (liveTrackingMap) {
+                        liveTrackingMap.remove();
+                        liveTrackingMap = null;
                     }
-                }
-            })
-            .catch(error => {
-                console.error('Error starting shift:', error);
-                updateUI('error', 'Connection error');
-            });
-        }
+                    userMarker = null;
+                    destinationMarker = null;
+                    routingControl = null;
+                    accuracyCircle = null;
+                    currentPosition = null;
+                });
+            }
 
-        function endExistingShift() {
-            updateUI('requesting', 'Ending previous shift...');
-            
-            fetch('../Global/gps_shift._start.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: 'force_end_shift',
-                    driver_id: currentDriverId
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    console.log('Previous shift ended:', data);
-                    startShift();
-                } else {
-                    updateUI('error', 'Failed to end shift');
-                }
-            });
-        }
-
-        function startGPSTracking() {
-            updateUI('requesting', 'Getting GPS location...');
-            
-            navigator.geolocation.getCurrentPosition(
-                function(position) {
-                    sendLocation(position.coords);
-                    startWatching();
-                },
-                function(error) {
-                    console.log('GPS Error:', error.code, error.message);
-                    retryCount++;
+            // Setup tracking button click handler
+            const trackingBtn = document.getElementById('trackingBtn');
+            if (trackingBtn) {
+                trackingBtn.addEventListener('click', function(e) {
+                    e.preventDefault();
                     
-                    if (retryCount <= 3) {
-                        updateUI('retry', 'Retrying GPS... (' + retryCount + '/3)');
+                    if (trackingActive) {
+                        // Check for active deliveries before stopping
+                        const rows = document.querySelectorAll('tbody tr');
+                        let hasActiveDelivery = false;
                         
-                        setTimeout(function() {
-                            startGPSTracking();
-                        }, 2000);
+                        rows.forEach(row => {
+                            const statusCell = row.cells[5];
+                            if (statusCell) {
+                                const status = statusCell.textContent.toLowerCase().trim();
+                                if (status.includes('in transit') || status.includes('partial')) {
+                                    hasActiveDelivery = true;
+                                }
+                            }
+                        });
+                        
+                        if (hasActiveDelivery) {
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Cannot Stop Tracking',
+                                text: 'You have active deliveries. Please complete all deliveries first.',
+                                confirmButtonColor: '#28a745'
+                            });
+                            return;
+                        }
+                        
+                        stopTracking();
                     } else {
-                        updateUI('error', 'GPS Error: ' + getErrorMessage(error));
-                        retryCount = 0;
+                        toggleTracking();
                     }
-                },
-                {
-                    enableHighAccuracy: false,
-                    timeout: 10000,
-                    maximumAge: 60000
-                }
-            );
-        }
-
-        function getErrorMessage(error) {
-            switch(error.code) {
-                case error.PERMISSION_DENIED:
-                    return 'Please enable location permissions';
-                case error.POSITION_UNAVAILABLE:
-                    return 'Location unavailable - check GPS';
-                case error.TIMEOUT:
-                    return 'GPS timeout - try again';
-                default:
-                    return error.message;
+                });
             }
-        }
 
-        function updateUI(status, message) {
-            let indicator = document.getElementById('locationIndicator');
-            let statusSpan = document.getElementById('locationStatus');
-            let updateSpan = document.getElementById('updateCount');
-            
-            switch(status) {
-                case 'requesting':
-                    indicator.className = 'badge bg-warning';
-                    statusSpan.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>' + message;
-                    break;
-                case 'retry':
-                    indicator.className = 'badge bg-info';
-                    statusSpan.innerHTML = '<i class="bi bi-arrow-repeat me-1"></i>' + message;
-                    break;
-                case 'success':
-                    indicator.className = 'badge bg-success';
-                    statusSpan.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>' + message;
-                    break;
-                case 'error':
-                    indicator.className = 'badge bg-danger';
-                    statusSpan.innerHTML = '<i class="bi bi-exclamation-triangle-fill me-1"></i>' + message;
-                    break;
-                default:
-                    indicator.className = 'badge bg-secondary';
-                    statusSpan.innerHTML = message || 'Offline';
-            }
-            
-            if (updateSpan) {
-                updateSpan.innerHTML = updateCount > 0 ? '(' + updateCount + ')' : '';
-            }
-        }
-
-        function startWatching() {
-            if (watchId) return;
-
-            watchId = navigator.geolocation.watchPosition(
-                function(position) {
-                    sendLocation(position.coords);
-                    updateCount++;
-                    
-                    updateUI('success', 'LIVE');
-                },
-                function(error) {
-                    console.log('Watch error:', error.message);
-                },
-                {
-                    enableHighAccuracy: true,
-                    timeout: 15000,
-                    maximumAge: 10000
-                }
-            );
-
-            trackingActive = true;
-            
-            let btn = document.getElementById('trackingBtn');
-            btn.innerHTML = '<i class="bi bi-stop-circle"></i> Stop Tracking';
-            btn.classList.remove('btn-success');
-            btn.classList.add('btn-danger');
-        }
-
-        function stopTracking() {
-            if (watchId) {
-                navigator.geolocation.clearWatch(watchId);
-                watchId = null;
-            }
-            
-            fetch('../Global/gps_shift_start.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    action: 'end_shift',
-                    driver_id: currentDriverId
-                })
-            })
-            .then(response => response.json())
-            .then(data => {
-                console.log('Shift ended:', data);
-            })
-            .catch(error => {
-                console.error('Error ending shift:', error);
-            });
-            
-            trackingActive = false;
-            updateCount = 0;
-            retryCount = 0;
-            
-            let btn = document.getElementById('trackingBtn');
-            btn.innerHTML = '<i class="bi bi-play-circle"></i> Start Tracking';
-            btn.classList.remove('btn-danger');
-            btn.classList.add('btn-success');
-            
-            updateUI('offline', 'Offline');
-        }
-
-        function sendLocation(coords) {
-            let data = {
-                action: 'update_location',
-                driver_id: currentDriverId,
-                latitude: coords.latitude,
-                longitude: coords.longitude,
-                accuracy: coords.accuracy,
-                speed: coords.speed || 0,
-                heading: coords.heading || 0,
-                timestamp: new Date().toISOString()
-            };
-
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 5000);
-
-            fetch('../Global/gps_shift_start.php', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json'
-                },
-                body: JSON.stringify(data),
-                signal: controller.signal
-            })
-            .then(response => {
-                clearTimeout(timeoutId);
-                if (!response.ok) {
-                    throw new Error('HTTP ' + response.status);
-                }
-                return response.json();
-            })
-            .then(result => {
-                if (!result.success) {
-                    console.log('Location update failed:', result.error);
-                }
-            })
-            .catch(error => {
-                if (error.name === 'AbortError') {
-                    console.log('Location update timeout');
-                } else {
-                    console.log('Location update error:', error.message);
-                }
-            });
-        }
-
-        // Auto-start for delivery drivers
-        <?php if ($user_role == 'delivery' && $driver_id > 0): ?>
-        document.addEventListener('DOMContentLoaded', function() {
+            // Auto-start for delivery drivers
+            <?php if ($user_role == 'delivery' && $driver_id > 0): ?>
             fetch('../Global/gps_shift_start.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -2206,19 +3434,32 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                     }, 2000);
                 }
             });
-        });
-        <?php endif; ?>
+            <?php endif; ?>
 
-        // Add pulse animation
-        const style = document.createElement('style');
-        style.textContent = `
-            @keyframes pulse {
-                0% { opacity: 1; }
-                50% { opacity: 0.4; }
-                100% { opacity: 1; }
+            // Initialize collapsible panel and draggable if tracking modal exists
+            if (document.getElementById('trackingModal')) {
+                initCollapsiblePanel();
+                makePanelDraggable();
             }
-        `;
-        document.head.appendChild(style);
+        });
+
+        // Keyboard shortcuts
+        document.addEventListener('keydown', function(e) {
+            if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
+                e.preventDefault();
+                toggleSidebar();
+            }
+            else if (e.key === 'Escape' && window.innerWidth <= 992) {
+                closeMobileSidebar();
+            }
+            else if (e.ctrlKey && e.key === 'f' && !e.target.matches('input, textarea')) {
+                e.preventDefault();
+                const searchInput = document.getElementById('searchInput');
+                if (searchInput) {
+                    searchInput.focus();
+                }
+            }
+        });
     </script>
 </body>
 </html>
