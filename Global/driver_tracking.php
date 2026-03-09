@@ -1580,9 +1580,6 @@ if (isset($_GET['ajax_trip']) && isset($_GET['id'])) {
                     Speed: ${speed}<br>
                     Last Seen: ${lastSeen}<br>
                     Status: <span class="badge ${driver.status_badge}">${statusText}</span><br>
-                    <button onclick="viewDriver(${driver.id})" class="btn-action btn-view">
-                        View Details
-                    </button>
                 </div>
             `;
         }

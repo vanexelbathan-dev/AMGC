@@ -1412,7 +1412,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                                                            $order['latitude'] != 0 && $order['longitude'] != 0;
                                         if ($has_coordinates): 
                                         ?>
-                                            <!-- Live Navigation Button (Pinalitan ang pangalan ng function) -->
+                                            <!-- Live Navigation Button -->
                                             <button class="btn-action btn-map" title="Navigate to Customer" onclick="openLiveNavigation(
                                                 <?php echo $order['latitude']; ?>, 
                                                 <?php echo $order['longitude']; ?>, 
@@ -1806,8 +1806,8 @@ if ($user_role == 'delivery' && $driver_id > 0) {
         let currentItems = [];
         let currentThermalReceipt = '';
 
-        // ================= GPS TRACKING VARIABLES =================
-        let watchId = null;
+        // ================= GPS TRACKING VARIABLES (UPDATED) =================
+        let intervalId = null;      // Para sa setInterval (60 seconds)
         let trackingActive = false;
         let updateCount = 0;
         let retryCount = 0;
@@ -2087,13 +2087,40 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             });
         }
 
+        // UPDATED: startGPSTracking with setInterval (60 seconds)
         function startGPSTracking() {
             updateUI('requesting', 'Getting GPS location...');
             
+            // Kunin agad ang location para sa initial
             navigator.geolocation.getCurrentPosition(
                 function(position) {
                     sendLocation(position.coords);
-                    startWatching();
+                    
+                    // Simulan ang interval para sa 60 seconds
+                    if (intervalId) clearInterval(intervalId);
+                    intervalId = setInterval(function() {
+                        navigator.geolocation.getCurrentPosition(
+                            function(pos) {
+                                sendLocation(pos.coords);
+                                updateCount++;
+                                updateUI('success', 'LIVE');
+                            },
+                            function(error) {
+                                console.log('Interval GPS error:', error.message);
+                            },
+                            {
+                                enableHighAccuracy: true,
+                                timeout: 15000,
+                                maximumAge: 0
+                            }
+                        );
+                    }, 60000); // 60,000 milliseconds = 60 seconds
+                    
+                    trackingActive = true;
+                    let btn = document.getElementById('trackingBtn');
+                    btn.innerHTML = '<i class="bi bi-stop-circle"></i> Stop Tracking';
+                    btn.classList.remove('btn-success');
+                    btn.classList.add('btn-danger');
                 },
                 function(error) {
                     console.log('GPS Error:', error.code, error.message);
@@ -2101,19 +2128,16 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                     
                     if (retryCount <= 3) {
                         updateUI('retry', 'Retrying GPS... (' + retryCount + '/3)');
-                        
-                        setTimeout(function() {
-                            startGPSTracking();
-                        }, 2000);
+                        setTimeout(startGPSTracking, 2000);
                     } else {
                         updateUI('error', 'GPS Error: ' + getErrorMessage(error));
                         retryCount = 0;
                     }
                 },
                 {
-                    enableHighAccuracy: false,
+                    enableHighAccuracy: true,
                     timeout: 10000,
-                    maximumAge: 60000
+                    maximumAge: 0
                 }
             );
         }
@@ -2163,38 +2187,13 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             }
         }
 
-        function startWatching() {
-            if (watchId) return;
+        // REMOVED: startWatching() function - hindi na kailangan
 
-            watchId = navigator.geolocation.watchPosition(
-                function(position) {
-                    sendLocation(position.coords);
-                    updateCount++;
-                    
-                    updateUI('success', 'LIVE');
-                },
-                function(error) {
-                    console.log('Watch error:', error.message);
-                },
-                {
-                    enableHighAccuracy: true,
-                    timeout: 15000,
-                    maximumAge: 10000
-                }
-            );
-
-            trackingActive = true;
-            
-            let btn = document.getElementById('trackingBtn');
-            btn.innerHTML = '<i class="bi bi-stop-circle"></i> Stop Tracking';
-            btn.classList.remove('btn-success');
-            btn.classList.add('btn-danger');
-        }
-
+        // UPDATED: stopTracking - clear interval instead of watch
         function stopTracking() {
-            if (watchId) {
-                navigator.geolocation.clearWatch(watchId);
-                watchId = null;
+            if (intervalId) {
+                clearInterval(intervalId);
+                intervalId = null;
             }
             
             fetch('../Global/gps_shift_start.php', {
@@ -2587,7 +2586,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             }
         }
 
-        // Confirmation before stopping live navigation (bagong function)
+        // Confirmation before stopping live navigation
         function confirmStopLiveNavigation() {
             Swal.fire({
                 title: 'Stop Navigation?',
