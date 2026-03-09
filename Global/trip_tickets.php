@@ -904,62 +904,69 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
         </div>
     </div>
 </div>
-               <!-- FILTER SECTION - TRIP TICKETS (GAYA SA BRANCH RECORDS) -->
+               <!-- FILTER SECTION - TRIP TICKETS -->
 <div class="row g-3 mb-4">
     <div class="col-12">
         <div class="form-card">
-            <h5 class="mb-3">
-                <i class="bi bi-funnel"></i> Filter Trip Tickets
-            </h5>
-            <div class="row g-3">
-                <!-- Status Filter -->
-                <div class="col-12 col-sm-6 col-md-3">
-                    <label class="form-label">
-                        <i class="bi bi-flag"></i> Status
-                    </label>
-                    <select class="form-select" id="statusFilter" onchange="loadTrips()">
-                        <option value="">All Status</option>
-                        <option value="planned">Planned</option>
-                        <option value="in-progress">In Progress</option>
-                        <option value="completed">Completed</option>
-                        <option value="delayed">Delayed</option>
-                        <option value="cancelled">Cancelled</option>
-                    </select>
-                </div>
-                
-                <!-- Origin/Branch Filter -->
-                <div class="col-12 col-sm-6 col-md-3">
-                    <label class="form-label">
-                        <i class="bi bi-building"></i> Origin/Branch
-                    </label>
-                    <select class="form-select" id="originFilter" onchange="loadTrips()">
-                        <option value="">All Origins</option>
-                        <?php foreach ($branches as $branch): ?>
-                            <option value="<?php echo $branch['branch_id']; ?>">
-                                <?php echo htmlspecialchars($branch['branch_name']); ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                
-                <!-- Trip Date Filter -->
-                <div class="col-12 col-sm-6 col-md-3">
-                    <label class="form-label">
-                        <i class="bi bi-calendar"></i> Trip Date
-                    </label>
-                    <input type="date" class="form-control" id="dateFilter" value="<?php echo $default_date; ?>" placeholder="Select date" onchange="loadTrips()">
-                </div>
-                
-                <!-- Sort By Filter -->
-                <div class="col-12 col-sm-6 col-md-3">
-                    <label class="form-label">
-                        <i class="bi bi-sort-down"></i> Sort By
-                    </label>
-                    <select class="form-select" id="sortFilter" onchange="loadTrips()">
-                        <option value="date">Date (Newest First)</option>
-                        <option value="status">Status</option>
-                        <option value="driver">Driver Name</option>
-                    </select>
+            <div class="filter-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-funnel"></i> Filter Trip Tickets
+                </h5>
+                <button class="filter-toggle-btn" id="toggleTripFilter" onclick="toggleFilter('trip')" title="Toggle Filter">
+                    <i class="bi bi-chevron-down" id="tripFilterIcon"></i>
+                </button>
+            </div>
+            <div class="filter-content" id="tripFilterContent">
+                <div class="row mt-3 g-3">
+                    <!-- Status Filter -->
+                    <div class="col-12 col-sm-6 col-md-3">
+                        <label class="form-label">
+                            <i class="bi bi-flag"></i> Status
+                        </label>
+                        <select class="form-select" id="statusFilter" onchange="loadTrips()">
+                            <option value="">All Status</option>
+                            <option value="planned">Planned</option>
+                            <option value="in-progress">In Progress</option>
+                            <option value="completed">Completed</option>
+                            <option value="delayed">Delayed</option>
+                            <option value="cancelled">Cancelled</option>
+                        </select>
+                    </div>
+                    
+                    <!-- Origin/Branch Filter -->
+                    <div class="col-12 col-sm-6 col-md-3">
+                        <label class="form-label">
+                            <i class="bi bi-building"></i> Origin/Branch
+                        </label>
+                        <select class="form-select" id="originFilter" onchange="loadTrips()">
+                            <option value="">All Origins</option>
+                            <?php foreach ($branches as $branch): ?>
+                                <option value="<?php echo $branch['branch_id']; ?>">
+                                    <?php echo htmlspecialchars($branch['branch_name']); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    
+                    <!-- Trip Date Filter -->
+                    <div class="col-12 col-sm-6 col-md-3">
+                        <label class="form-label">
+                            <i class="bi bi-calendar"></i> Trip Date
+                        </label>
+                        <input type="date" class="form-control" id="dateFilter" value="<?php echo $default_date; ?>" placeholder="Select date" onchange="loadTrips()">
+                    </div>
+                    
+                    <!-- Sort By Filter -->
+                    <div class="col-12 col-sm-6 col-md-3">
+                        <label class="form-label">
+                            <i class="bi bi-sort-down"></i> Sort By
+                        </label>
+                        <select class="form-select" id="sortFilter" onchange="loadTrips()">
+                            <option value="date">Date (Newest First)</option>
+                            <option value="status">Status</option>
+                            <option value="driver">Driver Name</option>
+                        </select>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1579,6 +1586,84 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 loadTrips();
             }
         });
+
+        // ================= FILTER TOGGLE FUNCTIONS =================
+// Toggle filter section visibility with localStorage
+function toggleFilter(filterType) {
+    const contentId = filterType + 'FilterContent';
+    const iconId = filterType + 'FilterIcon';
+    
+    const content = document.getElementById(contentId);
+    const icon = document.getElementById(iconId);
+    
+    if (content && icon) {
+        if (content.classList.contains('collapsed')) {
+            // Show filter
+            content.classList.remove('collapsed');
+            icon.style.transform = 'rotate(0deg)';
+            localStorage.setItem(filterType + 'FilterHidden', 'false');
+        } else {
+            // Hide filter
+            content.classList.add('collapsed');
+            icon.style.transform = 'rotate(-90deg)';
+            localStorage.setItem(filterType + 'FilterHidden', 'true');
+        }
+    }
+}
+
+// ================= FILTER TOGGLE FUNCTIONS =================
+// Toggle filter section visibility with localStorage
+function toggleFilter(filterType) {
+    const contentId = filterType + 'FilterContent';
+    const iconId = filterType + 'FilterIcon';
+    
+    const content = document.getElementById(contentId);
+    const icon = document.getElementById(iconId);
+    
+    if (content && icon) {
+        if (content.classList.contains('collapsed')) {
+            // Show filter
+            content.classList.remove('collapsed');
+            icon.style.transform = 'rotate(0deg)';
+            localStorage.setItem(filterType + 'FilterHidden', 'false');
+        } else {
+            // Hide filter
+            content.classList.add('collapsed');
+            icon.style.transform = 'rotate(-90deg)';
+            localStorage.setItem(filterType + 'FilterHidden', 'true');
+        }
+    }
+}
+
+// Initialize filter states on page load - DEFAULT CLOSED
+function initFilterStates() {
+    const filterTypes = ['sales', 'branch', 'items', 'driver', 'trip'];
+    
+    filterTypes.forEach(type => {
+        const contentId = type + 'FilterContent';
+        const iconId = type + 'FilterIcon';
+        
+        const content = document.getElementById(contentId);
+        const icon = document.getElementById(iconId);
+        
+        if (content && icon) {
+            // DEFAULT: CLOSED sa simula
+            content.classList.add('collapsed');
+            icon.style.transform = 'rotate(-90deg)';
+            
+            // Save sa localStorage na closed para consistent
+            localStorage.setItem(type + 'FilterHidden', 'true');
+        }
+    });
+}
+
+// Call this sa loob ng DOMContentLoaded
+document.addEventListener('DOMContentLoaded', function() {
+    // ... existing code ...
+    
+    // Initialize filter states - lahat closed
+    initFilterStates();
+});
     </script>
 </body>
 </html>

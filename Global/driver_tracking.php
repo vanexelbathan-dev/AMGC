@@ -592,59 +592,6 @@ if (isset($_GET['ajax_trip']) && isset($_GET['id'])) {
             border-radius: 8px;
             overflow: hidden;
         }
-        /* Mobile responsive */
-        @media (max-width: 768px) {
-            .stat-card {
-                padding: 12px;
-                min-height: 85px;
-                margin-bottom: 8px;
-            }
-            
-            .stat-icon {
-                font-size: 2rem;
-                margin-right: 12px;
-            }
-            
-            .stat-value {
-                font-size: 1.5rem;
-            }
-            
-            .stat-label {
-                font-size: 0.8rem;
-            }
-            
-            .col-md-3 {
-                width: 50%;
-                padding-left: 8px;
-                padding-right: 8px;
-            }
-            
-            .row.g-3 {
-                margin-left: -8px;
-                margin-right: -8px;
-            }
-        }
-        
-        @media (max-width: 576px) {
-            .stat-card {
-                min-height: 80px;
-                padding: 10px;
-            }
-            
-            .stat-icon {
-                font-size: 1.8rem;
-                margin-right: 10px;
-            }
-            
-            .stat-value {
-                font-size: 1.3rem;
-            }
-            
-            .stat-label {
-                font-size: 0.75rem;
-            }
-        }
-
         /* Mobile Profile Modal Styles */
         .user-avatar-large {
             width: 100px;
@@ -853,91 +800,234 @@ if (isset($_GET['ajax_trip']) && isset($_GET['id'])) {
         font-size: 0.55rem;
     }
 }
-/* Mobile responsive filters - gaya ng nasa image */
+/* ===== MOBILE-FIRST FILTER STYLES ===== */
+
+/* Form Card */
+.form-card {
+    background: white;
+    border-radius: 16px;
+    padding: 1.25rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+    border: 1px solid #eef2f6;
+}
+
+.form-card h5 {
+    font-size: 1rem;
+    font-weight: 600;
+        color: var(--dark-green);
+    margin-bottom: 1rem;
+}
+.form-card h5 i {
+    color: var(--primary-green);
+    background: rgba(68, 211, 78, 0.1);
+    padding: clamp(0.3rem, 1.5vw, 0.5rem);
+    border-radius: clamp(6px, 2vw, 10px);
+    font-size: clamp(0.9rem, 3.5vw, 1.2rem);
+}
+
+/* Form Labels */
+.form-card .form-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 0.25rem;
+}
+
+/* Form Controls */
+.form-card .form-control,
+.form-card .form-select {
+    border: 1.5px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 0.6rem 0.75rem;
+    font-size: 0.9rem;
+    height: 44px;
+    background-color: #fff;
+    transition: all 0.2s ease;
+}
+
+.form-card .form-control:focus,
+.form-card .form-select:focus {
+    border-color: var(--primary-green);
+    box-shadow: 0 0 0 3px rgba(68, 211, 78, 0.15);
+    outline: none;
+}
+
+/* Buttons */
+.form-card .btn {
+    border-radius: 10px;
+    padding: 0.6rem 1rem;
+    font-size: 0.9rem;
+    font-weight: 500;
+    height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.form-card .btn-primary {
+    background: var(--primary-green);
+    border: none;
+    color: white;
+}
+
+.form-card .btn-outline-secondary {
+    border: 1.5px solid #e2e8f0;
+    color: #64748b;
+    background: white;
+}
+
+/* ===== MOBILE SPECIFIC (up to 768px) ===== */
 @media (max-width: 768px) {
     .form-card {
         padding: 1rem;
+        border-radius: 14px;
     }
     
-    .form-card .row {
-        margin-left: -5px;
-        margin-right: -5px;
+    .form-card h5 {
+        font-size: 0.95rem;
+        margin-bottom: 0.75rem;
     }
     
-    .form-card [class*="col-"] {
-        padding-left: 5px;
-        padding-right: 5px;
-        margin-bottom: 10px;
+    /* Magkatabi ang Branch at Status (50% each) */
+    .form-card .col-6 {
+        width: 50%;
+        padding-left: 4px;
+        padding-right: 4px;
     }
     
-    .form-label {
-        font-size: 0.85rem;
-        margin-bottom: 0.25rem;
-    }
-    
-    .form-control, 
-    .form-select {
-        padding: 0.6rem 0.75rem;
-        font-size: 0.9rem;
-    }
-    
-    /* Full width buttons sa mobile */
-    .btn {
+    /* Driver Name at Trip Ticket - full width */
+    .form-card .col-12 {
         width: 100%;
-        padding: 0.6rem 1rem;
-        font-size: 0.9rem;
+        padding-left: 4px;
+        padding-right: 4px;
     }
     
-    /* Spacing for buttons */
-    .row.mt-3 {
-        margin-top: 0.5rem !important;
+    /* Adjust row spacing */
+    .form-card .row {
+        margin-left: -4px;
+        margin-right: -4px;
     }
     
-    .row.mt-3 [class*="col-"] {
-        margin-bottom: 8px;
-    }
-    
-    /* Last button walang margin-bottom */
-    .row.mt-3 [class*="col-"]:last-child {
-        margin-bottom: 0;
-    }
-}
-
-/* Para sa sobrang liit na phones */
-@media (max-width: 576px) {
-    .form-card {
-        padding: 0.75rem;
-    }
-    
-    .form-label {
-        font-size: 0.8rem;
-    }
-    
-    .form-control, 
-    .form-select {
-        padding: 0.5rem 0.65rem;
+    /* Smaller form controls sa mobile */
+    .form-card .form-control,
+    .form-card .form-select {
+        padding: 0.5rem 0.6rem;
         font-size: 0.85rem;
+        height: 42px;
+        border-radius: 8px;
     }
     
-    .btn {
+    .form-card .form-label {
+        font-size: 0.7rem;
+        margin-bottom: 0.2rem;
+    }
+    
+    /* Buttons sa mobile */
+    .form-card .btn {
         padding: 0.5rem 0.75rem;
         font-size: 0.85rem;
+        height: 42px;
+        border-radius: 8px;
+    }
+    
+    .form-card .btn i {
+        font-size: 0.9rem;
+    }
+    
+    /* Bawasan ang spacing */
+    .form-card .mb-3 {
+        margin-bottom: 0.75rem !important;
+    }
+    
+    .form-card .g-2 {
+        --bs-gutter-y: 0.5rem;
     }
 }
 
-/* Landscape mode fix */
-@media (max-height: 500px) and (orientation: landscape) {
+/* Small phones (576px and below) */
+@media (max-width: 576px) {
+    .form-card {
+        padding: 0.875rem;
+    }
+    
+    .form-card h5 {
+        font-size: 0.9rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    /* Mas maliit pa para sa small phones */
+    .form-card .form-control,
+    .form-card .form-select {
+        padding: 0.4rem 0.5rem;
+        font-size: 0.8rem;
+        height: 40px;
+    }
+    
+    .form-card .form-label {
+        font-size: 0.65rem;
+    }
+    
+    .form-card .btn {
+        padding: 0.4rem 0.5rem;
+        font-size: 0.8rem;
+        height: 40px;
+    }
+    
+    .form-card .btn i {
+        font-size: 0.8rem;
+        margin-right: 0.25rem;
+    }
+}
+
+/* Very small phones (400px and below) */
+@media (max-width: 400px) {
     .form-card {
         padding: 0.75rem;
     }
     
-    .row.g-3 {
-        --bs-gutter-y: 0.5rem;
+    .form-card .form-control,
+    .form-card .form-select {
+        padding: 0.35rem 0.4rem;
+        font-size: 0.75rem;
+        height: 38px;
     }
     
-    .form-control, 
-    .form-select {
-        padding: 0.4rem 0.6rem;
+    .form-card .form-label {
+        font-size: 0.6rem;
+    }
+    
+    .form-card .btn {
+        padding: 0.35rem 0.4rem;
+        font-size: 0.75rem;
+        height: 38px;
+    }
+}
+
+/* Tablet (768px to 992px) */
+@media (min-width: 768px) and (max-width: 992px) {
+    .form-card {
+        padding: 1.15rem;
+    }
+    
+    /* Sa tablet: 2 columns */
+    .form-card [class*="col-md-6"] {
+        width: 50%;
+        margin-bottom: 0.5rem;
+    }
+}
+
+/* Desktop (992px and above) */
+@media (min-width: 992px) {
+    .form-card {
+        padding: 1.25rem;
+    }
+    
+    /* Sa desktop: 4 columns */
+    .form-card [class*="col-lg-3"] {
+        width: 25%;
     }
 }
     </style>
@@ -1071,98 +1161,119 @@ if (isset($_GET['ajax_trip']) && isset($_GET['id'])) {
         </div>
     </div>
 </div>
-
-          <!-- Filter Card -->
+<!-- FILTER SECTION - DRIVER TRACKING -->
 <div class="form-card mb-4">
-    <h5 class="mb-3">Filter Drivers</h5>
-    <div class="row g-3">
-        <div class="col-12 col-md-6 col-lg-3">
-            <label class="form-label">Driver Name</label>
-            <input type="text" class="form-control" id="filterName" placeholder="Enter driver name...">
-        </div>
-        <div class="col-12 col-md-6 col-lg-3">
-            <label class="form-label">Branch</label>
-            <select class="form-select" id="filterBranch">
-                <option value="">All Branches</option>
-                <?php foreach ($branches as $branch): ?>
-                <option value="<?php echo htmlspecialchars($branch['branch_name']); ?>"><?php echo htmlspecialchars($branch['branch_name']); ?></option>
-                <?php endforeach; ?>
-            </select>
-        </div>
-        <div class="col-12 col-md-6 col-lg-3">
-            <label class="form-label">Trip Ticket</label>
-            <input type="text" class="form-control" id="filterTrip" placeholder="Enter trip number...">
-        </div>
-        <div class="col-12 col-md-6 col-lg-3">
-            <label class="form-label">Status</label>
-            <select class="form-select" id="filterStatus">
-                <option value="">All Status</option>
-                <option value="active">Active (On Delivery)</option>
-                <option value="idle">Idle (Online)</option>
-                <option value="offline">Offline</option>
-            </select>
-        </div>
+    <div class="filter-header">
+        <h5 class="mb-0">
+            <i class="bi bi-funnel"></i> Filter Drivers
+        </h5>
+        <button class="filter-toggle-btn" id="toggleDriverFilter" onclick="toggleFilter('driver')" title="Toggle Filter">
+            <i class="bi bi-chevron-down" id="driverFilterIcon"></i>
+        </button>
     </div>
-    <div class="row mt-3">
-        <div class="col-12 col-sm-6 col-md-4 col-lg-3">
-            <button class="btn btn-primary w-100 mb-2 mb-sm-0" onclick="applyFilters()">
-                <i class="bi bi-search"></i> Apply Filters
-            </button>
+    <div class="filter-content" id="driverFilterContent">
+        <!-- Filter Fields -->
+        <div class="row g-2 g-md-3 mt-3 mb-3">
+            <!-- Driver Name -->
+            <div class="col-12 col-md-6 col-lg-3">
+                <label class="form-label">Driver Name</label>
+                <input type="text" class="form-control" id="filterName" placeholder="Enter driver name...">
+            </div>
+            
+            <!-- Branch -->
+            <div class="col-6 col-md-6 col-lg-3">
+                <label class="form-label">Branch</label>
+                <select class="form-select" id="filterBranch">
+                    <option value="">All Branches</option>
+                    <?php foreach ($branches as $branch): ?>
+                    <option value="<?php echo htmlspecialchars($branch['branch_name']); ?>">
+                        <?php echo htmlspecialchars($branch['branch_name']); ?>
+                    </option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+            
+            <!-- Status -->
+            <div class="col-6 col-md-6 col-lg-3">
+                <label class="form-label">Status</label>
+                <select class="form-select" id="filterStatus">
+                    <option value="">All Status</option>
+                    <option value="active">Active (On Delivery)</option>
+                    <option value="idle">Idle (Online)</option>
+                    <option value="offline">Offline</option>
+                </select>
+            </div>
+            
+            <!-- Trip Ticket -->
+            <div class="col-12 col-md-6 col-lg-3">
+                <label class="form-label">Trip Ticket</label>
+                <input type="text" class="form-control" id="filterTrip" placeholder="Enter trip number...">
+            </div>
         </div>
-        <div class="col-12 col-sm-6 col-md-4 col-lg-3">
-            <button class="btn btn-secondary w-100" onclick="clearFilters()">
-                <i class="bi bi-x-circle"></i> Clear Filters
-            </button>
+        
+        <!-- Filter Buttons -->
+        <div class="row g-2">
+            <div class="col-6">
+                <button class="btn btn-primary w-100" onclick="applyFilters()">
+                    <i class="bi bi-funnel me-1"></i> Apply Filters
+                </button>
+            </div>
+            <div class="col-6">
+                <button class="btn btn-outline-secondary w-100" onclick="clearFilters()">
+                    <i class="bi bi-x-circle me-1"></i> Clear Filters
+                </button>
+            </div>
         </div>
     </div>
 </div>
             <!-- Map Container -->
-            <div class="data-table mb-4">
-                <div class="table-header">
-                    <h5><i class="bi bi-map"></i> Live Driver Locations</h5>
-                    <div>
-                        <span class="me-3"><span class="location-indicator online"></span> Online (Active)</span>
-                        <span class="me-3"><span class="location-indicator idle"></span> Online (Idle)</span>
-                        <span><span class="location-indicator offline"></span> Offline</span>
-                    </div>
-                </div>
-                <div id="driverMap"></div>
-            </div>
+<div class="data-table mb-4">
+    <div class="table-header">
+        <h5><i class="bi bi-map"></i> Live Driver Locations</h5>
+        <div class="status-indicators">
+            <span><span class="location-indicator online"></span> Online (Active)</span>
+            <span><span class="location-indicator idle"></span> Online (Idle)</span>
+            <span><span class="location-indicator offline"></span> Offline</span>
+        </div>
+    </div>
+    <div id="driverMap"></div>
+</div>
 
-            <!-- Drivers Table -->
-            <div class="data-table">
-                <div class="table-header">
-                    <h5><i class="bi bi-list"></i> Live Driver Locations</h5>
-                    <span class="badge bg-primary" id="driverCount">0</span>
-                </div>
-                 <div class="table-container">
-                        <table class="table custom-table compact-table" id="itemsTable">
-                        <thead>
-                            <tr>
-                                <th>ID</th>
-                                <th>Driver</th>
-                                <th>Vehicle</th>
-                                <th>Location</th>
-                                <th>Trip</th>
-                                <th>Status</th>
-                                <th>Last Seen</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="driversTable">
-                            <tr>
-                                <td colspan="8" class="text-center py-4">
-                                    <div class="spinner-border text-primary" role="status">
-                                        <span class="visually-hidden">Loading...</span>
-                                    </div>
-                                    <p class="mt-2">Loading driver data...</p>
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
+          <!-- Drivers Table -->
+<div class="data-table">
+    <div class="table-header">
+        <h5><i class="bi bi-list"></i> Live Driver Locations</h5>
+        <div class="status-indicators">
+            <span class="badge bg-primary" id="driverCount">0</span>
+        </div>
+    </div>
+    <div class="table-container">
+        <table class="table custom-table compact-table" id="itemsTable">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Driver</th>
+                    <th>Vehicle</th>
+                    <th>Location</th>
+                    <th>Trip</th>
+                    <th>Status</th>
+                    <th>Last Seen</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="driversTable">
+                <tr>
+                    <td colspan="8" class="text-center py-4">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Loading driver data...</p>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
             <!-- Trips Table -->
             <div class="data-table mt-4">
                 <div class="table-header">
@@ -1863,6 +1974,108 @@ if (isset($_GET['ajax_trip']) && isset($_GET['id'])) {
                 }
             }
         });
+
+        // ================= FILTER TOGGLE FUNCTIONS =================
+// Toggle filter section visibility with localStorage
+function toggleFilter(filterType) {
+    const contentId = filterType + 'FilterContent';
+    const iconId = filterType + 'FilterIcon';
+    
+    const content = document.getElementById(contentId);
+    const icon = document.getElementById(iconId);
+    
+    if (content && icon) {
+        if (content.classList.contains('collapsed')) {
+            // Show filter
+            content.classList.remove('collapsed');
+            icon.style.transform = 'rotate(0deg)';
+            localStorage.setItem(filterType + 'FilterHidden', 'false');
+        } else {
+            // Hide filter
+            content.classList.add('collapsed');
+            icon.style.transform = 'rotate(-90deg)';
+            localStorage.setItem(filterType + 'FilterHidden', 'true');
+        }
+    }
+}
+
+// ================= FILTER TOGGLE FUNCTIONS =================
+// Toggle filter section visibility with localStorage
+function toggleFilter(filterType) {
+    const contentId = filterType + 'FilterContent';
+    const iconId = filterType + 'FilterIcon';
+    
+    const content = document.getElementById(contentId);
+    const icon = document.getElementById(iconId);
+    
+    if (content && icon) {
+        if (content.classList.contains('collapsed')) {
+            // Show filter
+            content.classList.remove('collapsed');
+            icon.style.transform = 'rotate(0deg)';
+            localStorage.setItem(filterType + 'FilterHidden', 'false');
+        } else {
+            // Hide filter
+            content.classList.add('collapsed');
+            icon.style.transform = 'rotate(-90deg)';
+            localStorage.setItem(filterType + 'FilterHidden', 'true');
+        }
+    }
+}
+
+// ================= FILTER TOGGLE FUNCTIONS =================
+// Toggle filter section visibility with localStorage
+function toggleFilter(filterType) {
+    const contentId = filterType + 'FilterContent';
+    const iconId = filterType + 'FilterIcon';
+    
+    const content = document.getElementById(contentId);
+    const icon = document.getElementById(iconId);
+    
+    if (content && icon) {
+        if (content.classList.contains('collapsed')) {
+            // Show filter
+            content.classList.remove('collapsed');
+            icon.style.transform = 'rotate(0deg)';
+            localStorage.setItem(filterType + 'FilterHidden', 'false');
+        } else {
+            // Hide filter
+            content.classList.add('collapsed');
+            icon.style.transform = 'rotate(-90deg)';
+            localStorage.setItem(filterType + 'FilterHidden', 'true');
+        }
+    }
+}
+
+// Initialize filter states on page load - DEFAULT CLOSED
+function initFilterStates() {
+    const filterTypes = ['sales', 'branch', 'items', 'driver', 'trip'];
+    
+    filterTypes.forEach(type => {
+        const contentId = type + 'FilterContent';
+        const iconId = type + 'FilterIcon';
+        
+        const content = document.getElementById(contentId);
+        const icon = document.getElementById(iconId);
+        
+        if (content && icon) {
+            // DEFAULT: CLOSED sa simula
+            content.classList.add('collapsed');
+            icon.style.transform = 'rotate(-90deg)';
+            
+            // Save sa localStorage na closed para consistent
+            localStorage.setItem(type + 'FilterHidden', 'true');
+        }
+    });
+}
+
+// Call this sa loob ng DOMContentLoaded
+document.addEventListener('DOMContentLoaded', function() {
+    // ... existing code ...
+    
+    // Initialize filter states - lahat closed
+    initFilterStates();
+});
     </script>
 </body>
 </html>

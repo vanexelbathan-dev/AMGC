@@ -788,27 +788,35 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
     <!-- Pwedeng magdagdag ng Card 4, 5, 6 - automatic mag-aadjust -->
 </div>
                 
-              <div class="row g-3 mb-4">
+              <!-- FILTER SECTION - SALES REPORTS -->
+<div class="row g-3 mb-4">
     <div class="col-12">
         <div class="form-card">
-            <h5 class="mb-3">
-                <i class="bi bi-funnel"></i> Filter Reports
-            </h5>
-            <div class="row mt-2 g-3">
-                <div class="col-12 col-sm-6">
-                    <label class="form-label">
-                        <i class="bi bi-calendar-range"></i> Period
-                    </label>
-                    <select class="form-select" id="periodFilter" onchange="toggleDateFilter()">
-                        <option value="monthly" selected>Monthly</option>
-                        <option value="daily">Daily</option>
-                    </select>
-                </div>
-                <div class="col-12 col-sm-6">
-                    <label class="form-label" id="dateLabel">
-                        <i class="bi bi-calendar-month"></i> Month
-                    </label>
-                    <input type="month" class="form-control" id="dateFilter" value="2026-02" onchange="loadReports()">
+            <div class="filter-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-funnel"></i> Filter Reports
+                </h5>
+                <button class="filter-toggle-btn" id="toggleSalesFilter" onclick="toggleFilter('sales')" title="Toggle Filter">
+                    <i class="bi bi-chevron-down" id="salesFilterIcon"></i>
+                </button>
+            </div>
+            <div class="filter-content" id="salesFilterContent">
+                <div class="row mt-3 g-3">
+                    <div class="col-12 col-sm-6">
+                        <label class="form-label">
+                            <i class="bi bi-calendar-range"></i> Period
+                        </label>
+                        <select class="form-select" id="periodFilter" onchange="toggleDateFilter()">
+                            <option value="monthly" selected>Monthly</option>
+                            <option value="daily">Daily</option>
+                        </select>
+                    </div>
+                    <div class="col-12 col-sm-6">
+                        <label class="form-label" id="dateLabel">
+                            <i class="bi bi-calendar-month"></i> Month
+                        </label>
+                        <input type="month" class="form-control" id="dateFilter" value="2026-02" onchange="loadReports()">
+                    </div>
                 </div>
             </div>
         </div>
@@ -1301,6 +1309,107 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
             }
         }
     });
+    // ================= FILTER TOGGLE FUNCTIONS =================
+// Toggle filter section visibility with localStorage
+function toggleFilter(filterType) {
+    const contentId = filterType + 'FilterContent';
+    const iconId = filterType + 'FilterIcon';
+    
+    const content = document.getElementById(contentId);
+    const icon = document.getElementById(iconId);
+    
+    if (content && icon) {
+        if (content.classList.contains('collapsed')) {
+            // Show filter
+            content.classList.remove('collapsed');
+            icon.style.transform = 'rotate(0deg)';
+            localStorage.setItem(filterType + 'FilterHidden', 'false');
+        } else {
+            // Hide filter
+            content.classList.add('collapsed');
+            icon.style.transform = 'rotate(-90deg)';
+            localStorage.setItem(filterType + 'FilterHidden', 'true');
+        }
+    }
+}
+
+// ================= FILTER TOGGLE FUNCTIONS =================
+// Toggle filter section visibility with localStorage
+function toggleFilter(filterType) {
+    const contentId = filterType + 'FilterContent';
+    const iconId = filterType + 'FilterIcon';
+    
+    const content = document.getElementById(contentId);
+    const icon = document.getElementById(iconId);
+    
+    if (content && icon) {
+        if (content.classList.contains('collapsed')) {
+            // Show filter
+            content.classList.remove('collapsed');
+            icon.style.transform = 'rotate(0deg)';
+            localStorage.setItem(filterType + 'FilterHidden', 'false');
+        } else {
+            // Hide filter
+            content.classList.add('collapsed');
+            icon.style.transform = 'rotate(-90deg)';
+            localStorage.setItem(filterType + 'FilterHidden', 'true');
+        }
+    }
+}
+
+// ================= FILTER TOGGLE FUNCTIONS =================
+// Toggle filter section visibility with localStorage
+function toggleFilter(filterType) {
+    const contentId = filterType + 'FilterContent';
+    const iconId = filterType + 'FilterIcon';
+    
+    const content = document.getElementById(contentId);
+    const icon = document.getElementById(iconId);
+    
+    if (content && icon) {
+        if (content.classList.contains('collapsed')) {
+            // Show filter
+            content.classList.remove('collapsed');
+            icon.style.transform = 'rotate(0deg)';
+            localStorage.setItem(filterType + 'FilterHidden', 'false');
+        } else {
+            // Hide filter
+            content.classList.add('collapsed');
+            icon.style.transform = 'rotate(-90deg)';
+            localStorage.setItem(filterType + 'FilterHidden', 'true');
+        }
+    }
+}
+
+// Initialize filter states on page load - DEFAULT CLOSED
+function initFilterStates() {
+    const filterTypes = ['sales', 'branch', 'items', 'driver', 'trip'];
+    
+    filterTypes.forEach(type => {
+        const contentId = type + 'FilterContent';
+        const iconId = type + 'FilterIcon';
+        
+        const content = document.getElementById(contentId);
+        const icon = document.getElementById(iconId);
+        
+        if (content && icon) {
+            // DEFAULT: CLOSED sa simula
+            content.classList.add('collapsed');
+            icon.style.transform = 'rotate(-90deg)';
+            
+            // Save sa localStorage na closed para consistent
+            localStorage.setItem(type + 'FilterHidden', 'true');
+        }
+    });
+}
+
+// Call this sa loob ng DOMContentLoaded
+document.addEventListener('DOMContentLoaded', function() {
+    // ... existing code ...
+    
+    // Initialize filter states - lahat closed
+    initFilterStates();
+});
     </script>
 </body>
 </html>

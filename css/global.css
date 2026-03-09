@@ -3272,50 +3272,48 @@ a:hover {
     }
 }
 
-/* ===== DRIVER TRACKING - BADGE AND STATUS INDICATORS STYLE ONLY (RIGHT SIDE) ===== */
+/* ===== FIXED DRIVER TRACKING - STATUS INDICATORS ALWAYS ON RIGHT ===== */
 
-/* Position driver count badge to the right */
+/* Base styles for all table headers */
 .data-table .table-header {
-    position: relative !important;
-}
-
-.data-table .table-header #driverCount {
-    position: absolute !important;
-    right: 20px !important;
-    top: 50% !important;
-    transform: translateY(-50%) !important;
-    background: #00ff3c8d  !important;
-    color: white !important;
-    font-size: 0.8rem !important;
-    padding: 0.3rem 1rem !important;
-    border-radius: 50px !important;
-    font-weight: 600 !important;
-    box-shadow: 0 2px 5px #00ff3c7d !important;
-    border: 1px solid rgb(255, 255, 255) !important;
-    z-index: 10 !important;
-}
-
-/* Position status indicators to the right - DESKTOP */
-.data-table.mb-4 .table-header {
-    position: relative !important;
-}
-
-.data-table.mb-4 .table-header > div:last-child {
-    position: absolute !important;
-    right: 20px !important;
-    top: 50% !important;
-    transform: translateY(-50%) !important;
     display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding: 1rem 1.25rem !important;
+    background: var(--dark-green) !important;
+    position: relative !important;
+    flex-wrap: nowrap !important;
+    gap: 10px !important;
+}
+
+/* Left side - Title for both headers */
+.data-table .table-header h5 {
+    margin: 0 !important;
+    color: white !important;
+    font-weight: 600 !important;
+    font-size: 1.1rem !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    white-space: nowrap !important;
+    flex-shrink: 0 !important;
+}
+
+/* Right side container for both status indicators and driver count */
+.data-table .table-header .status-indicators {
+    display: flex !important;
+    align-items: center !important;
     gap: 15px !important;
     background: rgba(255, 255, 255, 0.1) !important;
     padding: 5px 15px !important;
     border-radius: 30px !important;
     backdrop-filter: blur(3px) !important;
-    z-index: 10 !important;
+    margin-left: auto !important;
+    flex-wrap: nowrap !important;
 }
 
-/* Style for each status text */
-.data-table.mb-4 .table-header > div:last-child span {
+/* Status text items */
+.data-table .table-header .status-indicators span {
     color: white !important;
     font-size: 0.8rem !important;
     display: flex !important;
@@ -3323,6 +3321,24 @@ a:hover {
     gap: 5px !important;
     font-weight: 400 !important;
     white-space: nowrap !important;
+}
+
+/* Driver count badge */
+.data-table .table-header #driverCount {
+    background: #00ff3c8d !important;
+    color: white !important;
+    font-size: 0.8rem !important;
+    padding: 0.3rem 1rem !important;
+    border-radius: 50px !important;
+    font-weight: 600 !important;
+    box-shadow: 0 2px 5px #00ff3c7d !important;
+    border: 1px solid rgb(255, 255, 255) !important;
+    margin: 0 !important;
+    display: inline-block !important;
+    position: static !important;
+    transform: none !important;
+    right: auto !important;
+    top: auto !important;
 }
 
 /* Smaller location indicators */
@@ -3366,24 +3382,73 @@ a:hover {
     }
 }
 
-/* Optional: Different glow intensity for different states */
-.location-indicator.online {
-    background-color: #00ff3c !important;
-    animation: pulse 1.5s infinite !important;
+/* ===== MOBILE RESPONSIVE ===== */
+
+/* Tablet */
+@media (max-width: 992px) {
+    .data-table .table-header {
+        padding: 0.875rem 1rem !important;
+    }
+    
+    .data-table .table-header h5 {
+        font-size: 1rem !important;
+    }
+    
+    .data-table .table-header .status-indicators {
+        padding: 4px 12px !important;
+        gap: 12px !important;
+    }
+    
+    .data-table .table-header .status-indicators span {
+        font-size: 0.75rem !important;
+    }
+    
+    .data-table .table-header #driverCount {
+        font-size: 0.75rem !important;
+        padding: 0.25rem 0.9rem !important;
+    }
+    
+    .location-indicator {
+        width: 7px !important;
+        height: 7px !important;
+    }
 }
 
-.location-indicator.idle {
-    background-color: #ffc107 !important;
-    box-shadow: 0 0 8px #ffc107, 0 0 15px rgba(255, 193, 7, 0.6) !important;
-}
-
-.location-indicator.offline {
-    background-color: #6c757d !important;
-    box-shadow: 0 0 5px #6c757d, 0 0 10px rgba(108, 117, 125, 0.3) !important;
-}
-
-/* Mobile responsive - adjust glow for smaller screens */
+/* Mobile */
 @media (max-width: 768px) {
+    .data-table .table-header {
+        padding: 0.75rem 0.875rem !important;
+        gap: 8px !important;
+    }
+    
+    .data-table .table-header h5 {
+        font-size: 0.9rem !important;
+    }
+    
+    .data-table .table-header h5 i {
+        font-size: 0.9rem !important;
+    }
+    
+    .data-table .table-header .status-indicators {
+        padding: 3px 10px !important;
+        gap: 8px !important;
+    }
+    
+    .data-table .table-header .status-indicators span {
+        font-size: 0.7rem !important;
+        gap: 4px !important;
+    }
+    
+    .data-table .table-header #driverCount {
+        font-size: 0.7rem !important;
+        padding: 0.2rem 0.8rem !important;
+    }
+    
+    .location-indicator {
+        width: 6px !important;
+        height: 6px !important;
+    }
+    
     .location-indicator.online {
         box-shadow: 0 0 8px #28a745, 0 0 15px rgba(40, 167, 69, 0.5) !important;
     }
@@ -3397,13 +3462,104 @@ a:hover {
     }
 }
 
-/* Simple pulse animation */
-@keyframes pulse {
-    0% { opacity: 1; }
-    50% { opacity: 0.6; }
-    100% { opacity: 1; }
+/* Small phones */
+@media (max-width: 576px) {
+    .data-table .table-header {
+        padding: 0.6rem 0.75rem !important;
+    }
+    
+    .data-table .table-header h5 {
+        font-size: 0.8rem !important;
+    }
+    
+    .data-table .table-header h5 i {
+        font-size: 0.8rem !important;
+    }
+    
+    .data-table .table-header .status-indicators {
+        padding: 2px 8px !important;
+        gap: 6px !important;
+    }
+    
+    .data-table .table-header .status-indicators span {
+        font-size: 0.6rem !important;
+        gap: 3px !important;
+    }
+    
+    .data-table .table-header #driverCount {
+        font-size: 0.6rem !important;
+        padding: 0.15rem 0.7rem !important;
+    }
+    
+    .location-indicator {
+        width: 5px !important;
+        height: 5px !important;
+    }
 }
 
+/* Very small phones */
+@media (max-width: 400px) {
+    .data-table .table-header {
+        padding: 0.5rem 0.6rem !important;
+    }
+    
+    .data-table .table-header h5 {
+        font-size: 0.7rem !important;
+    }
+    
+    .data-table .table-header h5 i {
+        font-size: 0.7rem !important;
+    }
+    
+    .data-table .table-header .status-indicators {
+        padding: 2px 6px !important;
+        gap: 4px !important;
+    }
+    
+    .data-table .table-header .status-indicators span {
+        font-size: 0.55rem !important;
+        gap: 2px !important;
+    }
+    
+    .data-table .table-header #driverCount {
+        font-size: 0.55rem !important;
+        padding: 0.1rem 0.6rem !important;
+    }
+    
+    .location-indicator {
+        width: 4px !important;
+        height: 4px !important;
+    }
+}
+
+/* Landscape mode */
+@media (max-height: 500px) and (orientation: landscape) {
+    .data-table .table-header {
+        padding: 0.4rem 0.75rem !important;
+    }
+    
+    .data-table .table-header h5 {
+        font-size: 0.7rem !important;
+    }
+    
+    .data-table .table-header .status-indicators {
+        padding: 2px 6px !important;
+    }
+    
+    .data-table .table-header .status-indicators span {
+        font-size: 0.55rem !important;
+    }
+    
+    .data-table .table-header #driverCount {
+        font-size: 0.55rem !important;
+        padding: 0.1rem 0.5rem !important;
+    }
+    
+    .location-indicator {
+        width: 4px !important;
+        height: 4px !important;
+    }
+}
 /* ===== SUPER RESPONSIVE STAT CARDS - ONE CSS TO RULE THEM ALL ===== */
 
 /* Base styles - mobile first approach */
@@ -3793,4 +3949,87 @@ a:hover {
     .form-card {
         margin-top: 0.5rem;
     }
+}
+/* ===== FILTER SECTION COLLAPSE - COMPLETE FIX ===== */
+
+/* Override the form-card h5 border-bottom */
+.form-card .filter-header h5 {
+    border-bottom: none !important;
+    margin-bottom: 0 !important;
+    padding-bottom: 0 !important;
+}
+
+/* Remove any potential border from the filter-header itself */
+.filter-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    border-bottom: none !important;
+}
+
+/* Add border line ONLY when filter is expanded - between header and content */
+.filter-header + .filter-content:not(.collapsed) {
+    border-top: 2px solid rgba(68, 211, 78, 0.2);
+    margin-top: 1rem;
+    padding-top: 0.5rem;
+}
+
+/* Filter toggle button */
+.filter-toggle-btn {
+    background: transparent;
+    border: none;
+    color: var(--dark-green);
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    padding: 0;
+}
+
+.filter-toggle-btn i {
+    font-size: 1.2rem;
+    transition: transform 0.3s ease;
+    color: var(--dark-green);
+}
+
+.filter-toggle-btn:hover {
+    background: rgba(68, 211, 78, 0.1);
+}
+
+.filter-toggle-btn:hover i {
+    color: var(--primary-green);
+}
+
+/* Filter content animation */
+.filter-content {
+    transition: all 0.3s ease-in-out;
+    overflow: hidden;
+}
+
+.filter-content.collapsed {
+    display: none;
+}
+
+/* Mobile adjustments */
+@media (max-width: 768px) {
+    .filter-toggle-btn {
+        width: 28px;
+        height: 28px;
+    }
+    
+    .filter-toggle-btn i {
+        font-size: 1rem;
+    }
+}
+
+/* Save filter state sa localStorage */
+.filter-state-indicator {
+    font-size: 0.75rem;
+    color: #6b7280;
+    margin-left: 0.5rem;
 }

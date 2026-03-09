@@ -811,50 +811,55 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
     </div>
 </div> <!-- Isang closing div lang dito -->
 
-<!-- Filter Section - Hiwalay na row -->
+<!-- FILTER SECTION - ALL ITEMS -->
 <div class="row g-3 mb-4">
     <div class="col-12">
         <div class="form-card">
-            <div class="d-flex justify-content-between align-items-center">
-                <h5 class="mb-0">Filter Items</h5>
+            <div class="filter-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-funnel"></i> Filter Items
+                </h5>
+                <button class="filter-toggle-btn" id="toggleItemsFilter" onclick="toggleFilter('items')" title="Toggle Filter">
+                    <i class="bi bi-chevron-down" id="itemsFilterIcon"></i>
+                </button>
             </div>
-            <div class="row mt-3">
-                <!-- Filter options here -->
-                <div class="col-md-4">
-                    <label class="form-label">Category</label>
-                    <select class="form-select" id="categoryFilter" onchange="applyFilters()">
-                        <option value="">All Categories</option>
-                        <?php foreach ($categories as $cat): ?>
-                            <option value="<?php echo htmlspecialchars($cat); ?>" <?php echo $category == $cat ? 'selected' : ''; ?>>
-                                <?php echo htmlspecialchars($cat); ?>
-                            </option>
-                        <?php endforeach; ?>
-                    </select>
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">Stock Status</label>
-                    <select class="form-select" id="stockFilter" onchange="applyFilters()">
-                        <option value="">All Items</option>
-                        <option value="in_stock" <?php echo $stock == 'in_stock' ? 'selected' : ''; ?>>In Stock</option>
-                        <option value="low_stock" <?php echo $stock == 'low_stock' ? 'selected' : ''; ?>>Low Stock</option>
-                        <option value="out_of_stock" <?php echo $stock == 'out_of_stock' ? 'selected' : ''; ?>>Out of Stock</option>
-                    </select>
-                </div>
-                <div class="col-md-4">
-                    <label class="form-label">Price Range</label>
-                    <select class="form-select" id="priceFilter" onchange="applyFilters()">
-                        <option value="">All Prices</option>
-                        <option value="0-50" <?php echo $price == '0-50' ? 'selected' : ''; ?>>₱0 - ₱50</option>
-                        <option value="50-100" <?php echo $price == '50-100' ? 'selected' : ''; ?>>₱50 - ₱100</option>
-                        <option value="100-500" <?php echo $price == '100-500' ? 'selected' : ''; ?>>₱100 - ₱500</option>
-                        <option value="500+" <?php echo $price == '500+' ? 'selected' : ''; ?>>₱500+</option>
-                    </select>
+            <div class="filter-content" id="itemsFilterContent">
+                <div class="row mt-3 g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Category</label>
+                        <select class="form-select" id="categoryFilter" onchange="applyFilters()">
+                            <option value="">All Categories</option>
+                            <?php foreach ($categories as $cat): ?>
+                                <option value="<?php echo htmlspecialchars($cat); ?>" <?php echo $category == $cat ? 'selected' : ''; ?>>
+                                    <?php echo htmlspecialchars($cat); ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Stock Status</label>
+                        <select class="form-select" id="stockFilter" onchange="applyFilters()">
+                            <option value="">All Items</option>
+                            <option value="in_stock" <?php echo $stock == 'in_stock' ? 'selected' : ''; ?>>In Stock</option>
+                            <option value="low_stock" <?php echo $stock == 'low_stock' ? 'selected' : ''; ?>>Low Stock</option>
+                            <option value="out_of_stock" <?php echo $stock == 'out_of_stock' ? 'selected' : ''; ?>>Out of Stock</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Price Range</label>
+                        <select class="form-select" id="priceFilter" onchange="applyFilters()">
+                            <option value="">All Prices</option>
+                            <option value="0-50" <?php echo $price == '0-50' ? 'selected' : ''; ?>>₱0 - ₱50</option>
+                            <option value="50-100" <?php echo $price == '50-100' ? 'selected' : ''; ?>>₱50 - ₱100</option>
+                            <option value="100-500" <?php echo $price == '100-500' ? 'selected' : ''; ?>>₱100 - ₱500</option>
+                            <option value="500+" <?php echo $price == '500+' ? 'selected' : ''; ?>>₱500+</option>
+                        </select>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-</div> <!-- Eto ang closing div para sa filter section -->
-
+</div>
                 <div class="data-table">
                     <div class="table-header">
                         <h5>Complete Items Catalog</h5>
@@ -1430,6 +1435,84 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 }
             }
         });
+
+        // ================= FILTER TOGGLE FUNCTIONS =================
+// Toggle filter section visibility with localStorage
+function toggleFilter(filterType) {
+    const contentId = filterType + 'FilterContent';
+    const iconId = filterType + 'FilterIcon';
+    
+    const content = document.getElementById(contentId);
+    const icon = document.getElementById(iconId);
+    
+    if (content && icon) {
+        if (content.classList.contains('collapsed')) {
+            // Show filter
+            content.classList.remove('collapsed');
+            icon.style.transform = 'rotate(0deg)';
+            localStorage.setItem(filterType + 'FilterHidden', 'false');
+        } else {
+            // Hide filter
+            content.classList.add('collapsed');
+            icon.style.transform = 'rotate(-90deg)';
+            localStorage.setItem(filterType + 'FilterHidden', 'true');
+        }
+    }
+}
+
+// ================= FILTER TOGGLE FUNCTIONS =================
+// Toggle filter section visibility with localStorage
+function toggleFilter(filterType) {
+    const contentId = filterType + 'FilterContent';
+    const iconId = filterType + 'FilterIcon';
+    
+    const content = document.getElementById(contentId);
+    const icon = document.getElementById(iconId);
+    
+    if (content && icon) {
+        if (content.classList.contains('collapsed')) {
+            // Show filter
+            content.classList.remove('collapsed');
+            icon.style.transform = 'rotate(0deg)';
+            localStorage.setItem(filterType + 'FilterHidden', 'false');
+        } else {
+            // Hide filter
+            content.classList.add('collapsed');
+            icon.style.transform = 'rotate(-90deg)';
+            localStorage.setItem(filterType + 'FilterHidden', 'true');
+        }
+    }
+}
+
+// Initialize filter states on page load - DEFAULT CLOSED
+function initFilterStates() {
+    const filterTypes = ['sales', 'branch', 'items', 'driver', 'trip'];
+    
+    filterTypes.forEach(type => {
+        const contentId = type + 'FilterContent';
+        const iconId = type + 'FilterIcon';
+        
+        const content = document.getElementById(contentId);
+        const icon = document.getElementById(iconId);
+        
+        if (content && icon) {
+            // DEFAULT: CLOSED sa simula
+            content.classList.add('collapsed');
+            icon.style.transform = 'rotate(-90deg)';
+            
+            // Save sa localStorage na closed para consistent
+            localStorage.setItem(type + 'FilterHidden', 'true');
+        }
+    });
+}
+
+// Call this sa loob ng DOMContentLoaded
+document.addEventListener('DOMContentLoaded', function() {
+    // ... existing code ...
+    
+    // Initialize filter states - lahat closed
+    initFilterStates();
+});
     </script>
 </body>
 </html>
