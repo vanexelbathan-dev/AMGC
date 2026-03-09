@@ -492,69 +492,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-        /* Mobile responsive adjustments */
-        @media (max-width: 768px) {
-            .stat-card {
-                padding: 12px;
-                min-height: 85px;
-                margin-bottom: 8px;
-            }
-            
-            .stat-icon {
-                font-size: 2rem;
-                margin-right: 12px;
-            }
-            
-            .stat-value {
-                font-size: 1.5rem;
-            }
-            
-            .stat-label {
-                font-size: 0.8rem;
-            }
-            
-            .col-md-3 {
-                width: 50%;
-                padding-left: 8px;
-                padding-right: 8px;
-            }
-            
-            .row.g-3 {
-                margin-left: -8px;
-                margin-right: -8px;
-            }
-            
-            .mb-3 {
-                margin-bottom: 8px !important;
-            }
-        }
-        
-        /* Extra small devices */
-        @media (max-width: 576px) {
-            .stat-card {
-                min-height: 80px;
-                padding: 10px;
-            }
-            
-            .stat-icon {
-                font-size: 1.8rem;
-                margin-right: 10px;
-            }
-            
-            .stat-value {
-                font-size: 1.3rem;
-            }
-            
-            .stat-label {
-                font-size: 0.75rem;
-            }
-            
-            .col-md-3 {
-                width: 50%;
-                padding-left: 6px;
-                padding-right: 6px;
-            }
-        }
         
         /* Branch indicator */
         .branch-indicator {
@@ -903,78 +840,91 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $stats['total_pos'] = $result->fetch_assoc()['count'] ?? 0;
             ?>
 
-            <!-- Stats Cards - Original Design -->
-            <div class="row g-3 mb-4">
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card inventory">
-                        <div class="stat-icon">
-                            <i class="bi bi-receipt"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $stats['total_pos']; ?></div>
-                            <div class="stat-label">Total Orders</div>
-                        </div>
-                    </div>
-                </div>
+          <!-- Stats Cards - Original Design -->
+<div class="row stat-card-row g-1 g-sm-2">
+    <!-- Card 1 - Total Orders -->
+    <div class="col">
+        <div class="stat-card inventory">
+            <i class="bi bi-receipt"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo $stats['total_pos']; ?></div>
+                <div class="stat-label">Total Orders</div>
+            </div>
+        </div>
+    </div>
 
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card sales">
-                        <div class="stat-icon">
-                            <i class="bi bi-check-circle"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $stats['received']; ?></div>
-                            <div class="stat-label">Received Items</div>
-                        </div>
-                    </div>
-                </div>
+    <!-- Card 2 - Received Items -->
+    <div class="col">
+        <div class="stat-card sales">
+            <i class="bi bi-check-circle"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo $stats['received']; ?></div>
+                <div class="stat-label">Received Items</div>
+            </div>
+        </div>
+    </div>
 
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card pending">
-                        <div class="stat-icon">
-                            <i class="bi bi-hourglass-split"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $stats['pending']; ?></div>
-                            <div class="stat-label">Pending Items</div>
-                        </div>
-                    </div>
-                </div>
+    <!-- Card 3 - Pending Items -->
+    <div class="col">
+        <div class="stat-card pending">
+            <i class="bi bi-hourglass-split"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo $stats['pending']; ?></div>
+                <div class="stat-label">Pending Items</div>
+            </div>
+        </div>
+    </div>
 
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card delivery">
-                        <div class="stat-icon">
-                            <i class="bi bi-box"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $stats['total_items']; ?></div>
-                            <div class="stat-label">Total Items</div>
-                        </div>
-                    </div>
+    <!-- Card 4 - Total Items -->
+    <div class="col">
+        <div class="stat-card delivery">
+            <i class="bi bi-box"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo $stats['total_items']; ?></div>
+                <div class="stat-label">Total Items</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+           <!-- FILTER SECTION - PURCHASE ORDERS (Consistent with global design) -->
+<div class="form-card mb-4">
+    <div class="filter-header">
+        <h5>
+            <i class="bi bi-funnel"></i> Filter Purchase Orders
+        </h5>
+        <button class="filter-toggle-btn" type="button" id="poFilterToggle" aria-expanded="false">
+            <i class="bi bi-chevron-down" id="poFilterIcon"></i>
+        </button>
+    </div>
+    
+    <div class="filter-content collapsed" id="poFilterContent">
+        <div class="row g-3">
+            <!-- Search Field -->
+            <div class="col-12 col-md-6">
+                <label class="form-label">
+                    <i class="bi bi-search"></i> Search
+                </label>
+                <div class="search-wrapper">
+                    <input type="text" class="form-control search-input" id="searchInput" placeholder="Search PO number or supplier...">
                 </div>
             </div>
-
-            <!-- Search and Filter - Updated with icon inside field -->
-            <div class="card mb-4">
-                <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <div class="search-wrapper">
-                                <i class="bi bi-search search-icon"></i>
-                                <input type="text" class="form-control search-input" id="searchInput" placeholder="Search PO number or supplier...">
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <select class="form-select" id="statusFilter">
-                                <option value="">All Status</option>
-                                <option value="pending">Pending</option>
-                                <option value="partial">Partial Received</option>
-                                <option value="received">Received</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
+            
+            <!-- Status Filter -->
+            <div class="col-12 col-md-6">
+                <label class="form-label">
+                    <i class="bi bi-flag"></i> Status
+                </label>
+                <select class="form-select" id="statusFilter">
+                    <option value="">All Status</option>
+                    <option value="pending">Pending</option>
+                    <option value="partial">Partial Received</option>
+                    <option value="received">Received</option>
+                </select>
             </div>
+        </div>
+    </div>
+</div>
 
             <!-- Purchase Orders Table -->
             <div class="card">
@@ -1154,10 +1104,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     </div>
                     <?php endif; ?>
                     
-                    <!-- User ID -->
-                    <div class="user-id text-muted small mb-4">
-                        <i class="bi bi-hash"></i> User ID: <?php echo $user_id; ?>
-                    </div>
                     
                     <!-- Logout Button -->
                     <button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()">
@@ -1430,7 +1376,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 text: 'You will be logged out of the system',
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonColor: '#dc3545',
+                confirmButtonColor: '#07d826',
                 cancelButtonColor: '#6c757d',
                 confirmButtonText: 'Yes, logout'
             }).then((result) => {
@@ -1448,7 +1394,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 text: 'You will be logged out of the system',
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonColor: '#dc3545',
+                confirmButtonColor: '#07d826',
                 cancelButtonColor: '#6c757d',
                 confirmButtonText: 'Yes, logout'
             }).then((result) => {
@@ -1950,6 +1896,84 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
             }
         });
+
+        // ================= PURCHASE ORDERS FILTER FUNCTIONS =================
+
+// Toggle filter visibility
+function togglePOFilter() {
+    const content = document.getElementById('poFilterContent');
+    const icon = document.getElementById('poFilterIcon');
+    const toggleBtn = document.getElementById('poFilterToggle');
+    
+    if (content && icon && toggleBtn) {
+        const isExpanded = toggleBtn.getAttribute('aria-expanded') === 'true';
+        
+        if (isExpanded) {
+            // Collapse
+            content.classList.add('collapsed');
+            toggleBtn.setAttribute('aria-expanded', 'false');
+            icon.style.transform = 'rotate(0deg)';
+            localStorage.setItem('poFilterHidden', 'true');
+        } else {
+            // Expand
+            content.classList.remove('collapsed');
+            toggleBtn.setAttribute('aria-expanded', 'true');
+            icon.style.transform = 'rotate(180deg)';
+            localStorage.setItem('poFilterHidden', 'false');
+        }
+    }
+}
+
+// Apply filters
+function applyPOFilters() {
+    const search = document.getElementById('searchInput')?.value || '';
+    const status = document.getElementById('statusFilter')?.value || '';
+    
+    const params = new URLSearchParams();
+    if (search) params.append('search', search);
+    if (status) params.append('status', status);
+    
+    window.location.href = 'purchase_orders.php?' + params.toString();
+}
+
+// Clear filters
+function clearPOFilters() {
+    document.getElementById('searchInput') && (document.getElementById('searchInput').value = '');
+    document.getElementById('statusFilter') && (document.getElementById('statusFilter').value = '');
+    
+    applyPOFilters();
+}
+
+// Initialize filter state - DEFAULT CLOSED
+function initPOFilterState() {
+    const content = document.getElementById('poFilterContent');
+    const icon = document.getElementById('poFilterIcon');
+    const toggleBtn = document.getElementById('poFilterToggle');
+    
+    if (content && icon && toggleBtn) {
+        // ALWAYS START CLOSED
+        content.classList.add('collapsed');
+        toggleBtn.setAttribute('aria-expanded', 'false');
+        icon.style.transform = 'rotate(0deg)';
+        
+        // Reset localStorage
+        localStorage.setItem('poFilterHidden', 'true');
+    }
+}
+
+// Add event listeners
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize filter - ALWAYS CLOSED
+    initPOFilterState();
+    
+    // Toggle button
+    document.getElementById('poFilterToggle')?.addEventListener('click', togglePOFilter);
+    
+    // Enter key on search
+    document.getElementById('searchInput')?.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') applyPOFilters();
+    });
+});
     </script>
 </body>
 </html>

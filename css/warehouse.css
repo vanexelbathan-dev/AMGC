@@ -853,11 +853,11 @@ a:hover {
 }
 
 .stat-card.pending { 
-    background: linear-gradient(135deg, #f59e0b, #fbbf24); 
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green)); 
 }
 
 .stat-card.delivery { 
-    background: linear-gradient(135deg, #0891b2, #22d3ee); 
+    background: linear-gradient(135deg, #065f46, #047857);
 }
 
 .stat-card.complete { 
@@ -865,11 +865,11 @@ a:hover {
 }
 
 .stat-card.inventory { 
-    background: linear-gradient(135deg, #7c3aed, #8b5cf6); 
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green)); 
 }
 
 .stat-card.processing { 
-    background: linear-gradient(135deg, #8b5cf6, #a78bfa); 
+   background: linear-gradient(135deg, #065f46, #047857); 
 }
 
 .stat-card.approved { 
@@ -956,7 +956,7 @@ a:hover {
 
 /* Additional Stat Cards for Driver Stats */
 .stat-card.drivers { 
-    background: linear-gradient(135deg, #8b5cf6, #a78bfa); 
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green)); 
 }
 
 .stat-card.drivers .stat-icon { 
@@ -969,7 +969,7 @@ a:hover {
 }
 
 .stat-card.trips { 
-    background: linear-gradient(135deg, #0891b2, #22d3ee); 
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green)); 
 }
 
 .stat-card.trips .stat-icon { 
@@ -1330,7 +1330,6 @@ a:hover {
 .table-container {
     max-width: 100%;
     overflow-x: auto;
-    border-radius: 12px;
 }
 
 /* Compact Table */
@@ -3231,4 +3230,838 @@ select.form-select option:hover {
 .mobile-nav .nav-link.logout-btn.active i,
 .mobile-nav .nav-link.logout-btn:hover i {
     color: #dc3545;
+}
+/* ===== SUPER RESPONSIVE STAT CARDS - ONE CSS TO RULE THEM ALL ===== */
+
+/* Base styles - mobile first approach */
+.stat-card {
+    border: none;
+    border-radius: 12px;
+    color: white;
+    padding: 1rem;
+    margin: 0;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+    height: 100%;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center; /* Center for mobile */
+    justify-content: center;
+    text-align: center; /* Center for mobile */
+}
+
+/* Fluid typography - AUTO LUMILITI ANG TEXT AT ICONS */
+.stat-card i {
+    font-size: clamp(1.2rem, 6vw, 2.2rem);
+    margin-bottom: 0.25rem;
+    transition: font-size 0.2s ease;
+}
+
+.stat-value {
+    font-size: clamp(0.9rem, 5vw, 1.8rem);
+    font-weight: 700;
+    line-height: 1.2;
+    margin: 0.1rem 0;
+    transition: font-size 0.2s ease;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+.stat-label {
+    font-size: clamp(0.6rem, 3vw, 0.875rem);
+    font-weight: 500;
+    opacity: 0.95;
+    transition: font-size 0.2s ease;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+.stat-content {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center; /* Center for mobile */
+    justify-content: center;
+}
+
+/* Row and column system - para sa STAT CARDS LANG */
+.row.stat-card-row {
+    display: flex;
+    flex-wrap: wrap;
+    margin-right: -6px;
+    margin-left: -6px;
+    margin-bottom: 1.5rem;
+}
+
+.row.stat-card-row [class*="col-"] {
+    padding-right: 6px;
+    padding-left: 6px;
+    margin-bottom: 12px;
+}
+
+/* Responsive column system - para sa STAT CARDS LANG */
+.row.stat-card-row .col-12 { width: 100%; }
+.row.stat-card-row .col-6 { width: 50%; }
+.row.stat-card-row .col-4 { width: 33.333%; }
+.row.stat-card-row .col-3 { width: 25%; }
+.row.stat-card-row .col-2 { width: 16.666%; }
+
+/* Ultra small phones (below 400px) */
+@media (max-width: 399px) {
+    .stat-card {
+        padding: 0.4rem;
+    }
+    .stat-card i { 
+        font-size: 1.1rem; 
+        margin-bottom: 0.1rem;
+    }
+    .stat-value { 
+        font-size: 0.8rem; 
+        margin: 0;
+    }
+    .stat-label { 
+        font-size: 0.5rem; 
+    }
+    
+    .row.stat-card-row {
+        margin-right: -3px;
+        margin-left: -3px;
+    }
+    
+    .row.stat-card-row [class*="col-"] {
+        padding-right: 3px;
+        padding-left: 3px;
+        margin-bottom: 6px;
+        width: 50% !important;
+    }
+}
+
+/* Small phones (400px - 575px) */
+@media (min-width: 400px) and (max-width: 575px) {
+    .stat-card {
+        padding: 0.5rem;
+    }
+    .stat-card i { 
+        font-size: 1.2rem; 
+    }
+    .stat-value { 
+        font-size: 0.9rem; 
+    }
+    .stat-label { 
+        font-size: 0.55rem; 
+    }
+    
+    .row.stat-card-row {
+        margin-right: -4px;
+        margin-left: -4px;
+    }
+    
+    .row.stat-card-row [class*="col-"] {
+        padding-right: 4px;
+        padding-left: 4px;
+        margin-bottom: 8px;
+        width: 50% !important;
+    }
+}
+
+/* Medium phones (576px - 767px) */
+@media (min-width: 576px) and (max-width: 767px) {
+    .stat-card {
+        padding: 0.6rem;
+    }
+    .stat-card i { 
+        font-size: 1.4rem; 
+    }
+    .stat-value { 
+        font-size: 1.1rem; 
+    }
+    .stat-label { 
+        font-size: 0.65rem; 
+    }
+    
+    .row.stat-card-row {
+        margin-right: -5px;
+        margin-left: -5px;
+    }
+    
+    .row.stat-card-row [class*="col-"] {
+        padding-right: 5px;
+        padding-left: 5px;
+        margin-bottom: 10px;
+        width: 33.333% !important;
+    }
+}
+
+/* Tablets (768px - 991px) */
+@media (min-width: 768px) and (max-width: 991px) {
+    .stat-card {
+        padding: 0.8rem;
+    }
+    .stat-card i { 
+        font-size: 1.7rem; 
+    }
+    .stat-value { 
+        font-size: 1.4rem; 
+    }
+    .stat-label { 
+        font-size: 0.75rem; 
+    }
+    
+    .row.stat-card-row {
+        margin-right: -6px;
+        margin-left: -6px;
+    }
+    
+    .row.stat-card-row [class*="col-"] {
+        padding-right: 6px;
+        padding-left: 6px;
+        margin-bottom: 12px;
+        width: 25% !important;
+    }
+}
+
+/* ===== DESKTOP MODE (992px and above) ===== */
+@media (min-width: 992px) {
+    /* Left alignment para sa desktop */
+    .stat-card {
+        align-items: flex-start !important;
+        text-align: left !important;
+        padding: 1rem; /* Mas maliit na padding sa desktop */
+    }
+    
+    .stat-content {
+        align-items: flex-start !important;
+        text-align: left !important;
+    }
+    
+    /* Mas maliit na height sa desktop */
+    .stat-card {
+        min-height: 100px;
+        max-height: 130px;
+    }
+    
+    /* I-compress ang spacing */
+    .stat-card i {
+        margin-bottom: 0.15rem;
+        font-size: 1.8rem; /* Fixed size sa desktop */
+    }
+    
+    .stat-value {
+        margin: 0.05rem 0;
+        font-size: 1.5rem;
+        line-height: 1.1;
+    }
+    
+    .stat-label {
+        font-size: 0.8rem;
+        margin-top: 0.1rem;
+    }
+}
+
+/* Small desktop (992px - 1199px) */
+@media (min-width: 992px) and (max-width: 1199px) {
+    .stat-card {
+        padding: 0.9rem;
+        min-height: 95px;
+        max-height: 120px;
+    }
+    .stat-card i { 
+        font-size: 1.7rem; 
+    }
+    .stat-value { 
+        font-size: 1.4rem; 
+    }
+    .stat-label { 
+        font-size: 0.75rem; 
+    }
+    
+    .row.stat-card-row {
+        margin-right: -7px;
+        margin-left: -7px;
+    }
+    
+    .row.stat-card-row [class*="col-"] {
+        padding-right: 7px;
+        padding-left: 7px;
+        margin-bottom: 14px;
+        width: 20% !important; /* 5 columns */
+    }
+}
+
+/* Large desktop (1200px - 1399px) */
+@media (min-width: 1200px) and (max-width: 1399px) {
+    .stat-card {
+        padding: 1rem;
+        min-height: 105px;
+        max-height: 135px;
+    }
+    .stat-card i { 
+        font-size: 1.9rem; 
+    }
+    .stat-value { 
+        font-size: 1.6rem; 
+    }
+    .stat-label { 
+        font-size: 0.8rem; 
+    }
+    
+    .row.stat-card-row {
+        margin-right: -8px;
+        margin-left: -8px;
+    }
+    
+    .row.stat-card-row [class*="col-"] {
+        padding-right: 8px;
+        padding-left: 8px;
+        margin-bottom: 16px;
+        width: 16.666% !important; /* 6 columns */
+    }
+}
+
+/* Extra large desktop (1400px and above) */
+@media (min-width: 1400px) {
+    .stat-card {
+        padding: 1.1rem;
+        min-height: 115px;
+        max-height: 145px;
+    }
+    .stat-card i { 
+        font-size: 2.1rem; 
+    }
+    .stat-value { 
+        font-size: 1.8rem; 
+    }
+    .stat-label { 
+        font-size: 0.875rem; 
+    }
+    
+    .row.stat-card-row {
+        margin-right: -10px;
+        margin-left: -10px;
+    }
+    
+    .row.stat-card-row [class*="col-"] {
+        padding-right: 10px;
+        padding-left: 10px;
+        margin-bottom: 20px;
+        width: 16.666% !important;
+    }
+}
+
+/* Ultra large desktop (1600px and above) */
+@media (min-width: 1600px) {
+    .stat-card {
+        padding: 1.2rem;
+        min-height: 125px;
+        max-height: 155px;
+    }
+    .stat-card i { 
+        font-size: 2.3rem; 
+    }
+    .stat-value { 
+        font-size: 2rem; 
+    }
+    .stat-label { 
+        font-size: 0.95rem; 
+    }
+}
+
+/* Landscape mode for phones */
+@media (max-height: 500px) and (orientation: landscape) {
+    .stat-card {
+        padding: 0.3rem;
+        min-height: 60px;
+        max-height: 80px;
+    }
+    .stat-card i { 
+        font-size: 1rem; 
+        margin-bottom: 0.1rem;
+    }
+    .stat-value { 
+        font-size: 0.8rem; 
+        margin: 0;
+    }
+    .stat-label { 
+        font-size: 0.5rem; 
+    }
+    
+    .row.stat-card-row {
+        margin-right: -3px;
+        margin-left: -3px;
+    }
+    
+    .row.stat-card-row [class*="col-"] {
+        padding-right: 3px;
+        padding-left: 3px;
+        margin-bottom: 6px;
+        width: 20% !important;
+    }
+}
+
+/* Para sa sobrang daming cards */
+.row.stat-card-row > [class*="col-"] {
+    flex: 1 0 auto;
+}
+
+/* Additional spacing */
+.stat-card-row {
+    margin-bottom: 1.5rem !important;
+}
+
+/* Mobile adjustments */
+@media (max-width: 768px) {
+    .stat-card-row {
+        margin-bottom: 1rem !important;
+    }
+}
+/* ===== FILTER SECTION COLLAPSE - COMPLETE FIX ===== */
+
+/* Form Card with collapsible filter */
+.form-card {
+    background: white;
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+    border: 1px solid var(--light-green);
+    margin-bottom: 1.5rem;
+    transition: all 0.3s ease;
+    width: 100%;
+}
+
+/* Filter Header */
+.filter-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    border-bottom: none !important;
+}
+
+/* Filter Header Title */
+.filter-header h5 {
+    border-bottom: none !important;
+    margin-bottom: 0 !important;
+    padding-bottom: 0 !important;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #1e293b;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.filter-header h5 i {
+    color: var(--primary-green);
+    background: rgba(68, 211, 78, 0.1);
+    padding: 0.5rem;
+    border-radius: 8px;
+    font-size: 1rem;
+}
+
+/* Filter count badge */
+.filter-count-badge {
+    background: var(--primary-green);
+    color: white;
+    font-size: 0.7rem;
+    padding: 0.15rem 0.5rem;
+    border-radius: 50px;
+    margin-left: 8px;
+    font-weight: 600;
+    display: inline-block;
+}
+
+/* Filter toggle button */
+.filter-toggle-btn {
+    background: transparent;
+    border: none;
+    color: var(--dark-green);
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    padding: 0;
+}
+
+.filter-toggle-btn i {
+    font-size: 1.2rem;
+    transition: transform 0.3s ease;
+    color: var(--dark-green);
+}
+
+.filter-toggle-btn:hover {
+    background: rgba(68, 211, 78, 0.1);
+}
+
+.filter-toggle-btn:hover i {
+    color: var(--primary-green);
+}
+
+/* Rotate chevron when expanded */
+.filter-toggle-btn[aria-expanded="true"] i {
+    transform: rotate(180deg);
+}
+
+/* Filter content - collapsed state */
+.filter-content {
+    transition: all 0.3s ease-in-out;
+    overflow: hidden;
+}
+
+.filter-content.collapsed {
+    display: none;
+}
+
+/* Add border line ONLY when filter is expanded */
+.filter-header + .filter-content:not(.collapsed) {
+    border-top: 2px solid rgba(68, 211, 78, 0.2);
+    margin-top: 1rem;
+    padding-top: 1rem;
+}
+
+/* ===== DESKTOP DEFAULT STYLES (769px and above) ===== */
+@media (min-width: 769px) {
+    /* Form Labels inside filter */
+    .filter-content .form-label {
+        font-weight: 600;
+        color: var(--dark-color);
+        margin-bottom: 0.4rem;
+        font-size: 0.85rem;
+        display: flex;
+        align-items: center;
+        gap: 0.3rem;
+    }
+
+    .filter-content .form-label i {
+        color: var(--primary-green);
+        font-size: 0.9rem;
+    }
+
+    /* Form Controls inside filter */
+    .filter-content .form-control,
+    .filter-content .form-select {
+        border: 1px solid #dee2e6;
+        border-radius: 6px;
+        padding: 0.5rem 0.75rem;
+        font-size: 0.9rem;
+        height: 40px;
+        background-color: #fff;
+        width: 100%;
+        transition: all 0.2s ease;
+    }
+
+    .filter-content .form-control:focus,
+    .filter-content .form-select:focus {
+        border-color: var(--primary-green);
+        box-shadow: 0 0 0 3px rgba(68, 211, 78, 0.1);
+        outline: none;
+    }
+
+    .filter-content .form-control::placeholder {
+        color: #adb5bd;
+        font-size: 0.85rem;
+    }
+
+    /* ===== ALL ITEMS FILTER FIXES ===== */
+
+    /* Fix para sa Category dropdown - para hindi putol at makita ang buong text */
+    .filter-content .form-select {
+        width: 100%;
+        min-width: 0;
+        /* REMOVE or COMMENT OUT these lines para hindi mag-ellipsis */
+        /* text-overflow: ellipsis; */
+        /* white-space: nowrap; */
+        /* overflow: hidden; */
+        padding-right: 2rem;
+        
+        /* Add this para mag-wrap ang text kung mahaba */
+        white-space: normal !important;
+        word-wrap: break-word !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        
+        /* Ensure enough height for wrapped text */
+        height: auto !important;
+        min-height: 40px;
+        line-height: 1.3;
+    }
+
+    /* Para sa napiling option sa select - dapat full text */
+    .filter-content .form-select option {
+        font-size: 0.9rem;
+        padding: 0.5rem;
+        white-space: normal;
+        word-wrap: break-word;
+        min-height: 30px;
+    }
+
+    /* Fix para sa search field */
+    .search-wrapper {
+        width: 100%;
+        min-width: 0;
+        position: relative;
+    }
+
+    .search-wrapper .search-input {
+        width: 100%;
+        min-width: 0;
+        padding-left: 35px;
+    }
+    
+    .search-wrapper .search-icon {
+        position: absolute;
+        left: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #94a3b8;
+        z-index: 10;
+    }
+}
+
+/* ===== MOBILE STYLES (768px and below) ===== */
+@media (max-width: 768px) {
+    /* Sa mobile, full width ang search at category */
+    .filter-content .col-md-8,
+    .filter-content .col-md-4 {
+        width: 100% !important;
+        flex: 0 0 100% !important;
+        max-width: 100% !important;
+    }
+    
+    /* Ayusin ang spacing */
+    .filter-content .row.g-3 {
+        margin-left: -0.5rem;
+        margin-right: -0.5rem;
+    }
+    
+    .filter-content [class*="col-"] {
+        padding-left: 0.5rem;
+        padding-right: 0.5rem;
+    }
+    
+    /* Form Labels inside filter - MOBILE */
+    .filter-content .form-label {
+        font-size: 0.8rem !important;
+        margin-bottom: 0.3rem !important;
+    }
+    
+    .filter-content .form-label i {
+        font-size: 0.85rem !important;
+    }
+    
+    /* Form Controls inside filter - MOBILE */
+    .filter-content .form-control,
+    .filter-content .form-select {
+        height: 38px !important;
+        font-size: 0.85rem !important;
+        padding: 0.4rem 0.7rem !important;
+    }
+    
+    /* Siguraduhing hindi putol ang dropdown */
+    .filter-content .form-select {
+        font-size: 0.85rem !important;
+        padding: 0.4rem 0.7rem !important;
+        padding-right: 2rem !important;
+        background-position: right 0.6rem center !important;
+        /* Sa mobile, pwedeng mag-wrap din */
+        white-space: normal !important;
+        word-wrap: break-word !important;
+        height: auto !important;
+        min-height: 38px;
+    }
+    
+    .filter-content .form-select option {
+        font-size: 0.85rem !important;
+        white-space: normal;
+        word-wrap: break-word;
+        min-height: 30px;
+    }
+    
+    .form-card {
+        padding: 1.25rem !important;
+    }
+    
+    .filter-header h5 {
+        font-size: 1rem !important;
+    }
+    
+    .filter-header h5 i {
+        padding: 0.4rem !important;
+        font-size: 0.9rem !important;
+    }
+    
+    .filter-count-badge {
+        font-size: 0.65rem !important;
+        padding: 0.12rem 0.4rem !important;
+    }
+    
+    .filter-toggle-btn {
+        width: 30px !important;
+        height: 30px !important;
+    }
+    
+    .filter-toggle-btn i {
+        font-size: 1.1rem !important;
+    }
+    
+    .search-wrapper {
+        position: relative;
+    }
+    
+    .search-wrapper .search-input {
+        padding-left: 32px !important;
+    }
+    
+    .search-wrapper .search-icon {
+        position: absolute;
+        left: 10px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #94a3b8;
+        z-index: 10;
+        font-size: 0.85rem;
+    }
+}
+
+/* Small phones */
+@media (max-width: 576px) {
+    .filter-content .form-select {
+        font-size: 0.8rem !important;
+        padding: 0.35rem 0.6rem !important;
+        padding-right: 1.8rem !important;
+        min-height: 34px !important;
+    }
+    
+    .filter-content .form-label {
+        font-size: 0.7rem !important;
+    }
+    
+    .filter-content .form-control,
+    .filter-content .form-select {
+        min-height: 34px !important;
+        font-size: 0.75rem !important;
+        padding: 0.35rem 0.5rem !important;
+    }
+    
+    .form-card {
+        padding: 0.875rem !important;
+    }
+    
+    .filter-header h5 {
+        font-size: 0.9rem !important;
+    }
+    
+    .filter-header h5 i {
+        padding: 0.3rem !important;
+        font-size: 0.85rem !important;
+    }
+    
+    .filter-count-badge {
+        font-size: 0.6rem !important;
+        padding: 0.1rem 0.35rem !important;
+    }
+    
+    .filter-toggle-btn {
+        width: 28px !important;
+        height: 28px !important;
+    }
+    
+    .filter-toggle-btn i {
+        font-size: 1rem !important;
+    }
+    
+    .filter-content .form-select option {
+        font-size: 0.8rem !important;
+    }
+    
+    .search-wrapper .search-input {
+        padding-left: 30px !important;
+    }
+    
+    .search-wrapper .search-icon {
+        left: 8px;
+        font-size: 0.8rem;
+    }
+}
+
+/* Very small phones */
+@media (max-width: 400px) {
+    .form-card {
+        padding: 0.75rem !important;
+    }
+    
+    .filter-header h5 {
+        font-size: 0.85rem !important;
+    }
+    
+    .filter-header h5 i {
+        padding: 0.25rem !important;
+        font-size: 0.8rem !important;
+    }
+    
+    .filter-toggle-btn {
+        width: 26px !important;
+        height: 26px !important;
+    }
+    
+    .filter-toggle-btn i {
+        font-size: 0.9rem !important;
+    }
+    
+    .filter-content .form-label {
+        font-size: 0.65rem !important;
+    }
+    
+    .filter-content .form-control,
+    .filter-content .form-select {
+        min-height: 32px !important;
+        font-size: 0.7rem !important;
+        padding: 0.3rem 0.4rem !important;
+    }
+    
+    .filter-content .form-select {
+        padding-right: 1.6rem !important;
+    }
+}
+
+/* Landscape mode */
+@media (max-height: 500px) and (orientation: landscape) {
+    .form-card {
+        padding: 0.75rem !important;
+    }
+    
+    .filter-header h5 {
+        font-size: 0.9rem !important;
+    }
+    
+    .filter-content .form-control,
+    .filter-content .form-select {
+        min-height: 32px !important;
+        font-size: 0.75rem !important;
+        padding: 0.25rem 0.5rem !important;
+    }
+}
+
+/* ===== ANIMATION ===== */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.form-card {
+    animation: fadeInUp 0.3s ease-out;
 }
