@@ -1156,20 +1156,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
     </style>
 </head>
 <body>
-    <!-- Display success/error messages -->
-    <?php if (isset($_SESSION['success_message'])): ?>
-        <div class="alert alert-success alert-dismissible fade show m-3" role="alert">
-            <?php echo $_SESSION['success_message']; unset($_SESSION['success_message']); ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    <?php endif; ?>
-    
-    <?php if (isset($_SESSION['error_message'])): ?>
-        <div class="alert alert-danger alert-dismissible fade show m-3" role="alert">
-            <?php echo $_SESSION['error_message']; unset($_SESSION['error_message']); ?>
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    <?php endif; ?>
 
     <!-- MAIN APPLICATION -->
     <div id="appPage">
@@ -1426,23 +1412,14 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                                                            $order['latitude'] != 0 && $order['longitude'] != 0;
                                         if ($has_coordinates): 
                                         ?>
-                                            <button class="btn-action btn-map" title="View on Map" onclick="showLocation(
+                                            <!-- Live Navigation Button (Pinalitan ang pangalan ng function) -->
+                                            <button class="btn-action btn-map" title="Navigate to Customer" onclick="openLiveNavigation(
                                                 <?php echo $order['latitude']; ?>, 
                                                 <?php echo $order['longitude']; ?>, 
                                                 '<?php echo htmlspecialchars(addslashes($order['customer_name'])); ?>', 
                                                 '<?php echo htmlspecialchars(addslashes($order['address'] . ', ' . $order['city'])); ?>'
                                             )">
                                                 <i class="bi bi-geo-alt-fill"></i>
-                                            </button>
-                                            
-                                            <!-- Live Tracking Button -->
-                                            <button class="btn-action btn-tracking" title="Navigate to Customer" onclick="startTracking(
-                                                <?php echo $order['latitude']; ?>, 
-                                                <?php echo $order['longitude']; ?>, 
-                                                '<?php echo htmlspecialchars(addslashes($order['customer_name'])); ?>', 
-                                                '<?php echo htmlspecialchars(addslashes($order['address'] . ', ' . $order['city'])); ?>'
-                                            )">
-                                                <i class="bi bi-navigation"></i>
                                             </button>
                                         <?php endif; ?>
                                         
@@ -1579,7 +1556,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button type="button" class="btn btn-danger" onclick="stopLiveTracking()">
+                    <button type="button" class="btn btn-danger" onclick="confirmStopLiveNavigation()">
                         <i class="bi bi-stop-circle me-2"></i>Stop Navigation
                     </button>
                 </div>
@@ -1836,7 +1813,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
         let retryCount = 0;
         let currentDriverId = <?php echo $driver_id ?: 0; ?>;
 
-        // ================= LIVE TRACKING VARIABLES =================
+        // ================= LIVE TRACKING VARIABLES (OPTIMIZED) =================
         let liveTrackingMap = null;
         let routingControl = null;
         let userMarker = null;
@@ -1846,6 +1823,9 @@ if ($user_role == 'delivery' && $driver_id > 0) {
         let destinationPosition = null;
         let accuracyCircle = null;
         let gpsRetryTimeout = null;
+
+        // Cache ng huling posisyon para sa mabilis na initial load
+        let lastKnownPosition = null;
 
         // ================= SIDEBAR FUNCTIONS =================
         function toggleSidebar() {
@@ -1995,7 +1975,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
         }
         // ================= END SIDEBAR FUNCTIONS =================
 
-        // ================= GPS TRACKING FUNCTIONS =================
+        // ================= GPS TRACKING FUNCTIONS (Main Shift) =================
         function toggleTracking() {
             if (!navigator.geolocation) {
                 Swal.fire('Error', 'Geolocation is not supported by your browser.', 'error');
@@ -2003,16 +1983,20 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             }
 
             if (trackingActive) {
-                // Check for active deliveries before stopping
+                // Check for active deliveries before stopping (using badge classes)
                 const rows = document.querySelectorAll('tbody tr');
                 let hasActiveDelivery = false;
                 
                 rows.forEach(row => {
-                    const statusCell = row.cells[5];
+                    const statusCell = row.cells[5]; // Status column index
                     if (statusCell) {
-                        const status = statusCell.textContent.toLowerCase().trim();
-                        if (status.includes('in transit') || status.includes('partial')) {
-                            hasActiveDelivery = true;
+                        const badge = statusCell.querySelector('.badge');
+                        if (badge) {
+                            const badgeClass = badge.className;
+                            // 'in-transit' has class 'bg-primary', 'partial' has 'bg-info'
+                            if (badgeClass.includes('bg-primary') || badgeClass.includes('bg-info')) {
+                                hasActiveDelivery = true;
+                            }
                         }
                     }
                 });
@@ -2029,7 +2013,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 
                 stopTracking();
             } else {
-                startTracking();
+                startTracking(); // this is the main shift start function
             }
         }
 
@@ -2285,8 +2269,8 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             });
         }
 
-        // ================= LIVE TRACKING FUNCTIONS =================
-        function startTracking(destLat, destLng, customerName, address) {
+        // ================= LIVE NAVIGATION FUNCTIONS (RENAMED & OPTIMIZED) =================
+        function openLiveNavigation(destLat, destLng, customerName, address) {
             // Check if browser supports geolocation
             if (!navigator.geolocation) {
                 Swal.fire('Error', 'Geolocation is not supported by your browser.', 'error');
@@ -2300,16 +2284,17 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             const modal = new bootstrap.Modal(document.getElementById('trackingModal'));
             modal.show();
 
-            // Update destination info
+            // Update destination info agad
             document.getElementById('destinationText').textContent = customerName || 'Customer Location';
             document.getElementById('destinationCoordinates').textContent = 
                 `${destinationPosition.lat.toFixed(6)}, ${destinationPosition.lng.toFixed(6)}`;
 
-            // Initialize map after modal is shown
+            // Initialize map agad (huwag maghintay ng GPS)
             setTimeout(() => {
                 initLiveTrackingMap(destinationPosition.lat, destinationPosition.lng, customerName, address);
-                startLiveWatching();
-            }, 500);
+                // Simulan ang pagkuha ng GPS (fast acquisition)
+                startFastGPSAcquisition();
+            }, 300); // Bahagyang delay para mag-render muna ang modal
         }
 
         function initLiveTrackingMap(destLat, destLng, customerName, address) {
@@ -2318,7 +2303,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 liveTrackingMap.remove();
             }
 
-            // Create map centered on destination first
+            // Create map centered on destination (mas mabilis kaysa hintayin ang user location)
             liveTrackingMap = L.map('trackingMap').setView([destLat, destLng], 13);
 
             // Add OpenStreetMap tiles
@@ -2342,7 +2327,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 <small>${destLat.toFixed(6)}, ${destLng.toFixed(6)}</small>
             `).openPopup();
 
-            // Add user marker (blue) - will be updated with GPS
+            // Add user marker (blue) - itatago muna, ipapakita pag may GPS na
             userMarker = L.marker([destLat, destLng], {
                 icon: L.divIcon({
                     className: 'custom-user-icon',
@@ -2363,27 +2348,61 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             }).addTo(liveTrackingMap);
         }
 
+        // Mabilis na pagkuha ng GPS (low accuracy, cached)
+        function startFastGPSAcquisition() {
+            // Kung may cached na posisyon at bago pa (<= 30 seconds), gamitin muna
+            if (lastKnownPosition && (Date.now() - lastKnownPosition.timestamp < 30000)) {
+                console.log('Using cached position');
+                livePositionSuccess({
+                    coords: {
+                        latitude: lastKnownPosition.lat,
+                        longitude: lastKnownPosition.lng,
+                        accuracy: lastKnownPosition.accuracy || 50
+                    }
+                });
+            }
+
+            // Subukang kumuha ng mabilis na low-accuracy fix
+            navigator.geolocation.getCurrentPosition(
+                function(position) {
+                    // I-save sa cache
+                    lastKnownPosition = {
+                        lat: position.coords.latitude,
+                        lng: position.coords.longitude,
+                        accuracy: position.coords.accuracy,
+                        timestamp: Date.now()
+                    };
+                    livePositionSuccess(position);
+                    // Pag nakuha na, mag-watch na ng high accuracy
+                    startLiveWatching();
+                },
+                function(error) {
+                    console.log('Fast GPS error:', error);
+                    // Kung walang makuha, subukan ang high accuracy watch
+                    startLiveWatching();
+                },
+                {
+                    enableHighAccuracy: false,
+                    timeout: 5000,
+                    maximumAge: 30000 // Gumamit ng naka-cache hanggang 30s
+                }
+            );
+        }
+
         function startLiveWatching() {
             // Clear any existing watch
             if (watchPositionId) {
                 navigator.geolocation.clearWatch(watchPositionId);
             }
             
-            // Options for high accuracy
+            // Options for high accuracy (continuous tracking)
             const options = {
                 enableHighAccuracy: true,
                 timeout: 10000,
-                maximumAge: 0
+                maximumAge: 5000
             };
 
             watchPositionId = navigator.geolocation.watchPosition(
-                livePositionSuccess,
-                livePositionError,
-                options
-            );
-            
-            // Also try to get immediate position
-            navigator.geolocation.getCurrentPosition(
                 livePositionSuccess,
                 livePositionError,
                 options
@@ -2396,6 +2415,14 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             const accuracy = position.coords.accuracy;
 
             currentPosition = { lat, lng, accuracy };
+
+            // I-update ang cache
+            lastKnownPosition = {
+                lat: lat,
+                lng: lng,
+                accuracy: accuracy,
+                timestamp: Date.now()
+            };
 
             // Update user marker position
             if (userMarker) {
@@ -2417,7 +2444,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             document.getElementById('yourLocationText').innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i> Location acquired';
             document.getElementById('yourCoordinates').innerHTML = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
 
-            // Update or create route
+            // Update or create route (huwag i-fit para hindi mag-reset ang view)
             if (destinationPosition) {
                 if (!routingControl) {
                     // Create route for the first time
@@ -2428,7 +2455,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                         ],
                         routeWhileDragging: false,
                         showAlternatives: false,
-                        fitSelectedRoutes: true,
+                        fitSelectedRoutes: false, // Huwag i-auto fit para hindi mag-jump ang view
                         lineOptions: {
                             styles: [{ color: '#007bff', opacity: 0.8, weight: 5 }]
                         },
@@ -2480,10 +2507,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             document.getElementById('accuracyBar').className = 'progress-bar ' + accuracyClass;
             document.getElementById('accuracyText').innerHTML = `<i class="bi bi-${accuracyClass === 'bg-success' ? 'check-circle' : accuracyClass === 'bg-info' ? 'info-circle' : accuracyClass === 'bg-warning' ? 'exclamation-triangle' : 'x-circle'} me-1"></i> ${accuracyText}`;
 
-            // Center map on user if this is the first fix
-            if (liveTrackingMap && routingControl === null) {
-                liveTrackingMap.setView([lat, lng], 15);
-            }
+            // Huwag i-center ang map sa user para hindi mawala ang view
         }
 
         function livePositionError(error) {
@@ -2507,11 +2531,37 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             document.getElementById('accuracyBar').className = 'progress-bar bg-info';
             document.getElementById('accuracyText').innerHTML = '<i class="bi bi-arrow-repeat me-1"></i> Retrying...';
             
-            // Restart watching
-            startLiveWatching();
+            // Restart fast acquisition
+            startFastGPSAcquisition();
         }
 
-        function stopLiveTracking() {
+        function stopLiveNavigation() {
+            // Check for active deliveries before stopping navigation (same as before)
+            const rows = document.querySelectorAll('tbody tr');
+            let hasActiveDelivery = false;
+            rows.forEach(row => {
+                const statusCell = row.cells[5];
+                if (statusCell) {
+                    const badge = statusCell.querySelector('.badge');
+                    if (badge) {
+                        const badgeClass = badge.className;
+                        if (badgeClass.includes('bg-primary') || badgeClass.includes('bg-info')) {
+                            hasActiveDelivery = true;
+                        }
+                    }
+                }
+            });
+
+            if (hasActiveDelivery) {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Cannot Stop Navigation',
+                    text: 'You have active deliveries. Please complete them before stopping navigation.',
+                    confirmButtonColor: '#28a745'
+                });
+                return; // Do not stop navigation
+            }
+
             // Clear watch position
             if (watchPositionId) {
                 navigator.geolocation.clearWatch(watchPositionId);
@@ -2535,6 +2585,23 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             if (modal) {
                 modal.hide();
             }
+        }
+
+        // Confirmation before stopping live navigation (bagong function)
+        function confirmStopLiveNavigation() {
+            Swal.fire({
+                title: 'Stop Navigation?',
+                text: 'Are you sure you want to stop navigating?',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#dc3545',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, Stop'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    stopLiveNavigation();
+                }
+            });
         }
 
         function centerOnYourLocation() {
@@ -3361,7 +3428,8 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             const trackingModal = document.getElementById('trackingModal');
             if (trackingModal) {
                 trackingModal.addEventListener('hidden.bs.modal', function () {
-                    stopLiveTracking();
+                    // Do not call stopLiveNavigation() here because it might have been called already
+                    // Just clean up map resources
                     if (liveTrackingMap) {
                         liveTrackingMap.remove();
                         liveTrackingMap = null;
@@ -3388,9 +3456,12 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                         rows.forEach(row => {
                             const statusCell = row.cells[5];
                             if (statusCell) {
-                                const status = statusCell.textContent.toLowerCase().trim();
-                                if (status.includes('in transit') || status.includes('partial')) {
-                                    hasActiveDelivery = true;
+                                const badge = statusCell.querySelector('.badge');
+                                if (badge) {
+                                    const badgeClass = badge.className;
+                                    if (badgeClass.includes('bg-primary') || badgeClass.includes('bg-info')) {
+                                        hasActiveDelivery = true;
+                                    }
                                 }
                             }
                         });
