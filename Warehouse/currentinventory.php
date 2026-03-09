@@ -402,76 +402,6 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 <style>
-    /* Mobile responsive adjustments - same as warehouse.php */
-    @media (max-width: 768px) {
-        .stat-card {
-            padding: 12px;
-            min-height: 85px;
-            margin-bottom: 8px;
-        }
-        
-        .stat-icon {
-            font-size: 2rem;
-            margin-right: 12px;
-        }
-        
-        .stat-value {
-            font-size: 1.5rem;
-        }
-        
-        .stat-label {
-            font-size: 0.8rem;
-        }
-        
-        /* Make cards 2 columns on mobile */
-        .col-md-3, .col-md-4 {
-            width: 50%;
-            padding-left: 8px;
-            padding-right: 8px;
-        }
-        
-        .row.g-3 {
-            margin-left: -8px;
-            margin-right: -8px;
-        }
-        
-        .mb-3 {
-            margin-bottom: 8px !important;
-        }
-    }
-    
-    /* Extra small devices (phones, less than 576px) */
-    @media (max-width: 576px) {
-        .stat-card {
-            min-height: 80px;
-            padding: 10px;
-        }
-        
-        .stat-icon {
-            font-size: 1.8rem;
-            margin-right: 10px;
-        }
-        
-        .stat-value {
-            font-size: 1.3rem;
-        }
-        
-        .stat-label {
-            font-size: 0.75rem;
-        }
-        
-        .col-md-3, .col-md-4 {
-            width: 50%;
-            padding-left: 6px;
-            padding-right: 6px;
-        }
-        
-        .row.g-3 {
-            margin-left: -6px;
-            margin-right: -6px;
-        }
-    }
-
     /* Category indicator */
     .category-indicator {
         display: inline-block;
@@ -676,77 +606,80 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                 </div>
             </div>
 
-            <!-- Inventory Stats -->
-            <div class="row g-3 mb-4">
-                <!-- Total Items -->
-                <div class="col-md-4 mb-3">
-                    <div class="stat-card inventory">
-                        <div class="stat-icon">
-                            <i class="bi bi-boxes"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo number_format($stats['total_items']); ?></div>
-                            <div class="stat-label">Total <?php echo !empty($user_category) ? htmlspecialchars($user_category) : ''; ?> Items</div>
-                        </div>
-                    </div>
-                </div>
+           <!-- Inventory Stats -->
+<div class="row stat-card-row g-1 g-sm-2">
+    <!-- Card 1 - Total Items -->
+    <div class="col">
+        <div class="stat-card inventory">
+            <i class="bi bi-boxes"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo number_format($stats['total_items']); ?></div>
+                <div class="stat-label">Total <?php echo !empty($user_category) ? htmlspecialchars($user_category) : ''; ?> Items</div>
+            </div>
+        </div>
+    </div>
 
-                <!-- Current Stock -->
-                <div class="col-md-4 mb-3">
-                    <div class="stat-card stock">
-                        <div class="stat-icon">
-                            <i class="bi bi-box-seam"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo number_format($stats['current_stock']); ?></div>
-                            <div class="stat-label">Current <?php echo !empty($user_category) ? htmlspecialchars($user_category) : ''; ?> Stock</div>
-                        </div>
-                    </div>
-                </div>
+    <!-- Card 2 - Current Stock -->
+    <div class="col">
+        <div class="stat-card stock">
+            <i class="bi bi-box-seam"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo number_format($stats['current_stock']); ?></div>
+                <div class="stat-label">Current <?php echo !empty($user_category) ? htmlspecialchars($user_category) : ''; ?> Stock</div>
+            </div>
+        </div>
+    </div>
 
-                <!-- Low Stock Items -->
-                <div class="col-md-4 mb-3">
-                    <div class="stat-card pending">
-                        <div class="stat-icon">
-                            <i class="bi bi-exclamation-triangle"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $stats['low_stock']; ?></div>
-                            <div class="stat-label">Low Stock Items</div>
-                        </div>
-                    </div>
+    <!-- Card 3 - Low Stock Items -->
+    <div class="col">
+        <div class="stat-card pending">
+            <i class="bi bi-exclamation-triangle"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo $stats['low_stock']; ?></div>
+                <div class="stat-label">Low Stock Items</div>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- FILTER SECTION - ALL ITEMS -->
+<div class="form-card mb-4">
+    <div class="filter-header">
+        <h5>
+            <i class="bi bi-funnel"></i> Filter Items
+
+        </h5>
+        <button class="filter-toggle-btn" type="button" id="itemsFilterToggle" aria-expanded="false">
+            <i class="bi bi-chevron-down" id="itemsFilterIcon"></i>
+        </button>
+    </div>
+    
+    <div class="filter-content collapsed" id="itemsFilterContent">
+        <div class="row g-3">
+            <!-- Search Field -->
+            <div class="col-12 col-md-8">
+                <label class="form-label">
+                    <i class="bi bi-search"></i> Search
+                </label>
+                <div class="search-wrapper">
+                    <input type="text" class="form-control search-input" id="searchInput" placeholder="Search by item name or code...">
                 </div>
             </div>
-
-            <!-- Search and Filter - Icon inside the field -->
-            <div class="card mb-4">
-                <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-md-8 col-12">
-                            <div class="search-wrapper">
-                                <i class="bi bi-search search-icon"></i>
-                                <input type="text" class="form-control search-input" id="searchInput" placeholder="Search by item name or code...">
-                            </div>
-                        </div>
-                        <div class="col-md-4 col-12">
-                            <?php if (!empty($user_category)): ?>
-                                <!-- Show disabled category filter with user's category -->
-                                <select class="form-select" id="categoryFilter" disabled>
-                                    <option value="<?php echo htmlspecialchars($user_category); ?>" selected>
-                                        <?php echo htmlspecialchars($user_category); ?>
-                                    </option>
-                                </select>
-                                <input type="hidden" id="userCategory" value="<?php echo htmlspecialchars($user_category); ?>">
-                            <?php else: ?>
-                                <!-- For users with no category, show error -->
-                                <select class="form-select" id="categoryFilter" disabled>
-                                    <option value="">No Category Assigned</option>
-                                </select>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                </div>
+            
+            <!-- Category Field - DISABLED INPUT TEXT -->
+            <div class="col-12 col-md-4">
+                <label class="form-label">
+                    <i class="bi bi-tag"></i> Category
+                </label>
+                <?php if (!empty($user_category)): ?>
+                    <input type="text" class="form-control" id="categoryFilter" value="<?php echo htmlspecialchars($user_category); ?>" disabled readonly>
+                    <input type="hidden" id="userCategory" value="<?php echo htmlspecialchars($user_category); ?>">
+                <?php else: ?>
+                    <input type="text" class="form-control" value="No Category Assigned" disabled readonly>
+                <?php endif; ?>
             </div>
+        </div>
+    </div>
+</div>
 
             <!-- Inventory Table -->
             <div class="card">
@@ -919,11 +852,6 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                         <span><?php echo htmlspecialchars($branch_name); ?></span>
                     </div>
                     <?php endif; ?>
-                    
-                    <!-- User ID -->
-                    <div class="user-id text-muted small mb-4">
-                        <i class="bi bi-hash"></i> User ID: <?php echo $user_id; ?>
-                    </div>
                     
                     <!-- Logout Button -->
                     <button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()">
@@ -1139,7 +1067,7 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                 text: 'You will be logged out of the system',
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonColor: '#dc3545',
+                confirmButtonColor: '#07d826',
                 cancelButtonColor: '#6c757d',
                 confirmButtonText: 'Yes, logout'
             }).then((result) => {
@@ -1157,7 +1085,7 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                 text: 'You will be logged out of the system',
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonColor: '#dc3545',
+                confirmButtonColor: '#07d826',
                 cancelButtonColor: '#6c757d',
                 confirmButtonText: 'Yes, logout'
             }).then((result) => {
@@ -1713,6 +1641,136 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                 }
             }
         });
+
+      // ================= FILTER TOGGLE FUNCTIONS =================
+// Toggle filter section visibility with localStorage
+function toggleFilter(filterType) {
+    const content = document.getElementById(filterType + 'FilterContent');
+    const icon = document.getElementById(filterType + 'FilterIcon');
+    const toggleBtn = document.getElementById(filterType + 'FilterToggle');
+    
+    if (content && icon && toggleBtn) {
+        const isExpanded = toggleBtn.getAttribute('aria-expanded') === 'true';
+        
+        if (isExpanded) {
+            // Collapse
+            content.classList.add('collapsed');
+            toggleBtn.setAttribute('aria-expanded', 'false');
+            icon.style.transform = 'rotate(0deg)';
+            localStorage.setItem(filterType + 'FilterHidden', 'true');
+        } else {
+            // Expand
+            content.classList.remove('collapsed');
+            toggleBtn.setAttribute('aria-expanded', 'true');
+            icon.style.transform = 'rotate(180deg)';
+            localStorage.setItem(filterType + 'FilterHidden', 'false');
+        }
+    }
+}
+
+// Initialize picklist filter state - DEFAULT CLOSED
+function initPicklistFilterState() {
+    const content = document.getElementById('picklistFilterContent');
+    const icon = document.getElementById('picklistFilterIcon');
+    const toggleBtn = document.getElementById('picklistFilterToggle');
+    
+    if (content && icon && toggleBtn) {
+        // DEFAULT: CLOSED sa simula
+        content.classList.add('collapsed');
+        toggleBtn.setAttribute('aria-expanded', 'false');
+        icon.style.transform = 'rotate(0deg)';
+        
+        // Save sa localStorage na closed para consistent
+        localStorage.setItem('picklistFilterHidden', 'true');
+    }
+}
+
+// Initialize items filter state - DEFAULT CLOSED
+function initItemsFilterState() {
+    const content = document.getElementById('itemsFilterContent');
+    const icon = document.getElementById('itemsFilterIcon');
+    const toggleBtn = document.getElementById('itemsFilterToggle');
+    
+    if (content && icon && toggleBtn) {
+        // DEFAULT: CLOSED sa simula
+        content.classList.add('collapsed');
+        toggleBtn.setAttribute('aria-expanded', 'false');
+        icon.style.transform = 'rotate(0deg)';
+        
+        // Save sa localStorage na closed para consistent
+        localStorage.setItem('itemsFilterHidden', 'true');
+    }
+}
+
+// Generic function for any filter - DEFAULT CLOSED
+function initFilterState(filterType) {
+    const content = document.getElementById(filterType + 'FilterContent');
+    const icon = document.getElementById(filterType + 'FilterIcon');
+    const toggleBtn = document.getElementById(filterType + 'FilterToggle');
+    
+    if (content && icon && toggleBtn) {
+        // DEFAULT: CLOSED sa simula
+        content.classList.add('collapsed');
+        toggleBtn.setAttribute('aria-expanded', 'false');
+        icon.style.transform = 'rotate(0deg)';
+        
+        // Save sa localStorage na closed para consistent
+        localStorage.setItem(filterType + 'FilterHidden', 'true');
+    }
+}
+
+// Add event listeners
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize picklist filter - DEFAULT CLOSED
+    initPicklistFilterState();
+    
+    // Initialize items filter - kung meron
+    if (document.getElementById('itemsFilterContent')) {
+        initItemsFilterState();
+    }
+    
+    // Toggle button for picklist
+    document.getElementById('picklistFilterToggle')?.addEventListener('click', function() {
+        toggleFilter('picklist');
+    });
+    
+    // Toggle button for items - kung meron
+    document.getElementById('itemsFilterToggle')?.addEventListener('click', function() {
+        toggleFilter('items');
+    });
+    
+    // Enter key on search (picklist)
+    document.getElementById('searchInput')?.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') applyFilters();
+    });
+});
+
+// Apply filters function (sample - i-customize per page)
+function applyFilters() {
+    // Get filter values
+    const search = document.getElementById('searchInput')?.value || '';
+    const status = document.getElementById('statusFilter')?.value || '';
+    const driver = document.getElementById('driverFilter')?.value || '';
+    
+    // Build URL parameters
+    const params = new URLSearchParams();
+    if (search) params.append('search', search);
+    if (status) params.append('status', status);
+    if (driver) params.append('driver', driver);
+    
+    // Redirect with filters
+    window.location.href = window.location.pathname + '?' + params.toString();
+}
+
+// Clear filters function
+function clearFilters() {
+    document.getElementById('searchInput') && (document.getElementById('searchInput').value = '');
+    document.getElementById('statusFilter') && (document.getElementById('statusFilter').value = '');
+    document.getElementById('driverFilter') && (document.getElementById('driverFilter').value = '');
+    
+    // Apply the cleared filters
+    applyFilters();
+}
     </script>
 </body>
 </html>

@@ -43,6 +43,14 @@ if ($cat_stmt) {
     $cat_stmt->close();
 }
 
+// Get base64 encoded logo for printing
+$logo_path = '../Pictures/amgc3DLogo.png';
+$logo_base64 = '';
+if (file_exists($logo_path)) {
+    $image_data = file_get_contents($logo_path);
+    $logo_base64 = 'data:image/png;base64,' . base64_encode($image_data);
+}
+
 // Check if branch_id column exists in items table
 $items_branch_column_exists = false;
 $check_branch_col = $conn->query("SHOW COLUMNS FROM items LIKE 'branch_id'");
@@ -124,6 +132,19 @@ if (isset($_GET['load_po_details'])) {
         }
         
         ?>
+        <!-- Hidden print data for printing -->
+        <div id="print-data" 
+             data-po-number="<?php echo htmlspecialchars($po['po_number']); ?>"
+             data-supplier="<?php echo htmlspecialchars($po['supplier_name']); ?>"
+             data-po-date="<?php echo date('M d, Y', strtotime($po['order_date'])); ?>"
+             data-branch="<?php echo htmlspecialchars($po['branch_name'] ?? 'N/A'); ?>"
+             data-status="<?php echo ucfirst($po['po_status'] ?? 'pending'); ?>"
+             data-total-ordered="<?php echo $total_ordered; ?>"
+             data-total-received="<?php echo $total_received; ?>"
+             data-pending="<?php echo ($total_ordered - $total_received); ?>"
+             data-completion="<?php echo round($completion_percentage, 1); ?>">
+        </div>
+        
         <div class="row">
             <div class="col-md-6">
                 <div class="card mb-3">
@@ -180,6 +201,10 @@ if (isset($_GET['load_po_details'])) {
                                 <td><strong>Pending:</strong></td>
                                 <td><?php echo ($total_ordered - $total_received); ?> units</td>
                             </tr>
+                            <tr>
+                                <td><strong>Completion:</strong></td>
+                                <td><?php echo round($completion_percentage, 1); ?>%</td>
+                            </tr>
                         </table>
                     </div>
                 </div>
@@ -226,14 +251,6 @@ if (isset($_GET['load_po_details'])) {
                         </table>
                     </div>
                 </div>
-            </div>
-        </div>
-
-        <div class="row mt-2">
-            <div class="col-12 text-end">
-                <button type="button" class="btn btn-outline-primary" onclick="window.print()">
-                    <i class="bi bi-printer"></i> Print Details
-                </button>
             </div>
         </div>
         <?php
@@ -475,69 +492,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-        /* Mobile responsive adjustments */
-        @media (max-width: 768px) {
-            .stat-card {
-                padding: 12px;
-                min-height: 85px;
-                margin-bottom: 8px;
-            }
-            
-            .stat-icon {
-                font-size: 2rem;
-                margin-right: 12px;
-            }
-            
-            .stat-value {
-                font-size: 1.5rem;
-            }
-            
-            .stat-label {
-                font-size: 0.8rem;
-            }
-            
-            .col-md-3 {
-                width: 50%;
-                padding-left: 8px;
-                padding-right: 8px;
-            }
-            
-            .row.g-3 {
-                margin-left: -8px;
-                margin-right: -8px;
-            }
-            
-            .mb-3 {
-                margin-bottom: 8px !important;
-            }
-        }
-        
-        /* Extra small devices */
-        @media (max-width: 576px) {
-            .stat-card {
-                min-height: 80px;
-                padding: 10px;
-            }
-            
-            .stat-icon {
-                font-size: 1.8rem;
-                margin-right: 10px;
-            }
-            
-            .stat-value {
-                font-size: 1.3rem;
-            }
-            
-            .stat-label {
-                font-size: 0.75rem;
-            }
-            
-            .col-md-3 {
-                width: 50%;
-                padding-left: 6px;
-                padding-right: 6px;
-            }
-        }
         
         /* Branch indicator */
         .branch-indicator {
@@ -664,6 +618,93 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         .search-input {
             padding-left: 35px !important;
             width: 100%;
+        }
+
+        /* ================= PRINT STYLES ================= */
+        #printFrame {
+            position: absolute;
+            left: -9999px;
+            top: -9999px;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        @media print {
+            @page {
+                size: portrait;
+                margin: 0.3in;
+            }
+            
+            body * {
+                visibility: hidden;
+                background: white !important;
+                color: black !important;
+                border-color: black !important;
+            }
+            
+            #printFrame, #printFrame * {
+                visibility: visible;
+            }
+            
+            #printFrame {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: auto;
+                border: none;
+            }
+            
+            /* Only keep the logo colored */
+            #printFrame img {
+                filter: none !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            
+            /* Everything else black and white */
+            #printFrame * {
+                background: white !important;
+                color: black !important;
+                border-color: #000 !important;
+                box-shadow: none !important;
+                text-shadow: none !important;
+                -webkit-print-color-adjust: economy;
+                print-color-adjust: economy;
+            }
+            
+            /* Table borders in black */
+            #printFrame table, 
+            #printFrame th, 
+            #printFrame td {
+                border: 1px solid #000 !important;
+            }
+            
+            /* Header background to white with black text */
+            #printFrame th {
+                background: white !important;
+                color: black !important;
+                font-weight: bold;
+            }
+            
+            /* Remove any gradient backgrounds */
+            #printFrame .summary-box,
+            #printFrame .customer-section,
+            #printFrame .total-row {
+                background: white !important;
+                border: 1px solid #000 !important;
+            }
+            
+            /* Remove all background colors from badges */
+            #printFrame .badge,
+            #printFrame .status-badge {
+                background: white !important;
+                border: 1px solid #000 !important;
+                color: black !important;
+                padding: 2px 6px;
+            }
         }
     </style>
 </head>
@@ -799,78 +840,91 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $stats['total_pos'] = $result->fetch_assoc()['count'] ?? 0;
             ?>
 
-            <!-- Stats Cards - Original Design -->
-            <div class="row g-3 mb-4">
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card inventory">
-                        <div class="stat-icon">
-                            <i class="bi bi-receipt"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $stats['total_pos']; ?></div>
-                            <div class="stat-label">Total Orders</div>
-                        </div>
-                    </div>
-                </div>
+          <!-- Stats Cards - Original Design -->
+<div class="row stat-card-row g-1 g-sm-2">
+    <!-- Card 1 - Total Orders -->
+    <div class="col">
+        <div class="stat-card inventory">
+            <i class="bi bi-receipt"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo $stats['total_pos']; ?></div>
+                <div class="stat-label">Total Orders</div>
+            </div>
+        </div>
+    </div>
 
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card sales">
-                        <div class="stat-icon">
-                            <i class="bi bi-check-circle"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $stats['received']; ?></div>
-                            <div class="stat-label">Received Items</div>
-                        </div>
-                    </div>
-                </div>
+    <!-- Card 2 - Received Items -->
+    <div class="col">
+        <div class="stat-card sales">
+            <i class="bi bi-check-circle"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo $stats['received']; ?></div>
+                <div class="stat-label">Received Items</div>
+            </div>
+        </div>
+    </div>
 
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card pending">
-                        <div class="stat-icon">
-                            <i class="bi bi-hourglass-split"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $stats['pending']; ?></div>
-                            <div class="stat-label">Pending Items</div>
-                        </div>
-                    </div>
-                </div>
+    <!-- Card 3 - Pending Items -->
+    <div class="col">
+        <div class="stat-card pending">
+            <i class="bi bi-hourglass-split"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo $stats['pending']; ?></div>
+                <div class="stat-label">Pending Items</div>
+            </div>
+        </div>
+    </div>
 
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card delivery">
-                        <div class="stat-icon">
-                            <i class="bi bi-box"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $stats['total_items']; ?></div>
-                            <div class="stat-label">Total Items</div>
-                        </div>
-                    </div>
+    <!-- Card 4 - Total Items -->
+    <div class="col">
+        <div class="stat-card delivery">
+            <i class="bi bi-box"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo $stats['total_items']; ?></div>
+                <div class="stat-label">Total Items</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+           <!-- FILTER SECTION - PURCHASE ORDERS (Consistent with global design) -->
+<div class="form-card mb-4">
+    <div class="filter-header">
+        <h5>
+            <i class="bi bi-funnel"></i> Filter Purchase Orders
+        </h5>
+        <button class="filter-toggle-btn" type="button" id="poFilterToggle" aria-expanded="false">
+            <i class="bi bi-chevron-down" id="poFilterIcon"></i>
+        </button>
+    </div>
+    
+    <div class="filter-content collapsed" id="poFilterContent">
+        <div class="row g-3">
+            <!-- Search Field -->
+            <div class="col-12 col-md-6">
+                <label class="form-label">
+                    <i class="bi bi-search"></i> Search
+                </label>
+                <div class="search-wrapper">
+                    <input type="text" class="form-control search-input" id="searchInput" placeholder="Search PO number or supplier...">
                 </div>
             </div>
-
-            <!-- Search and Filter - Updated with icon inside field -->
-            <div class="card mb-4">
-                <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <div class="search-wrapper">
-                                <i class="bi bi-search search-icon"></i>
-                                <input type="text" class="form-control search-input" id="searchInput" placeholder="Search PO number or supplier...">
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <select class="form-select" id="statusFilter">
-                                <option value="">All Status</option>
-                                <option value="pending">Pending</option>
-                                <option value="partial">Partial Received</option>
-                                <option value="received">Received</option>
-                            </select>
-                        </div>
-                    </div>
-                </div>
+            
+            <!-- Status Filter -->
+            <div class="col-12 col-md-6">
+                <label class="form-label">
+                    <i class="bi bi-flag"></i> Status
+                </label>
+                <select class="form-select" id="statusFilter">
+                    <option value="">All Status</option>
+                    <option value="pending">Pending</option>
+                    <option value="partial">Partial Received</option>
+                    <option value="received">Received</option>
+                </select>
             </div>
+        </div>
+    </div>
+</div>
 
             <!-- Purchase Orders Table -->
             <div class="card">
@@ -954,6 +1008,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                                                     <i class="bi bi-box-seam"></i>
                                                 </button>
                                                 <?php endif; ?>
+                                                <button class="btn-action btn-print" onclick="printPODetails(<?php echo $po['po_id']; ?>)" title="Print PO Details">
+                                                    <i class="bi bi-printer"></i>
+                                                </button>
                                             </div>
                                         </td>
                                     </tr>
@@ -1047,10 +1104,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     </div>
                     <?php endif; ?>
                     
-                    <!-- User ID -->
-                    <div class="user-id text-muted small mb-4">
-                        <i class="bi bi-hash"></i> User ID: <?php echo $user_id; ?>
-                    </div>
                     
                     <!-- Logout Button -->
                     <button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()">
@@ -1124,10 +1177,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         </div>
     </div>
 
+    <!-- Print Frame (hidden) -->
+    <iframe id="printFrame" name="printFrame"></iframe>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         let currentPoItemId = null;
         let currentMaxQuantity = 0;
+        const logoBase64 = '<?php echo $logo_base64; ?>';
 
         // ================= SIDEBAR FUNCTIONS =================
         function toggleSidebar() {
@@ -1319,7 +1376,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 text: 'You will be logged out of the system',
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonColor: '#dc3545',
+                confirmButtonColor: '#07d826',
                 cancelButtonColor: '#6c757d',
                 confirmButtonText: 'Yes, logout'
             }).then((result) => {
@@ -1337,7 +1394,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 text: 'You will be logged out of the system',
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonColor: '#dc3545',
+                confirmButtonColor: '#07d826',
                 cancelButtonColor: '#6c757d',
                 confirmButtonText: 'Yes, logout'
             }).then((result) => {
@@ -1346,6 +1403,291 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     window.location.href = '../logout.php';
                 }
             });
+        }
+
+        // ================= PRINT FUNCTION =================
+        function printPODetails(poId) {
+            const printBtn = event ? event.target.closest('button') : null;
+            if (printBtn) {
+                const originalHTML = printBtn.innerHTML;
+                printBtn.innerHTML = '<i class="bi bi-printer"></i>';
+                printBtn.disabled = true;
+            }
+            
+            fetch(`purchase_order.php?load_po_details=${poId}`)
+                .then(response => response.text())
+                .then(html => {
+                    // Create a temporary div to parse the HTML
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = html;
+                    
+                    // Try to get data from print-data element
+                    const printData = tempDiv.querySelector('#print-data');
+                    
+                    let poNumber = '';
+                    let supplier = '';
+                    let poDate = '';
+                    let branch = '';
+                    let status = '';
+                    let totalOrdered = 0;
+                    let totalReceived = 0;
+                    let pending = 0;
+                    let completion = 0;
+                    let items = [];
+                    
+                    if (printData) {
+                        poNumber = printData.getAttribute('data-po-number') || '';
+                        supplier = printData.getAttribute('data-supplier') || '';
+                        poDate = printData.getAttribute('data-po-date') || '';
+                        branch = printData.getAttribute('data-branch') || '';
+                        status = printData.getAttribute('data-status') || '';
+                        totalOrdered = printData.getAttribute('data-total-ordered') || '0';
+                        totalReceived = printData.getAttribute('data-total-received') || '0';
+                        pending = printData.getAttribute('data-pending') || '0';
+                        completion = printData.getAttribute('data-completion') || '0';
+                    }
+                    
+                    // Extract items from the table
+                    const itemRows = tempDiv.querySelectorAll('table tbody tr');
+                    itemRows.forEach(row => {
+                        const cells = row.querySelectorAll('td');
+                        if (cells.length >= 7) {
+                            items.push({
+                                code: cells[0].textContent.trim(),
+                                name: cells[1].textContent.trim(),
+                                unit: cells[2].textContent.trim(),
+                                ordered: cells[3].textContent.trim(),
+                                received: cells[4].textContent.trim(),
+                                pending: cells[5].textContent.trim(),
+                                stock: cells[6].textContent.trim()
+                            });
+                        }
+                    });
+                    
+                    // Generate print HTML
+                    const htmlContent = generatePOPrintHTML({
+                        poNumber,
+                        supplier,
+                        poDate,
+                        branch,
+                        status,
+                        totalOrdered,
+                        totalReceived,
+                        pending,
+                        completion,
+                        items
+                    });
+                    
+                    // Use hidden iframe for printing
+                    const iframe = document.getElementById('printFrame');
+                    const iframeDoc = iframe.contentWindow.document;
+                    
+                    iframeDoc.open();
+                    iframeDoc.write(htmlContent);
+                    iframeDoc.close();
+                    
+                    // Restore button
+                    setTimeout(() => {
+                        if (printBtn) {
+                            printBtn.innerHTML = '<i class="bi bi-printer"></i>';
+                            printBtn.disabled = false;
+                        }
+                    }, 1000);
+                    
+                    // Trigger print dialog
+                    setTimeout(() => {
+                        iframe.contentWindow.focus();
+                        iframe.contentWindow.print();
+                    }, 250);
+                })
+                .catch(error => {
+                    console.error('Error loading PO details:', error);
+                    Swal.fire('Error', 'Failed to load PO details for printing', 'error');
+                    if (printBtn) {
+                        printBtn.innerHTML = '<i class="bi bi-printer"></i>';
+                        printBtn.disabled = false;
+                    }
+                });
+        }
+
+        function generatePOPrintHTML(data) {
+            const currentDate = new Date().toLocaleDateString('en-US', { 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric' 
+            });
+            
+            let itemsHtml = '';
+            if (data.items && data.items.length > 0) {
+                data.items.forEach(item => {
+                    itemsHtml += `
+                        <tr>
+                            <td style="padding: 3px; border: 1px solid #000;">${item.code}</td>
+                            <td style="padding: 3px; border: 1px solid #000;">${item.name}</td>
+                            <td style="padding: 3px; border: 1px solid #000;">${item.unit}</td>
+                            <td style="padding: 3px; border: 1px solid #000; text-align: center;">${item.ordered}</td>
+                            <td style="padding: 3px; border: 1px solid #000; text-align: center;">${item.received}</td>
+                            <td style="padding: 3px; border: 1px solid #000; text-align: center;">${item.pending}</td>
+                            <td style="padding: 3px; border: 1px solid #000; text-align: center;">${item.stock}</td>
+                        </tr>
+                    `;
+                });
+            }
+            
+            return `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>Purchase Order - ${data.poNumber}</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; margin: 0; padding: 0; font-size: 10px; }
+                        .print-container { max-width: 100%; margin: 0; }
+                        .print-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; border-bottom: 1px solid #000; padding-bottom: 3px; }
+                        .logo-section { display: flex; align-items: center; gap: 5px; }
+                        .company-logo { width: 30px; height: auto; }
+                        .company-info h1 { font-size: 14px; margin: 0; font-weight: bold; }
+                        .company-info p { font-size: 8px; margin: 0; }
+                        .report-title h2 { font-size: 12px; margin: 0; }
+                        .report-title .date-info { font-size: 8px; }
+                        .section-title { font-size: 10px; font-weight: bold; margin: 5px 0 3px; border-bottom: 1px solid #000; }
+                        .info-grid { display: flex; flex-wrap: wrap; border: 1px solid #000; margin-bottom: 5px; }
+                        .info-row { width: 50%; display: flex; border-bottom: 1px solid #000; }
+                        .info-row:nth-last-child(-n+2) { border-bottom: none; }
+                        .info-label { width: 100px; font-weight: bold; padding: 3px; background: #f0f0f0; border-right: 1px solid #000; }
+                        .info-value { flex: 1; padding: 3px; }
+                        table { width: 100%; border-collapse: collapse; font-size: 9px; margin: 5px 0; }
+                        th { border: 1px solid #000; padding: 3px; text-align: left; font-weight: bold; background: #f0f0f0; }
+                        td { border: 1px solid #000; padding: 3px; }
+                        .summary-box { 
+                            width: 100%; 
+                            border: 2px solid #000; 
+                            margin: 5px 0; 
+                            background: #f9f9f9;
+                            page-break-inside: avoid;
+                        }
+                        .summary-header { 
+                            background: #e0e0e0; 
+                            font-weight: bold; 
+                            padding: 4px 8px; 
+                            border-bottom: 1px solid #000; 
+                            font-size: 10px;
+                            text-transform: uppercase;
+                        }
+                        .summary-content { 
+                            padding: 8px; 
+                            font-size: 11px;
+                            line-height: 1.5;
+                        }
+                        .summary-row {
+                            display: flex;
+                            margin: 3px 0;
+                        }
+                        .summary-label {
+                            width: 120px;
+                            font-weight: bold;
+                        }
+                        .summary-value {
+                            flex: 1;
+                        }
+                        .print-footer { margin-top: 5px; border-top: 1px solid #000; padding-top: 3px; display: flex; justify-content: space-between; font-size: 8px; }
+                        .text-center { text-align: center; }
+                    </style>
+                </head>
+                <body>
+                    <div class="print-container">
+                        <div class="print-header">
+                            <div class="logo-section">
+                                <img src="${logoBase64}" alt="AMGC Logo" class="company-logo">
+                                <div class="company-info">
+                                    <h1>AMGC</h1>
+                                    <p>Purchase Order</p>
+                                </div>
+                            </div>
+                            <div class="report-title">
+                                <h2>PURCHASE ORDER DETAILS</h2>
+                                <div class="date-info">${currentDate}</div>
+                            </div>
+                        </div>
+                        
+                        <div class="summary-box">
+                            <div class="summary-header">
+                                📄 PO INFORMATION
+                            </div>
+                            <div class="summary-content">
+                                <div class="summary-row">
+                                    <span class="summary-label">PO Number:</span>
+                                    <span class="summary-value"><strong>${data.poNumber}</strong></span>
+                                </div>
+                                <div class="summary-row">
+                                    <span class="summary-label">Supplier:</span>
+                                    <span class="summary-value">${data.supplier}</span>
+                                </div>
+                                <div class="summary-row">
+                                    <span class="summary-label">PO Date:</span>
+                                    <span class="summary-value">${data.poDate}</span>
+                                </div>
+                                <div class="summary-row">
+                                    <span class="summary-label">Branch:</span>
+                                    <span class="summary-value">${data.branch}</span>
+                                </div>
+                                <div class="summary-row">
+                                    <span class="summary-label">Status:</span>
+                                    <span class="summary-value">${data.status}</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="summary-box">
+                            <div class="summary-header">
+                                📊 RECEIVE SUMMARY
+                            </div>
+                            <div class="summary-content">
+                                <div class="summary-row">
+                                    <span class="summary-label">Total Ordered:</span>
+                                    <span class="summary-value">${data.totalOrdered} units</span>
+                                </div>
+                                <div class="summary-row">
+                                    <span class="summary-label">Total Received:</span>
+                                    <span class="summary-value">${data.totalReceived} units</span>
+                                </div>
+                                <div class="summary-row">
+                                    <span class="summary-label">Pending:</span>
+                                    <span class="summary-value">${data.pending} units</span>
+                                </div>
+                                <div class="summary-row">
+                                    <span class="summary-label">Completion:</span>
+                                    <span class="summary-value">${data.completion}%</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="section-title">Purchase Order Items</div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Item Code</th>
+                                    <th>Item Name</th>
+                                    <th>Unit</th>
+                                    <th class="text-center">Ordered</th>
+                                    <th class="text-center">Received</th>
+                                    <th class="text-center">Pending</th>
+                                    <th class="text-center">Current Stock</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${itemsHtml}
+                            </tbody>
+                        </table>
+                        
+                        <div class="print-footer">
+                            <div>Generated: ${currentDate}</div>
+                            <div><?php echo htmlspecialchars($user_name); ?></div>
+                        </div>
+                    </div>
+                </body>
+                </html>
+            `;
         }
 
         // ================= PURCHASE ORDER FUNCTIONS =================
@@ -1554,6 +1896,84 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
             }
         });
+
+        // ================= PURCHASE ORDERS FILTER FUNCTIONS =================
+
+// Toggle filter visibility
+function togglePOFilter() {
+    const content = document.getElementById('poFilterContent');
+    const icon = document.getElementById('poFilterIcon');
+    const toggleBtn = document.getElementById('poFilterToggle');
+    
+    if (content && icon && toggleBtn) {
+        const isExpanded = toggleBtn.getAttribute('aria-expanded') === 'true';
+        
+        if (isExpanded) {
+            // Collapse
+            content.classList.add('collapsed');
+            toggleBtn.setAttribute('aria-expanded', 'false');
+            icon.style.transform = 'rotate(0deg)';
+            localStorage.setItem('poFilterHidden', 'true');
+        } else {
+            // Expand
+            content.classList.remove('collapsed');
+            toggleBtn.setAttribute('aria-expanded', 'true');
+            icon.style.transform = 'rotate(180deg)';
+            localStorage.setItem('poFilterHidden', 'false');
+        }
+    }
+}
+
+// Apply filters
+function applyPOFilters() {
+    const search = document.getElementById('searchInput')?.value || '';
+    const status = document.getElementById('statusFilter')?.value || '';
+    
+    const params = new URLSearchParams();
+    if (search) params.append('search', search);
+    if (status) params.append('status', status);
+    
+    window.location.href = 'purchase_orders.php?' + params.toString();
+}
+
+// Clear filters
+function clearPOFilters() {
+    document.getElementById('searchInput') && (document.getElementById('searchInput').value = '');
+    document.getElementById('statusFilter') && (document.getElementById('statusFilter').value = '');
+    
+    applyPOFilters();
+}
+
+// Initialize filter state - DEFAULT CLOSED
+function initPOFilterState() {
+    const content = document.getElementById('poFilterContent');
+    const icon = document.getElementById('poFilterIcon');
+    const toggleBtn = document.getElementById('poFilterToggle');
+    
+    if (content && icon && toggleBtn) {
+        // ALWAYS START CLOSED
+        content.classList.add('collapsed');
+        toggleBtn.setAttribute('aria-expanded', 'false');
+        icon.style.transform = 'rotate(0deg)';
+        
+        // Reset localStorage
+        localStorage.setItem('poFilterHidden', 'true');
+    }
+}
+
+// Add event listeners
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize filter - ALWAYS CLOSED
+    initPOFilterState();
+    
+    // Toggle button
+    document.getElementById('poFilterToggle')?.addEventListener('click', togglePOFilter);
+    
+    // Enter key on search
+    document.getElementById('searchInput')?.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') applyPOFilters();
+    });
+});
     </script>
 </body>
 </html>

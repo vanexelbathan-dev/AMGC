@@ -58,59 +58,6 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-        /* Mobile responsive */
-        @media (max-width: 768px) {
-            .stat-card {
-                padding: 12px;
-                min-height: 85px;
-                margin-bottom: 8px;
-            }
-            
-            .stat-icon {
-                font-size: 2rem;
-                margin-right: 12px;
-            }
-            
-            .stat-value {
-                font-size: 1.5rem;
-            }
-            
-            .stat-label {
-                font-size: 0.8rem;
-            }
-            
-            .col-md-3 {
-                width: 50%;
-                padding-left: 8px;
-                padding-right: 8px;
-            }
-            
-            .row.g-3 {
-                margin-left: -8px;
-                margin-right: -8px;
-            }
-        }
-        
-        @media (max-width: 576px) {
-            .stat-card {
-                min-height: 80px;
-                padding: 10px;
-            }
-            
-            .stat-icon {
-                font-size: 1.8rem;
-                margin-right: 10px;
-            }
-            
-            .stat-value {
-                font-size: 1.3rem;
-            }
-            
-            .stat-label {
-                font-size: 0.75rem;
-            }
-        }
-
         /* Mobile Profile Modal Styles */
         .user-avatar-large {
             width: 100px;
@@ -348,93 +295,101 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
             $stats['trips_completed'] = $result->fetch_assoc()['count'] ?? 0;
             ?>
 
-            <!-- Driver Stats -->
-            <div class="row g-3 mb-4">
-                <!-- Total Drivers -->
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card drivers">
-                        <div class="stat-icon">
-                            <i class="bi bi-person-badge"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $stats['total_drivers']; ?></div>
-                            <div class="stat-label">Total Drivers</div>
-                        </div>
-                    </div>
-                </div>
+           <!-- Driver Stats -->
+<div class="row stat-card-row g-1 g-sm-2">
+    <!-- Card 1 - Total Drivers -->
+    <div class="col">
+        <div class="stat-card drivers">
+            <i class="bi bi-person-badge"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo $stats['total_drivers']; ?></div>
+                <div class="stat-label">Total Drivers</div>
+            </div>
+        </div>
+    </div>
 
-                <!-- Active Drivers -->
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card complete">
-                        <div class="stat-icon">
-                            <i class="bi bi-check-circle"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $stats['active_drivers']; ?></div>
-                            <div class="stat-label">Active Drivers</div>
-                        </div>
-                    </div>
-                </div>
+    <!-- Card 2 - Active Drivers -->
+    <div class="col">
+        <div class="stat-card complete">
+            <i class="bi bi-check-circle"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo $stats['active_drivers']; ?></div>
+                <div class="stat-label">Active Drivers</div>
+            </div>
+        </div>
+    </div>
 
-                <!-- Trips Completed -->
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card trips">
-                        <div class="stat-icon">
-                            <i class="bi bi-truck"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $stats['trips_completed']; ?></div>
-                            <div class="stat-label">Trips Completed</div>
-                        </div>
-                    </div>
-                </div>
+    <!-- Card 3 - Trips Completed -->
+    <div class="col">
+        <div class="stat-card trips">
+            <i class="bi bi-truck"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo $stats['trips_completed']; ?></div>
+                <div class="stat-label">Trips Completed</div>
+            </div>
+        </div>
+    </div>
 
-                <!-- Avg Rating (static for now) -->
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card stock">
-                        <div class="stat-icon">
-                            <i class="bi bi-star"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">4.6/5</div>
-                            <div class="stat-label">Avg Rating</div>
-                        </div>
-                    </div>
+    <!-- Card 4 - Avg Rating -->
+    <div class="col">
+        <div class="stat-card stock">
+            <i class="bi bi-star"></i>
+            <div class="stat-content">
+                <div class="stat-value">4.6/5</div>
+                <div class="stat-label">Avg Rating</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+           <!-- FILTER SECTION - DRIVERS/USER MANAGEMENT (Consistent with global design) -->
+<div class="form-card mb-4">
+    <div class="filter-header">
+        <h5>
+            <i class="bi bi-funnel"></i> Filter Drivers
+        </h5>
+        <button class="filter-toggle-btn" type="button" id="driversFilterToggle" aria-expanded="false">
+            <i class="bi bi-chevron-down" id="driversFilterIcon"></i>
+        </button>
+    </div>
+    
+    <div class="filter-content collapsed" id="driversFilterContent">
+        <div class="row g-3">
+            <!-- Search Field - Name or Driver ID -->
+            <div class="col-12 col-md-4">
+                <label class="form-label">
+                    <i class="bi bi-search"></i> Search
+                </label>
+                <div class="search-wrapper">
+                    <input type="text" class="form-control search-input" id="searchInput" placeholder="Search by name or driver ID...">
                 </div>
             </div>
-
-            <!-- Search and Filter - Updated with icon inside field -->
-            <div class="card mb-4">
-                <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-md-4">
-                            <div class="search-wrapper">
-                                <i class="bi bi-search search-icon"></i>
-                                <input type="text" class="form-control search-input" id="searchInput" placeholder="Search by name or driver ID...">
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <select class="form-select" id="statusFilter">
-                                <option value="">All Status</option>
-                                <option value="active">Active</option>
-                                <option value="inactive">Inactive</option>
-                                <option value="on-leave">On Leave</option>
-                            </select>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="search-wrapper">
-                                <i class="bi bi-truck search-icon"></i>
-                                <input type="text" class="form-control search-input" id="vehicleTypeFilter" placeholder="Filter by vehicle type...">
-                            </div>
-                        </div>
-                        <div class="col-md-2">
-                            <button class="btn btn-outline-secondary w-100" onclick="clearFilters()">
-                                <i class="bi bi-x-circle"></i> Clear
-                            </button>
-                        </div>
-                    </div>
+            
+            <!-- Status Filter -->
+            <div class="col-12 col-md-3">
+                <label class="form-label">
+                    <i class="bi bi-flag"></i> Status
+                </label>
+                <select class="form-select" id="statusFilter">
+                    <option value="">All Status</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                    <option value="on-leave">On Leave</option>
+                </select>
+            </div>
+            
+            <!-- Vehicle Type Filter -->
+            <div class="col-12 col-md-3">
+                <label class="form-label">
+                    <i class="bi bi-truck"></i> Vehicle Type
+                </label>
+                <div class="search-wrapper">
+                    <input type="text" class="form-control search-input" id="vehicleTypeFilter" placeholder="Filter by vehicle type...">
                 </div>
             </div>
+        </div>
+    </div>
+</div>
 
             <!-- Drivers Table -->
             <div class="card">
@@ -583,11 +538,6 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                         <span><?php echo htmlspecialchars($branch_name); ?></span>
                     </div>
                     <?php endif; ?>
-                    
-                    <!-- User ID -->
-                    <div class="user-id text-muted small mb-4">
-                        <i class="bi bi-hash"></i> User ID: <?php echo $user_id; ?>
-                    </div>
                     
                     <!-- Logout Button -->
                     <button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()">
@@ -833,7 +783,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                 text: 'You will be logged out of the system',
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonColor: '#dc3545',
+                confirmButtonColor: '#07d826',
                 cancelButtonColor: '#6c757d',
                 confirmButtonText: 'Yes, logout'
             }).then((result) => {
@@ -1055,6 +1005,91 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                 clearFilters();
             }
         });
+
+        // ================= DRIVERS FILTER FUNCTIONS =================
+
+// Toggle filter visibility
+function toggleDriversFilter() {
+    const content = document.getElementById('driversFilterContent');
+    const icon = document.getElementById('driversFilterIcon');
+    const toggleBtn = document.getElementById('driversFilterToggle');
+    
+    if (content && icon && toggleBtn) {
+        const isExpanded = toggleBtn.getAttribute('aria-expanded') === 'true';
+        
+        if (isExpanded) {
+            // Collapse
+            content.classList.add('collapsed');
+            toggleBtn.setAttribute('aria-expanded', 'false');
+            icon.style.transform = 'rotate(0deg)';
+            localStorage.setItem('driversFilterHidden', 'true');
+        } else {
+            // Expand
+            content.classList.remove('collapsed');
+            toggleBtn.setAttribute('aria-expanded', 'true');
+            icon.style.transform = 'rotate(180deg)';
+            localStorage.setItem('driversFilterHidden', 'false');
+        }
+    }
+}
+
+// Apply filters
+function applyDriversFilters() {
+    const search = document.getElementById('searchInput')?.value || '';
+    const status = document.getElementById('statusFilter')?.value || '';
+    const vehicleType = document.getElementById('vehicleTypeFilter')?.value || '';
+    
+    const params = new URLSearchParams();
+    if (search) params.append('search', search);
+    if (status) params.append('status', status);
+    if (vehicleType) params.append('vehicle_type', vehicleType);
+    
+    window.location.href = 'drivers.php?' + params.toString();
+}
+
+// Clear filters
+function clearDriversFilters() {
+    document.getElementById('searchInput') && (document.getElementById('searchInput').value = '');
+    document.getElementById('statusFilter') && (document.getElementById('statusFilter').value = '');
+    document.getElementById('vehicleTypeFilter') && (document.getElementById('vehicleTypeFilter').value = '');
+    
+    applyDriversFilters();
+}
+
+// Initialize filter state - DEFAULT CLOSED
+function initDriversFilterState() {
+    const content = document.getElementById('driversFilterContent');
+    const icon = document.getElementById('driversFilterIcon');
+    const toggleBtn = document.getElementById('driversFilterToggle');
+    
+    if (content && icon && toggleBtn) {
+        // ALWAYS START CLOSED
+        content.classList.add('collapsed');
+        toggleBtn.setAttribute('aria-expanded', 'false');
+        icon.style.transform = 'rotate(0deg)';
+        
+        // Reset localStorage
+        localStorage.setItem('driversFilterHidden', 'true');
+    }
+}
+
+// Add event listeners
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize filter - ALWAYS CLOSED
+    initDriversFilterState();
+    
+    // Toggle button
+    document.getElementById('driversFilterToggle')?.addEventListener('click', toggleDriversFilter);
+    
+    // Enter key on search fields
+    document.getElementById('searchInput')?.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') applyDriversFilters();
+    });
+    
+    document.getElementById('vehicleTypeFilter')?.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') applyDriversFilters();
+    });
+});
     </script>
 </body>
 </html>

@@ -83,57 +83,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-        /* Mobile responsive */
-        @media (max-width: 768px) {
-            .stat-card {
-                padding: 12px;
-                min-height: 85px;
-                margin-bottom: 8px;
-            }
-            
-            .stat-icon {
-                font-size: 2rem;
-                margin-right: 12px;
-            }
-            
-            .stat-value {
-                font-size: 1.5rem;
-            }
-            
-            .stat-label {
-                font-size: 0.8rem;
-            }
-            
-            .col-6 {
-                padding-left: 8px;
-                padding-right: 8px;
-            }
-            
-            .row.g-3 {
-                margin-left: -8px;
-                margin-right: -8px;
-            }
-        }
-        
-        @media (max-width: 576px) {
-            .stat-card {
-                min-height: 80px;
-                padding: 10px;
-            }
-            
-            .stat-icon {
-                font-size: 1.8rem;
-                margin-right: 10px;
-            }
-            
-            .stat-value {
-                font-size: 1.3rem;
-            }
-            
-            .stat-label {
-                font-size: 0.75rem;
-            }
-        }
+
 
         /* Category indicator - hidden by default, lalabas lang if may category */
         .category-indicator {
@@ -348,61 +298,52 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
             }
             ?>
 
-            <!-- Warehouse Stats -->
-            <div class="row g-3 mb-4">
-                <!-- Total Items -->
-                <div class="col-6 col-md-3 mb-3">
-                    <div class="stat-card inventory">
-                        <div class="stat-icon">
-                            <i class="bi bi-boxes"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo number_format($stats['total_items']); ?></div>
-                            <div class="stat-label">Total Items</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Current Stock -->
-                <div class="col-6 col-md-3 mb-3">
-                    <div class="stat-card stock">
-                        <div class="stat-icon">
-                            <i class="bi bi-box-seam"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo number_format($stats['current_stock']); ?></div>
-                            <div class="stat-label">Current Stock</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Active Drivers -->
-                <div class="col-6 col-md-3 mb-3">
-                    <div class="stat-card delivery">
-                        <div class="stat-icon">
-                            <i class="bi bi-person-badge"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $stats['active_drivers']; ?></div>
-                            <div class="stat-label">Active Drivers</div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Pending Deliveries -->
-                <div class="col-6 col-md-3 mb-3">
-                    <div class="stat-card pending">
-                        <div class="stat-icon">
-                            <i class="bi bi-truck"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $stats['pending_deliveries']; ?></div>
-                            <div class="stat-label">Pending Pickup</div>
-                        </div>
-                    </div>
-                </div>
+       <!-- Warehouse Stats -->
+<div class="row stat-card-row g-1 g-sm-2">
+    <!-- Card 1 - Total Items -->
+    <div class="col">
+        <div class="stat-card inventory">
+            <i class="bi bi-boxes"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo number_format($stats['total_items']); ?></div>
+                <div class="stat-label">Total Items</div>
             </div>
+        </div>
+    </div>
 
+    <!-- Card 2 - Current Stock -->
+    <div class="col">
+        <div class="stat-card stock">
+            <i class="bi bi-box-seam"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo number_format($stats['current_stock']); ?></div>
+                <div class="stat-label">Current Stock</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Card 3 - Active Drivers -->
+    <div class="col">
+        <div class="stat-card delivery">
+            <i class="bi bi-person-badge"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo $stats['active_drivers']; ?></div>
+                <div class="stat-label">Active Drivers</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Card 4 - Pending Deliveries -->
+    <div class="col">
+        <div class="stat-card pending">
+            <i class="bi bi-truck"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo $stats['pending_deliveries']; ?></div>
+                <div class="stat-label">Pending Pickup</div>
+            </div>
+        </div>
+    </div>
+</div>
             <!-- Recent Activities -->
             <div class="row">
                 <!-- Recent Pick List Items - REMOVED CANCELLED STATUS -->
@@ -411,8 +352,8 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                         <div class="card-header">
                             <h5 class="mb-0"><i class="bi bi-clipboard-check me-2"></i>Recent Pick List Items</h5>
                         </div>
-                        <div class="table-responsive">
-                            <table class="table table-hover mb-0">
+                        <div class="table-container">
+                            <table class="table custom-table compact-table">
                                 <thead class="table-light">
                                     <tr>
                                         <th>Pick List #</th>
@@ -497,8 +438,8 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                         <div class="card-header">
                             <h5 class="mb-0"><i class="bi bi-ticket me-2"></i>Recent Trip Tickets</h5>
                         </div>
-                        <div class="table-responsive">
-                            <table class="table table-hover mb-0">
+                        <div class="table-container">
+                            <table class="table custom-table compact-table">
                                 <thead class="table-light">
                                     <tr>
                                         <th>Ticket ID</th>
@@ -961,7 +902,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                 text: 'You will be logged out of the system',
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonColor: '#dc3545',
+                confirmButtonColor: '#07d826',
                 cancelButtonColor: '#6c757d',
                 confirmButtonText: 'Yes, logout'
             }).then((result) => {
@@ -979,7 +920,7 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
                 text: 'You will be logged out of the system',
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonColor: '#dc3545',
+                confirmButtonColor: '#07d826',
                 cancelButtonColor: '#6c757d',
                 confirmButtonText: 'Yes, logout'
             }).then((result) => {

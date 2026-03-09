@@ -83,7 +83,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $param_types .= "ss";
         }
         
-        // Query to get individual order items (for Excel export)
+        // Query to get individual order items (for Excel export) - using soi.unit_type
         $sql = "SELECT 
                     so.so_id,
                     so.so_number,
@@ -106,7 +106,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     i.item_name,
                     i.item_code,
                     i.category,
-                    i.unit_type
+                    soi.unit_type
                 FROM sales_orders so
                 LEFT JOIN customers c ON so.customer_id = c.customer_id
                 LEFT JOIN branches b ON so.branch_id = b.branch_id
@@ -212,7 +212,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             
             $order = $result->fetch_assoc();
             
-            // Get order items
+            // Get order items - using soi.unit_type
             $items_sql = "SELECT 
                             soi.so_item_id,
                             soi.so_id,
@@ -223,7 +223,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                             soi.line_total,
                             i.item_name,
                             i.item_code,
-                            i.unit_type
+                            soi.unit_type
                          FROM sales_order_items soi
                          JOIN items i ON soi.item_id = i.item_id
                          WHERE soi.so_id = ?
@@ -307,7 +307,7 @@ if (isset($_GET['search']) && !empty($_GET['search'])) {
     $param_types .= "ss";
 }
 
-// Build query with branch information and FULL item names (no truncation) - FOR UI DISPLAY ONLY
+// Build query with branch information and FULL item names - using soi.unit_type in concatenation
 $sql = "SELECT 
             so.so_id,
             so.so_number,
@@ -322,7 +322,7 @@ $sql = "SELECT
              FROM sales_order_items soi 
              JOIN items i ON soi.item_id = i.item_id 
              WHERE soi.so_id = so.so_id) as item_names,
-            (SELECT GROUP_CONCAT(CONCAT(i.item_name, ' (', soi.quantity_ordered, ')') SEPARATOR ', ') 
+            (SELECT GROUP_CONCAT(CONCAT(i.item_name, ' (', soi.quantity_ordered, ' ', soi.unit_type, ')') SEPARATOR ', ') 
              FROM sales_order_items soi 
              JOIN items i ON soi.item_id = i.item_id 
              WHERE soi.so_id = so.so_id) as item_names_with_qty
@@ -1011,7 +1011,7 @@ if (file_exists($logo_path)) {
                                                         }
                                                         ?>
                                                     </span>
-                                                    <!-- Store full item names in data attribute for Excel export -->
+                                                    <!-- Store full item names (now with historical unit type) in data attribute -->
                                                     <span class="full-item-names" style="display: none;"><?php echo htmlspecialchars($order['item_names_with_qty'] ?? $order['item_names']); ?></span>
                                                 <?php else: ?>
                                                     <span class="text-muted">No items</span>
@@ -1404,7 +1404,7 @@ if (file_exists($logo_path)) {
             location.reload();
         }
 
-        // View order details
+        // View order details - now using unit_type from sales_order_items
         function viewOrderDetails(orderId) {
             currentOrderId = orderId;
             const modal = new bootstrap.Modal(document.getElementById('orderDetailsModal'));
@@ -1449,6 +1449,7 @@ if (file_exists($logo_path)) {
                         itemsHtml = items.map(item => `
                             <tr>
                                 <td>${item.item_name}<br><small class="text-muted">${item.item_code}</small></td>
+                                <td class="text-center">${item.unit_type}</td>  <!-- historical unit type -->
                                 <td class="text-center">${item.quantity_ordered}</td>
                                 <td class="text-end">₱${parseFloat(item.unit_price).toFixed(2)}</td>
                                 <td class="text-end">₱${parseFloat(item.line_total).toFixed(2)}</td>
@@ -1505,6 +1506,7 @@ if (file_exists($logo_path)) {
                                     <thead class="table-light">
                                         <tr>
                                             <th>Product</th>
+                                            <th class="text-center">Unit</th>
                                             <th class="text-center">Quantity</th>
                                             <th class="text-end">Unit Price</th>
                                             <th class="text-end">Total</th>
@@ -1513,7 +1515,7 @@ if (file_exists($logo_path)) {
                                     <tbody>
                                         ${itemsHtml}
                                         <tr class="table-success fw-bold">
-                                            <td colspan="3" class="text-end">Grand Total</td>
+                                            <td colspan="4" class="text-end">Grand Total</td>
                                             <td class="text-end">₱${parseFloat(order.total_amount).toFixed(2)}</td>
                                         </tr>
                                     </tbody>
@@ -1551,7 +1553,7 @@ if (file_exists($logo_path)) {
             });
         }
         
-        // PRINT SINGLE ORDER - Optimized for ink/paper
+        // PRINT SINGLE ORDER - now using unit_type from sales_order_items
         function printSingleOrder(orderId) {
             currentOrderId = orderId;
             
@@ -1622,7 +1624,7 @@ if (file_exists($logo_path)) {
             });
         }
         
-        // Generate HTML for single order - Optimized for ink/paper
+        // Generate HTML for single order - now using unit_type from sales_order_items
         function generateSingleOrderHTML(order, items) {
             let itemsHtml = '';
             
@@ -1630,6 +1632,7 @@ if (file_exists($logo_path)) {
                 itemsHtml = items.map(item => `
                     <tr>
                         <td>${item.item_name}<br><span style="color:#666;font-size:9px;">${item.item_code}</span></td>
+                        <td style="text-align:center;">${item.unit_type}</td>  <!-- historical unit type -->
                         <td style="text-align:center;">${item.quantity_ordered}</td>
                         <td style="text-align:right;">₱${parseFloat(item.unit_price).toFixed(2)}</td>
                         <td style="text-align:right;">₱${parseFloat(item.line_total).toFixed(2)}</td>
@@ -1707,10 +1710,21 @@ if (file_exists($logo_path)) {
                         
                         <div class="section-title">ITEMS</div>
                         <table>
-                            <thead><tr><th>Product</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
+                            <thead>
+                                <tr>
+                                    <th>Product</th>
+                                    <th>Unit</th>
+                                    <th>Qty</th>
+                                    <th>Price</th>
+                                    <th>Total</th>
+                                </tr>
+                            </thead>
                             <tbody>
                                 ${itemsHtml}
-                                <tr class="total-row"><td colspan="3" style="text-align:right;">TOTAL</td><td style="text-align:right;">₱${parseFloat(order.total_amount).toFixed(2)}</td></tr>
+                                <tr class="total-row">
+                                    <td colspan="4" style="text-align:right;">TOTAL</td>
+                                    <td style="text-align:right;">₱${parseFloat(order.total_amount).toFixed(2)}</td>
+                                </tr>
                             </tbody>
                         </table>
                         
@@ -1724,7 +1738,7 @@ if (file_exists($logo_path)) {
             `;
         }
         
-        // PRINT ALL ORDERS - Optimized for ink/paper
+        // PRINT ALL ORDERS - unchanged (already uses full item names with historical unit type)
         function printAllOrders() {
             const rows = document.querySelectorAll('#ordersTable tbody tr');
             const visibleRows = [];
@@ -1783,7 +1797,7 @@ if (file_exists($logo_path)) {
             }, 250);
         }
         
-        // Generate HTML for all orders - Optimized for ink/paper
+        // Generate HTML for all orders - unchanged (uses full-item-names span which now contains historical unit types)
         function generateAllOrdersHTML(rows) {
             let tableRows = '';
             let totalAmount = 0;
@@ -1802,14 +1816,12 @@ if (file_exists($logo_path)) {
                     if (hasBranchColumn) {
                         branch = cells[3].textContent.trim();
                         items = cells[4].textContent.trim();
-                        // Get FULL item names from the hidden span
                         const fullItemsSpan = cells[5].querySelector('.full-item-names');
                         itemsList = fullItemsSpan ? fullItemsSpan.textContent.trim() : cells[5].textContent.trim();
                         amount = cells[6].textContent.trim();
                         status = cells[7].textContent.trim();
                     } else {
                         items = cells[3].textContent.trim();
-                        // Get FULL item names from the hidden span
                         const fullItemsSpan = cells[4].querySelector('.full-item-names');
                         itemsList = fullItemsSpan ? fullItemsSpan.textContent.trim() : cells[4].textContent.trim();
                         amount = cells[5].textContent.trim();
@@ -1840,7 +1852,6 @@ if (file_exists($logo_path)) {
                 hour: '2-digit', minute: '2-digit'
             });
             
-            const columnCount = branchColumnExists && viewAllBranches ? 8 : 7;
             const totalColspan = branchColumnExists && viewAllBranches ? 6 : 5;
             
             return `
@@ -1929,7 +1940,7 @@ if (file_exists($logo_path)) {
             }
         }
         
-        // Export to Excel - PURE BLACK & WHITE WITH INDIVIDUAL ITEM ROWS
+        // Export to Excel - unchanged (already uses historical unit type from updated PHP query)
         function exportToExcel() {
             // Get filter values
             const status = document.getElementById('statusFilter')?.value || 'all';
@@ -1972,7 +1983,7 @@ if (file_exists($logo_path)) {
             });
         }
         
-        // Generate Excel file with individual item rows - PURE BLACK & WHITE
+        // Generate Excel file with individual item rows - unchanged (uses data.items which now contains soi.unit_type)
         function generateExcelFile(items) {
             // Group items by order for summary
             const ordersMap = new Map();

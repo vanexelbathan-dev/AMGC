@@ -96,6 +96,14 @@ if ($cat_stmt) {
     $cat_stmt->close();
 }
 
+// Get base64 encoded logo for printing
+$logo_path = '../Pictures/amgc3DLogo.png';
+$logo_base64 = '';
+if (file_exists($logo_path)) {
+    $image_data = file_get_contents($logo_path);
+    $logo_base64 = 'data:image/png;base64,' . base64_encode($image_data);
+}
+
 // Function to create delivery records for completed pick list
 function createDeliveriesForPickList($conn, $pick_list_id, $branch_id, $user_id) {
     try {
@@ -496,76 +504,6 @@ function formatLocation($row) {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-    /* Mobile responsive adjustments */
-        @media (max-width: 768px) {
-            .stat-card {
-                padding: 12px;
-                min-height: 85px;
-                margin-bottom: 8px;
-            }
-            
-            .stat-icon {
-                font-size: 2rem;
-                margin-right: 12px;
-            }
-            
-            .stat-value {
-                font-size: 1.5rem;
-            }
-            
-            .stat-label {
-                font-size: 0.8rem;
-            }
-            
-            /* Make cards 2 columns on mobile */
-            .col-md-3 {
-                width: 50%;
-                padding-left: 8px;
-                padding-right: 8px;
-            }
-            
-            .row.g-3 {
-                margin-left: -8px;
-                margin-right: -8px;
-            }
-            
-            .mb-3 {
-                margin-bottom: 8px !important;
-            }
-        }
-        
-        /* Extra small devices */
-        @media (max-width: 576px) {
-            .stat-card {
-                min-height: 80px;
-                padding: 10px;
-            }
-            
-            .stat-icon {
-                font-size: 1.8rem;
-                margin-right: 10px;
-            }
-            
-            .stat-value {
-                font-size: 1.3rem;
-            }
-            
-            .stat-label {
-                font-size: 0.75rem;
-            }
-            
-            .col-md-3 {
-                width: 50%;
-                padding-left: 6px;
-                padding-right: 6px;
-            }
-            
-            .row.g-3 {
-                margin-left: -6px;
-                margin-right: -6px;
-            }
-        }
-        
         /* Branch indicator */
         .branch-indicator {
             display: inline-block;
@@ -825,6 +763,96 @@ function formatLocation($row) {
             padding-left: 35px !important;
             width: 100%;
         }
+
+        /* ================= PRINT STYLES - OPTIMIZED FOR PICK LIST ITEM DETAILS ================= */
+        /* Print iframe styles */
+        #printFrame {
+            position: absolute;
+            left: -9999px;
+            top: -9999px;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        @media print {
+            @page {
+                size: portrait;
+                margin: 0.3in;
+            }
+            
+            body * {
+                visibility: hidden;
+                background: white !important;
+                color: black !important;
+                border-color: black !important;
+            }
+            
+            #printFrame, #printFrame * {
+                visibility: visible;
+            }
+            
+            #printFrame {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                height: auto;
+                border: none;
+            }
+            
+            /* Only keep the logo colored */
+            #printFrame img {
+                filter: none !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+            }
+            
+            /* Everything else black and white */
+            #printFrame * {
+                background: white !important;
+                color: black !important;
+                border-color: #000 !important;
+                box-shadow: none !important;
+                text-shadow: none !important;
+                -webkit-print-color-adjust: economy;
+                print-color-adjust: economy;
+            }
+            
+            /* Table borders in black */
+            #printFrame table, 
+            #printFrame th, 
+            #printFrame td {
+                border: 1px solid #000 !important;
+            }
+            
+            /* Header background to white with black text */
+            #printFrame th {
+                background: white !important;
+                color: black !important;
+                font-weight: bold;
+            }
+            
+            /* Remove any gradient backgrounds */
+            #printFrame .summary-box,
+            #printFrame .customer-section,
+            #printFrame .total-row {
+                background: white !important;
+                border: 1px solid #000 !important;
+            }
+            
+            /* Remove all background colors from badges */
+            #printFrame .badge,
+            #printFrame .order-status-badge,
+            #printFrame .branch-badge,
+            #printFrame .driver-badge {
+                background: white !important;
+                border: 1px solid #000 !important;
+                color: black !important;
+                padding: 2px 6px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -982,120 +1010,132 @@ function formatLocation($row) {
                 </div>
             <?php endif; ?>
 
-            <!-- Stats Cards -->
-            <div class="row g-3 mb-4">
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card inventory">
-                        <div class="stat-icon">
-                            <i class="bi bi-clipboard-check"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $stats['total_items']; ?></div>
-                            <div class="stat-label">Total Items</div>
-                        </div>
-                    </div>
-                </div>
+           <!-- Stats Cards -->
+<div class="row stat-card-row g-1 g-sm-2">
+    <!-- Card 1 - Total Items -->
+    <div class="col">
+        <div class="stat-card inventory">
+            <i class="bi bi-clipboard-check"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo $stats['total_items']; ?></div>
+                <div class="stat-label">Total Items</div>
+            </div>
+        </div>
+    </div>
 
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card sales">
-                        <div class="stat-icon">
-                            <i class="bi bi-check-circle"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $stats['picked']; ?></div>
-                            <div class="stat-label">Picked</div>
-                        </div>
-                    </div>
-                </div>
+    <!-- Card 2 - Picked -->
+    <div class="col">
+        <div class="stat-card sales">
+            <i class="bi bi-check-circle"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo $stats['picked']; ?></div>
+                <div class="stat-label">Picked</div>
+            </div>
+        </div>
+    </div>
 
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card pending">
-                        <div class="stat-icon">
-                            <i class="bi bi-hourglass-split"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $stats['pending']; ?></div>
-                            <div class="stat-label">Pending Pickup</div>
-                        </div>
-                    </div>
-                </div>
+    <!-- Card 3 - Pending Pickup -->
+    <div class="col">
+        <div class="stat-card pending">
+            <i class="bi bi-hourglass-split"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo $stats['pending']; ?></div>
+                <div class="stat-label">Pending Pickup</div>
+            </div>
+        </div>
+    </div>
 
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card delivery">
-                        <div class="stat-icon">
-                            <i class="bi bi-currency-exchange"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value">₱<?php echo number_format($total_value, 0); ?></div>
-                            <div class="stat-label">Total Value</div>
-                        </div>
-                    </div>
+    <!-- Card 4 - Total Value -->
+    <div class="col">
+        <div class="stat-card delivery">
+            <i class="bi bi-currency-exchange"></i>
+            <div class="stat-content">
+                <div class="stat-value">₱<?php echo number_format($total_value, 0); ?></div>
+                <div class="stat-label">Total Value</div>
+            </div>
+        </div>
+    </div>
+</div>
+<!-- FILTER SECTION - PICK LISTS (Consistent with global design) -->
+<div class="form-card mb-4">
+    <div class="filter-header">
+        <h5>
+            <i class="bi bi-funnel"></i> Filter Pick Lists
+        </h5>
+        <button class="filter-toggle-btn" type="button" id="picklistFilterToggle" aria-expanded="false">
+            <i class="bi bi-chevron-down" id="picklistFilterIcon"></i>
+        </button>
+    </div>
+    
+    <div class="filter-content collapsed" id="picklistFilterContent">
+        <div class="row g-3">
+            <!-- Search Field -->
+            <div class="col-12 col-md-5">
+                <label class="form-label">
+                    <i class="bi bi-search"></i> Search
+                </label>
+                <div class="search-wrapper">
+                    <input type="text" class="form-control search-input" id="searchInput" placeholder="Search pick list or item...">
                 </div>
             </div>
-
-            <!-- Search and Filter - Updated with icon inside field -->
-            <div class="card mb-4">
-                <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-md-5">
-                            <div class="search-wrapper">
-                                <i class="bi bi-search search-icon"></i>
-                                <input type="text" class="form-control search-input" id="searchInput" placeholder="Search pick list or item...">
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <select class="form-select" id="statusFilter">
-                                <option value="">All Order Status</option>
-                                <option value="pending">Pending</option>
-                                <option value="confirmed">Confirmed</option>
-                                <option value="processing">Processing</option>
-                                <option value="ready">Ready for Delivery</option>
-                                <option value="delivered">Delivered</option>
-                                <option value="cancelled">Cancelled</option>
-                            </select>
-                        </div>
-                        <div class="col-md-2">
-                            <select class="form-select" id="driverFilter">
-                                <option value="">All Drivers</option>
-                                <?php
-                                // Get all drivers from current branch
-                                $drivers_filter_query = "SELECT driver_id, driver_name, vehicle_plate_number 
-                                                        FROM drivers 
-                                                        WHERE status = 'active'";
-                                
-                                if (!$view_all_branches && $user_branch_id > 0) {
-                                    $drivers_filter_query .= " AND branch_id = ?";
-                                    $driver_stmt = $conn->prepare($drivers_filter_query . " ORDER BY driver_name");
-                                    $driver_stmt->bind_param("i", $user_branch_id);
-                                } else {
-                                    $drivers_filter_query .= " ORDER BY driver_name";
-                                    $driver_stmt = $conn->prepare($drivers_filter_query);
-                                }
-                                
-                                $driver_stmt->execute();
-                                $drivers_result = $driver_stmt->get_result();
-                                
-                                if ($drivers_result->num_rows > 0) {
-                                    while($driver = $drivers_result->fetch_assoc()) {
-                                        $vehicle_info = !empty($driver['vehicle_plate_number']) ? ' - ' . $driver['vehicle_plate_number'] : '';
-                                        echo '<option value="' . $driver['driver_id'] . '">' . 
-                                             htmlspecialchars($driver['driver_name'] . $vehicle_info) . '</option>';
-                                    }
-                                } else {
-                                    echo '<option value="" disabled>No drivers available</option>';
-                                }
-                                $driver_stmt->close();
-                                ?>
-                            </select>
-                        </div>
-                        <div class="col-md-2">
-                            <button class="btn btn-outline-secondary w-100" onclick="clearFilters()">
-                                <i class="bi bi-x-circle"></i> Clear
-                            </button>
-                        </div>
-                    </div>
-                </div>
+            
+            <!-- Status Filter -->
+            <div class="col-12 col-md-3">
+                <label class="form-label">
+                    <i class="bi bi-flag"></i> Order Status
+                </label>
+                <select class="form-select" id="statusFilter">
+                    <option value="">All Order Status</option>
+                    <option value="pending">Pending</option>
+                    <option value="confirmed">Confirmed</option>
+                    <option value="processing">Processing</option>
+                    <option value="ready">Ready for Delivery</option>
+                    <option value="delivered">Delivered</option>
+                    <option value="cancelled">Cancelled</option>
+                </select>
             </div>
+            
+            <!-- Driver Filter -->
+            <div class="col-12 col-md-2">
+                <label class="form-label">
+                    <i class="bi bi-truck"></i> Driver
+                </label>
+                <select class="form-select" id="driverFilter">
+                    <option value="">All Drivers</option>
+                    <?php
+                    // Get all drivers from current branch
+                    $drivers_filter_query = "SELECT driver_id, driver_name, vehicle_plate_number 
+                                            FROM drivers 
+                                            WHERE status = 'active'";
+                    
+                    if (!$view_all_branches && $user_branch_id > 0) {
+                        $drivers_filter_query .= " AND branch_id = ?";
+                        $driver_stmt = $conn->prepare($drivers_filter_query . " ORDER BY driver_name");
+                        $driver_stmt->bind_param("i", $user_branch_id);
+                    } else {
+                        $drivers_filter_query .= " ORDER BY driver_name";
+                        $driver_stmt = $conn->prepare($drivers_filter_query);
+                    }
+                    
+                    $driver_stmt->execute();
+                    $drivers_result = $driver_stmt->get_result();
+                    
+                    if ($drivers_result->num_rows > 0) {
+                        while($driver = $drivers_result->fetch_assoc()) {
+                            $vehicle_info = !empty($driver['vehicle_plate_number']) ? ' - ' . $driver['vehicle_plate_number'] : '';
+                            echo '<option value="' . $driver['driver_id'] . '">' . 
+                                 htmlspecialchars($driver['driver_name'] . $vehicle_info) . '</option>';
+                        }
+                    } else {
+                        echo '<option value="" disabled>No drivers available</option>';
+                    }
+                    $driver_stmt->close();
+                    ?>
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
 
             <!-- Clean Pick List Items Table -->
             <div class="card">
@@ -1258,6 +1298,9 @@ function formatLocation($row) {
                                                         onclick="loadPickItemDetails(<?php echo $row['pick_item_id']; ?>)" title="View Details">
                                                     <i class="bi bi-eye"></i>
                                                 </button>
+                                                <button class="btn-action btn-print" onclick="printPickItem(<?php echo $row['pick_item_id']; ?>)" title="Print Details">
+                                                    <i class="bi bi-printer"></i>
+                                                </button>
                                                 <?php if (!isset($row['order_status']) || ($row['order_status'] != 'delivered' && $row['order_status'] != 'cancelled')): ?>
                                                 <button class="btn-action btn-edit" data-bs-toggle="modal" data-bs-target="#updatePickModal"
                                                         onclick="setUpdatePickItem(
@@ -1364,11 +1407,6 @@ function formatLocation($row) {
                         <span><?php echo htmlspecialchars($branch_name); ?></span>
                     </div>
                     <?php endif; ?>
-                    
-                    <!-- User ID -->
-                    <div class="user-id text-muted small mb-4">
-                        <i class="bi bi-hash"></i> User ID: <?php echo $user_id; ?>
-                    </div>
                     
                     <!-- Logout Button -->
                     <button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()">
@@ -1748,9 +1786,17 @@ function formatLocation($row) {
         </div>
     </div>
 
+    <!-- Print Frame (hidden) -->
+    <iframe id="printFrame" name="printFrame"></iframe>
+
     <!-- JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        // ========== GLOBAL VARIABLES ==========
+        const logoBase64 = '<?php echo $logo_base64; ?>';
+        let currentPickItemId = null;
+        let currentPickItemData = null;
+
         // ================= SIDEBAR FUNCTIONS =================
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
@@ -1941,7 +1987,7 @@ function formatLocation($row) {
                 text: 'You will be logged out of the system',
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonColor: '#dc3545',
+                confirmButtonColor: '#07d826',
                 cancelButtonColor: '#6c757d',
                 confirmButtonText: 'Yes, logout'
             }).then((result) => {
@@ -1959,7 +2005,7 @@ function formatLocation($row) {
                 text: 'You will be logged out of the system',
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonColor: '#dc3545',
+                confirmButtonColor: '#07d826',
                 cancelButtonColor: '#6c757d',
                 confirmButtonText: 'Yes, logout'
             }).then((result) => {
@@ -1968,6 +2014,465 @@ function formatLocation($row) {
                     window.location.href = '../logout.php';
                 }
             });
+        }
+
+        // ================= IMPROVED LOCATION EXTRACTION =================
+        function extractLocation(container) {
+            let location = '';
+            
+            // Method 1: Look for print-data element with location attribute (MOST RELIABLE)
+            const printData = container.querySelector('#print-data');
+            if (printData) {
+                const locationAttr = printData.getAttribute('data-location');
+                const coordinatesAttr = printData.getAttribute('data-coordinates');
+                
+                if (locationAttr && locationAttr !== '' && locationAttr !== 'No location data') {
+                    location = locationAttr;
+                    console.log('Found location from print-data:', location);
+                    
+                    // If we also have coordinates, format them nicely
+                    if (coordinatesAttr && coordinatesAttr !== '') {
+                        return location + ' (GPS: ' + coordinatesAttr + ')';
+                    }
+                    return location;
+                }
+                
+                if (coordinatesAttr && coordinatesAttr !== '') {
+                    location = 'GPS Coordinates: ' + coordinatesAttr;
+                    console.log('Found coordinates from print-data:', location);
+                    return location;
+                }
+            }
+            
+            // Method 2: Look for full address in the location display
+            const fullAddress = container.querySelector('.full-address');
+            if (fullAddress) {
+                location = fullAddress.textContent.trim();
+                console.log('Found full address:', location);
+                return location;
+            }
+            
+            // Method 3: Look for coordinate-badge (coordinates with icon)
+            const coordBadge = container.querySelector('.coordinate-badge');
+            if (coordBadge) {
+                location = coordBadge.textContent.trim();
+                console.log('Found coordinate badge:', location);
+                return location;
+            }
+            
+            // Method 4: Look for address-text
+            const addressEl = container.querySelector('.address-text');
+            if (addressEl) {
+                location = addressEl.textContent.trim();
+                console.log('Found address text:', location);
+                return location;
+            }
+            
+            // Method 5: Look in the location display div
+            const locationDisplay = container.querySelector('.location-display');
+            if (locationDisplay) {
+                location = locationDisplay.textContent.trim().replace(/\s+/g, ' ');
+                console.log('Found location display:', location);
+                return location;
+            }
+            
+            // Method 6: Look for any element containing location data in the customer section
+            const customerCards = container.querySelectorAll('.card');
+            for (let card of customerCards) {
+                const header = card.querySelector('.card-header');
+                if (header && (header.textContent.includes('Delivery Location') || header.textContent.includes('Customer'))) {
+                    const locationContent = card.querySelector('.card-body');
+                    if (locationContent) {
+                        const text = locationContent.textContent.trim();
+                        if (text && !text.includes('No location') && !text.includes('No data')) {
+                            location = text.replace(/\s+/g, ' ').substring(0, 200);
+                            console.log('Found location in customer card:', location);
+                            return location;
+                        }
+                    }
+                }
+            }
+            
+            // Method 7: Look for coordinates in the HTML content
+            const htmlText = container.innerHTML;
+            
+            // Look for coordinates pattern (latitude, longitude)
+            const coordPattern = /(-?\d+\.\d+),\s*(-?\d+\.\d+)/g;
+            const coordMatch = coordPattern.exec(htmlText);
+            if (coordMatch) {
+                location = coordMatch[1] + ', ' + coordMatch[2];
+                console.log('Found coordinates in HTML:', location);
+                return 'GPS Coordinates: ' + location;
+            }
+            
+            // Method 8: Look for address in text content
+            const textContent = container.textContent;
+            const addressKeywords = ['Address:', 'Location:', 'Deliver to:', 'Customer Address', 'Full Address'];
+            for (let keyword of addressKeywords) {
+                const index = textContent.indexOf(keyword);
+                if (index !== -1) {
+                    // Extract text after the keyword up to the next line break
+                    const afterKeyword = textContent.substring(index + keyword.length).trim();
+                    const endIndex = afterKeyword.indexOf('\n');
+                    if (endIndex !== -1) {
+                        location = afterKeyword.substring(0, endIndex).trim();
+                    } else {
+                        location = afterKeyword.substring(0, 150).trim(); // Limit to first 150 chars
+                    }
+                    console.log('Found address by keyword:', location);
+                    return location;
+                }
+            }
+            
+            console.log('No location data found');
+            return 'No location data';
+        }
+
+        // ================= PRINT PICK ITEM FUNCTION =================
+        function printPickItem(pickItemId) {
+            currentPickItemId = pickItemId;
+            
+            const printBtn = event ? event.target.closest('button') : null;
+            if (printBtn) {
+                const originalHTML = printBtn.innerHTML;
+                printBtn.innerHTML = '<i class="bi bi-printer"></i>';
+                printBtn.disabled = true;
+            }
+            
+            fetch('get_pick_item_details.php?pick_item_id=' + pickItemId)
+                .then(response => response.text())
+                .then(html => {
+                    // Create a temporary div to parse the HTML
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = html;
+                    
+                    // Try to get data from print-data element first (most reliable)
+                    const printData = tempDiv.querySelector('#print-data');
+                    
+                    let pickListNumber = '';
+                    let itemName = '';
+                    let itemCode = '';
+                    let customerName = '';
+                    let soNumber = '';
+                    let driverName = '';
+                    let vehicleInfo = '';
+                    let location = '';
+                    let quantityToPick = 0;
+                    let quantityPicked = 0;
+                    let completion = '0%';
+                    let orderStatus = '';
+                    
+                    if (printData) {
+                        // Get data from attributes
+                        pickListNumber = printData.getAttribute('data-picklist') || '';
+                        itemName = printData.getAttribute('data-itemname') || '';
+                        itemCode = printData.getAttribute('data-itemcode') || '';
+                        customerName = printData.getAttribute('data-customer') || 'N/A';
+                        soNumber = printData.getAttribute('data-sonumber') || 'N/A';
+                        driverName = printData.getAttribute('data-driver') || 'No Driver Assigned';
+                        
+                        const vehicle = printData.getAttribute('data-vehicle') || 'No vehicle';
+                        const plate = printData.getAttribute('data-plate') || 'No plate';
+                        vehicleInfo = vehicle + ' - ' + plate;
+                        
+                        // Get location - prioritize address over coordinates
+                        const locationAttr = printData.getAttribute('data-location') || '';
+                        const coordinates = printData.getAttribute('data-coordinates') || '';
+                        
+                        if (locationAttr && locationAttr !== '' && locationAttr !== 'No location data') {
+                            location = locationAttr;
+                            if (coordinates && coordinates !== '') {
+                                location = location + ' (GPS: ' + coordinates + ')';
+                            }
+                        } else if (coordinates && coordinates !== '') {
+                            location = 'GPS Coordinates: ' + coordinates;
+                        } else {
+                            location = 'No location data';
+                        }
+                        
+                        quantityToPick = printData.getAttribute('data-quantity-to-pick') || '0';
+                        quantityPicked = printData.getAttribute('data-quantity-picked') || '0';
+                        completion = printData.getAttribute('data-completion') || '0%';
+                        orderStatus = printData.getAttribute('data-order-status') || 'N/A';
+                        
+                        console.log('Using print-data for location:', location);
+                    } else {
+                        // Fallback to text extraction methods
+                        pickListNumber = extractText(tempDiv, 'Pick List:', 1) || 
+                                        extractText(tempDiv, 'Pick List Number:', 1) || 
+                                        extractText(tempDiv, 'pick_list_number', 0);
+                        
+                        itemName = extractText(tempDiv, 'Item Name:', 1) || 
+                                  extractText(tempDiv, 'Item:', 1);
+                        
+                        itemCode = extractText(tempDiv, 'Item Code:', 1);
+                        customerName = extractText(tempDiv, 'Customer:', 1) || 'N/A';
+                        soNumber = extractText(tempDiv, 'SO Number:', 1) || 'N/A';
+                        driverName = extractText(tempDiv, 'Driver Name:', 1) || 'No Driver Assigned';
+                        
+                        // Extract vehicle info
+                        const vehicleType = extractText(tempDiv, 'Vehicle Type:', 1);
+                        const plateNumber = extractText(tempDiv, 'Plate Number:', 1);
+                        vehicleInfo = (vehicleType || 'No vehicle') + ' - ' + (plateNumber || 'No plate');
+                        
+                        // Extract location using the improved function
+                        location = extractLocation(tempDiv);
+                        console.log('Fallback location extraction:', location);
+                        
+                        // Extract quantity information
+                        quantityToPick = extractNumber(tempDiv, 'To Pick');
+                        quantityPicked = extractNumber(tempDiv, 'Picked');
+                        completion = extractCompletion(tempDiv);
+                        orderStatus = extractOrderStatus(tempDiv);
+                    }
+                    
+                    // Generate compact HTML with location prominently displayed
+                    const htmlContent = generatePickItemHTML({
+                        pickListNumber,
+                        itemName,
+                        itemCode,
+                        customerName,
+                        soNumber,
+                        driverName,
+                        vehicleInfo,
+                        location,
+                        quantityToPick,
+                        quantityPicked,
+                        completion,
+                        orderStatus
+                    });
+                    
+                    // Use hidden iframe for printing
+                    const iframe = document.getElementById('printFrame');
+                    const iframeDoc = iframe.contentWindow.document;
+                    
+                    iframeDoc.open();
+                    iframeDoc.write(htmlContent);
+                    iframeDoc.close();
+                    
+                    // Restore button
+                    setTimeout(() => {
+                        if (printBtn) {
+                            printBtn.innerHTML = '<i class="bi bi-printer"></i>';
+                            printBtn.disabled = false;
+                        }
+                    }, 1000);
+                    
+                    // Trigger print dialog
+                    setTimeout(() => {
+                        iframe.contentWindow.focus();
+                        iframe.contentWindow.print();
+                    }, 250);
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    Swal.fire('Error', 'Failed to load pick item details', 'error');
+                    if (printBtn) {
+                        printBtn.innerHTML = '<i class="bi bi-printer"></i>';
+                        printBtn.disabled = false;
+                    }
+                });
+        }
+
+        // Helper function to extract text from HTML
+        function extractText(container, label, offset) {
+            const elements = container.querySelectorAll('td');
+            for (let i = 0; i < elements.length; i++) {
+                if (elements[i].textContent.includes(label)) {
+                    if (elements[i + offset]) {
+                        return elements[i + offset].textContent.trim();
+                    }
+                }
+            }
+            return '';
+        }
+
+        // Helper function to extract number
+        function extractNumber(container, label) {
+            const text = extractText(container, label, 0);
+            const match = text.match(/\d+/);
+            return match ? match[0] : '0';
+        }
+
+        // Helper function to extract completion percentage
+        function extractCompletion(container) {
+            const progressBar = container.querySelector('.progress-bar');
+            if (progressBar) {
+                const style = progressBar.getAttribute('style');
+                const match = style.match(/width:\s*(\d+)%/);
+                return match ? match[1] + '%' : '0%';
+            }
+            return '0%';
+        }
+
+        // Helper function to extract order status
+        function extractOrderStatus(container) {
+            const statusSpan = container.querySelector('.order-status-badge, .badge.bg-success, .badge.bg-warning, .badge.bg-info, .badge.bg-danger');
+            return statusSpan ? statusSpan.textContent.trim() : 'N/A';
+        }
+
+        // Generate compact HTML for pick item with prominent location display
+        function generatePickItemHTML(data) {
+            const currentDate = new Date().toLocaleDateString('en-US', { 
+                year: 'numeric', 
+                month: 'short', 
+                day: 'numeric' 
+            });
+            
+            const completionValue = data.completion.replace('%', '');
+            const remaining = data.quantityToPick - data.quantityPicked;
+            
+            // Check if location contains coordinates
+            const hasCoordinates = data.location.match(/-?\d+\.\d+,\s*-?\d+\.\d+/) || 
+                                  data.location.includes('GPS:') ||
+                                  data.location.includes('Coordinates:');
+            
+            return `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>Pick Item - ${data.itemCode}</title>
+                    <style>
+                        body { font-family: Arial, sans-serif; margin: 0; padding: 0; font-size: 10px; }
+                        .print-container { max-width: 100%; margin: 0; }
+                        .print-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; border-bottom: 1px solid #000; padding-bottom: 3px; }
+                        .logo-section { display: flex; align-items: center; gap: 5px; }
+                        .company-logo { width: 30px; height: auto; }
+                        .company-info h1 { font-size: 14px; margin: 0; font-weight: bold; }
+                        .company-info p { font-size: 8px; margin: 0; }
+                        .report-title h2 { font-size: 12px; margin: 0; }
+                        .report-title .date-info { font-size: 8px; }
+                        .section-title { font-size: 10px; font-weight: bold; margin: 5px 0 3px; border-bottom: 1px solid #000; }
+                        .info-grid { display: flex; flex-wrap: wrap; border: 1px solid #000; margin-bottom: 5px; }
+                        .info-row { width: 50%; display: flex; border-bottom: 1px solid #000; }
+                        .info-row:nth-last-child(-n+2) { border-bottom: none; }
+                        .info-label { width: 100px; font-weight: bold; padding: 3px; background: #f0f0f0; border-right: 1px solid #000; }
+                        .info-value { flex: 1; padding: 3px; }
+                        .location-box { 
+                            width: 100%; 
+                            border: 2px solid #000; 
+                            margin: 5px 0; 
+                            background: #f9f9f9;
+                            page-break-inside: avoid;
+                        }
+                        .location-header { 
+                            background: #e0e0e0; 
+                            font-weight: bold; 
+                            padding: 4px 8px; 
+                            border-bottom: 1px solid #000; 
+                            font-size: 10px;
+                            text-transform: uppercase;
+                            letter-spacing: 0.5px;
+                        }
+                        .location-content { 
+                            padding: 8px; 
+                            font-size: 11px;
+                            line-height: 1.5;
+                            word-break: break-word;
+                            font-weight: 500;
+                        }
+                        .coordinates-highlight {
+                            font-family: monospace;
+                            font-size: 12px;
+                            background: #f0f0f0;
+                            padding: 4px 8px;
+                            border: 1px dashed #666;
+                            margin: 4px 0;
+                            font-weight: bold;
+                        }
+                        table { width: 100%; border-collapse: collapse; font-size: 9px; margin: 5px 0; }
+                        th { border: 1px solid #000; padding: 3px; text-align: left; font-weight: bold; background: #f0f0f0; }
+                        td { border: 1px solid #000; padding: 3px; }
+                        .progress-bar { border: 1px solid #000; height: 15px; width: 100%; margin: 3px 0; }
+                        .progress-fill { height: 15px; background: #ccc; width: ${completionValue}%; }
+                        .total-row { font-weight: bold; }
+                        .print-footer { margin-top: 5px; border-top: 1px solid #000; padding-top: 3px; display: flex; justify-content: space-between; font-size: 8px; }
+                        .status-box { border: 1px solid #000; padding: 2px 5px; display: inline-block; font-size: 8px; }
+                        .text-center { text-align: center; }
+                    </style>
+                </head>
+                <body>
+                    <div class="print-container">
+                        <div class="print-header">
+                            <div class="logo-section">
+                                <img src="${logoBase64}" alt="AMGC Logo" class="company-logo">
+                                <div class="company-info">
+                                    <h1>AMGC</h1>
+                                    <p>Pick List Item</p>
+                                </div>
+                            </div>
+                            <div class="report-title">
+                                <h2>PICK ITEM DETAILS</h2>
+                                <div class="date-info">${currentDate}</div>
+                            </div>
+                        </div>
+                        
+                        <div class="section-title">Item Information</div>
+                        <div class="info-grid">
+                            <div class="info-row"><span class="info-label">Pick List:</span><span class="info-value">${data.pickListNumber || 'N/A'}</span></div>
+                            <div class="info-row"><span class="info-label">Item Code:</span><span class="info-value">${data.itemCode || 'N/A'}</span></div>
+                            <div class="info-row"><span class="info-label">Item Name:</span><span class="info-value">${data.itemName || 'N/A'}</span></div>
+                            <div class="info-row"><span class="info-label">SO Number:</span><span class="info-value">${data.soNumber || 'N/A'}</span></div>
+                        </div>
+                        
+                        <div class="section-title">Customer Information</div>
+                        <div class="info-grid">
+                            <div class="info-row"><span class="info-label">Customer:</span><span class="info-value">${data.customerName || 'N/A'}</span></div>
+                        </div>
+                        
+                        <!-- Location Section - Prominently Displayed -->
+                        <div class="location-box">
+                            <div class="location-header">
+                                📍 DELIVERY LOCATION
+                            </div>
+                            <div class="location-content">
+                                ${data.location !== 'No location data' ? data.location : 
+                                  '<span style="color: #666; font-style: italic;">No location data available for this customer</span>'}
+                               
+                            </div>
+                        </div>
+                        
+                        <div class="section-title">Driver Information</div>
+                        <div class="info-grid">
+                            <div class="info-row"><span class="info-label">Driver:</span><span class="info-value">${data.driverName || 'No Driver Assigned'}</span></div>
+                            <div class="info-row"><span class="info-label">Vehicle:</span><span class="info-value">${data.vehicleInfo || 'N/A'}</span></div>
+                        </div>
+                        
+                        <div class="section-title">Pick Details</div>
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>To Pick</th>
+                                    <th>Picked</th>
+                                    <th>Remaining</th>
+                                    <th>Completion</th>
+                                    <th>Order Status</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td class="text-center">${data.quantityToPick}</td>
+                                    <td class="text-center">${data.quantityPicked}</td>
+                                    <td class="text-center">${remaining}</td>
+                                    <td class="text-center">${data.completion}</td>
+                                    <td class="text-center"><span class="status-box">${data.orderStatus || 'N/A'}</span></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        
+                        <div class="progress-bar">
+                            <div class="progress-fill"></div>
+                        </div>
+                        
+                        <div class="print-footer">
+                            <div>Generated: ${currentDate}</div>
+                            <div><?php echo htmlspecialchars($user_name); ?></div>
+                        </div>
+                    </div>
+                </body>
+                </html>
+            `;
         }
 
         // Enhanced function to set values for update pick modal
@@ -2192,6 +2697,8 @@ function formatLocation($row) {
             initMobileNav();
             
             const mobileToggleBtn = document.getElementById('mobileToggleBtn');
+            const desktopToggleBtn = document.getElementById('desktopToggleBtn');
+            
             if (mobileToggleBtn) {
                 mobileToggleBtn.addEventListener('click', function(e) {
                     e.stopPropagation();
@@ -2199,7 +2706,6 @@ function formatLocation($row) {
                 });
             }
             
-            const desktopToggleBtn = document.getElementById('desktopToggleBtn');
             if (desktopToggleBtn) {
                 desktopToggleBtn.addEventListener('click', function(e) {
                     e.stopPropagation();
@@ -2207,14 +2713,7 @@ function formatLocation($row) {
                 });
             }
             
-            document.querySelectorAll('.sidebar .nav-link').forEach(link => {
-                link.addEventListener('click', function() {
-                    if (window.innerWidth <= 992) {
-                        closeMobileSidebar();
-                    }
-                });
-            });
-            
+            // Close sidebar when clicking outside on mobile
             document.addEventListener('click', function(event) {
                 const sidebar = document.getElementById('sidebar');
                 const mobileBtn = document.getElementById('mobileToggleBtn');
@@ -2376,6 +2875,114 @@ function formatLocation($row) {
                 }
             });
         });
+
+       // ================= PICKLIST FILTER FUNCTIONS =================
+
+// Update filter count badge
+function updatePicklistFilterCount() {
+    const search = document.getElementById('searchInput')?.value || '';
+    const status = document.getElementById('statusFilter')?.value || '';
+    const driver = document.getElementById('driverFilter')?.value || '';
+    
+    let count = 0;
+    if (search.trim() !== '') count++;
+    if (status && status !== '') count++;
+    if (driver && driver !== '') count++;
+    
+    const filterCount = document.getElementById('picklistFilterCount');
+    if (filterCount) {
+        filterCount.textContent = count;
+        filterCount.style.display = count > 0 ? 'inline-block' : 'none';
+    }
+}
+
+// Toggle filter visibility
+function togglePicklistFilter() {
+    const content = document.getElementById('picklistFilterContent');
+    const icon = document.getElementById('picklistFilterIcon');
+    const toggleBtn = document.getElementById('picklistFilterToggle');
+    
+    if (content && icon && toggleBtn) {
+        const isExpanded = toggleBtn.getAttribute('aria-expanded') === 'true';
+        
+        if (isExpanded) {
+            // Collapse
+            content.classList.add('collapsed');
+            toggleBtn.setAttribute('aria-expanded', 'false');
+            icon.style.transform = 'rotate(0deg)';
+            localStorage.setItem('picklistFilterHidden', 'true');
+        } else {
+            // Expand
+            content.classList.remove('collapsed');
+            toggleBtn.setAttribute('aria-expanded', 'true');
+            icon.style.transform = 'rotate(180deg)';
+            localStorage.setItem('picklistFilterHidden', 'false');
+        }
+    }
+}
+
+// Apply filters
+function applyFilters() {
+    const search = document.getElementById('searchInput')?.value || '';
+    const status = document.getElementById('statusFilter')?.value || '';
+    const driver = document.getElementById('driverFilter')?.value || '';
+    
+    const params = new URLSearchParams();
+    if (search) params.append('search', search);
+    if (status) params.append('status', status);
+    if (driver) params.append('driver', driver);
+    
+    window.location.href = 'sales_reports.php?' + params.toString();
+}
+
+// Clear filters
+function clearFilters() {
+    document.getElementById('searchInput') && (document.getElementById('searchInput').value = '');
+    document.getElementById('statusFilter') && (document.getElementById('statusFilter').value = '');
+    document.getElementById('driverFilter') && (document.getElementById('driverFilter').value = '');
+    
+    updatePicklistFilterCount();
+    applyFilters();
+}
+
+// Initialize filter state - ALWAYS CLOSED ON PAGE LOAD
+function initPicklistFilterState() {
+    const content = document.getElementById('picklistFilterContent');
+    const icon = document.getElementById('picklistFilterIcon');
+    const toggleBtn = document.getElementById('picklistFilterToggle');
+    
+    if (content && icon && toggleBtn) {
+        // ALWAYS START CLOSED - ignore localStorage on initial load
+        content.classList.add('collapsed');
+        toggleBtn.setAttribute('aria-expanded', 'false');
+        icon.style.transform = 'rotate(0deg)';
+        
+        // Reset localStorage to 'true' para consistent
+        localStorage.setItem('picklistFilterHidden', 'true');
+    }
+    
+    updatePicklistFilterCount();
+}
+
+// Add event listeners
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize picklist filter - ALWAYS CLOSED
+    initPicklistFilterState();
+    
+    // Toggle button
+    document.getElementById('picklistFilterToggle')?.addEventListener('click', togglePicklistFilter);
+    
+    // Update count on changes
+    document.getElementById('searchInput')?.addEventListener('input', updatePicklistFilterCount);
+    document.getElementById('statusFilter')?.addEventListener('change', updatePicklistFilterCount);
+    document.getElementById('driverFilter')?.addEventListener('change', updatePicklistFilterCount);
+    
+    // Enter key on search
+    document.getElementById('searchInput')?.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') applyFilters();
+    });
+});
     </script>
 </body>
 </html>
+<?php $conn->close(); ?>
