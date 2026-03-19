@@ -8,20 +8,19 @@
     --shadow-hover: 0 15px 40px rgba(0,0,0,0.1);
     --border-radius-lg: 20px;
     --border-radius-md: 12px;
+    --border-radius-sm: 8px;
 }
 
-/* 1. Modern Card Design with Gradient */
+/* 1. Modern Card Design with Gradient - IMPROVED FOR MOBILE */
 .card {
     border: none;
-    border-radius: var(--border-radius-lg);
+    border-radius: var(--border-radius-lg) !important;
     box-shadow: var(--shadow-sm);
     transition: all 0.3s ease;
-    background: rgba(255, 255, 255, 0.95);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    border-radius: var(--border-radius-lg) var(--border-radius-lg) 0 0 !important;
+    background: white;
+    border: 1px solid var(--primary-light);
     margin-bottom: 24px;
+    overflow: hidden;
 }
 
 .card:hover {
@@ -30,11 +29,26 @@
 }
 
 .card-header {
-    background: var(--primary-gradient);
-    color: white;
+    background: #047857 !important;
+    color: white !important;
     border-radius: var(--border-radius-lg) var(--border-radius-lg) 0 0 !important;
     padding: 1.25rem 1.5rem;
-    border: none;
+    border: none !important;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Decorative pattern sa card header */
+.card-header::after {
+    content: '';
+    position: absolute;
+    top: -50%;
+    right: -10%;
+    width: 150px;
+    height: 150px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 50%;
+    pointer-events: none;
 }
 
 .card-header h5 {
@@ -44,18 +58,25 @@
     font-size: 1.25rem;
     display: flex;
     align-items: center;
+    color: white !important;
+    position: relative;
+    z-index: 2;
 }
 
 .card-header i {
     font-size: 1.3rem;
     margin-right: 10px;
+    color: white !important;
+    background: rgba(255, 255, 255, 0.2);
+    padding: 0.5rem;
+    border-radius: 10px;
 }
 
 .card-body {
-    padding: 2rem;
+    padding: 1.5rem;
 }
 
-/* 2. Animated Form Fields */
+/* 2. Animated Form Fields - IMPROVED FOR TOUCH */
 .form-control, .form-select {
     border: 2px solid #e9ecef;
     border-radius: var(--border-radius-md);
@@ -65,6 +86,9 @@
     font-size: 0.95rem;
     height: auto;
     line-height: 1.5;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
 }
 
 .form-control:hover, .form-select:hover {
@@ -73,9 +97,18 @@
 
 .form-control:focus, .form-select:focus {
     border-color: var(--primary-color);
-    box-shadow: 0 0 0 4px rgba(102,126,234,0.1);
+    box-shadow: 0 0 0 4px rgba(68, 211, 78, 0.15);
     transform: scale(1.01);
     outline: none;
+}
+
+/* Better select dropdown styling */
+.form-select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23047857' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 1rem center;
+    background-size: 16px;
+    padding-right: 2.5rem;
 }
 
 .form-label {
@@ -85,27 +118,31 @@
     font-size: 0.85rem;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
 }
 
-/* Floating Labels Effect */
-.form-floating {
-    position: relative;
-}
-
-.form-floating .form-control:focus + label,
-.form-floating .form-control:not(:placeholder-shown) + label {
-    transform: translateY(-1.5rem) scale(0.85);
+.form-label i {
     color: var(--primary-color);
+    font-size: 1rem;
 }
 
-/* 3. Section Headers with Icons */
+/* Required field indicator */
+.form-label .text-danger {
+    font-size: 1.2rem;
+    line-height: 1;
+    margin-left: 4px;
+}
+
+/* 3. Section Headers with Icons - IMPROVED */
 h6 {
     display: flex;
     align-items: center;
     padding: 16px 0 12px;
     margin: 24px 0 16px;
     border-bottom: 3px solid transparent;
-    border-image: linear-gradient(90deg, #66ea85, #57a24b);
+    border-image: linear-gradient(90deg, #44D34E, #047857);
     border-image-slice: 1;
     color: #1a202c;
     font-weight: 700;
@@ -125,10 +162,10 @@ h6 i {
     font-size: 1.4rem;
 }
 
-/* 4. Modern Buttons with Micro-interactions */
+/* 4. Modern Buttons with Micro-interactions - TOUCH FRIENDLY */
 .btn {
     border-radius: var(--border-radius-md);
-    padding: 12px 28px;
+    padding: 12px 24px;
     font-weight: 600;
     letter-spacing: 0.5px;
     transition: all 0.3s ease;
@@ -136,18 +173,23 @@ h6 i {
     overflow: hidden;
     border: none;
     font-size: 0.95rem;
+    min-height: 48px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
 }
 
 .btn-success {
-    background: var(--secondary-gradient);
+    background: var(--primary-gradient) !important;
     border: none !important;
-    box-shadow: 0 4px 15px rgba(102,126,234,0.4);
+    box-shadow: 0 4px 15px rgba(4, 120, 87, 0.3);
     color: white;
 }
 
 .btn-success:hover {
     transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(102,126,234,0.5);
+    box-shadow: 0 8px 25px rgba(4, 120, 87, 0.4);
     color: white;
 }
 
@@ -156,134 +198,123 @@ h6 i {
 }
 
 .btn-danger {
-    background: linear-gradient(90deg, rgb(255, 1, 18) 0%, rgb(238, 64, 11) 100%);
+    background: linear-gradient(135deg, #dc3545, #f87171) !important;
     border: none;
     color: white;
+    box-shadow: 0 4px 15px rgba(220, 53, 69, 0.3);
 }
 
 .btn-danger:hover {
-    background: linear-gradient(90deg, rgba(255, 1, 18, 0.541) 0%, rgba(238, 64, 11, 0.481) 100%);
     transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(74,85,104,0.4);
+    box-shadow: 0 8px 25px rgba(220, 53, 69, 0.4);
     color: white;
 }
 
-/* Ripple Effect */
-.btn::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 5px;
-    height: 5px;
-    background: rgba(255,255,255,0.7);
-    opacity: 0;
-    border-radius: 100%;
-    transform: scale(1, 1) translate(-50%);
-    transform-origin: 50% 50%;
+.btn-secondary {
+    background: #e2e8f0 !important;
+    color: #475569 !important;
+    border: 1px solid #cbd5e1 !important;
 }
 
-.btn:focus:not(:active)::after {
-    animation: ripple 0.6s ease-out;
+.btn-secondary:hover {
+    background: #cbd5e1 !important;
+    color: #1e293b !important;
 }
 
-@keyframes ripple {
-    0% {
-        transform: scale(0, 0);
-        opacity: 0.5;
-    }
-    100% {
-        transform: scale(20, 20);
-        opacity: 0;
-    }
+/* 5. Customer Info Card - 2 Column Grid - ULTRA COMPACT VERSION */
+.customer-info-card {
+    background: linear-gradient(135deg, #f8fafc, #f0fdf4);
+    border-left: 4px solid var(--primary-color);
+    padding: 0.75rem;
+    border-radius: 10px;
+    margin: 0.5rem 0;
+    box-shadow: 0 2px 8px rgba(4, 120, 87, 0.08);
 }
 
-/* 5. Modern Table Design */
-.table-responsive {
-    border-radius: var(--border-radius-md);
-    margin: 20px 0;
+.customer-info-card h6 {
+    margin-top: 0;
+    margin-bottom: 0.25rem;
+    padding-top: 0;
+    padding-bottom: 0.2rem;
+    color: var(--primary-color);
+    border-bottom: 1px dashed var(--primary-light);
+    font-size: 0.9rem;
 }
 
-.table {
-    border-collapse: separate;
-    border-spacing: 0 12px;
-    margin-top: -8px;
-    width: 100%;
+.customer-info-card h6 i {
+    font-size: 0.9rem;
+    margin-right: 4px;
 }
 
-.table thead th {
-    background: var(--primary-light);
-    color: #2d3748;
-    font-weight: 700;
-    text-transform: uppercase;
-    font-size: 0.75rem;
-    letter-spacing: 1px;
-    padding: 16px 12px;
-    border: none;
-    white-space: nowrap;
+.customer-info-card .row {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.35rem;
+    margin: 0;
 }
 
-.table tbody tr {
-    background: white;
-    border-radius: var(--border-radius-md);
-    box-shadow: 0 2px 10px rgba(0,0,0,0.02);
-    transition: all 0.3s ease;
-    cursor: pointer;
+.customer-info-card .col-md-6 {
+    width: 100% !important;
+    max-width: 100% !important;
+    flex: none !important;
+    padding: 0;
 }
 
-.table tbody tr:hover {
-    transform: scale(1.01);
-    box-shadow: 0 5px 20px rgba(0,0,0,0.08);
-    background: white;
+/* Override ang general .info-row styles para sa loob ng customer-info-card */
+.customer-info-card .info-row {
+    display: flex;
+    margin-bottom: 0.15rem !important;
+    padding: 0.1rem 0 !important;
+    border-bottom: 1px solid rgba(209, 250, 229, 0.3);
+    font-size: 0.8rem;
 }
 
-.table td {
-    padding: 16px 12px;
-    vertical-align: middle;
-    border: none;
-    font-size: 0.95rem;
+.customer-info-card .info-row:last-child {
+    border-bottom: none;
+    margin-bottom: 0 !important;
 }
 
-.table td:first-child {
-    border-radius: var(--border-radius-md) 0 0 var(--border-radius-md);
-    padding-left: 20px;
-}
-
-.table td:last-child {
-    border-radius: 0 var(--border-radius-md) var(--border-radius-md) 0;
-    padding-right: 20px;
-}
-
-/* 6. Enhanced Badge Design */
-.badge {
-    padding: 8px 16px;
-    border-radius: 30px;
+.customer-info-card .info-label {
     font-weight: 600;
+    width: 70px;
+    color: #475569;
     font-size: 0.7rem;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.08);
-    display: inline-block;
-    line-height: 1;
 }
 
-.badge.bg-primary {
-    background: var(--secondary-gradient) !important;
+.customer-info-card .info-value {
+    color: #1e293b;
+    flex: 1;
+    font-weight: 500;
+    word-break: break-word;
+    font-size: 0.7rem;
 }
 
-/* 7. Stylish File Upload */
+/* 6. Form Grid Improvements */
+.row {
+    margin-left: -10px;
+    margin-right: -10px;
+}
+
+[class*="col-"] {
+    padding-left: 10px;
+    padding-right: 10px;
+}
+
+/* 7. File Upload - IMPROVED */
 input[type="file"] {
-    padding: 10px 16px;
-    background: linear-gradient(145deg, #f8f9fa, #ffffff);
-    border: 2px dashed #cbd5e0;
+    padding: 10px 12px;
+    background: #f8fafc;
+    border: 2px dashed var(--primary-light);
     cursor: pointer;
     border-radius: var(--border-radius-md);
     font-size: 0.95rem;
+    width: 100%;
+    min-height: 48px;
 }
 
 input[type="file"]:hover {
     border-color: var(--primary-color);
-    background: linear-gradient(145deg, #ffffff, #f8f9fa);
+    background: #f0fdf4;
 }
 
 input[type="file"]::file-selector-button {
@@ -295,199 +326,105 @@ input[type="file"]::file-selector-button {
     margin-right: 16px;
     font-weight: 600;
     transition: all 0.3s ease;
+    min-height: 36px;
 }
 
 input[type="file"]::file-selector-button:hover {
     transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(102,126,234,0.3);
+    box-shadow: 0 4px 12px rgba(4, 120, 87, 0.3);
 }
 
-/* 8. Animated Checkbox - FIXED for Mobile */
+/* 8. Checkbox - FIXED: No line break */
 .form-check {
-    display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    margin: 20px 0;
-    padding: 0;
+    display: flex !important;
+    align-items: center !important;
+    gap: 14px;
+    margin: 24px 0;
+    padding: 12px 16px;
     width: 100%;
-    position: relative;
+    min-height: 56px;
+    background: #f8fafc;
+    border-radius: 16px;
+    border: 1px solid #eef2f6;
+    transition: all 0.2s ease;
+}
+
+.form-check:hover {
+    background: #f1f5f9;
+    border-color: var(--primary-light);
 }
 
 .form-check-input {
-    width: 20px;
-    height: 20px;
+    width: 24px;
+    height: 24px;
     flex-shrink: 0;
     flex-grow: 0;
-    margin: 3px 0 0 0 !important; /* I-align sa first line ng text */
+    margin: 0 !important;
     cursor: pointer;
     border: 2px solid #cbd5e0;
     transition: all 0.2s ease;
-    border-radius: 6px;
+    border-radius: 8px;
     -webkit-appearance: none;
     -moz-appearance: none;
     appearance: none;
     background: white;
     position: relative;
-    display: inline-block;
-    vertical-align: top;
 }
 
 .form-check-input:checked {
     background: var(--primary-gradient);
     border-color: transparent;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z'/%3E%3C/svg%3E");
-    background-size: 14px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='white'%3E%3Cpath d='M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z'/%3E%3C/svg%3E");
+    background-size: 16px;
     background-position: center;
     background-repeat: no-repeat;
 }
 
-.form-check-input:focus {
-    box-shadow: 0 0 0 4px rgba(102,126,234,0.1);
-    border-color: var(--primary-color);
-    outline: none;
-}
-
 .form-check-label {
-    color: #2d3748;
+    color: #1e293b;
     font-weight: 500;
     font-size: 0.95rem;
     cursor: pointer;
-    line-height: 1.5;
-    word-wrap: break-word;
-    word-break: break-word;
+    line-height: 1.4;
     flex: 1;
-    display: block;
-    padding: 0;
+    word-break: break-word;
 }
 
-/* MOBILE FIX - Eto ang pinaka-importante */
-@media screen and (max-width: 768px) {
-    .form-check {
-        display: flex !important;
-        flex-direction: row !important;
-        align-items: flex-start !important;
-        gap: 15px !important;
-        padding: 8px 0 !important;
-        margin: 15px 0 !important;
-        width: 100% !important;
-    }
-    
-    .form-check-input {
-        width: 24px !important;
-        height: 24px !important;
-        min-width: 24px !important;
-        min-height: 24px !important;
-        max-width: 24px !important;
-        max-height: 24px !important;
-        margin: 2px 0 0 0 !important;
-        padding: 0 !important;
-        flex: 0 0 24px !important;
-        position: relative !important;
-        top: 0 !important;
-        left: 0 !important;
-        float: none !important;
-        display: block !important;
-    }
-    
-    .form-check-label {
-        font-size: 1rem !important;
-        line-height: 1.5 !important;
-        flex: 1 !important;
-        width: auto !important;
-        max-width: calc(100% - 39px) !important;
-        padding-right: 5px !important;
-        display: block !important;
-        word-break: break-word !important;
-        white-space: normal !important;
-    }
-}
-
-/* Small mobile */
-@media screen and (max-width: 480px) {
-    .form-check {
-        gap: 12px !important;
-        padding: 6px 0 !important;
-    }
-    
-    .form-check-input {
-        width: 22px !important;
-        height: 22px !important;
-        min-width: 22px !important;
-        min-height: 22px !important;
-        flex: 0 0 22px !important;
-    }
-    
-    .form-check-label {
-        font-size: 0.95rem !important;
-        max-width: calc(100% - 34px) !important;
-    }
-}
-
-/* I-OVERRIDE LAHAT NG BOOTSTRAP */
-.form-check,
-.card .form-check,
-.card-body .form-check,
-form .form-check,
-div.form-check,
-section .form-check,
-main .form-check,
-.content .form-check {
-    display: flex !important;
-    flex-direction: row !important;
-    align-items: flex-start !important;
-    padding-left: 0 !important;
-    padding-right: 0 !important;
-    min-height: auto !important;
-}
-
-.form-check-input,
-.card .form-check-input,
-.card-body .form-check-input,
-form .form-check-input {
-    float: none !important;
-    margin-left: 0 !important;
-    margin-right: 0 !important;
-    position: relative !important;
-}
-
-.form-check-label,
-.card .form-check-label,
-.card-body .form-check-label,
-form .form-check-label {
-    margin-left: 0 !important;
-    padding-left: 0 !important;
-}
-
-/* Bootstrap overrides - ultra specific */
-.form-check .form-check-input {
-    margin-left: 0 !important;
-}
-
-/* Para sa Bootstrap 5 na nag-a-add ng margin */
-.form-check .form-check-input {
-    margin-top: 0.25em !important;
-}
-
-@media (max-width: 768px) {
-    .form-check .form-check-input {
-        margin-top: 0.15em !important;
-    }
-}
-/* 9. Alert Boxes */
+/* 9. Alert Boxes - IMPROVED */
 .alert {
     border: none;
     border-radius: var(--border-radius-md);
-    padding: 1rem 1.5rem;
+    padding: 1rem 1.25rem;
     margin-bottom: 1.5rem;
-    background: linear-gradient(145deg, #f8f9fa, #ffffff);
+    background: white;
     border-left: 4px solid var(--primary-color);
-    box-shadow: 0 2px 10px rgba(0,0,0,0.02);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    position: relative;
+    overflow: hidden;
+}
+
+.alert-success {
+    background: rgba(209, 250, 229, 0.3);
+    border-left-color: var(--primary-color);
+    color: var(--primary-color);
+}
+
+.alert-warning {
+    background: rgba(253, 230, 138, 0.3);
+    border-left-color: #f59e0b;
+    color: #b45309;
+}
+
+.alert-danger {
+    background: rgba(254, 202, 202, 0.3);
+    border-left-color: #dc3545;
+    color: #b91c1c;
 }
 
 .alert-info {
-    background: linear-gradient(145deg, #ebf8ff, #bee3f8);
-    border-left-color: #4299e1;
-    color: #2c5282;
+    background: rgba(191, 219, 254, 0.3);
+    border-left-color: #3b82f6;
+    color: #1e3a8a;
 }
 
 .alert i {
@@ -495,243 +432,1318 @@ form .form-check-label {
     font-size: 1.1rem;
 }
 
+.alert code {
+    background: rgba(0,0,0,0.05);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: #c7254e;
+    word-break: break-word;
+}
+
 /* 10. Horizontal Rule */
 hr {
-    margin: 28px 0;
+    margin: 24px 0;
     border: 0;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(120, 234, 102, 0.2), transparent);
+    height: 2px;
+    background: linear-gradient(90deg, transparent, var(--primary-light), transparent);
 }
 
 /* 11. Text Utilities */
 .text-muted {
-    color: #718096 !important;
-    font-size: 0.8rem;
+    color: #64748b !important;
+    font-size: 0.85rem;
     margin-top: 6px;
     display: block;
+    line-height: 1.4;
 }
 
-/* 12. Spacing Utilities */
-.mb-3 {
-    margin-bottom: 1.25rem !important;
+.text-muted i {
+    font-size: 0.9rem;
+    margin-right: 4px;
 }
 
-/* 13. Form Select Specific */
-.form-select {
-    appearance: none;
-    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23343a40' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3e%3c/svg%3e");
-    background-repeat: no-repeat;
-    background-position: right 0.75rem center;
-    background-size: 16px 12px;
+/* 12. Status Badge Styles */
+.status-badge {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 20px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.3px;
 }
 
-/* 14. Responsive Design */
-@media (max-width: 768px) {
-    .card {
-        border-radius: 15px;
-        margin: 12px;
-    }
-    
-    .card-header {
-        border-radius: 15px 15px 0 0 !important;
-        padding: 1rem 1.25rem;
+.status-pending { 
+    background-color: #ffedd5; 
+    color: #9a3412; 
+    border: 1px solid #fdba74;
+}
+
+.status-in-transit { 
+    background-color: #dbeafe; 
+    color: #1e40af; 
+    border: 1px solid #93c5fd;
+}
+
+.status-partial { 
+    background-color: #cffafe; 
+    color: #155e75; 
+    border: 1px solid #7dd3fc;
+}
+
+.status-delivered { 
+    background-color: #dcfce7; 
+    color: #166534; 
+    border: 1px solid #86efac;
+}
+
+.status-rejected { 
+    background-color: #fee2e2; 
+    color: #991b1b; 
+    border: 1px solid #fca5a5;
+}
+
+/* 13. Photo Thumbnail - Hindi na ginagamit pero保留 */
+.photo-thumbnail {
+    width: 45px;
+    height: 45px;
+    object-fit: cover;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 2px solid transparent;
+}
+
+.photo-thumbnail:hover {
+    transform: scale(1.1);
+    border-color: var(--primary-color);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.photo-placeholder {
+    width: 45px;
+    height: 45px;
+    background: linear-gradient(145deg, #f8fafc, #f1f5f9);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #94a3b8;
+    border: 2px dashed var(--primary-light);
+    font-size: 1.2rem;
+}
+
+/* ===== DETAILS MODAL STYLES - SIMPLIFIED ===== */
+#detailsModal .modal-dialog {
+    max-width: 450px;
+    margin: 1.75rem auto;
+}
+
+#detailsModal .modal-content {
+    border: none;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+}
+
+#detailsModal .modal-header {
+    background: linear-gradient(135deg, #047857, #44D34E);
+    color: white;
+    padding: 0.875rem 1.25rem;
+    border-bottom: none;
+    flex-shrink: 0;
+}
+
+#detailsModal .modal-header .modal-title {
+    font-size: 1rem;
+    font-weight: 500;
+    color: white !important;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#detailsModal .modal-header .btn-close {
+    filter: brightness(0) invert(1);
+    opacity: 0.8;
+    font-size: 0.8rem;
+}
+
+#detailsModal .modal-header .btn-close:hover {
+    opacity: 1;
+}
+
+#detailsModal .modal-body {
+    padding: 1.25rem;
+    overflow-y: auto;
+    background: #f8fafc;
+    flex: 1;
+}
+
+/* Photo button */
+#detailsModal .photo-button-container {
+    margin-bottom: 1rem;
+}
+
+#detailsModal .photo-button-container .btn {
+    width: 100%;
+    padding: 0.6rem;
+    border: 1px solid #047857;
+    color: #047857;
+    background: white;
+    border-radius: 8px;
+    font-size: 0.85rem;
+    font-weight: normal;
+    transition: all 0.2s ease;
+}
+
+#detailsModal .photo-button-container .btn:hover {
+    background: #047857;
+    color: white;
+}
+
+#detailsModal .photo-button-container .btn i {
+    margin-right: 0.4rem;
+}
+
+/* No photo */
+#detailsModal .no-photo {
+    background: #f1f5f9;
+    border: 1px dashed #cbd5e1;
+    border-radius: 8px;
+    padding: 1rem;
+    text-align: center;
+    color: #64748b;
+    margin-bottom: 1rem;
+    font-size: 0.85rem;
+}
+
+#detailsModal .no-photo i {
+    font-size: 1.5rem;
+    color: #94a3b8;
+    margin-bottom: 0.25rem;
+}
+
+/* Details list - simple */
+#detailsModal .details-list {
+    background: white;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+    overflow: hidden;
+}
+
+#detailsModal .detail-item {
+    display: flex;
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid #e9ecef;
+}
+
+#detailsModal .detail-item:last-child {
+    border-bottom: none;
+}
+
+#detailsModal .detail-label {
+    width: 95px;
+    color: #6c757d;
+    font-size: 0.85rem;
+}
+
+#detailsModal .detail-value {
+    flex: 1;
+    color: #212529;
+    font-size: 0.85rem;
+}
+
+#detailsModal .detail-value .badge {
+    font-size: 0.7rem;
+    padding: 0.2rem 0.5rem;
+    background: #f8f9fa;
+    color: #495057;
+    border: 1px solid #dee2e6;
+    font-weight: normal;
+}
+
+/* ===== UPDATED IMAGE EXPAND MODAL - SIMPLE LANG, WALANG DESIGN ===== */
+#imageExpandModal .modal-dialog {
+    max-width: 100vw;
+    margin: 0;
+    padding: 0;
+}
+
+#imageExpandModal .modal-content {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+}
+
+#imageExpandModal .modal-body {
+    padding: 20px 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    overflow: hidden;
+}
+
+#imageExpandModal img {
+    max-width: 100%;
+    max-height: 80vh;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    /* Remove all designs */
+    border-radius: 0 !important;
+    box-shadow: none !important;
+}
+
+/* Hide close button */
+#imageExpandModal .btn-close {
+    display: none;
+}
+
+/* ===== CONTENT RESPONSIVE ===== */
+
+/* Tablet (992px and below) */
+@media (max-width: 992px) {
+    .card-header h5 {
+        font-size: 1.1rem;
     }
     
     .card-body {
         padding: 1.25rem;
     }
-    
-    .form-control, .form-select {
-        padding: 10px 14px;
-        font-size: 16px; /* Prevents zoom on mobile */
+}
+
+/* Mobile (768px and below) - SMALLER INPUT FIELDS */
+@media (max-width: 768px) {
+    /* Cards */
+    .card {
+        border-radius: 16px !important;
+        margin-bottom: 16px;
     }
     
+    .card-header {
+        border-radius: 16px 16px 0 0 !important;
+        padding: 0.875rem 1.25rem;
+    }
+    
+    .card-header h5 {
+        font-size: 1rem;
+    }
+    
+    .card-header i {
+        font-size: 1rem;
+        padding: 0.35rem;
+    }
+    
+    .card-body {
+        padding: 1rem;
+    }
+    
+    /* Form elements */
+    .form-label {
+        font-size: 0.7rem;
+        margin-bottom: 4px;
+        letter-spacing: 0.3px;
+    }
+    
+    .form-control, 
+    .form-select {
+        padding: 8px 12px !important;
+        font-size: 0.85rem !important;
+        min-height: 38px !important;
+        border-width: 1.5px !important;
+        border-radius: 10px !important;
+    }
+    
+    .form-select {
+        background-position: right 0.8rem center;
+        background-size: 14px;
+        padding-right: 2.2rem !important;
+    }
+    
+    /* Buttons */
     .btn {
         width: 100%;
-        margin-bottom: 12px;
-        padding: 14px 20px;
+        margin-bottom: 8px;
+        padding: 10px 16px !important;
+        font-size: 0.9rem !important;
+        min-height: 44px !important;
     }
     
-    .d-flex.gap-2 {
+    .btn-group, .d-flex.gap-2 {
         flex-direction: column;
         gap: 8px !important;
     }
     
-    .table thead {
-        display: none;
+    .btn-action {
+        width: 38px !important;
+        height: 38px !important;
     }
     
-    .table tbody tr {
-        display: block;
-        margin-bottom: 16px;
-        padding: 12px;
+    .btn-action i {
+        font-size: 1rem !important;
     }
     
-    .table td {
-        display: block;
-        text-align: right;
-        padding: 12px;
-        border-bottom: 1px solid #e2e8f0;
+    /* Mobile cards */
+    .mobile-card {
+        padding: 0.875rem;
     }
     
-    .table td:last-child {
-        border-bottom: none;
+    .mobile-card-title {
+        font-size: 0.95rem;
     }
     
-    .table td::before {
-        content: attr(data-label);
-        float: left;
-        font-weight: 700;
-        color: #4a5568;
-        text-transform: uppercase;
+    .mobile-card-row {
+        font-size: 0.85rem;
+        padding: 0.4rem 0;
+    }
+    
+    .mobile-card-reason {
+        font-size: 0.8rem;
+        padding: 0.6rem;
+        margin: 0.4rem 0;
+    }
+    
+    /* Badges */
+    .badge {
+        padding: 0.25rem 0.6rem !important;
+        font-size: 0.6rem !important;
+    }
+    
+    /* Headers */
+    h6 {
+        font-size: 0.9rem;
+        margin: 14px 0 10px;
+        padding: 8px 0 6px;
+    }
+    
+    h6 i {
+        font-size: 1.1rem;
+        margin-right: 6px;
+    }
+    
+    /* Photo thumbnails */
+    .photo-thumbnail,
+    .photo-placeholder {
+        width: 40px !important;
+        height: 40px !important;
+    }
+    
+    .photo-placeholder i {
+        font-size: 1rem;
+    }
+    
+    /* Row spacing */
+    .row {
+        margin-left: -6px;
+        margin-right: -6px;
+    }
+    
+    [class*="col-"] {
+        padding-left: 6px;
+        padding-right: 6px;
+        margin-bottom: 6px;
+    }
+    
+    .mb-3 {
+        margin-bottom: 0.75rem !important;
+    }
+    
+    /* Alerts */
+    .alert {
+        padding: 0.75rem 1rem;
+        font-size: 0.85rem;
+        margin-bottom: 0.875rem;
+    }
+    
+    .alert i {
+        font-size: 0.9rem;
+        margin-right: 6px;
+    }
+    
+    .alert code {
+        font-size: 0.75rem;
+        margin: 3px 0;
+    }
+    
+    /* Info rows - para sa labas ng customer-info-card */
+    .info-row {
+        font-size: 0.8rem;
+        margin-bottom: 0.5rem;
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 3px;
+    }
+    
+    .info-label {
+        width: 90px;
+        font-size: 0.7rem;
+        margin-bottom: 0;
+    }
+    
+    .info-value {
+        font-size: 0.8rem;
+        padding-left: 0;
+        flex: 1;
+    }
+    
+    /* Customer info card - Mobile ULTRA COMPACT */
+    .customer-info-card {
+        padding: 0.6rem;
+    }
+    
+    .customer-info-card h6 {
+        font-size: 0.75rem;
+        margin-bottom: 0.2rem;
+        padding-bottom: 0.15rem;
+    }
+    
+    .customer-info-card h6 i {
+        font-size: 0.8rem;
+    }
+    
+    .customer-info-card .row {
+        display: grid !important;
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 0.25rem;
+    }
+    
+    .customer-info-card .info-row {
+        margin-bottom: 0.1rem !important;
+        padding: 0.05rem 0 !important;
+    }
+    
+    .customer-info-card .info-label {
+        width: 60px;
+        font-size: 0.6rem;
+    }
+    
+    .customer-info-card .info-value {
+        font-size: 0.6rem;
+    }
+    
+    /* Pagination */
+    .pagination .page-link {
+        padding: 0.3rem 0.6rem;
+        font-size: 0.75rem;
+        min-width: 36px;
+    }
+    
+    /* Modal adjustments */
+    .modal-header {
+        padding: 0.875rem 1rem !important;
+    }
+    
+    .modal-header .modal-title {
+        font-size: 0.95rem;
+    }
+    
+    .modal-header .modal-title i {
+        font-size: 1rem;
+        width: 32px;
+        height: 32px;
+    }
+    
+    .modal-body {
+        padding: 1rem !important;
+    }
+    
+    .modal-footer {
+        padding: 0.875rem 1rem !important;
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .modal-footer .btn {
+        padding: 10px !important;
+        font-size: 0.85rem !important;
+        margin: 0 !important;
+    }
+    
+    /* File input */
+    input[type="file"] {
+        padding: 6px 8px;
+        min-height: 42px;
+        font-size: 0.85rem;
+    }
+    
+    input[type="file"]::file-selector-button {
+        padding: 6px 12px;
+        font-size: 0.8rem;
+        min-height: 32px;
+    }
+    
+    /* Checkbox */
+    .form-check {
+        margin: 14px 0;
+        padding: 10px 14px !important;
+        min-height: 50px;
+        align-items: center !important;
+        gap: 12px;
+    }
+    
+    .form-check-input {
+        width: 22px;
+        height: 22px;
+        flex: 0 0 22px;
+        margin: 0 !important;
+    }
+    
+    .form-check-label {
+        font-size: 0.85rem;
+        line-height: 1.4;
+    }
+    
+    /* Details Modal Mobile */
+    #detailsModal .modal-dialog {
+        margin: 0.5rem;
+    }
+    
+    #detailsModal .modal-body {
+        padding: 1rem;
+    }
+    
+    #detailsModal .detail-item {
+        padding: 0.5rem 0.75rem;
+    }
+    
+    #detailsModal .detail-label {
+        width: 85px;
+        font-size: 0.8rem;
+    }
+    
+    #detailsModal .detail-value {
+        font-size: 0.8rem;
+    }
+}
+
+/* Small Mobile (576px and below) - EVEN SMALLER */
+@media (max-width: 576px) {
+    /* Cards */
+    .card-header {
+        padding: 0.75rem 1rem;
+    }
+    
+    .card-header h5 {
+        font-size: 0.9rem;
+    }
+    
+    .card-header i {
+        font-size: 0.95rem;
+        padding: 0.3rem;
+        margin-right: 5px;
+    }
+    
+    .card-body {
+        padding: 0.75rem;
+    }
+    
+    /* Form elements */
+    .form-label {
+        font-size: 0.65rem;
+        margin-bottom: 3px;
+        gap: 4px;
+    }
+    
+    .form-label i {
+        font-size: 0.85rem;
+    }
+    
+    .form-control, 
+    .form-select {
+        padding: 6px 10px !important;
+        font-size: 0.8rem !important;
+        min-height: 36px !important;
+        border-width: 1.5px !important;
+        border-radius: 8px !important;
+    }
+    
+    .form-select {
+        background-position: right 0.7rem center;
+        background-size: 12px;
+        padding-right: 2rem !important;
+    }
+    
+    /* Buttons */
+    .btn {
+        padding: 8px 14px !important;
+        font-size: 0.85rem !important;
+        min-height: 40px !important;
+    }
+    
+    .btn-action {
+        width: 34px !important;
+        height: 34px !important;
+    }
+    
+    .btn-action i {
+        font-size: 0.9rem !important;
+    }
+    
+    /* Mobile cards */
+    .mobile-card {
+        padding: 0.75rem;
+    }
+    
+    .mobile-card-title {
+        font-size: 0.9rem;
+    }
+    
+    .mobile-card-row {
+        font-size: 0.8rem;
+    }
+    
+    .mobile-card-reason {
+        font-size: 0.75rem;
+        padding: 0.5rem;
+    }
+    
+    /* Badges */
+    .badge {
+        padding: 0.2rem 0.5rem !important;
+        font-size: 0.55rem !important;
+    }
+    
+    /* Photo thumbnails */
+    .photo-thumbnail,
+    .photo-placeholder {
+        width: 36px !important;
+        height: 36px !important;
+    }
+    
+    /* Headers */
+    h6 {
+        font-size: 0.85rem;
+        padding: 6px 0 4px;
+        margin: 12px 0 8px;
+    }
+    
+    h6 i {
+        font-size: 1rem;
+        margin-right: 5px;
+    }
+    
+    /* Alerts */
+    .alert {
+        padding: 0.6rem 0.75rem;
+        font-size: 0.8rem;
+    }
+    
+    /* Customer Info Card - Small Mobile - ULTRA COMPACT */
+    .customer-info-card .row {
+        gap: 0.2rem;
+    }
+    
+    .customer-info-card .info-label {
+        width: 55px;
+        font-size: 0.55rem;
+    }
+    
+    .customer-info-card .info-value {
+        font-size: 0.55rem;
+    }
+    
+    /* Checkbox */
+    .form-check {
+        padding: 8px 12px !important;
+        gap: 10px;
+        min-height: 46px;
+    }
+    
+    .form-check-input {
+        width: 20px;
+        height: 20px;
+        flex: 0 0 20px;
+    }
+    
+    .form-check-label {
+        font-size: 0.8rem;
+    }
+    
+    /* Modal */
+    .modal-dialog {
+        margin: 0.25rem;
+    }
+    
+    .modal-header {
+        padding: 0.6rem 0.75rem !important;
+    }
+    
+    .modal-header .modal-title {
+        font-size: 0.9rem;
+    }
+    
+    .modal-header .modal-title i {
+        font-size: 0.95rem;
+        width: 28px;
+        height: 28px;
+    }
+    
+    .modal-body {
+        padding: 0.75rem !important;
+    }
+    
+    .modal-footer {
+        padding: 0.6rem 0.75rem !important;
+    }
+    
+    /* Details Modal Small Mobile */
+    #detailsModal .detail-item {
+        padding: 0.4rem 0.6rem;
+    }
+    
+    #detailsModal .detail-label {
+        width: 75px;
         font-size: 0.75rem;
     }
     
-    .table td:first-child {
-        border-radius: var(--border-radius-md) var(--border-radius-md) 0 0;
+    #detailsModal .detail-value {
+        font-size: 0.75rem;
+    }
+}
+
+/* Extra Small Mobile (380px and below) - PINAKAMALIIT */
+@media (max-width: 380px) {
+    .card-header {
+        padding: 0.6rem 0.75rem;
     }
     
-    .table td:last-child {
-        border-radius: 0 0 var(--border-radius-md) var(--border-radius-md);
+    .card-header h5 {
+        font-size: 0.85rem;
+    }
+    
+    .card-body {
+        padding: 0.6rem;
+    }
+    
+    /* Form elements */
+    .form-label {
+        font-size: 0.6rem;
+    }
+    
+    .form-control, 
+    .form-select {
+        padding: 5px 8px !important;
+        font-size: 0.7rem !important;
+        min-height: 32px !important;
+        border-width: 1px !important;
+    }
+    
+    .btn {
+        padding: 6px 12px !important;
+        font-size: 0.75rem !important;
+        min-height: 36px !important;
+    }
+    
+    .btn-action {
+        width: 30px !important;
+        height: 30px !important;
+    }
+    
+    .btn-action i {
+        font-size: 0.8rem !important;
+    }
+    
+    .mobile-card {
+        padding: 0.6rem;
+    }
+    
+    .mobile-card-title {
+        font-size: 0.8rem;
+    }
+    
+    .mobile-card-row {
+        font-size: 0.7rem;
+    }
+    
+    .photo-thumbnail,
+    .photo-placeholder {
+        width: 32px !important;
+        height: 32px !important;
     }
     
     h6 {
-        font-size: 1rem;
-        margin: 20px 0 12px;
+        font-size: 0.75rem;
+    }
+    
+    /* Checkbox */
+    .form-check {
+        padding: 6px 10px !important;
+        gap: 8px;
+        min-height: 42px;
+    }
+    
+    .form-check-input {
+        width: 18px;
+        height: 18px;
+        flex: 0 0 18px;
+    }
+    
+    .form-check-label {
+        font-size: 0.7rem;
+    }
+    
+    /* Customer Info Card - Extra Small - ULTRA COMPACT */
+    .customer-info-card {
+        padding: 0.5rem;
+    }
+    
+    .customer-info-card .row {
+        grid-template-columns: 1fr !important;
+        gap: 0.1rem;
+    }
+    
+    .customer-info-card .info-row {
+        margin-bottom: 0.1rem !important;
+    }
+    
+    .customer-info-card .info-label {
+        width: 60px;
+        font-size: 0.5rem;
+    }
+    
+    .customer-info-card .info-value {
+        font-size: 0.55rem;
+    }
+    
+    /* Details Modal Extra Small */
+    #detailsModal .detail-item {
+        flex-direction: column;
+        padding: 0.3rem 0.5rem;
+    }
+    
+    #detailsModal .detail-label {
+        width: 100%;
+        font-size: 0.7rem;
+        margin-bottom: 0.2rem;
+    }
+    
+    #detailsModal .detail-value {
+        font-size: 0.7rem;
+        padding-left: 0.25rem;
     }
 }
 
-/* 15. Smooth Scrolling */
-html {
-    scroll-behavior: smooth;
+/* Mobile Rejection Cards */
+.mobile-rejection-card .card {
+    border-radius: 16px !important;
+    transition: all 0.2s ease;
+    border: 1px solid var(--primary-light) !important;
 }
 
-/* 16. Loading Spinner */
-.spinner-border {
-    width: 1.2rem;
-    height: 1.2rem;
-    border-width: 0.15em;
+.mobile-rejection-card .card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08) !important;
 }
 
-/* 17. Tooltip Customization */
-[data-tooltip] {
-    position: relative;
+.mobile-rejection-card .card-body {
+    padding: 1rem !important;
+}
+
+.mobile-rejection-card .bg-light {
+    background-color: rgba(209, 250, 229, 0.3) !important;
+    border-left: 3px solid #dc3545;
+}
+
+.mobile-rejection-card .badge {
+    padding: 0.3rem 0.7rem;
+    font-size: 0.65rem;
+}
+
+/* Mobile photo thumbnail */
+.photo-thumbnail-mobile {
+    width: 45px;
+    height: 45px;
+    object-fit: cover;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 2px solid white;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+}
+
+.photo-thumbnail-mobile:hover {
+    transform: scale(1.05);
+    border-color: var(--primary-color);
+}
+
+.photo-placeholder-mobile {
+    width: 45px;
+    height: 45px;
+    background: linear-gradient(145deg, #f8fafc, #f1f5f9);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #94a3b8;
+    border: 2px dashed var(--primary-light);
+    font-size: 1.2rem;
+}
+
+/* Mobile card text sizes */
+@media (max-width: 768px) {
+    .mobile-rejection-card .fw-bold {
+        font-size: 0.95rem;
+    }
+    
+    .mobile-rejection-card .small {
+        font-size: 0.8rem;
+    }
+    
+    .mobile-rejection-card .bg-light .small {
+        font-size: 0.8rem;
+    }
+    
+    .photo-thumbnail-mobile,
+    .photo-placeholder-mobile {
+        width: 40px;
+        height: 40px;
+    }
+}
+
+@media (max-width: 576px) {
+    .mobile-rejection-card .fw-bold {
+        font-size: 0.9rem;
+    }
+    
+    .mobile-rejection-card .small {
+        font-size: 0.75rem;
+    }
+    
+    .mobile-rejection-card .bg-light .small {
+        font-size: 0.75rem;
+    }
+    
+    .photo-thumbnail-mobile,
+    .photo-placeholder-mobile {
+        width: 38px;
+        height: 38px;
+    }
+}
+
+@media (max-width: 380px) {
+    .mobile-rejection-card .fw-bold {
+        font-size: 0.85rem;
+    }
+    
+    .mobile-rejection-card .small {
+        font-size: 0.7rem;
+    }
+    
+    .photo-thumbnail-mobile,
+    .photo-placeholder-mobile {
+        width: 35px;
+        height: 35px;
+    }
+}
+
+/* Badge custom style */
+.badge.bg-custom {
+    background: linear-gradient(135deg, #117d18 0%, #047857 100%) !important;
+    color: #fff !important;
+    border: 1px solid var(--primary-light) !important;
+}
+
+/* ===== REJECTION DECK VIEW STYLES ===== */
+.rejection-deck-card {
+    background: white;
+    border-radius: 16px;
+    border: 1px solid var(--primary-light);
+    overflow: hidden;
+    transition: all 0.3s ease;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+}
+
+.rejection-deck-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 24px rgba(4, 120, 87, 0.15);
+    border-color: var(--primary-color);
+}
+
+.deck-card-header {
+    padding: 1rem 1rem 0.5rem 1rem;
+    background: linear-gradient(135deg, #f8fafc, #f0fdf4);
+    border-bottom: 1px solid var(--primary-light);
+}
+
+.deck-card-body {
+    padding: 1rem;
+    flex: 1;
+}
+
+.deck-card-footer {
+    padding: 0.75rem 1rem;
+    background: #f8fafc;
+    border-top: 1px solid var(--primary-light);
+    font-size: 0.8rem;
+}
+
+.customer-info-mini h6 {
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+    color: #1e293b;
+}
+
+.reason-mini {
+    background-color: #fff3cd !important;
+    border-left: 3px solid #dc3545;
+}
+
+/* Fix for modal animation lag */
+.modal.fade .modal-dialog {
+    transition: transform 0.2s ease-out;
+}
+
+.modal.show .modal-dialog {
+    transform: none;
+}
+
+/* Fix for body scroll */
+body.modal-open {
+    overflow: hidden;
+    padding-right: 0 !important;
+}
+
+/* Clickable cards */
+.rejection-deck-card {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.rejection-deck-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 24px rgba(4, 120, 87, 0.15);
+    border-color: var(--primary-color);
+}
+
+.mobile-rejection-card {
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.mobile-rejection-card:active {
+    transform: scale(0.98);
+}
+
+/* Remove button styles since wala na tayong buttons */
+.rejection-deck-card .btn,
+.mobile-rejection-card .btn {
+    display: none;
+}
+
+/* Add visual indicator na clickable ang card */
+.rejection-deck-card .text-primary,
+.mobile-rejection-card .text-primary {
+    font-size: 0.75rem;
+    opacity: 0.7;
+}
+
+.rejection-deck-card:hover .text-primary,
+.mobile-rejection-card:hover .text-primary {
+    opacity: 1;
+}
+
+/* Adjust spacing after removing reason */
+.rejection-deck-card .deck-card-body {
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+}
+
+.customer-info-mini {
+    margin-bottom: 0.5rem;
+}
+
+.customer-info-mini h6 {
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+    color: #1e293b;
+}
+
+.mobile-rejection-card .card-body {
+    padding: 1rem;
+}
+
+/* Remove old reason styles */
+.reason-mini {
+    display: none;
+}
+
+/* ===== DETAILS MODAL STYLES - CLEAN & SIMPLE ===== */
+#detailsModal .modal-dialog {
+    max-width: 400px;
+    margin: 1rem auto;
+}
+
+#detailsModal .modal-content {
+    border: none;
+    border-radius: 20px;
+    overflow: hidden;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+}
+
+#detailsModal .modal-header {
+    background: white;
+    color: #333;
+    padding: 1.2rem 1.5rem 0.5rem;
+    border-bottom: none;
+}
+
+#detailsModal .modal-header .modal-title {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #1e293b;
+}
+
+#detailsModal .modal-header .btn-close {
+    opacity: 0.5;
+}
+
+#detailsModal .modal-header .btn-close:hover {
+    opacity: 1;
+}
+
+#detailsModal .modal-body {
+    padding: 0 1.5rem 1.5rem;
+    background: white;
+}
+
+/* Photo section */
+#detailsModal .photo-section {
+    margin-bottom: 1.5rem;
+    text-align: center;
+}
+
+#detailsModal .photo-button {
+    width: 100%;
+    padding: 0.8rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: white;
+    color: #4a5568;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.2s;
     cursor: pointer;
 }
 
-[data-tooltip]:before {
-    content: attr(data-tooltip);
-    position: absolute;
-    bottom: 100%;
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 6px 12px;
-    background: #2d3748;
-    color: white;
-    font-size: 0.75rem;
-    border-radius: 6px;
-    white-space: nowrap;
-    opacity: 0;
-    visibility: hidden;
-    transition: all 0.3s ease;
+#detailsModal .photo-button:hover {
+    background: #f7fafc;
+    border-color: #cbd5e0;
 }
 
-[data-tooltip]:hover:before {
-    opacity: 1;
-    visibility: visible;
-    bottom: 130%;
-}
-
-/* 18. Form Row Spacing */
-.row {
-    margin-bottom: 0;
-}
-
-.row > [class*="col-"] {
-    padding: 0 12px;
-}
-
-/* 19. Focus Visible */
-:focus-visible {
-    outline: 2px solid var(--primary-color);
-    outline-offset: 2px;
-}
-
-/* 20. Placeholder Style */
-::placeholder {
-    color: #a0aec0;
-    font-size: 0.9rem;
-    opacity: 1;
-}
-
-/* 21. Disabled State */
-.form-control:disabled, 
-.form-select:disabled {
-    background-color: #f7fafc;
-    opacity: 0.7;
-    cursor: not-allowed;
-}
-
-/* 22. Small Text in Table */
-.table td small {
+#detailsModal .photo-button i {
     color: #718096;
-    font-size: 0.85rem;
-    display: block;
 }
 
-/* 23. Icon Colors */
-.bi {
-    vertical-align: middle;
+#detailsModal .no-photo {
+    padding: 0.8rem;
+    background: #f7fafc;
+    border: 1px dashed #cbd5e0;
+    border-radius: 10px;
+    color: #718096;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
 }
 
-/* 24. Additional Hover Effects */
-.btn-outline-primary {
-    background: transparent;
-    border: 2px solid var(--primary-color);
-    color: var(--primary-color);
+/* Info grid - 2 columns */
+#detailsModal .info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 1rem;
 }
 
-.btn-outline-primary:hover {
-    background: var(--primary-gradient);
-    color: white;
-    border-color: transparent;
+#detailsModal .info-item {
+    display: flex;
+    flex-direction: column;
 }
 
-/* 25. Animation for Form Load */
-@keyframes slideIn {
-    from {
-        opacity: 0;
-        transform: translateY(20px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+#detailsModal .info-label {
+    font-size: 0.7rem;
+    color: #718096;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+    margin-bottom: 0.2rem;
 }
 
-.card {
-    animation: slideIn 0.5s ease-out;
+#detailsModal .info-value {
+    font-size: 0.9rem;
+    color: #1e293b;
+    font-weight: 500;
 }
 
-/* 26. Form Progress Bar */
-.form-progress {
-    position: sticky;
-    top: 0;
-    z-index: 1000;
-    height: 4px;
-    background: var(--primary-gradient);
-    width: 0;
-    transition: width 0.3s ease;
+#detailsModal .info-value.full-width {
+    grid-column: span 2;
 }
 
-/* 27. Print Styles */
-@media print {
-    .btn, .form-check, input[type="file"] {
-        display: none !important;
+/* Badge styles */
+#detailsModal .badge {
+    background: #edf2f7;
+    color: #4a5568;
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 400;
+    display: inline-block;
+    width: fit-content;
+}
+
+/* Divider */
+#detailsModal .divider {
+    height: 1px;
+    background: #e2e8f0;
+    margin: 1rem 0;
+}
+
+/* Reason section */
+#detailsModal .reason-section {
+    margin-top: 0.5rem;
+}
+
+#detailsModal .reason-text {
+    font-size: 0.9rem;
+    color: #1e293b;
+    line-height: 1.5;
+    margin-top: 0.3rem;
+    padding: 0.5rem 0;
+}
+
+/* Mobile responsive */
+@media (max-width: 576px) {
+    #detailsModal .modal-dialog {
+        margin: 0.5rem;
     }
     
-    .card {
-        box-shadow: none;
-        border: 1px solid #e2e8f0;
+    #detailsModal .modal-header {
+        padding: 1rem 1.2rem 0.3rem;
+    }
+    
+    #detailsModal .modal-body {
+        padding: 0 1.2rem 1.2rem;
+    }
+    
+    #detailsModal .info-grid {
+        gap: 0.8rem;
+    }
+    
+    #detailsModal .info-label {
+        font-size: 0.65rem;
+    }
+    
+    #detailsModal .info-value {
+        font-size: 0.85rem;
     }
 }

@@ -16,6 +16,20 @@ $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'delivery';
 $branch_id = $_SESSION['branch_id'] ?? 0;
 $view_all_branches = $_SESSION['view_all_branches'] ?? false;
 
+// Get user's branch name for display
+$branch_name = 'All Branches';
+if (!$view_all_branches && $branch_id > 0) {
+    $branch_query = "SELECT branch_name FROM branches WHERE branch_id = ?";
+    $branch_stmt = $conn->prepare($branch_query);
+    $branch_stmt->bind_param("i", $branch_id);
+    $branch_stmt->execute();
+    $branch_result = $branch_stmt->get_result();
+    if ($branch_row = $branch_result->fetch_assoc()) {
+        $branch_name = $branch_row['branch_name'];
+    }
+    $branch_stmt->close();
+}
+
 // AUTO-FIX: Kung ang user ay delivery role at walang branch_id, i-set sa 1 (Main Branch)
 if ($user_role == 'delivery' && $branch_id == 0) {
     $branch_id = 1;
@@ -54,6 +68,20 @@ if ($user_role == 'delivery') {
         $driver_info = $driver_info_result->fetch_assoc();
         $driver_info_stmt->close();
     }
+}
+
+// Get user initials for avatar
+$user_initials = '';
+if (!empty($user_name)) {
+    $name_parts = explode(' ', $user_name);
+    foreach ($name_parts as $part) {
+        if (!empty($part)) {
+            $user_initials .= strtoupper(substr($part, 0, 1));
+        }
+    }
+}
+if (empty($user_initials)) {
+    $user_initials = 'DV';
 }
 
 // Check if branch_id column exists in deliveries table
@@ -117,6 +145,8 @@ try {
             d.driver_id,
             d.rejection_photo,
             d.rejection_reason,
+            d.delivery_date,
+            d.remarks,
             so.so_number,
             so.order_status,
             c.customer_id,
@@ -380,32 +410,133 @@ try {
         .status-delivered { background-color: #198754; color: #fff; }
         .status-rejected { background-color: #dc3545; color: #fff; }
         
-        /* Photo thumbnail */
-        .photo-thumbnail {
-            width: 40px;
-            height: 40px;
-            object-fit: cover;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        
-        .photo-placeholder {
-            width: 40px;
-            height: 40px;
-            background-color: #f8f9fa;
-            border-radius: 4px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #6c757d;
-            font-size: 12px;
-        }
-        
+        /* Photo view button styles */
+.btn-outline-primary {
+    border: 1px solid var(--primary-color);
+    color: var(--primary-color);
+    background: transparent;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.75rem;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+.btn-outline-primary:hover {
+    background: var(--primary-color);
+    color: white;
+}
+
+.btn-link {
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.btn-link:hover {
+    text-decoration: underline;
+}
+
+/* Table adjustments */
+.table td {
+    vertical-align: middle;
+}
         /* Modal image */
         .modal-image {
             max-width: 100%;
             max-height: 400px;
             border-radius: 8px;
+        }
+
+        /* Mobile Profile Modal Styles */
+        .user-avatar-large {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #047857, #44D34E);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin: 0 auto;
+            border: 4px solid #d1fae5;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        #profileModal .modal-content {
+            border: none;
+            border-radius: 20px;
+            overflow: hidden;
+        }
+
+        #profileModal .modal-header {
+            background: linear-gradient(135deg, #047857, #44D34E);
+            color: white;
+            border-bottom: none;
+            padding: 1.5rem;
+        }
+
+        #profileModal .modal-header .modal-title {
+            color: white;
+            font-weight: 600;
+        }
+
+        #profileModal .modal-header .btn-close {
+            filter: brightness(0) invert(1);
+            opacity: 0.9;
+        }
+
+        #profileModal .modal-header .btn-close:hover {
+            opacity: 1;
+            transform: rotate(90deg);
+        }
+
+        #profileModal .modal-body {
+            padding: 2rem;
+            background: linear-gradient(135deg, #f9fefc 0%, #f0fdf4 100%);
+        }
+
+        #profileModal .branch-info {
+            background: #d1fae5;
+            color: #047857;
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+            display: inline-block;
+            font-weight: 500;
+        }
+
+        #profileModal .btn-danger {
+            background: linear-gradient(135deg, #dc3545, #f87171);
+            border: none;
+            padding: 1rem;
+            border-radius: 50px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        #profileModal .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(220, 53, 69, 0.3);
+        }
+
+        /* Mobile Logout Button in Bottom Nav */
+        .mobile-nav .nav-link.logout-btn {
+            color: #dc3545;
+        }
+
+        .mobile-nav .nav-link.logout-btn i {
+            color: #dc3545;
+        }
+
+        .mobile-nav .nav-link.logout-btn.active,
+        .mobile-nav .nav-link.logout-btn:hover {
+            background: rgba(220, 53, 69, 0.1);
+            color: #dc3545;
+        }
+
+        .mobile-nav .nav-link.logout-btn.active i,
+        .mobile-nav .nav-link.logout-btn:hover i {
+            color: #dc3545;
         }
     </style>
 </head>
@@ -451,7 +582,7 @@ try {
             <!-- User Profile Section at the bottom of sidebar -->
             <div class="sidebar-footer">
                 <div class="user-profile-sidebar">
-                    <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
+                    <div class="user-avatar-sidebar"><?php echo $user_initials; ?></div>
                     <div class="user-details-sidebar">
                         <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
                     </div>
@@ -601,39 +732,39 @@ try {
                         </div>
 
                         <!-- Customer Information Card (Auto-filled) -->
-                        <div class="customer-info-card" id="customerInfoCard" style="display: none;">
-                            <h6><i class="bi bi-person-check me-2"></i>Customer Information</h6>
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <div class="info-row">
-                                        <span class="info-label">Customer:</span>
-                                        <span class="info-value" id="displayCustomerName"></span>
-                                    </div>
-                                    <div class="info-row">
-                                        <span class="info-label">Contact:</span>
-                                        <span class="info-value" id="displayContactPerson"></span>
-                                    </div>
-                                    <div class="info-row">
-                                        <span class="info-label">Phone:</span>
-                                        <span class="info-value" id="displayPhoneNumber"></span>
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="info-row">
-                                        <span class="info-label">Address:</span>
-                                        <span class="info-value" id="displayAddress"></span>
-                                    </div>
-                                    <div class="info-row">
-                                        <span class="info-label">Trip #:</span>
-                                        <span class="info-value" id="displayTripNumber"></span>
-                                    </div>
-                                    <div class="info-row">
-                                        <span class="info-label">Stop #:</span>
-                                        <span class="info-value" id="displayStop"></span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
+<div class="customer-info-card" id="customerInfoCard" style="display: none;">
+    <h6><i class="bi bi-person-check me-2"></i>Customer Information</h6>
+    <div class="row">
+        <div class="col-md-6">
+            <div class="info-row">
+                <span class="info-label">Customer:</span>
+                <span class="info-value" id="displayCustomerName"></span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Contact:</span>
+                <span class="info-value" id="displayContactPerson"></span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Phone:</span>
+                <span class="info-value" id="displayPhoneNumber"></span>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="info-row">
+                <span class="info-label">Address:</span>
+                <span class="info-value" id="displayAddress"></span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Trip #:</span>
+                <span class="info-value" id="displayTripNumber"></span>
+            </div>
+            <div class="info-row">
+                <span class="info-label">Stop #:</span>
+                <span class="info-value" id="displayStop"></span>
+            </div>
+        </div>
+    </div>
+</div>
 
                         <hr>
 
@@ -724,74 +855,180 @@ try {
                 </div>
             </div>
             
-            <!-- Recent Rejected Deliveries -->
-            <div class="card mt-4">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Recent Rejected Deliveries</h5>
-                    <?php if (!empty($recent_rejections)): ?>
-                        <span class="badge bg-danger"><?php echo count($recent_rejections); ?> records</span>
-                    <?php endif; ?>
+<!-- DESKTOP DECK VIEW (hidden on mobile) -->
+<div class="d-none d-md-block">
+    <div class="row g-3 p-3">
+        <?php foreach ($recent_rejections as $rejection): ?>
+        <div class="col-md-6 col-lg-4">
+            <div class="rejection-deck-card" onclick="viewDetails(<?php echo $rejection['delivery_id']; ?>)">
+                <div class="deck-card-header">
+                    <div class="d-flex justify-content-between align-items-start">
+                        <div>
+                            <span class="badge bg-danger">Rejected</span>
+                            <span class="badge bg-secondary ms-1">#<?php echo $rejection['stop_sequence'] ?? 'N/A'; ?></span>
+                        </div>
+                        <small class="text-muted">
+                            <i class="bi bi-calendar3"></i>
+                            <?php echo !empty($rejection['delivery_date']) ? date('M d, Y', strtotime($rejection['delivery_date'])) : 'N/A'; ?>
+                        </small>
+                    </div>
                 </div>
-                <div class="card-body">
-                    <?php if (empty($recent_rejections)): ?>
-                        <div class="alert alert-info">
-                            <i class="bi bi-info-circle me-2"></i>
-                            No rejected deliveries found.
-                            <?php if ($user_role == 'delivery'): ?>
-                                <br><small>You haven't reported any rejected deliveries yet.</small>
+                
+                <div class="deck-card-body">
+                    <div class="customer-info-mini mb-2">
+                        <h6 class="mb-1"><?php echo htmlspecialchars($rejection['customer_name']); ?></h6>
+                        <div class="small text-muted">
+                            <i class="bi bi-receipt"></i> <?php echo htmlspecialchars($rejection['so_number']); ?>
+                        </div>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between align-items-center mt-3">
+                        <div>
+                            <?php if (!empty($rejection['rejection_photo'])): ?>
+                                <span class="text-success small">
+                                    <i class="bi bi-check-circle-fill"></i> Photo
+                                </span>
+                            <?php else: ?>
+                                <span class="text-muted small">
+                                    <i class="bi bi-x-circle"></i> No photo
+                                </span>
                             <?php endif; ?>
                         </div>
-                    <?php else: ?>
-                    <div class="table-responsive">
-                        <table class="table table-hover">
-                            <thead class="table-light">
-                                <tr>
-                                    <th>Date</th>
-                                    <th>Order #</th>
-                                    <th>Customer</th>
-                                    <th>Stop</th>
-                                    <th>Reason</th>
-                                    <th>Photo</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php foreach ($recent_rejections as $rejection): ?>
-                                <tr>
-                                    <td><?php echo !empty($rejection['delivery_date']) ? date('M d, Y H:i', strtotime($rejection['delivery_date'])) : 'N/A'; ?></td>
-                                    <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($rejection['so_number']); ?></span></td>
-                                    <td><?php echo htmlspecialchars($rejection['customer_name']); ?></td>
-                                    <td><span class="badge bg-secondary">#<?php echo $rejection['stop_sequence'] ?? 'N/A'; ?></span></td>
-                                    <td>
-                                        <small>
-                                            <?php 
-                                            if (!empty($rejection['rejection_reason'])) {
-                                                echo htmlspecialchars(substr($rejection['rejection_reason'], 0, 50)) . (strlen($rejection['rejection_reason'] ?? '') > 50 ? '...' : '');
-                                            } else {
-                                                echo htmlspecialchars(substr($rejection['remarks'] ?? 'No reason provided', 0, 50)) . (strlen($rejection['remarks'] ?? '') > 50 ? '...' : '');
-                                            }
-                                            ?>
-                                        </small>
-                                    </td>
-                                    <td>
-                                        <?php if (!empty($rejection['rejection_photo'])): ?>
-                                            <img src="../uploads/rejections/<?php echo basename($rejection['rejection_photo']); ?>" 
-                                                 class="photo-thumbnail" 
-                                                 onclick="viewPhoto('<?php echo basename($rejection['rejection_photo']); ?>', '<?php echo htmlspecialchars($rejection['rejection_reason'] ?? $rejection['remarks'] ?? ''); ?>')"
-                                                 alt="Rejection photo">
-                                        <?php else: ?>
-                                            <div class="photo-placeholder">
-                                                <i class="bi bi-image"></i>
-                                            </div>
-                                        <?php endif; ?>
-                                    </td>
-                                    <td><span class="badge bg-danger">Rejected</span></td>
-                                </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
+                        <span class="text-muted small"><i class="bi bi-eye"></i> Click to view</span>
+                    </div>
+                </div>
+                
+                <div class="deck-card-footer">
+                    <small class="text-muted">
+                        <i class="bi bi-truck"></i> <?php echo htmlspecialchars($rejection['driver_name'] ?? 'N/A'); ?>
+                        <?php if (!empty($rejection['trip_number'])): ?>
+                            | <i class="bi bi-ticket"></i> <?php echo htmlspecialchars($rejection['trip_number']); ?>
+                        <?php endif; ?>
+                    </small>
+                </div>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    </div>
+</div>
+<!-- MOBILE CARD VIEW (visible only on mobile) -->
+<div class="d-block d-md-none p-3">
+    <?php foreach ($recent_rejections as $rejection): ?>
+    <div class="mobile-rejection-card mb-3" onclick="viewDetails(<?php echo $rejection['delivery_id']; ?>)">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body p-3">
+                <!-- Header -->
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <div>
+                        <span class="badge bg-danger">Rejected</span>
+                        <span class="badge bg-secondary ms-1">#<?php echo $rejection['stop_sequence'] ?? 'N/A'; ?></span>
+                    </div>
+                    <small class="text-muted">
+                        <i class="bi bi-calendar3"></i>
+                        <?php echo !empty($rejection['delivery_date']) ? date('M d, Y', strtotime($rejection['delivery_date'])) : 'N/A'; ?>
+                    </small>
+                </div>
+                
+                <!-- Customer Info -->
+                <h6 class="fw-bold mb-1"><?php echo htmlspecialchars($rejection['customer_name']); ?></h6>
+                <div class="small text-muted mb-2">
+                    <i class="bi bi-receipt"></i> <?php echo htmlspecialchars($rejection['so_number']); ?>
+                </div>
+                
+                <!-- Footer -->
+                <div class="d-flex justify-content-between align-items-center mt-2">
+                    <div>
+                        <?php if (!empty($rejection['rejection_photo'])): ?>
+                            <span class="text-success small">
+                                <i class="bi bi-check-circle-fill"></i> Photo
+                            </span>
+                        <?php else: ?>
+                            <span class="text-muted small">
+                                <i class="bi bi-x-circle"></i> No photo
+                            </span>
+                        <?php endif; ?>
+                    </div>
+                    <small class="text-muted"><i class="bi bi-eye"></i> Tap to view</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    <?php endforeach; ?>
+</div>
+        </div>
+    </div>
+
+    <!-- Mobile Bottom Navigation -->
+    <div class="mobile-nav" id="mobileNav">
+        <ul class="nav">
+            <li class="nav-item">
+                <a class="nav-link" href="fordelivery.php">
+                    <i class="bi bi-truck"></i>
+                    <span>Delivery</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="trip_tickets.php">
+                    <i class="bi bi-ticket-perforated"></i>
+                    <span>Tickets</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link active" href="rejecteddelivery.php">
+                    <i class="bi bi-exclamation-circle"></i>
+                    <span>Rejected</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link logout-btn" href="#" onclick="showProfileModal(); return false;">
+                    <i class="bi bi-box-arrow-right"></i>
+                    <span>Logout</span>
+                </a>
+            </li>
+        </ul>
+    </div>
+
+    <!-- Mobile Profile/Logout Modal -->
+    <div class="modal fade" id="profileModal" tabindex="-1" aria-labelledby="profileModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="profileModalLabel">
+                        <i class="bi bi-person-circle me-2"></i>User Profile
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <!-- User Avatar -->
+                    <div class="user-avatar-large mb-3">
+                        <?php echo $user_initials; ?>
+                    </div>
+                    
+                    <!-- User Name -->
+                    <h4 class="mb-1"><?php echo htmlspecialchars($user_name); ?></h4>
+                    
+                    <!-- User Role -->
+                    <p class="text-muted mb-3">
+                        <span class="badge bg-success"><?php echo ucfirst($user_role); ?></span>
+                    </p>
+                    
+                    <!-- Branch Info (if applicable) -->
+                    <?php if (!$view_all_branches && $branch_id > 0): ?>
+                    <div class="branch-info mb-3">
+                        <i class="bi bi-building me-1"></i>
+                        <span><?php echo htmlspecialchars($branch_name); ?></span>
                     </div>
                     <?php endif; ?>
+                    
+                    <!-- User ID -->
+                    <div class="user-id text-muted small mb-4">
+                        <i class="bi bi-hash"></i> User ID: <?php echo $user_id; ?>
+                    </div>
+                    
+                    <!-- Logout Button -->
+                    <button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()">
+                        <i class="bi bi-box-arrow-right me-2"></i>Logout
+                    </button>
                 </div>
             </div>
         </div>
@@ -830,7 +1067,7 @@ try {
 
     <!-- JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-    <script>
+   <script>
         // Branch context variables
         const branchId = <?php echo $branch_id; ?>;
         const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
@@ -987,6 +1224,78 @@ try {
         }
         // ================= END SIDEBAR FUNCTIONS =================
 
+        // ================= MOBILE NAVIGATION FUNCTIONS =================
+        function initMobileNav() {
+            const mobileNav = document.getElementById('mobileNav');
+            const isMobile = window.innerWidth <= 992;
+            
+            if (isMobile) {
+                mobileNav.style.display = 'block';
+                
+                // Set active state based on current page (excluding logout)
+                const currentPage = window.location.pathname.split('/').pop();
+                const navLinks = mobileNav.querySelectorAll('.nav-link:not(.logout-btn)');
+                
+                navLinks.forEach(link => {
+                    link.classList.remove('active');
+                    const href = link.getAttribute('href');
+                    if (currentPage === href) {
+                        link.classList.add('active');
+                    }
+                });
+            } else {
+                mobileNav.style.display = 'none';
+            }
+        }
+
+        // ================= PROFILE/LOGOUT FUNCTIONS =================
+        function showProfileModal() {
+            const profileModal = new bootstrap.Modal(document.getElementById('profileModal'));
+            profileModal.show();
+        }
+
+        function confirmLogout() {
+            // Close the modal first
+            const modal = bootstrap.Modal.getInstance(document.getElementById('profileModal'));
+            if (modal) {
+                modal.hide();
+            }
+            
+            // Show confirmation dialog
+            Swal.fire({
+                title: 'Are you sure?',
+                text: 'You will be logged out of the system',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#dc3545',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, logout'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    localStorage.removeItem('sidebarCollapsed');
+                    window.location.href = '../logout.php';
+                }
+            });
+        }
+
+        // Logout function
+        function logout() {
+            Swal.fire({
+                title: 'Are you sure?',
+                text: 'You will be logged out of the system',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#07d826',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, logout'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    localStorage.removeItem('sidebarCollapsed');
+                    window.location.href = '../logout.php';
+                }
+            });
+        }
+
         // Load customer information when order is selected
         function loadCustomerInfo() {
             const select = document.getElementById('deliveryOrderId');
@@ -1105,7 +1414,7 @@ try {
             document.getElementById('customerId').value = '';
         }
 
-        // View photo
+        // View photo (for photoModal - old version, keep for compatibility)
         function viewPhoto(photoPath, reason) {
             const modal = new bootstrap.Modal(document.getElementById('photoModal'));
             document.getElementById('modalPhoto').src = '../uploads/rejections/' + photoPath;
@@ -1113,59 +1422,147 @@ try {
             modal.show();
         }
 
-        // View details
+        // ================= UPDATED VIEW DETAILS FUNCTION - CLEAN & SIMPLE =================
         function viewDetails(deliveryId) {
-            // Find the delivery data from the table
-            const rows = document.querySelectorAll('tbody tr');
-            let deliveryData = null;
+            // Find the delivery data
+            <?php
+            // Create a JavaScript array of all rejections
+            $rejections_json = json_encode($recent_rejections);
+            echo "const allRejections = " . $rejections_json . ";\n";
+            ?>
             
-            rows.forEach(row => {
-                if (row.querySelector('td:first-child')?.textContent.includes(deliveryId)) {
-                    const cells = row.querySelectorAll('td');
-                    deliveryData = {
-                        date: cells[0]?.textContent || 'N/A',
-                        order: cells[1]?.textContent || 'N/A',
-                        customer: cells[2]?.textContent || 'N/A',
-                        stop: cells[3]?.textContent || 'N/A',
-                        reason: cells[4]?.textContent || 'N/A',
-                        hasPhoto: cells[5]?.querySelector('img') !== null
-                    };
-                }
-            });
+            const rejection = allRejections.find(r => r.delivery_id == deliveryId);
             
-            if (deliveryData) {
+            if (rejection) {
+                const hasPhoto = rejection.rejection_photo && rejection.rejection_photo !== '';
+                const photoPath = hasPhoto ? '../uploads/rejections/' + rejection.rejection_photo.split('/').pop() : '';
+                
+                // Format date
+                const deliveryDate = rejection.delivery_date ? 
+                    new Date(rejection.delivery_date).toLocaleString('en-US', {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    }) : 'N/A';
+                
+                // Create photo section
+                const photoSectionHtml = hasPhoto ? 
+                    `<div class="photo-section">
+                        <button class="photo-button" onclick="expandImage('${photoPath}')">
+                            <i class="bi bi-image"></i>
+                            View Photo
+                        </button>
+                    </div>` : 
+                    `<div class="photo-section">
+                        <div class="no-photo">
+                            <i class="bi bi-image"></i>
+                            No photo
+                        </div>
+                    </div>`;
+                
                 const modalBody = document.getElementById('detailsModalBody');
                 modalBody.innerHTML = `
-                    <table class="table table-sm">
-                        <tr>
-                            <th>Delivery Date:</th>
-                            <td>${deliveryData.date}</td>
-                        </tr>
-                        <tr>
-                            <th>Order #:</th>
-                            <td>${deliveryData.order}</td>
-                        </tr>
-                        <tr>
-                            <th>Customer:</th>
-                            <td>${deliveryData.customer}</td>
-                        </tr>
-                        <tr>
-                            <th>Stop #:</th>
-                            <td>${deliveryData.stop}</td>
-                        </tr>
-                        <tr>
-                            <th>Reason:</th>
-                            <td>${deliveryData.reason}</td>
-                        </tr>
-                        <tr>
-                            <th>Photo:</th>
-                            <td>${deliveryData.hasPhoto ? '<span class="text-success"><i class="bi bi-check-circle"></i> Available</span>' : '<span class="text-muted"><i class="bi bi-x-circle"></i> No photo</span>'}</td>
-                        </tr>
-                    </table>
+                    ${photoSectionHtml}
+                    
+                    <div class="info-grid">
+                        <div class="info-item">
+                            <span class="info-label">Order #</span>
+                            <span class="info-value">${rejection.so_number || 'N/A'}</span>
+                        </div>
+                        
+                        <div class="info-item">
+                            <span class="info-label">Date</span>
+                            <span class="info-value">${deliveryDate}</span>
+                        </div>
+                        
+                        <div class="info-item">
+                            <span class="info-label">Customer</span>
+                            <span class="info-value">${rejection.customer_name || 'N/A'}</span>
+                        </div>
+                        
+                        <div class="info-item">
+                            <span class="info-label">Stop #</span>
+                            <span class="info-value"><span class="badge">#${rejection.stop_sequence || 'N/A'}</span></span>
+                        </div>
+                        
+                        <div class="info-item">
+                            <span class="info-label">Trip #</span>
+                            <span class="info-value">${rejection.trip_number || 'N/A'}</span>
+                        </div>
+                        
+                        <div class="info-item">
+                            <span class="info-label">Driver</span>
+                            <span class="info-value">${rejection.driver_name || 'N/A'}</span>
+                        </div>
+                    </div>
+                    
+                    <div class="divider"></div>
+                    
+                    <div class="reason-section">
+                        <div class="info-label">Reason</div>
+                        <div class="reason-text">${rejection.rejection_reason || rejection.remarks || 'N/A'}</div>
+                    </div>
                 `;
-                new bootstrap.Modal(document.getElementById('detailsModal')).show();
+                
+                // Update modal title
+                document.querySelector('#detailsModal .modal-title').innerHTML = 'Rejection Details';
+                    
+                // Show modal
+                const modal = new bootstrap.Modal(document.getElementById('detailsModal'));
+                modal.show();
             }
         }
+
+   // ================= SIMPLE RESPONSIVE IMAGE VIEWER - WALANG DESIGN =================
+function expandImage(imageSrc) {
+    // Close the current details modal first
+    const detailsModal = bootstrap.Modal.getInstance(document.getElementById('detailsModal'));
+    if (detailsModal) {
+        detailsModal.hide();
+    }
+    
+    setTimeout(() => {
+        // Remove existing modal
+        const existingModal = document.getElementById('imageExpandModal');
+        if (existingModal) existingModal.remove();
+        
+        // Create simple modal - image lang, walang design
+        const modalHtml = `
+            <div class="modal fade" id="imageExpandModal" tabindex="-1">
+                <div class="modal-dialog modal-dialog-centered modal-xl">
+                    <div class="modal-content bg-transparent border-0">
+                        <div class="modal-body text-center py-4" style="overflow: hidden;">
+                            <img src="${imageSrc}" class="img-fluid" alt="Photo" style="max-height: 80vh; width: auto;">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        
+        // Prevent body scroll
+        document.body.style.overflow = 'hidden';
+        
+        // Show modal
+        const modal = new bootstrap.Modal(document.getElementById('imageExpandModal'));
+        modal.show();
+        
+        // Click anywhere to close
+        document.getElementById('imageExpandModal').addEventListener('click', function() {
+            modal.hide();
+        });
+        
+        // Clean up
+        document.getElementById('imageExpandModal').addEventListener('hidden.bs.modal', function() {
+            this.remove();
+            document.body.style.overflow = '';
+        });
+        
+    }, 300);
+}
 
         // Copy SQL for database setup
         function copySQL(table) {
@@ -1179,30 +1576,11 @@ try {
             }
             
             navigator.clipboard.writeText(sql).then(() => {
-                alert('SQL copied to clipboard!');
+                Swal.fire('Success', 'SQL copied to clipboard!', 'success');
             });
         }
 
-        // Logout function
-         function logout() {
-        Swal.fire({
-            title: 'Are you sure?',
-            text: 'You will be logged out of the system',
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonColor: '#07d826',
-            cancelButtonColor: '#6c757d',
-            confirmButtonText: 'Yes, logout'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                localStorage.removeItem('sidebarCollapsed');
-                window.location.href = '../logout.php';
-            }
-        });
-    }
-
-
-        // Initialize when page loads
+        // ================= INITIALIZATION =================
         document.addEventListener('DOMContentLoaded', function() {
             console.log("Rejection Management page loaded - Fixed version");
             console.log("User Role:", userRole);
@@ -1211,6 +1589,7 @@ try {
             
             // Initialize sidebar
             initializeSidebar();
+            initMobileNav();
             
             // Setup mobile toggle button
             const mobileToggleBtn = document.getElementById('mobileToggleBtn');
@@ -1254,7 +1633,10 @@ try {
             });
 
             // Add resize event listener
-            window.addEventListener('resize', handleSidebarResize);
+            window.addEventListener('resize', function() {
+                handleSidebarResize();
+                initMobileNav();
+            });
             
             // Initialize retry date min attribute
             const retryDate = document.getElementById('retryDate');
@@ -1265,7 +1647,7 @@ try {
             // Log the number of pending orders
             const pendingOrdersSelect = document.getElementById('deliveryOrderId');
             if (pendingOrdersSelect) {
-                console.log("Pending orders in dropdown:", pendingOrdersSelect.options.length - 1); // -1 for the default option
+                console.log("Pending orders in dropdown:", pendingOrdersSelect.options.length - 1);
             }
         });
 
@@ -1277,6 +1659,20 @@ try {
             }
             else if (e.key === 'Escape' && window.innerWidth <= 992) {
                 closeMobileSidebar();
+            }
+            else if (e.key === 'Escape') {
+                const profileModal = document.getElementById('profileModal');
+                if (profileModal.classList.contains('show')) {
+                    bootstrap.Modal.getInstance(profileModal).hide();
+                }
+                const photoModal = document.getElementById('photoModal');
+                if (photoModal.classList.contains('show')) {
+                    bootstrap.Modal.getInstance(photoModal).hide();
+                }
+                const detailsModal = document.getElementById('detailsModal');
+                if (detailsModal.classList.contains('show')) {
+                    bootstrap.Modal.getInstance(detailsModal).hide();
+                }
             }
             else if (e.ctrlKey && e.key === 'r' && !e.target.matches('input, textarea, select')) {
                 e.preventDefault();

@@ -16,6 +16,20 @@ $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'delivery';
 $branch_id = $_SESSION['branch_id'] ?? 0;
 $view_all_branches = $_SESSION['view_all_branches'] ?? false;
 
+// Get user's branch name for display
+$branch_name = 'All Branches';
+if (!$view_all_branches && $branch_id > 0) {
+    $branch_query = "SELECT branch_name FROM branches WHERE branch_id = ?";
+    $branch_stmt = $conn->prepare($branch_query);
+    $branch_stmt->bind_param("i", $branch_id);
+    $branch_stmt->execute();
+    $branch_result = $branch_stmt->get_result();
+    if ($branch_row = $branch_result->fetch_assoc()) {
+        $branch_name = $branch_row['branch_name'];
+    }
+    $branch_stmt->close();
+}
+
 // AUTO-FIX: Kung ang user ay delivery role at walang branch_id, i-set sa 1 (Main Branch)
 if ($user_role == 'delivery' && $branch_id == 0) {
     $branch_id = 1;
@@ -211,20 +225,34 @@ if ($user_role == 'delivery' && $driver_id > 0) {
     $driver_info = $driver_result->fetch_assoc();
     $driver_stmt->close();
 }
+
+// Get user initials for avatar
+$user_initials = '';
+if (!empty($user_name)) {
+    $name_parts = explode(' ', $user_name);
+    foreach ($name_parts as $part) {
+        if (!empty($part)) {
+            $user_initials .= strtoupper(substr($part, 0, 1));
+        }
+    }
+}
+if (empty($user_initials)) {
+    $user_initials = 'DV';
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
     <title>For Delivery - Delivery Management</title>
     <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
     <link rel="shortcut icon" href="../Pictures/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="../Pictures/apple-touch-icon.png" />
     <link rel="manifest" href="../Pictures/site.webmanifest" />
-    <link rel="stylesheet" href="../css/delivery.css">
     <link rel="stylesheet" href="../css/fordelivery.css">
+    <link rel="stylesheet" href="../css/delivery.css">
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
@@ -617,7 +645,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
         #trackingModal .modal-dialog {
             max-width: 1200px;
             margin: 10px auto;
-            height: 95vh; /* Almost full height on all devices */
+            height: 95vh;
         }
         
         #trackingModal .modal-content {
@@ -678,7 +706,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             display: flex;
             align-items: center;
             gap: 8px;
-            cursor: move; /* draggable on desktop */
+            cursor: move;
         }
         
         .status-panel.collapsed h6 {
@@ -775,384 +803,674 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             100% { transform: scale(1); opacity: 1; }
         }
         
-        /* Mobile adjustments */
-        @media (max-width: 768px) {
-            #trackingModal .modal-dialog {
-                height: 100vh;
-                margin: 0;
-                max-width: 100%;
-            }
-            
-            #trackingModal .modal-content {
-                border-radius: 0;
-            }
-            
-            .status-panel {
-                position: absolute;
-                top: auto !important;
-                bottom: 0 !important;
-                left: 0 !important;
-                right: 0 !important;
-                width: 100%;
-                max-width: 100%;
-                border-radius: 16px 16px 0 0;
-                padding: 16px;
-                box-shadow: 0 -4px 20px rgba(0,0,0,0.15);
-                max-height: 50%; /* Limit height on mobile */
-                overflow-y: auto;
-            }
-            
-            .status-panel.collapsed {
-                padding: 10px 16px;
-                height: auto;
-                min-height: 50px;
-            }
-            
-            .status-panel h6 {
-                cursor: default; /* not draggable on mobile */
-            }
-            
-            /* Stack distance/time boxes */
-            .status-panel .row.g-2 {
-                flex-direction: column;
-            }
-            .status-panel .col-6 {
-                width: 100%;
-                max-width: 100%;
-                flex: 0 0 100%;
-                margin-bottom: 8px;
-            }
-            
-            /* Make buttons stack */
-            .status-panel .d-grid.gap-2.mt-3 {
-                display: flex;
-                flex-direction: column;
-            }
-            .status-panel .d-grid.gap-2.mt-3 .btn {
-                width: 100%;
-                margin-bottom: 5px;
-            }
-            
-            /* Smaller text */
-            .status-panel .info-label {
-                font-size: 0.75rem;
-            }
-            .status-panel .info-value {
-                font-size: 0.85rem;
-            }
-            .status-panel .coordinates-text {
-                font-size: 0.7rem;
-            }
-            
-            /* Adjust distance/time boxes */
-            .status-panel .bg-light.p-2.rounded {
-                padding: 10px !important;
-            }
-            .status-panel .info-value[style*="font-size: 1.2rem"] {
-                font-size: 1rem !important;
-            }
-            
-            /* Smaller retry button */
-            .status-panel .retry-btn {
-                padding: 2px 8px;
-                font-size: 0.7rem;
-            }
-        }
-
-        /* Extra small devices */
-        @media (max-width: 576px) {
-            .status-panel {
-                padding: 12px;
-            }
-            .status-panel h6 {
-                font-size: 0.9rem;
-            }
-        }
-        
-        .btn-tracking {
-            background-color: #28a745;
-            color: white;
-            border: none;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 0.85rem;
-            cursor: pointer;
-            transition: all 0.2s;
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-        }
-        
-        .btn-tracking:hover {
-            background-color: #218838;
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(40, 167, 69, 0.3);
-        }
-        
-        .btn-tracking i {
-            font-size: 1rem;
-        }
-
-        /* Navigation Status Bar (main page) */
-        .navigation-status-bar {
-            background: white;
-            border-radius: 12px;
-            padding: 12px 16px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
-            border: 1px solid #e9ecef;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            flex-wrap: wrap;
-            gap: 15px;
-        }
-        
-        .location-info-group {
-            display: flex;
-            align-items: center;
-            gap: 20px;
-            flex-wrap: wrap;
-        }
-        
-        .location-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        
-        .location-icon {
-            width: 32px;
-            height: 32px;
-            background: #f8f9fa;
+        /* Mobile Profile Modal Styles */
+        .user-avatar-large {
+            width: 100px;
+            height: 100px;
             border-radius: 50%;
+            background: linear-gradient(135deg, #047857, #44D34E);
+            color: white;
             display: flex;
             align-items: center;
             justify-content: center;
-            color: #0d6efd;
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin: 0 auto;
+            border: 4px solid #d1fae5;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
-        
-        .location-details {
-            line-height: 1.3;
-        }
-        
-        .location-label {
-            font-size: 0.7rem;
-            color: #6c757d;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        
-        .location-address {
-            font-weight: 600;
-            font-size: 0.9rem;
-            color: #212529;
-        }
-        
-        .location-coords {
-            font-family: monospace;
-            font-size: 0.8rem;
-            color: #6c757d;
-        }
-        
-        .distance-time-group {
-            display: flex;
-            align-items: center;
-            gap: 15px;
-            background: #f8f9fa;
-            padding: 8px 15px;
-            border-radius: 30px;
-        }
-        
-        .distance-time-item {
-            text-align: center;
-            min-width: 70px;
-        }
-        
-        .distance-time-label {
-            font-size: 0.7rem;
-            color: #6c757d;
-            text-transform: uppercase;
-        }
-        
-        .distance-time-value {
-            font-weight: 700;
-            font-size: 1.1rem;
-            color: #212529;
-            line-height: 1.2;
-        }
-        
-        .distance-time-unit {
-            font-size: 0.7rem;
-            color: #6c757d;
-            font-weight: normal;
-        }
-        
-        .gps-accuracy-badge {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            background: #f8f9fa;
-            padding: 5px 12px;
-            border-radius: 30px;
-        }
-        
-        .accuracy-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-        }
-        
-        .accuracy-dot.high { background-color: #28a745; }
-        .accuracy-dot.medium { background-color: #ffc107; }
-        .accuracy-dot.low { background-color: #dc3545; }
-        
-        .nav-actions {
-            display: flex;
-            gap: 8px;
-        }
-        
-        .nav-action-btn {
-            background: white;
-            border: 1px solid #dee2e6;
-            border-radius: 30px;
-            padding: 6px 15px;
-            font-size: 0.85rem;
-            color: #495057;
-            display: flex;
-            align-items: center;
-            gap: 5px;
-            transition: all 0.2s;
-        }
-        
-        .nav-action-btn:hover {
-            background: #f8f9fa;
-            border-color: #0d6efd;
-            color: #0d6efd;
-        }
-        
-        .nav-action-btn i {
-            font-size: 1rem;
-        }
-        
-        .retry-btn {
-            background: #e7f1ff;
-            color: #0d6efd;
+
+        #profileModal .modal-content {
             border: none;
-            padding: 4px 12px;
-            border-radius: 30px;
-            font-size: 0.75rem;
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            cursor: pointer;
-            transition: all 0.2s;
+            border-radius: 20px;
+            overflow: hidden;
         }
-        
-        .retry-btn:hover {
-            background: #0d6efd;
+
+        #profileModal .modal-header {
+            background: linear-gradient(135deg, #047857, #44D34E);
             color: white;
+            border-bottom: none;
+            padding: 1.5rem;
+        }
+
+        #profileModal .modal-header .modal-title {
+            color: white;
+            font-weight: 600;
+        }
+
+        #profileModal .modal-header .btn-close {
+            filter: brightness(0) invert(1);
+            opacity: 0.9;
+        }
+
+        #profileModal .modal-header .btn-close:hover {
+            opacity: 1;
+            transform: rotate(90deg);
+        }
+
+        #profileModal .modal-body {
+            padding: 2rem;
+            background: linear-gradient(135deg, #f9fefc 0%, #f0fdf4 100%);
+        }
+
+        #profileModal .branch-info {
+            background: #d1fae5;
+            color: #047857;
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+            display: inline-block;
+            font-weight: 500;
+        }
+
+        #profileModal .btn-danger {
+            background: linear-gradient(135deg, #dc3545, #f87171);
+            border: none;
+            padding: 1rem;
+            border-radius: 50px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        #profileModal .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(220, 53, 69, 0.3);
+        }
+
+        /* Mobile Logout Button in Bottom Nav */
+        .mobile-nav .nav-link.logout-btn {
+            color: #dc3545;
+        }
+
+        .mobile-nav .nav-link.logout-btn i {
+            color: #dc3545;
+        }
+
+        .mobile-nav .nav-link.logout-btn.active,
+        .mobile-nav .nav-link.logout-btn:hover {
+            background: rgba(220, 53, 69, 0.1);
+            color: #dc3545;
+        }
+
+        .mobile-nav .nav-link.logout-btn.active i,
+        .mobile-nav .nav-link.logout-btn:hover i {
+            color: #dc3545;
         }
         
-        /* General mobile adjustments (for main page) */
+        /* ===== RESPONSIVE MOBILE LAYOUT WITH DYNAMIC SIZING ===== */
         @media (max-width: 768px) {
-            .navigation-status-bar {
-                flex-direction: column;
-                align-items: stretch;
+            /* Hide table headers on mobile */
+            .custom-table thead {
+                display: none;
             }
             
-            .location-info-group {
-                justify-content: space-between;
-            }
-            
-            .distance-time-group {
-                justify-content: center;
-            }
-            
-            .nav-actions {
-                justify-content: center;
-            }
-        }
-        
-        @media (max-width: 576px) {
-            .location-map {
-                height: 300px;
-            }
-            .modal-dialog {
-                margin: 10px;
-            }
-            .btn-group {
-                display: flex;
-                flex-direction: column;
-            }
-            .btn-group .btn {
-                margin-bottom: 2px;
+            /* Make table behave like blocks */
+            .custom-table,
+            .custom-table tbody,
+            .custom-table tr,
+            .custom-table td {
+                display: block;
                 width: 100%;
             }
-            .stat-card {
+            
+            /* Style each row as a card with minimal padding */
+            .custom-table tbody tr {
+                background: white;
+                border-radius: 12px;
+                margin-bottom: 10px;
                 padding: 12px;
-                min-height: 85px;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+                border: 1px solid #e9ecef;
+            }
+            
+            /* First row: Order ID - dynamic sizing */
+            .custom-table td:first-child {
+                font-size: clamp(0.85rem, 3.5vw, 1rem);
+                font-weight: 600;
+                color: #047857;
+                margin-bottom: 4px;
+                padding: 0 !important;
+                border: none !important;
+                line-height: 1.2;
+            }
+            
+            .custom-table td:first-child .badge {
+                font-size: inherit;
+                padding: 0;
+                background: transparent !important;
+                color: #047857 !important;
+                font-weight: 600;
+            }
+            
+            /* Second row: Customer Name + Action Buttons - flexible layout */
+            .custom-table td:nth-child(2) {
+                display: flex !important;
+                align-items: center;
+                justify-content: space-between;
+                gap: 8px;
+                margin-bottom: 4px;
+                padding: 0 !important;
+                border: none !important;
+                width: 100%;
+            }
+            
+            /* Customer name - dynamic sizing, no wrap */
+            .custom-table td:nth-child(2) .customer-name-text {
+                font-size: clamp(0.95rem, 4.5vw, 1.2rem);
+                font-weight: 600;
+                color: #212529;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                flex: 1;
+                min-width: 0;
+            }
+            
+            /* Action buttons container - fixed width based on content */
+            .custom-table td:nth-child(2) .action-buttons {
+                display: flex !important;
+                gap: 5px;
+                flex-shrink: 0;
+            }
+            
+            /* Dynamic button sizing */
+            .custom-table td:nth-child(2) .btn-action {
+                width: clamp(30px, 7vw, 36px) !important;
+                height: clamp(30px, 7vw, 36px) !important;
+                border-radius: 8px !important;
+                font-size: clamp(0.85rem, 3.5vw, 1rem) !important;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                padding: 0;
+            }
+            
+            /* Hide the original actions column */
+            .custom-table td:last-child {
+                display: none !important;
+            }
+            
+            /* Third row: Status only - dynamic sizing */
+            .custom-table td:nth-child(6) {
+                display: block !important;
+                font-size: clamp(0.8rem, 3.2vw, 0.95rem);
+                font-weight: 500;
+                color: #f59e0b;
+                padding: 0 !important;
+                border: none !important;
+                margin-top: 2px;
+                line-height: 1.2;
+            }
+            
+            /* Status colors */
+            .custom-table td:nth-child(6) .badge {
+                all: unset;
+                font-size: inherit;
+                font-weight: 500;
+                padding: 0;
+                background: transparent !important;
+            }
+            
+            .custom-table td:nth-child(6) .badge.bg-warning {
+                color: #f59e0b;
+            }
+            
+            .custom-table td:nth-child(6) .badge.bg-primary {
+                color: #0d6efd;
+            }
+            
+            .custom-table td:nth-child(6) .badge.bg-info {
+                color: #0dcaf0;
+            }
+            
+            .custom-table td:nth-child(6) .badge.bg-success {
+                color: #198754;
+            }
+            
+            .custom-table td:nth-child(6) .badge.bg-secondary {
+                color: #6c757d;
+            }
+            
+            /* Hide all other columns */
+            .custom-table td:nth-child(3),
+            .custom-table td:nth-child(4),
+            .custom-table td:nth-child(5) {
+                display: none;
+            }
+            
+            /* Driver badge - smaller */
+            .custom-table td .driver-badge {
+                font-size: 0.65rem;
+                margin-top: 2px;
+                display: inline-block;
+                padding: 2px 6px;
+            }
+        }
+
+        /* Medium phones (400px - 568px) */
+        @media (min-width: 400px) and (max-width: 568px) {
+            .custom-table tbody tr {
+                padding: 10px;
                 margin-bottom: 8px;
             }
-            .stat-icon {
-                font-size: 2rem;
-                margin-right: 12px;
+            
+            .custom-table td:first-child {
+                font-size: 0.9rem;
+                margin-bottom: 3px;
             }
-            .stat-value {
-                font-size: 1.5rem;
+            
+            .custom-table td:nth-child(2) .customer-name-text {
+                font-size: 1rem;
             }
-            .stat-label {
+            
+            .custom-table td:nth-child(2) .btn-action {
+                width: 32px !important;
+                height: 32px !important;
+                font-size: 0.9rem !important;
+            }
+            
+            .custom-table td:nth-child(6) {
+                font-size: 0.85rem;
+            }
+        }
+
+        /* Small phones (below 400px) */
+        @media (max-width: 399px) {
+            .custom-table tbody tr {
+                padding: 8px;
+                margin-bottom: 6px;
+            }
+            
+            .custom-table td:first-child {
                 font-size: 0.8rem;
-            }
-            .col-md-3 {
-                width: 50%;
-                padding-left: 8px;
-                padding-right: 8px;
-            }
-            .row.g-3 {
-                margin-left: -8px;
-                margin-right: -8px;
-            }
-            .mb-3 {
-                margin-bottom: 8px !important;
+                margin-bottom: 2px;
             }
             
-            .location-info-group {
-                flex-direction: column;
-                align-items: flex-start;
-                gap: 10px;
+            .custom-table td:nth-child(2) .customer-name-text {
+                font-size: 0.9rem;
             }
             
-            .location-item {
-                width: 100%;
+            .custom-table td:nth-child(2) .btn-action {
+                width: 28px !important;
+                height: 28px !important;
+                font-size: 0.8rem !important;
+            }
+            
+            .custom-table td:nth-child(2) .action-buttons {
+                gap: 4px;
+            }
+            
+            .custom-table td:nth-child(6) {
+                font-size: 0.75rem;
+            }
+        }
+
+        /* Extra small phones */
+        @media (max-width: 320px) {
+            .custom-table td:nth-child(2) .btn-action {
+                width: 26px !important;
+                height: 26px !important;
+                font-size: 0.75rem !important;
+            }
+        }
+
+        /* ===== DESKTOP FIX - HIDE MOBILE ACTION BUTTONS ===== */
+        @media (min-width: 769px) {
+            /* Hide mobile action buttons on desktop */
+            .custom-table td:nth-child(2) .action-buttons.d-flex.d-md-none {
+                display: none !important;
+            }
+            
+            /* Also hide any action buttons in customer name column */
+            .custom-table td:nth-child(2) .action-buttons {
+                display: none !important;
+            }
+            
+            /* Ensure desktop action buttons are visible in Actions column */
+            .custom-table td:last-child .action-buttons.d-none.d-md-inline-flex {
+                display: inline-flex !important;
+            }
+            
+            /* Fix alignment for desktop actions */
+            .custom-table td:last-child {
+                white-space: nowrap;
+                text-align: center;
+                vertical-align: middle;
+            }
+            
+            .custom-table td:last-child .action-buttons {
+                justify-content: center !important;
+                gap: 8px;
+            }
+            
+            /* Style for action buttons in desktop */
+            .custom-table td:last-child .btn-action {
+                width: 36px;
+                height: 36px;
+                border-radius: 8px;
+                font-size: 1.1rem;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0 2px;
             }
         }
         
-        @media (max-width: 576px) {
-            .stat-card {
-                min-height: 80px;
-                padding: 10px;
+        .stat-card-row {
+            margin-bottom: 1.5rem !important;
+        }
+
+        @media (max-width: 768px) {
+            .stat-card-row {
+                margin-bottom: 1rem !important;
             }
-            .stat-icon {
-                font-size: 1.8rem;
-                margin-right: 10px;
-            }
-            .stat-value {
-                font-size: 1.3rem;
-            }
-            .stat-label {
-                font-size: 0.75rem;
-            }
-            .col-md-3 {
-                width: 50%;
-                padding-left: 6px;
-                padding-right: 6px;
-            }
-            .row.g-3 {
-                margin-left: -6px;
-                margin-right: -6px;
+            
+            .form-card {
+                margin-top: 0.5rem;
             }
         }
+        /* ===== ULTIMATE DESKTOP FIX - FORCE HIDE MOBILE BUTTONS ===== */
+@media (min-width: 769px) {
+    /* Target all possible mobile button containers */
+    .custom-table td:nth-child(2) .action-buttons,
+    .custom-table td:nth-child(2) div[class*="action-buttons"],
+    .custom-table td:nth-child(2) .d-flex.d-md-none,
+    .custom-table td:nth-child(2) [class*="d-md-none"] {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+        width: 0 !important;
+        height: 0 !important;
+        overflow: hidden !important;
+        position: absolute !important;
+        z-index: -9999 !important;
+    }
+    
+    /* Ensure desktop buttons are visible */
+    .custom-table td:last-child .action-buttons,
+    .custom-table td:last-child .d-none.d-md-inline-flex,
+    .custom-table td:last-child [class*="d-md-inline-flex"] {
+        display: inline-flex !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+        pointer-events: auto !important;
+    }
+}
+/* Thermal Receipt Modal - MAS MALAKI ANG HEIGHT, WHITE TEXT */
+#receiptModal .modal-dialog {
+    max-width: 500px;
+    margin: 1.75rem auto;
+}
+
+#receiptModal .modal-content {
+    border-radius: 12px;
+    border: none;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    overflow: hidden;
+}
+
+#receiptModal .modal-header {
+    background: linear-gradient(135deg, #047857, #44D34E); /* Green gradient */
+    border-bottom: 1px solid rgba(255,255,255,0.2);
+    padding: 1rem 1.5rem;
+}
+
+#receiptModal .modal-header .modal-title {
+    color: white !important; /* White text */
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#receiptModal .modal-header .modal-title i {
+    color: white !important; /* White icon */
+    font-size: 1.2rem;
+}
+
+#receiptModal .modal-header .btn-close {
+    filter: brightness(0) invert(1); /* White close button */
+    opacity: 0.9;
+}
+
+#receiptModal .modal-header .btn-close:hover {
+    opacity: 1;
+    transform: rotate(90deg);
+}
+
+#receiptModal .modal-body {
+    padding: 20px;
+    background: #f5f5f5;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start; /* Start from top */
+    min-height: auto;
+    max-height: 80vh; /* INCREASED HEIGHT from 70vh to 80vh */
+    overflow-y: auto;
+    /* Hide scrollbar but keep functionality */
+    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none; /* IE/Edge */
+}
+
+#receiptModal .modal-body::-webkit-scrollbar {
+    display: none; /* Chrome/Safari/Opera */
+}
+
+/* Thermal receipt - EXACT SIZE, NEVER CHANGES */
+#receiptModal .thermal-receipt {
+    font-family: 'Courier New', monospace;
+    width: 72mm !important;
+    max-width: 72mm !important;
+    min-width: 72mm !important;
+    margin: 0 auto;
+    padding: 3mm;
+    background: white;
+    color: black;
+    font-size: 11px;
+    line-height: 1.3;
+    box-sizing: border-box;
+    border: 1px solid #ddd;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* Mobile - MAS MALAKI ANG HEIGHT */
+@media (max-width: 768px) {
+    #receiptModal .modal-dialog {
+        max-width: 500px;
+        margin: 1rem auto;
+    }
+    
+    #receiptModal .modal-body {
+        padding: 15px;
+        max-height: 85vh; /* INCREASED from 80vh to 85vh */
+    }
+    
+    /* Receipt stays EXACTLY THE SAME SIZE */
+    #receiptModal .thermal-receipt {
+        width: 72mm !important;
+        max-width: 72mm !important;
+        min-width: 72mm !important;
+        font-size: 11px !important;
+        padding: 3mm !important;
+    }
+}
+
+/* Very small phones - MAS MALAKI ANG HEIGHT */
+@media (max-width: 480px) {
+    #receiptModal .modal-dialog {
+        max-width: 95%;
+        margin: 0.5rem auto;
+    }
+    
+    #receiptModal .modal-body {
+        padding: 10px;
+        max-height: 90vh; /* INCREASED from 85vh to 90vh */
+    }
+    
+    /* Receipt STAYS EXACTLY THE SAME */
+    #receiptModal .thermal-receipt {
+        width: 72mm !important;
+        max-width: 72mm !important;
+        min-width: 72mm !important;
+        font-size: 11px !important;
+        padding: 3mm !important;
+    }
+}
+
+/* Extra small phones - MAS MALAKI ANG HEIGHT */
+@media (max-width: 360px) {
+    #receiptModal .modal-body {
+        padding: 5px;
+        max-height: 95vh; /* INCREASED from 90vh to 95vh */
+    }
+    
+    /* Receipt NEVER CHANGES SIZE */
+    #receiptModal .thermal-receipt {
+        width: 72mm !important;
+        max-width: 72mm !important;
+        min-width: 72mm !important;
+    }
+}
+/* Thermal Receipt Modal - SAME HEIGHT AS DELIVERY DETAILS */
+#receiptModal .modal-dialog {
+    max-width: 500px;
+    margin: 1.75rem auto;
+}
+
+#receiptModal .modal-content {
+    border-radius: 12px;
+    border: none;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    overflow: hidden;
+    min-height: 400px; /* MINIMUM HEIGHT para di masyadong liit */
+}
+
+#receiptModal .modal-header {
+    background: linear-gradient(135deg, #047857, #44D34E);
+    border-bottom: 1px solid rgba(255,255,255,0.2);
+    padding: 1rem 1.5rem;
+}
+
+#receiptModal .modal-header .modal-title {
+    color: white !important;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+#receiptModal .modal-header .modal-title i {
+    color: white !important;
+    font-size: 1.2rem;
+}
+
+#receiptModal .modal-header .btn-close {
+    filter: brightness(0) invert(1);
+    opacity: 0.9;
+}
+
+#receiptModal .modal-body {
+    padding: 20px;
+    background: #f5f5f5;
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    min-height: 350px; /* MINIMUM HEIGHT para kapareho ng details */
+    max-height: 70vh;
+    overflow-y: auto;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+#receiptModal .modal-body::-webkit-scrollbar {
+    display: none;
+}
+
+/* Thermal receipt - exact size */
+#receiptModal .thermal-receipt {
+    font-family: 'Courier New', monospace;
+    width: 72mm !important;
+    max-width: 72mm !important;
+    min-width: 72mm !important;
+    margin: 0 auto;
+    padding: 3mm;
+    background: white;
+    color: black;
+    font-size: 11px;
+    line-height: 1.3;
+    box-sizing: border-box;
+    border: 1px solid #ddd;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+/* Mobile - SAME HEIGHT AS DETAILS */
+@media (max-width: 768px) {
+    #receiptModal .modal-dialog {
+        max-width: 500px;
+        margin: 1rem auto;
+    }
+    
+    #receiptModal .modal-content {
+        min-height: 450px; /* Mas malaki sa mobile */
+    }
+    
+    #receiptModal .modal-body {
+        padding: 15px;
+        min-height: 400px; /* SAME AS DETAILS */
+        max-height: 85vh;
+    }
+    
+    #receiptModal .thermal-receipt {
+        width: 72mm !important;
+        max-width: 72mm !important;
+        min-width: 72mm !important;
+        font-size: 11px !important;
+        padding: 3mm !important;
+    }
+}
+
+@media (max-width: 480px) {
+    #receiptModal .modal-dialog {
+        max-width: 95%;
+        margin: 0.5rem auto;
+    }
+    
+    #receiptModal .modal-content {
+        min-height: 500px; /* Mas malaki sa maliit na phone */
+    }
+    
+    #receiptModal .modal-body {
+        padding: 10px;
+        min-height: 450px; /* SAME AS DETAILS */
+        max-height: 90vh;
+    }
+    
+    #receiptModal .thermal-receipt {
+        width: 72mm !important;
+        max-width: 72mm !important;
+        min-width: 72mm !important;
+        font-size: 11px !important;
+        padding: 3mm !important;
+    }
+}
+
+@media (max-width: 360px) {
+    #receiptModal .modal-content {
+        min-height: 550px;
+    }
+    
+    #receiptModal .modal-body {
+        min-height: 500px;
+        padding: 5px;
+        max-height: 95vh;
+    }
+    
+    #receiptModal .thermal-receipt {
+        width: 72mm !important;
+        max-width: 72mm !important;
+        min-width: 72mm !important;
+    }
+}
     </style>
 </head>
 <body>
@@ -1197,7 +1515,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             <hr class="sidebar-divider">
             <div class="sidebar-footer">
                 <div class="user-profile-sidebar">
-                    <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
+                    <div class="user-avatar-sidebar"><?php echo $user_initials; ?></div>
                     <div class="user-details-sidebar">
                         <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
                     </div>
@@ -1222,9 +1540,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 </div>
                 <!-- GPS Tracking Button with Shift Management -->
                 <div style="margin-left: auto; display: flex; gap: 10px; align-items: center;">
-                    <button class="btn btn-success btn-sm" id="trackingBtn">
-                        <i class="bi bi-play-circle"></i> Start Tracking
-                    </button>
                     <div id="locationIndicator" class="badge bg-secondary" style="padding: 8px 12px;">
                         <span class="tracking-indicator tracking-inactive"></span>
                         <span id="locationStatus">Offline</span>
@@ -1233,83 +1548,92 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 </div>
             </div>
 
-            <!-- Delivery Stats -->
-            <div class="row g-3 mb-4 delivery-stats">
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card inventory">
-                        <div class="stat-icon">
-                            <i class="bi bi-clock"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $stats['pending_count'] ?? 0; ?></div>
-                            <div class="stat-label">Pending</div>
-                        </div>
-                    </div>
-                </div>
+       <!-- Delivery Stats -->
+<div class="row stat-card-row g-1 g-sm-2">
+    <!-- Card 1 - Pending -->
+    <div class="col">
+        <div class="stat-card inventory">
+            <i class="bi bi-clock"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo $stats['pending_count'] ?? 0; ?></div>
+                <div class="stat-label">Pending</div>
+            </div>
+        </div>
+    </div>
 
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card pending">
-                        <div class="stat-icon">
-                            <i class="bi bi-truck"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $stats['active_count'] ?? 0; ?></div>
-                            <div class="stat-label">Active (In Transit/Partial)</div>
-                        </div>
-                    </div>
-                </div>
+    <!-- Card 2 - Active -->
+    <div class="col">
+        <div class="stat-card pending">
+            <i class="bi bi-truck"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo $stats['active_count'] ?? 0; ?></div>
+                <div class="stat-label">Active</div>
+            </div>
+        </div>
+    </div>
 
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card complete">
-                        <div class="stat-icon">
-                            <i class="bi bi-check-circle"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $stats['completed_today'] ?? 0; ?></div>
-                            <div class="stat-label">Completed Today</div>
-                        </div>
-                    </div>
-                </div>
+    <!-- Card 3 - Completed Today -->
+    <div class="col">
+        <div class="stat-card complete">
+            <i class="bi bi-check-circle"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo $stats['completed_today'] ?? 0; ?></div>
+                <div class="stat-label">Completed Today</div>
+            </div>
+        </div>
+    </div>
 
-                <div class="col-md-3 mb-3">
-                    <div class="stat-card sales">
-                        <div class="stat-icon">
-                            <i class="bi bi-archive"></i>
-                        </div>
-                        <div>
-                            <div class="stat-value"><?php echo $stats['total_completed'] ?? 0; ?></div>
-                            <div class="stat-label">Total Completed</div>
-                        </div>
-                    </div>
+    <!-- Card 4 - Total Completed -->
+    <div class="col">
+        <div class="stat-card sales">
+            <i class="bi bi-archive"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo $stats['total_completed'] ?? 0; ?></div>
+                <div class="stat-label">Total Completed</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+            <!-- FILTER SECTION - SALES ORDERS -->
+<div class="form-card mb-4">
+    <div class="filter-header">
+        <h5>
+            <i class="bi bi-funnel"></i> Filter Sales Orders
+        </h5>
+        <button class="filter-toggle-btn" type="button" id="salesFilterToggle" aria-expanded="false">
+            <i class="bi bi-chevron-down" id="salesFilterIcon"></i>
+        </button>
+    </div>
+    
+    <div class="filter-content collapsed" id="salesFilterContent">
+        <div class="row g-3">
+            <!-- Search Field -->
+            <div class="col-12 col-md-6">
+                <label class="form-label">
+                    <i class="bi bi-search"></i> Search
+                </label>
+                <div class="input-group">
+                    <input type="text" class="form-control" id="searchInput" placeholder="Search by order ID, customer name...">
                 </div>
             </div>
-
-            <!-- Search and Filter -->
-            <div class="card mb-4">
-                <div class="card-body">
-                    <div class="row g-3">
-                        <div class="col-md-6">
-                            <div class="input-group">
-                                <span class="input-group-text">
-                                    <i class="bi bi-search"></i>
-                                </span>
-                                <input type="text" class="form-control" id="searchInput" placeholder="Search by order ID, customer name, address...">
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="d-flex gap-2">
-                                <select class="form-select flex-grow-1" id="statusFilter">
-                                    <option value="">All Status</option>
-                                    <option value="pending">Pending</option>
-                                    <option value="in-transit">In Transit</option>
-                                    <option value="partial">Partial</option>
-                                    <option value="delivered">Delivered</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+            
+            <!-- Status Filter -->
+            <div class="col-12 col-md-4">
+                <label class="form-label">
+                    <i class="bi bi-flag"></i> Status
+                </label>
+                <select class="form-select" id="statusFilter">
+                    <option value="">All Status</option>
+                    <option value="pending">Pending</option>
+                    <option value="in-transit">In Transit</option>
+                    <option value="partial">Partial</option>
+                    <option value="delivered">Delivered</option>
+                </select>
             </div>
+        </div>
+    </div>
+</div>
 
             <!-- No Orders Message -->
             <?php if (empty($delivery_orders)): ?>
@@ -1326,11 +1650,11 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 </div>
             <?php else: ?>
 
-            <!-- Delivery Orders Table -->
+            <!-- Delivery Orders Table - RESPONSIVE LAYOUT -->
             <div class="card">
                 <div class="table-container">
                     <table class="table custom-table compact-table">
-                        <thead>
+                        <thead class="table-light">
                             <tr>
                                 <th>Order ID</th>
                                 <th>Customer Name</th>
@@ -1350,7 +1674,53 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                                         <br><small class="driver-badge"><?php echo htmlspecialchars($order['driver_name']); ?></small>
                                     <?php endif; ?>
                                 </td>
-                                <td><?php echo htmlspecialchars($order['customer_name']); ?></td>
+                                <td>
+                                    <span class="customer-name-text"><?php echo htmlspecialchars($order['customer_name']); ?></span>
+                                            <!-- Action buttons for MOBILE only (hidden on desktop) -->
+                                            <div class="action-buttons d-flex d-md-none" style="display: inline-flex !important; margin-left: 8px;">
+                                        <button class="btn-action btn-view" title="View Details" onclick="viewDeliveryDetails(<?php echo $order['delivery_id']; ?>)">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+                                        
+                                        <?php 
+                                        $has_coordinates = !empty($order['latitude']) && !empty($order['longitude']) && 
+                                                           $order['latitude'] != 0 && $order['longitude'] != 0;
+                                        if ($has_coordinates): 
+                                        ?>
+                                            <button class="btn-action btn-map" title="Navigate to Customer" onclick="openLiveNavigation(
+                                                <?php echo $order['latitude']; ?>, 
+                                                <?php echo $order['longitude']; ?>, 
+                                                '<?php echo htmlspecialchars(addslashes($order['customer_name'])); ?>', 
+                                                '<?php echo htmlspecialchars(addslashes($order['address'] . ', ' . $order['city'])); ?>'
+                                            )">
+                                                <i class="bi bi-geo-alt-fill"></i>
+                                            </button>
+                                        <?php endif; ?>
+                                        
+                                        <?php if ($order['delivery_status'] == 'pending'): ?>
+                                            <button class="btn-action btn-truck" title="Start Delivery" onclick="updateDeliveryStatus(<?php echo $order['delivery_id']; ?>, 'in-transit')">
+                                                <i class="bi bi-truck"></i>
+                                            </button>
+                                        <?php elseif ($order['delivery_status'] == 'in-transit'): ?>
+                                            <button class="btn-action btn-success" title="Mark as Delivered" onclick="showDeliveryModal(<?php echo $order['delivery_id']; ?>, <?php echo $order['so_id']; ?>, '<?php echo htmlspecialchars(addslashes($order['so_number'])); ?>')">
+                                                <i class="bi bi-check-lg"></i>
+                                            </button>
+                                            <button class="btn-action btn-warning" title="Mark as Partial" onclick="updateDeliveryStatus(<?php echo $order['delivery_id']; ?>, 'partial')">
+                                                <i class="bi bi-exclamation-triangle"></i>
+                                            </button>
+                                        <?php elseif ($order['delivery_status'] == 'partial'): ?>
+                                            <button class="btn-action btn-success" title="Complete Remaining Items" onclick="showDeliveryModal(<?php echo $order['delivery_id']; ?>, <?php echo $order['so_id']; ?>, '<?php echo htmlspecialchars(addslashes($order['so_number'])); ?>')">
+                                                <i class="bi bi-check-lg"></i>
+                                            </button>
+                                        <?php endif; ?>
+                                        
+                                        <?php if ($order['delivery_status'] == 'delivered'): ?>
+                                            <button class="btn-action btn-print" title="Print Receipt" onclick="showReceiptModal(<?php echo $order['delivery_id']; ?>, '<?php echo htmlspecialchars(addslashes($order['so_number'])); ?>', '<?php echo htmlspecialchars(addslashes($order['customer_name'])); ?>', '<?php echo htmlspecialchars(addslashes($order['address'] . ', ' . $order['city'])); ?>', '<?php echo htmlspecialchars(addslashes($order['signed_by'])); ?>', '<?php echo $order['delivery_date']; ?>', '<?php echo htmlspecialchars(addslashes($order['items_receipt'])); ?>')">
+                                                <i class="bi bi-receipt"></i>
+                                            </button>
+                                        <?php endif; ?>
+                                    </div>
+                                </td>
                                 <td><?php echo htmlspecialchars($order['address'] . ', ' . $order['city']); ?></td>
                                 <td><?php echo htmlspecialchars($order['phone_number']); ?></td>
                                 <td>
@@ -1402,17 +1772,13 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                                     </span>
                                 </td>
                                 <td class="text-center align-middle">
-                                    <div class="action-buttons" style="display: flex; justify-content: center; gap: 8px;">
+    <!-- Desktop action buttons (hidden on mobile) -->
+    <div class="action-buttons d-none d-md-inline-flex" style="justify-content: center; gap: 8px;">
                                         <button class="btn-action btn-view" title="View Details" onclick="viewDeliveryDetails(<?php echo $order['delivery_id']; ?>)">
                                             <i class="bi bi-eye"></i>
                                         </button>
                                         
-                                        <?php 
-                                        $has_coordinates = !empty($order['latitude']) && !empty($order['longitude']) && 
-                                                           $order['latitude'] != 0 && $order['longitude'] != 0;
-                                        if ($has_coordinates): 
-                                        ?>
-                                            <!-- Live Navigation Button -->
+                                        <?php if ($has_coordinates): ?>
                                             <button class="btn-action btn-map" title="Navigate to Customer" onclick="openLiveNavigation(
                                                 <?php echo $order['latitude']; ?>, 
                                                 <?php echo $order['longitude']; ?>, 
@@ -1424,7 +1790,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                                         <?php endif; ?>
                                         
                                         <?php if ($order['delivery_status'] == 'pending'): ?>
-                                            <button class="btn-action btn-start" title="Start Delivery" onclick="updateDeliveryStatus(<?php echo $order['delivery_id']; ?>, 'in-transit')">
+                                            <button class="btn-action btn-truck" title="Start Delivery" onclick="updateDeliveryStatus(<?php echo $order['delivery_id']; ?>, 'in-transit')">
                                                 <i class="bi bi-truck"></i>
                                             </button>
                                         <?php elseif ($order['delivery_status'] == 'in-transit'): ?>
@@ -1457,10 +1823,81 @@ if ($user_role == 'delivery' && $driver_id > 0) {
         </div>
     </div>
 
+    <!-- Mobile Bottom Navigation -->
+    <div class="mobile-nav" id="mobileNav">
+        <ul class="nav">
+            <li class="nav-item">
+                <a class="nav-link active" href="fordelivery.php">
+                    <i class="bi bi-truck"></i>
+                    <span>Delivery</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="trip_tickets.php">
+                    <i class="bi bi-ticket-perforated"></i>
+                    <span>Tickets</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="rejecteddelivery.php">
+                    <i class="bi bi-exclamation-circle"></i>
+                    <span>Rejected</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link logout-btn" href="#" onclick="showProfileModal(); return false;">
+                    <i class="bi bi-box-arrow-right"></i>
+                    <span>Logout</span>
+                </a>
+            </li>
+        </ul>
+    </div>
+
+    <!-- Mobile Profile/Logout Modal -->
+    <div class="modal fade" id="profileModal" tabindex="-1" aria-labelledby="profileModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="profileModalLabel">
+                        <i class="bi bi-person-circle me-2"></i>User Profile
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <!-- User Avatar -->
+                    <div class="user-avatar-large mb-3">
+                        <?php echo $user_initials; ?>
+                    </div>
+                    
+                    <!-- User Name -->
+                    <h4 class="mb-1"><?php echo htmlspecialchars($user_name); ?></h4>
+                    
+                    <!-- User Role -->
+                    <p class="text-muted mb-3">
+                        <span class="badge bg-success"><?php echo ucfirst($user_role); ?></span>
+                    </p>
+                    
+                    <!-- Branch Info (if applicable) -->
+                    <?php if (!$view_all_branches && $branch_id > 0): ?>
+                    <div class="branch-info mb-3">
+                        <i class="bi bi-building me-1"></i>
+                        <span><?php echo htmlspecialchars($branch_name); ?></span>
+                    </div>
+                    <?php endif; ?>
+                    
+                    <!-- Logout Button -->
+                    <button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()">
+                        <i class="bi bi-box-arrow-right me-2"></i>Logout
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Hidden thermal receipt container -->
     <div id="thermalReceipt" style="display: none;"></div>
 
-    <!-- Live Tracking Modal (taller, collapsible panel, draggable on desktop) -->
+    <!-- Live Tracking Modal -->
     <div class="modal fade" id="trackingModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-xl">
             <div class="modal-content">
@@ -1474,7 +1911,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 <div class="modal-body p-0 position-relative">
                     <div id="trackingMap" class="location-map"></div>
                     
-                    <!-- Navigation Status Panel (collapsible, draggable on desktop) -->
+                    <!-- Navigation Status Panel -->
                     <div class="status-panel" id="navigationStatusPanel">
                         <h6>
                             <i class="bi bi-info-circle-fill text-primary me-2"></i>
@@ -1564,230 +2001,355 @@ if ($user_role == 'delivery' && $driver_id > 0) {
         </div>
     </div>
 
-    <!-- View Details Modal -->
-    <div class="modal fade" id="viewDetailsModal" tabindex="-1" aria-labelledby="viewDetailsModalLabel" aria-hidden="true">
-        <div class="modal-dialog modal-xl">
-            <div class="modal-content">
-                <div class="modal-header py-2">
-                    <h5 class="modal-title" id="viewDetailsModalLabel">
-                        <i class="bi bi-truck text-custom me-2"></i>
-                        Delivery Details
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body p-3" id="viewDetailsModalBody">
-                    <div class="text-center py-5">
-                        <div class="spinner-border text-primary" role="status">
-                            <span class="visually-hidden">Loading...</span>
-                        </div>
-                        <p class="mt-3">Loading delivery details...</p>
+  <!-- View Details Modal -->
+<div class="modal fade" id="viewDetailsModal" tabindex="-1" aria-labelledby="viewDetailsModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h5 class="modal-title" id="viewDetailsModalLabel">
+                    <i class="bi bi-truck text-custom me-2"></i>
+                    Delivery Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-3" id="viewDetailsModalBody">
+                <div class="text-center py-5">
+                    <div class="spinner-border text-primary" role="status">
+                        <span class="visually-hidden">Loading...</span>
                     </div>
-                </div>
-                <div class="modal-footer py-2">
-                    <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <p class="mt-3">Loading delivery details...</p>
                 </div>
             </div>
+            <!-- Modal footer removed -->
         </div>
     </div>
+</div>
 
-    <!-- Location Map Modal -->
-    <div class="modal fade" id="locationMapModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">
-                        <i class="bi bi-geo-alt-fill text-custom me-2"></i>
-                        Customer Location
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+<!-- Location Map Modal -->
+<div class="modal fade" id="locationMapModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-geo-alt-fill text-custom me-2"></i>
+                    Customer Location
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="customerLocationMap" class="location-map"></div>
+                
+                <div class="location-info">
+                    <h6 id="modalCustomerName" class="mb-3"></h6>
+                    <p>
+                        <i class="bi bi-geo-alt"></i>
+                        <strong>Address:</strong> <span id="modalCustomerAddress"></span>
+                    </p>
+                    <p>
+                        <i class="bi bi-geo"></i>
+                        <strong>Coordinates:</strong>
+                        <span id="modalCoordinates" class="coordinates-badge">
+                            <i class="bi bi-crosshair"></i>
+                            <span id="modalLat"></span>, <span id="modalLng"></span>
+                        </span>
+                    </p>
                 </div>
-                <div class="modal-body">
-                    <div id="customerLocationMap" class="location-map"></div>
+            </div>
+            <!-- Modal footer removed -->
+        </div>
+    </div>
+</div>
+
+<!-- Photo Modal -->
+<div class="modal fade" id="photoModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-image text-primary me-2"></i>
+                    Proof of Delivery Photo
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body text-center">
+                <img src="" alt="Proof of Delivery" class="photo-modal-img" id="photoModalImg">
+            </div>
+            <!-- Modal footer removed -->
+        </div>
+    </div>
+</div>
+
+<!-- Live Tracking Modal -->
+<div class="modal fade" id="trackingModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title">
+                    <i class="bi bi-navigation me-2"></i>
+                    Live Navigation to Customer
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0 position-relative">
+                <div id="trackingMap" class="location-map"></div>
+                
+                <!-- Navigation Status Panel -->
+                <div class="status-panel" id="navigationStatusPanel">
+                    <h6>
+                        <i class="bi bi-info-circle-fill text-primary me-2"></i>
+                        Navigation Status
+                        <button class="toggle-panel-btn" id="toggleStatusPanel" title="Expand/Collapse">
+                            <i class="bi bi-chevron-up"></i>
+                        </button>
+                    </h6>
                     
-                    <div class="location-info">
-                        <h6 id="modalCustomerName" class="mb-3"></h6>
-                        <p>
-                            <i class="bi bi-geo-alt"></i>
-                            <strong>Address:</strong> <span id="modalCustomerAddress"></span>
-                        </p>
-                        <p>
-                            <i class="bi bi-geo"></i>
-                            <strong>Coordinates:</strong>
-                            <span id="modalCoordinates" class="coordinates-badge">
-                                <i class="bi bi-crosshair"></i>
-                                <span id="modalLat"></span>, <span id="modalLng"></span>
-                            </span>
-                        </p>
+                    <div class="panel-content">
+                        <!-- Your Location -->
+                        <div class="info-row">
+                            <div class="info-label">
+                                <i class="bi bi-geo-alt-fill text-primary"></i>
+                                Your Location:
+                            </div>
+                            <div class="info-value" id="yourLocationText">Acquiring GPS...</div>
+                            <div class="coordinates-text" id="yourCoordinates">--</div>
+                        </div>
+                        
+                        <!-- Destination -->
+                        <div class="info-row">
+                            <div class="info-label">
+                                <i class="bi bi-pin-map-fill text-danger"></i>
+                                Destination:
+                            </div>
+                            <div class="info-value" id="destinationText">Customer Location</div>
+                            <div class="coordinates-text" id="destinationCoordinates">--</div>
+                        </div>
+                        
+                        <!-- Distance & Time -->
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <div class="bg-light p-2 rounded text-center">
+                                    <div class="info-label">Distance</div>
+                                    <div class="info-value" style="font-size: 1.2rem;">
+                                        <span id="distanceText">--</span> <small>km</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="bg-light p-2 rounded text-center">
+                                    <div class="info-label">Est. Time</div>
+                                    <div class="info-value" style="font-size: 1.2rem;">
+                                        <span id="timeText">--</span> <small>min</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- GPS Accuracy -->
+                        <div class="info-row">
+                            <div class="info-label">
+                                <i class="bi bi-satellite me-1"></i>
+                                GPS Accuracy:
+                            </div>
+                            <div class="progress mb-1" style="height: 8px;">
+                                <div id="accuracyBar" class="progress-bar bg-success" style="width: 100%"></div>
+                            </div>
+                            <div class="d-flex justify-content-between align-items-center">
+                                <small id="accuracyText" class="text-muted">High accuracy</small>
+                                <button class="retry-btn" onclick="retryGPSTracking()" title="Retry GPS">
+                                    <i class="bi bi-arrow-repeat"></i> Retry
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <!-- Navigation Actions -->
+                        <div class="d-grid gap-2 mt-3">
+                            <button class="btn btn-sm btn-success" onclick="centerOnYourLocation()">
+                                <i class="bi bi-crosshair me-2"></i>Center on Me
+                            </button>
+                            <button class="btn btn-sm btn-outline-primary" onclick="openGoogleMaps()">
+                                <i class="bi bi-google me-2"></i>Open in Google Maps
+                            </button>
+                        </div>
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button type="button" class="btn btn-primary" onclick="openInGoogleMaps()">
-                        <i class="bi bi-google"></i> Open in Google Maps
-                    </button>
-                </div>
+            </div>
+            <!-- Modal footer removed - Close button nasa header na -->
+        </div>
+    </div>
+</div>
+
+<!-- Delivery Modal -->
+<div class="modal fade" id="deliveryModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header py-2">
+                <h5 class="modal-title">Complete Delivery</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-3">
+                <form id="deliveryForm" enctype="multipart/form-data" action="update_delivery.php" method="POST">
+                    <input type="hidden" name="delivery_id" id="modalDeliveryId">
+                    <input type="hidden" name="so_id" id="modalSoId">
+                    <input type="hidden" name="so_number" id="modalSoNumber">
+                    <input type="hidden" name="branch_id" value="<?php echo $branch_id; ?>">
+                    
+                    <div class="alert alert-info py-2">
+                        <strong id="orderIdDisplay"></strong> - Delivery Confirmation Required
+                    </div>
+
+                    <div class="row mb-2">
+                        <div class="col-md-6">
+                            <label class="form-label small">Delivery Date</label>
+                            <input type="datetime-local" class="form-control form-control-sm" name="delivery_date" required value="<?php echo date('Y-m-d\TH:i'); ?>">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small">Signed By</label>
+                            <input type="text" class="form-control form-control-sm" name="signed_by" placeholder="Customer name" required>
+                        </div>
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label small">Proof of Delivery Photo</label>
+                        <input type="file" class="form-control form-control-sm" name="proof_photo" accept="image/*" required>
+                        <small class="text-muted">Upload photo of delivered package</small>
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label small">Remarks</label>
+                        <textarea class="form-control form-control-sm" name="remarks" rows="2" placeholder="Any notes..."></textarea>
+                    </div>
+
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="confirm_delivery" required>
+                        <label class="form-check-label small">
+                            I confirm this delivery is complete
+                        </label>
+                    </div>
+                    
+                    <div class="d-flex justify-content-end gap-2 mt-3">
+                        <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-sm btn-primary">Confirm Delivery</button>
+                    </div>
+                </form>
+            </div>
+            <!-- Modal footer removed from modal level -->
+        </div>
+    </div>
+</div>
+
+<!-- Thermal Receipt Modal - MAS MALAKI ANG HEIGHT, WHITE TEXT -->
+<div class="modal fade" id="receiptModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style="max-width: 500px;">
+        <div class="modal-content">
+            <div class="modal-header" style="background: linear-gradient(135deg, #047857, #44D34E);">
+                <h5 class="modal-title" style="color: white;">
+                    <i class="bi bi-receipt me-2" style="color: white;"></i>
+                    Receipt Preview
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close" style="filter: brightness(0) invert(1);"></button>
+            </div>
+            <div class="modal-body" id="receiptContent" style="padding: 20px; min-height: auto;">
+                <!-- Receipt preview will be loaded here -->
+            </div>
+            <!-- Modal footer removed -->
+        </div>
+    </div>
+</div>
+
+<!-- Partial Delivery Modal -->
+<div class="modal fade" id="partialModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Partial Delivery</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="partialForm">
+                    <div class="mb-3">
+                        <label class="form-label">Reason for Partial Delivery</label>
+                        <select class="form-select" id="partialReason" required>
+                            <option value="">Select reason</option>
+                            <option value="Out of stock">Out of stock</option>
+                            <option value="Damaged items">Damaged items</option>
+                            <option value="Customer refused some items">Customer refused some items</option>
+                            <option value="Wrong items">Wrong items</option>
+                            <option value="Quantity mismatch">Quantity mismatch</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div class="mb-3" id="otherReasonDiv" style="display: none;">
+                        <label class="form-label">Please specify</label>
+                        <input type="text" class="form-control" id="otherReason" placeholder="Enter reason">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Items Delivered</label>
+                        <div id="itemsList" class="border p-2 rounded mb-2" style="max-height: 200px; overflow-y: auto;">
+                            <!-- Items will be loaded here -->
+                        </div>
+                        <small class="text-muted">Check the items that were successfully delivered</small>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Additional Details</label>
+                        <textarea class="form-control" id="partialDetails" rows="3" placeholder="Provide more details about the partial delivery..."></textarea>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-warning" onclick="submitPartialDelivery()">Submit Partial</button>
             </div>
         </div>
     </div>
+</div>
 
-    <!-- Photo Modal -->
-    <div class="modal fade" id="photoModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">
-                        <i class="bi bi-image text-primary me-2"></i>
-                        Proof of Delivery Photo
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body text-center">
-                    <img src="" alt="Proof of Delivery" class="photo-modal-img" id="photoModalImg">
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <a href="#" class="btn btn-primary" id="downloadPhotoBtn" download>
-                        <i class="bi bi-download"></i> Download
-                    </a>
-                </div>
+<!-- Mobile Profile/Logout Modal -->
+<div class="modal fade" id="profileModal" tabindex="-1" aria-labelledby="profileModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="profileModalLabel">
+                    <i class="bi bi-person-circle me-2"></i>User Profile
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
+            <div class="modal-body text-center">
+                <!-- User Avatar -->
+                <div class="user-avatar-large mb-3">
+                    <?php echo $user_initials; ?>
+                </div>
+                
+                <!-- User Name -->
+                <h4 class="mb-1"><?php echo htmlspecialchars($user_name); ?></h4>
+                
+                <!-- User Role -->
+                <p class="text-muted mb-3">
+                    <span class="badge bg-success"><?php echo ucfirst($user_role); ?></span>
+                </p>
+                
+                <!-- Branch Info (if applicable) -->
+                <?php if (!$view_all_branches && $branch_id > 0): ?>
+                <div class="branch-info mb-3">
+                    <i class="bi bi-building me-1"></i>
+                    <span><?php echo htmlspecialchars($branch_name); ?></span>
+                </div>
+                <?php endif; ?>
+                
+                <!-- Logout Button -->
+                <button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()">
+                    <i class="bi bi-box-arrow-right me-2"></i>Logout
+                </button>
+            </div>
+            <!-- Modal footer removed -->
         </div>
     </div>
-
-    <!-- Delivery Modal -->
-    <div class="modal fade" id="deliveryModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header py-2">
-                    <h5 class="modal-title">Complete Delivery</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body p-3">
-                    <form id="deliveryForm" enctype="multipart/form-data" action="update_delivery.php" method="POST">
-                        <input type="hidden" name="delivery_id" id="modalDeliveryId">
-                        <input type="hidden" name="so_id" id="modalSoId">
-                        <input type="hidden" name="so_number" id="modalSoNumber">
-                        <input type="hidden" name="branch_id" value="<?php echo $branch_id; ?>">
-                        
-                        <div class="alert alert-info py-2">
-                            <strong id="orderIdDisplay"></strong> - Delivery Confirmation Required
-                        </div>
-
-                        <div class="row mb-2">
-                            <div class="col-md-6">
-                                <label class="form-label small">Delivery Date</label>
-                                <input type="datetime-local" class="form-control form-control-sm" name="delivery_date" required value="<?php echo date('Y-m-d\TH:i'); ?>">
-                            </div>
-                            <div class="col-md-6">
-                                <label class="form-label small">Signed By</label>
-                                <input type="text" class="form-control form-control-sm" name="signed_by" placeholder="Customer name" required>
-                            </div>
-                        </div>
-
-                        <div class="mb-2">
-                            <label class="form-label small">Proof of Delivery Photo</label>
-                            <input type="file" class="form-control form-control-sm" name="proof_photo" accept="image/*" required>
-                            <small class="text-muted">Upload photo of delivered package</small>
-                        </div>
-
-                        <div class="mb-2">
-                            <label class="form-label small">Remarks</label>
-                            <textarea class="form-control form-control-sm" name="remarks" rows="2" placeholder="Any notes..."></textarea>
-                        </div>
-
-                        <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" name="confirm_delivery" required>
-                            <label class="form-check-label small">
-                                I confirm this delivery is complete
-                            </label>
-                        </div>
-                        
-                        <div class="modal-footer py-2 px-0">
-                            <button type="button" class="btn btn-sm btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                            <button type="submit" class="btn btn-sm btn-primary">Confirm Delivery</button>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Thermal Receipt Modal -->
-    <div class="modal fade" id="receiptModal" tabindex="-1">
-        <div class="modal-dialog modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">
-                        <i class="bi bi-receipt me-2"></i>
-                        Receipt Preview
-                    </h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body" id="receiptContent">
-                    <!-- Receipt preview will be loaded here -->
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button type="button" class="btn btn-primary" onclick="printThermalReceipt()">
-                        <i class="bi bi-printer me-2"></i>Print Receipt
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Partial Delivery Modal -->
-    <div class="modal fade" id="partialModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Partial Delivery</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="partialForm">
-                        <div class="mb-3">
-                            <label class="form-label">Reason for Partial Delivery</label>
-                            <select class="form-select" id="partialReason" required>
-                                <option value="">Select reason</option>
-                                <option value="Out of stock">Out of stock</option>
-                                <option value="Damaged items">Damaged items</option>
-                                <option value="Customer refused some items">Customer refused some items</option>
-                                <option value="Wrong items">Wrong items</option>
-                                <option value="Quantity mismatch">Quantity mismatch</option>
-                                <option value="Other">Other</option>
-                            </select>
-                        </div>
-                        <div class="mb-3" id="otherReasonDiv" style="display: none;">
-                            <label class="form-label">Please specify</label>
-                            <input type="text" class="form-control" id="otherReason" placeholder="Enter reason">
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Items Delivered</label>
-                            <div id="itemsList" class="border p-2 rounded mb-2" style="max-height: 200px; overflow-y: auto;">
-                                <!-- Items will be loaded here -->
-                            </div>
-                            <small class="text-muted">Check the items that were successfully delivered</small>
-                        </div>
-                        <div class="mb-3">
-                            <label class="form-label">Additional Details</label>
-                            <textarea class="form-control" id="partialDetails" rows="3" placeholder="Provide more details about the partial delivery..."></textarea>
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-warning" onclick="submitPartialDelivery()">Submit Partial</button>
-                </div>
-            </div>
-        </div>
-    </div>
+</div>
 
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
-    <script>
+   <script>
         const branchId = <?php echo $branch_id; ?>;
         const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
         const userRole = '<?php echo $user_role; ?>';
@@ -1806,14 +2368,14 @@ if ($user_role == 'delivery' && $driver_id > 0) {
         let currentItems = [];
         let currentThermalReceipt = '';
 
-        // ================= GPS TRACKING VARIABLES (UPDATED) =================
-        let intervalId = null;      // Para sa setInterval (60 seconds)
+        // ================= GPS TRACKING VARIABLES =================
+        let watchId = null;
         let trackingActive = false;
         let updateCount = 0;
         let retryCount = 0;
         let currentDriverId = <?php echo $driver_id ?: 0; ?>;
 
-        // ================= LIVE TRACKING VARIABLES (OPTIMIZED) =================
+        // ================= LIVE TRACKING VARIABLES =================
         let liveTrackingMap = null;
         let routingControl = null;
         let userMarker = null;
@@ -1826,6 +2388,62 @@ if ($user_role == 'delivery' && $driver_id > 0) {
 
         // Cache ng huling posisyon para sa mabilis na initial load
         let lastKnownPosition = null;
+
+        // ================= MOBILE NAVIGATION FUNCTIONS =================
+        function initMobileNav() {
+            const mobileNav = document.getElementById('mobileNav');
+            if (!mobileNav) return;
+            
+            const isMobile = window.innerWidth <= 992;
+            
+            if (isMobile) {
+                mobileNav.style.display = 'block';
+                
+                // Set active state based on current page (excluding logout)
+                const currentPage = window.location.pathname.split('/').pop();
+                const navLinks = mobileNav.querySelectorAll('.nav-link:not(.logout-btn)');
+                
+                navLinks.forEach(link => {
+                    link.classList.remove('active');
+                    const href = link.getAttribute('href');
+                    if (currentPage === href) {
+                        link.classList.add('active');
+                    }
+                });
+            } else {
+                mobileNav.style.display = 'none';
+            }
+        }
+
+        // ================= PROFILE/LOGOUT FUNCTIONS =================
+        function showProfileModal() {
+            const profileModal = new bootstrap.Modal(document.getElementById('profileModal'));
+            profileModal.show();
+        }
+
+        function confirmLogout() {
+            // Close the modal first
+            const modal = bootstrap.Modal.getInstance(document.getElementById('profileModal'));
+            if (modal) {
+                modal.hide();
+            }
+            
+            // Show confirmation dialog
+            Swal.fire({
+                title: 'Are you sure?',
+                text: 'You will be logged out of the system',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#07d826',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, logout'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    localStorage.removeItem('sidebarCollapsed');
+                    window.location.href = '../logout.php';
+                }
+            });
+        }
 
         // ================= SIDEBAR FUNCTIONS =================
         function toggleSidebar() {
@@ -1983,17 +2601,16 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             }
 
             if (trackingActive) {
-                // Check for active deliveries before stopping (using badge classes)
+                // Check for active deliveries before stopping
                 const rows = document.querySelectorAll('tbody tr');
                 let hasActiveDelivery = false;
                 
                 rows.forEach(row => {
-                    const statusCell = row.cells[5]; // Status column index
+                    const statusCell = row.cells[5];
                     if (statusCell) {
                         const badge = statusCell.querySelector('.badge');
                         if (badge) {
                             const badgeClass = badge.className;
-                            // 'in-transit' has class 'bg-primary', 'partial' has 'bg-info'
                             if (badgeClass.includes('bg-primary') || badgeClass.includes('bg-info')) {
                                 hasActiveDelivery = true;
                             }
@@ -2013,7 +2630,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 
                 stopTracking();
             } else {
-                startTracking(); // this is the main shift start function
+                startTracking();
             }
         }
 
@@ -2087,40 +2704,13 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             });
         }
 
-        // UPDATED: startGPSTracking with setInterval (60 seconds)
         function startGPSTracking() {
             updateUI('requesting', 'Getting GPS location...');
             
-            // Kunin agad ang location para sa initial
             navigator.geolocation.getCurrentPosition(
                 function(position) {
                     sendLocation(position.coords);
-                    
-                    // Simulan ang interval para sa 60 seconds
-                    if (intervalId) clearInterval(intervalId);
-                    intervalId = setInterval(function() {
-                        navigator.geolocation.getCurrentPosition(
-                            function(pos) {
-                                sendLocation(pos.coords);
-                                updateCount++;
-                                updateUI('success', 'LIVE');
-                            },
-                            function(error) {
-                                console.log('Interval GPS error:', error.message);
-                            },
-                            {
-                                enableHighAccuracy: true,
-                                timeout: 15000,
-                                maximumAge: 0
-                            }
-                        );
-                    }, 60000); // 60,000 milliseconds = 60 seconds
-                    
-                    trackingActive = true;
-                    let btn = document.getElementById('trackingBtn');
-                    btn.innerHTML = '<i class="bi bi-stop-circle"></i> Stop Tracking';
-                    btn.classList.remove('btn-success');
-                    btn.classList.add('btn-danger');
+                    startWatching();
                 },
                 function(error) {
                     console.log('GPS Error:', error.code, error.message);
@@ -2128,16 +2718,19 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                     
                     if (retryCount <= 3) {
                         updateUI('retry', 'Retrying GPS... (' + retryCount + '/3)');
-                        setTimeout(startGPSTracking, 2000);
+                        
+                        setTimeout(function() {
+                            startGPSTracking();
+                        }, 2000);
                     } else {
                         updateUI('error', 'GPS Error: ' + getErrorMessage(error));
                         retryCount = 0;
                     }
                 },
                 {
-                    enableHighAccuracy: true,
+                    enableHighAccuracy: false,
                     timeout: 10000,
-                    maximumAge: 0
+                    maximumAge: 60000
                 }
             );
         }
@@ -2187,13 +2780,34 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             }
         }
 
-        // REMOVED: startWatching() function - hindi na kailangan
+        function startWatching() {
+            if (watchId) return;
 
-        // UPDATED: stopTracking - clear interval instead of watch
+            watchId = navigator.geolocation.watchPosition(
+                function(position) {
+                    sendLocation(position.coords);
+                    updateCount++;
+                    
+                    updateUI('success', 'LIVE');
+                },
+                function(error) {
+                    console.log('Watch error:', error.message);
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 15000,
+                    maximumAge: 10000
+                }
+            );
+
+            trackingActive = true;
+            
+        }
+
         function stopTracking() {
-            if (intervalId) {
-                clearInterval(intervalId);
-                intervalId = null;
+            if (watchId) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
             }
             
             fetch('../Global/gps_shift_start.php', {
@@ -2268,7 +2882,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             });
         }
 
-        // ================= LIVE NAVIGATION FUNCTIONS (RENAMED & OPTIMIZED) =================
+        // ================= LIVE NAVIGATION FUNCTIONS =================
         function openLiveNavigation(destLat, destLng, customerName, address) {
             // Check if browser supports geolocation
             if (!navigator.geolocation) {
@@ -2283,17 +2897,17 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             const modal = new bootstrap.Modal(document.getElementById('trackingModal'));
             modal.show();
 
-            // Update destination info agad
+            // Update destination info immediately
             document.getElementById('destinationText').textContent = customerName || 'Customer Location';
             document.getElementById('destinationCoordinates').textContent = 
                 `${destinationPosition.lat.toFixed(6)}, ${destinationPosition.lng.toFixed(6)}`;
 
-            // Initialize map agad (huwag maghintay ng GPS)
+            // Initialize map immediately
             setTimeout(() => {
                 initLiveTrackingMap(destinationPosition.lat, destinationPosition.lng, customerName, address);
-                // Simulan ang pagkuha ng GPS (fast acquisition)
+                // Start GPS acquisition
                 startFastGPSAcquisition();
-            }, 300); // Bahagyang delay para mag-render muna ang modal
+            }, 300);
         }
 
         function initLiveTrackingMap(destLat, destLng, customerName, address) {
@@ -2302,21 +2916,30 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 liveTrackingMap.remove();
             }
 
-            // Create map centered on destination (mas mabilis kaysa hintayin ang user location)
-            liveTrackingMap = L.map('trackingMap').setView([destLat, destLng], 13);
+            // Create map with mobile-friendly options
+            liveTrackingMap = L.map('trackingMap', {
+                zoomControl: false
+            }).setView([destLat, destLng], 13);
+
+            // Add zoom control in top-right for better mobile access
+            L.control.zoom({
+                position: 'topright'
+            }).addTo(liveTrackingMap);
 
             // Add OpenStreetMap tiles
             L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                attribution: '© OpenStreetMap contributors'
+                attribution: '© OpenStreetMap contributors',
+                maxZoom: 19
             }).addTo(liveTrackingMap);
 
-            // Add destination marker (red)
+            // Add destination marker (red) - larger for mobile
+            const destIconSize = window.innerWidth <= 768 ? 28 : 20;
             destinationMarker = L.marker([destLat, destLng], {
                 icon: L.divIcon({
                     className: 'custom-destination-icon',
                     html: '<div class="custom-destination-icon"></div>',
-                    iconSize: [20, 20],
-                    iconAnchor: [10, 10]
+                    iconSize: [destIconSize, destIconSize],
+                    iconAnchor: [destIconSize/2, destIconSize/2]
                 })
             }).addTo(liveTrackingMap);
             
@@ -2326,13 +2949,13 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 <small>${destLat.toFixed(6)}, ${destLng.toFixed(6)}</small>
             `).openPopup();
 
-            // Add user marker (blue) - itatago muna, ipapakita pag may GPS na
+            // Add user marker (blue)
             userMarker = L.marker([destLat, destLng], {
                 icon: L.divIcon({
                     className: 'custom-user-icon',
                     html: '<div class="custom-user-icon"></div>',
-                    iconSize: [20, 20],
-                    iconAnchor: [10, 10]
+                    iconSize: [destIconSize, destIconSize],
+                    iconAnchor: [destIconSize/2, destIconSize/2]
                 })
             }).addTo(liveTrackingMap);
             
@@ -2340,16 +2963,46 @@ if ($user_role == 'delivery' && $driver_id > 0) {
 
             // Add accuracy circle
             accuracyCircle = L.circle([destLat, destLng], {
-                color: '#007bff',
-                fillColor: '#007bff',
+                color: '#44D34E',
+                fillColor: '#44D34E',
                 fillOpacity: 0.1,
-                radius: 100
+                radius: 100,
+                weight: 2
             }).addTo(liveTrackingMap);
+            
+            // On mobile, ensure panel starts expanded and properly positioned
+            if (window.innerWidth <= 768) {
+                const panel = document.getElementById('navigationStatusPanel');
+                if (panel) {
+                    panel.classList.remove('collapsed');
+                    
+                    const toggleBtn = document.getElementById('toggleStatusPanel');
+                    if (toggleBtn) {
+                        const icon = toggleBtn.querySelector('i');
+                        icon.classList.remove('bi-chevron-down');
+                        icon.classList.add('bi-chevron-up');
+                    }
+                    
+                    panel.style.top = 'auto';
+                    panel.style.bottom = '0';
+                    panel.style.left = '0';
+                    panel.style.right = '0';
+                    panel.style.width = '100%';
+                    panel.style.maxHeight = '60vh';
+                }
+            }
+            
+            // Force map resize after panel is positioned
+            setTimeout(() => {
+                if (liveTrackingMap) {
+                    liveTrackingMap.invalidateSize();
+                }
+            }, 300);
         }
 
-        // Mabilis na pagkuha ng GPS (low accuracy, cached)
+        // Fast GPS acquisition
         function startFastGPSAcquisition() {
-            // Kung may cached na posisyon at bago pa (<= 30 seconds), gamitin muna
+            // Use cached position if fresh (<= 30 seconds)
             if (lastKnownPosition && (Date.now() - lastKnownPosition.timestamp < 30000)) {
                 console.log('Using cached position');
                 livePositionSuccess({
@@ -2361,10 +3014,10 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 });
             }
 
-            // Subukang kumuha ng mabilis na low-accuracy fix
+            // Try to get fast low-accuracy fix
             navigator.geolocation.getCurrentPosition(
                 function(position) {
-                    // I-save sa cache
+                    // Save to cache
                     lastKnownPosition = {
                         lat: position.coords.latitude,
                         lng: position.coords.longitude,
@@ -2372,18 +3025,18 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                         timestamp: Date.now()
                     };
                     livePositionSuccess(position);
-                    // Pag nakuha na, mag-watch na ng high accuracy
+                    // Start high accuracy watching
                     startLiveWatching();
                 },
                 function(error) {
                     console.log('Fast GPS error:', error);
-                    // Kung walang makuha, subukan ang high accuracy watch
+                    // If no fix, try high accuracy watch
                     startLiveWatching();
                 },
                 {
                     enableHighAccuracy: false,
                     timeout: 5000,
-                    maximumAge: 30000 // Gumamit ng naka-cache hanggang 30s
+                    maximumAge: 30000
                 }
             );
         }
@@ -2415,7 +3068,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
 
             currentPosition = { lat, lng, accuracy };
 
-            // I-update ang cache
+            // Update cache
             lastKnownPosition = {
                 lat: lat,
                 lng: lng,
@@ -2426,11 +3079,19 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             // Update user marker position
             if (userMarker) {
                 userMarker.setLatLng([lat, lng]);
-                userMarker.setPopupContent(`
-                    <b>Your Location</b><br>
-                    <small>${lat.toFixed(6)}, ${lng.toFixed(6)}</small><br>
-                    <small>Accuracy: ${accuracy.toFixed(1)}m</small>
-                `);
+                
+                if (window.innerWidth <= 768) {
+                    userMarker.setPopupContent(`
+                        <b>You</b><br>
+                        <small>${accuracy.toFixed(0)}m accuracy</small>
+                    `);
+                } else {
+                    userMarker.setPopupContent(`
+                        <b>Your Location</b><br>
+                        <small>${lat.toFixed(6)}, ${lng.toFixed(6)}</small><br>
+                        <small>Accuracy: ${accuracy.toFixed(1)}m</small>
+                    `);
+                }
             }
 
             // Update accuracy circle
@@ -2439,11 +3100,15 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 accuracyCircle.setRadius(accuracy);
             }
 
-            // Update UI with location info (no error message)
-            document.getElementById('yourLocationText').innerHTML = '<i class="bi bi-check-circle-fill text-success me-1"></i> Location acquired';
-            document.getElementById('yourCoordinates').innerHTML = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+            // Update UI
+            const isMobile = window.innerWidth <= 768;
+            const locationText = isMobile ? '📍 You' : 'Your Location:';
+            document.getElementById('yourLocationText').innerHTML = `<i class="bi bi-check-circle-fill text-success me-1"></i> ${locationText}`;
+            document.getElementById('yourCoordinates').innerHTML = isMobile ? 
+                `${lat.toFixed(5)}, ${lng.toFixed(5)}` : 
+                `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
 
-            // Update or create route (huwag i-fit para hindi mag-reset ang view)
+            // Update or create route
             if (destinationPosition) {
                 if (!routingControl) {
                     // Create route for the first time
@@ -2454,11 +3119,11 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                         ],
                         routeWhileDragging: false,
                         showAlternatives: false,
-                        fitSelectedRoutes: false, // Huwag i-auto fit para hindi mag-jump ang view
+                        fitSelectedRoutes: false,
                         lineOptions: {
-                            styles: [{ color: '#007bff', opacity: 0.8, weight: 5 }]
+                            styles: [{ color: '#44D34E', opacity: 0.8, weight: 5 }]
                         },
-                        createMarker: function() { return null; } // Don't create markers (we have our own)
+                        createMarker: function() { return null; }
                     }).addTo(liveTrackingMap);
 
                     // Listen for route calculation
@@ -2487,33 +3152,28 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             document.getElementById('accuracyBar').style.width = accuracyPercent + '%';
 
             let accuracyClass = 'bg-success';
-            let accuracyText = 'High accuracy';
+            let accuracyText = 'Excellent';
             
             if (accuracy < 10) {
                 accuracyClass = 'bg-success';
-                accuracyText = 'Excellent accuracy';
+                accuracyText = 'Excellent';
             } else if (accuracy < 30) {
                 accuracyClass = 'bg-info';
-                accuracyText = 'Good accuracy';
+                accuracyText = 'Good';
             } else if (accuracy < 100) {
                 accuracyClass = 'bg-warning';
-                accuracyText = 'Fair accuracy';
+                accuracyText = 'Fair';
             } else {
                 accuracyClass = 'bg-danger';
-                accuracyText = 'Poor accuracy';
+                accuracyText = 'Poor';
             }
             
             document.getElementById('accuracyBar').className = 'progress-bar ' + accuracyClass;
             document.getElementById('accuracyText').innerHTML = `<i class="bi bi-${accuracyClass === 'bg-success' ? 'check-circle' : accuracyClass === 'bg-info' ? 'info-circle' : accuracyClass === 'bg-warning' ? 'exclamation-triangle' : 'x-circle'} me-1"></i> ${accuracyText}`;
-
-            // Huwag i-center ang map sa user para hindi mawala ang view
         }
 
         function livePositionError(error) {
-            // Don't show error message, just update the UI with retry option
-            let accuracyClass = 'bg-warning';
-            let accuracyText = 'Waiting for GPS...';
-            
+            // Update UI with retry option
             document.getElementById('yourLocationText').innerHTML = '<i class="bi bi-hourglass-split me-1"></i> Acquiring GPS...';
             document.getElementById('yourCoordinates').innerHTML = '--';
             document.getElementById('accuracyBar').className = 'progress-bar bg-warning';
@@ -2535,7 +3195,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
         }
 
         function stopLiveNavigation() {
-            // Check for active deliveries before stopping navigation (same as before)
+            // Check for active deliveries before stopping navigation
             const rows = document.querySelectorAll('tbody tr');
             let hasActiveDelivery = false;
             rows.forEach(row => {
@@ -2558,7 +3218,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                     text: 'You have active deliveries. Please complete them before stopping navigation.',
                     confirmButtonColor: '#28a745'
                 });
-                return; // Do not stop navigation
+                return;
             }
 
             // Clear watch position
@@ -2586,7 +3246,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             }
         }
 
-        // Confirmation before stopping live navigation
         function confirmStopLiveNavigation() {
             Swal.fire({
                 title: 'Stop Navigation?',
@@ -2607,7 +3266,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             if (currentPosition && liveTrackingMap) {
                 liveTrackingMap.setView([currentPosition.lat, currentPosition.lng], 16);
             } else {
-                // If no current position, try to get one
                 retryGPSTracking();
             }
         }
@@ -2622,9 +3280,28 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             }
         }
 
+        // ================= TOUCH-FRIENDLY PANEL TOGGLE FOR MOBILE =================
+        function initMobilePanelToggle() {
+            const panel = document.getElementById('navigationStatusPanel');
+            const header = panel ? panel.querySelector('h6') : null;
+            
+            if (panel && header && window.innerWidth <= 768) {
+                header.removeEventListener('click', handlePanelHeaderClick);
+                header.addEventListener('click', handlePanelHeaderClick);
+            }
+        }
+
+        function handlePanelHeaderClick(e) {
+            if (window.innerWidth <= 768 && !e.target.closest('.toggle-panel-btn')) {
+                const toggleBtn = document.getElementById('toggleStatusPanel');
+                if (toggleBtn) {
+                    toggleBtn.click();
+                }
+            }
+        }
+
         // ================= DELIVERY FUNCTIONS WITH GPS VALIDATION =================
 
-        // Update delivery status (for start and partial) - WITH GPS VALIDATION
         function updateDeliveryStatus(deliveryId, newStatus) {
             if (newStatus === 'in-transit') {
                 // Check if GPS tracking is active
@@ -2718,7 +3395,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             }
         }
 
-        // Show delivery modal - WITH GPS VALIDATION
         function showDeliveryModal(deliveryId, soId, orderNumber) {
             // Check if GPS tracking is active
             if (!trackingActive) {
@@ -2758,7 +3434,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             modal.show();
         }
 
-        // Load items for partial delivery
         function loadItemsForPartial(deliveryId) {
             currentPartialDeliveryId = deliveryId;
             
@@ -2781,7 +3456,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 });
         }
 
-        // Display items for partial delivery
         function displayItemsForPartial() {
             const itemsDiv = document.getElementById('itemsList');
             let html = '';
@@ -2800,7 +3474,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             itemsDiv.innerHTML = html;
         }
 
-        // Submit Partial Delivery - WITH GPS VALIDATION
         function submitPartialDelivery() {
             // Check if GPS tracking is still active
             if (!trackingActive) {
@@ -2898,7 +3571,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             });
         }
 
-        // View delivery details in modal
         function viewDeliveryDetails(deliveryId) {
             const modalBody = document.getElementById('viewDetailsModalBody');
             modalBody.innerHTML = `
@@ -2937,7 +3609,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 });
         }
 
-        // Show photo modal
         function showPhotoModal(photoUrl) {
             const modalImg = document.getElementById('photoModalImg');
             const downloadBtn = document.getElementById('downloadPhotoBtn');
@@ -2949,7 +3620,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             modal.show();
         }
 
-        // Generate thermal receipt HTML
         function generateThermalReceipt(deliveryId, soNumber, customerName, address, signedBy, deliveryDate, itemsRaw) {
             const date = new Date(deliveryDate);
             const formattedDate = date.toLocaleString('en-PH', {
@@ -3052,7 +3722,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             `;
         }
 
-        // Show thermal receipt modal
         function showReceiptModal(deliveryId, soNumber, customerName, address, signedBy, deliveryDate, itemsRaw) {
             const receiptContent = document.getElementById('receiptContent');
             
@@ -3063,7 +3732,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             modal.show();
         }
 
-        // Print thermal receipt
         function printThermalReceipt() {
             const thermalDiv = document.getElementById('thermalReceipt');
             thermalDiv.style.display = 'block';
@@ -3076,7 +3744,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             }, 100);
         }
 
-        // Show location on map
         function showLocation(lat, lng, customerName, address) {
             currentLat = parseFloat(lat);
             currentLng = parseFloat(lng);
@@ -3096,7 +3763,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             }, 500);
         }
 
-        // Initialize map
         function initMap(lat, lng, customerName) {
             const mapElement = document.getElementById('customerLocationMap');
             
@@ -3126,7 +3792,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             }
         }
 
-        // Open in Google Maps
         function openInGoogleMaps() {
             if (currentLat && currentLng) {
                 const url = `https://www.google.com/maps/search/?api=1&query=${currentLat},${currentLng}`;
@@ -3148,7 +3813,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             }
         });
 
-        // Copy SQL
         function copySQL(table) {
             let sql = '';
             if (table === 'deliveries') {
@@ -3162,22 +3826,21 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             });
         }
 
-        // Logout
         function logout() {
-        Swal.fire({
-            title: 'Are you sure?',
-            text: 'You will be logged out of the system',
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonColor: '#07d826',
-            cancelButtonColor: '#6c757d',
-            confirmButtonText: 'Yes, logout'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                localStorage.removeItem('sidebarCollapsed');
-                window.location.href = '../logout.php';
-            }
-        });
+            Swal.fire({
+                title: 'Are you sure?',
+                text: 'You will be logged out of the system',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#07d826',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, logout'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    localStorage.removeItem('sidebarCollapsed');
+                    window.location.href = '../logout.php';
+                }
+            });
         }
 
         // Search functionality
@@ -3211,7 +3874,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             });
         }
 
-        // ================= COLLAPSIBLE PANEL & DRAGGABLE =================
+        // ================= IMPROVED COLLAPSIBLE PANEL & DRAGGABLE FOR MOBILE =================
         function initCollapsiblePanel() {
             const panel = document.getElementById('navigationStatusPanel');
             const toggleBtn = document.getElementById('toggleStatusPanel');
@@ -3219,12 +3882,11 @@ if ($user_role == 'delivery' && $driver_id > 0) {
 
             let isCollapsed = false;
 
-            // Prevent drag from starting when clicking the toggle button
             toggleBtn.addEventListener('mousedown', function(e) {
-                e.stopPropagation(); // Stop event from reaching the h6 drag handler
+                e.stopPropagation();
             });
             toggleBtn.addEventListener('touchstart', function(e) {
-                e.stopPropagation(); // For mobile touch
+                e.stopPropagation();
             });
 
             toggleBtn.addEventListener('click', function() {
@@ -3234,15 +3896,32 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 if (isCollapsed) {
                     icon.classList.remove('bi-chevron-up');
                     icon.classList.add('bi-chevron-down');
+                    
+                    if (window.innerWidth <= 768) {
+                        panel.style.maxHeight = '60px';
+                    }
                 } else {
                     icon.classList.remove('bi-chevron-down');
                     icon.classList.add('bi-chevron-up');
+                    
+                    if (window.innerWidth <= 768) {
+                        panel.style.maxHeight = '60vh';
+                    }
                 }
-                // Notify map to resize
+                
                 if (liveTrackingMap) {
                     setTimeout(() => liveTrackingMap.invalidateSize(), 200);
                 }
             });
+            
+            const header = panel.querySelector('h6');
+            if (header) {
+                header.addEventListener('click', function(e) {
+                    if (window.innerWidth <= 768 && !e.target.closest('.toggle-panel-btn')) {
+                        toggleBtn.click();
+                    }
+                });
+            }
         }
 
         function makePanelDraggable() {
@@ -3258,27 +3937,42 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 const isMobile = window.innerWidth <= 768;
 
                 if (isMobile) {
-                    // On mobile: stick to bottom (handled by CSS)
-                    panel.style.left = '';
-                    panel.style.top = '';
-                    panel.style.right = '';
+                    panel.style.left = '0';
+                    panel.style.top = 'auto';
+                    panel.style.bottom = '0';
+                    panel.style.right = '0';
+                    panel.style.width = '100%';
+                    panel.style.maxWidth = '100%';
+                    panel.style.borderRadius = '20px 20px 0 0';
+                    panel.style.transform = 'none';
+                    
+                    if (panel.classList.contains('collapsed')) {
+                        panel.style.maxHeight = '60px';
+                    } else {
+                        panel.style.maxHeight = '60vh';
+                        panel.style.overflowY = 'auto';
+                    }
                 } else {
-                    // Desktop: 20px from right edge
-                    const defaultLeft = containerRect.width - panelWidth - 20;
-                    const defaultTop = 20;
-                    panel.style.left = defaultLeft + 'px';
-                    panel.style.top = defaultTop + 'px';
+                    panel.style.width = '320px';
+                    panel.style.maxWidth = '320px';
+                    panel.style.left = (containerRect.width - panelWidth - 20) + 'px';
+                    panel.style.top = '20px';
+                    panel.style.bottom = 'auto';
                     panel.style.right = 'auto';
+                    panel.style.borderRadius = '12px';
+                    panel.style.maxHeight = 'calc(100% - 40px)';
+                    panel.style.overflowY = 'auto';
+                    panel.style.transform = 'none';
                 }
             }
 
-            // Reset position when modal opens
             const trackingModal = document.getElementById('trackingModal');
             trackingModal.addEventListener('shown.bs.modal', resetPosition);
+            
+            window.addEventListener('resize', resetPosition);
 
-            // Only enable dragging on desktop
             function enableDragging() {
-                if (window.innerWidth <= 768) return; // no dragging on mobile
+                if (window.innerWidth <= 768) return;
 
                 let isDragging = false;
                 let startX, startY, startLeft, startTop;
@@ -3343,6 +4037,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                     panel.style.left = relativeLeft + 'px';
                     panel.style.top = relativeTop + 'px';
                     panel.style.right = 'auto';
+                    panel.style.bottom = 'auto';
                 }
 
                 function stopDrag() {
@@ -3354,24 +4049,27 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                     document.removeEventListener('touchcancel', stopDrag);
                 }
 
-                // Attach drag start to handle
                 handle.addEventListener('mousedown', startDrag);
                 handle.addEventListener('touchstart', startDrag, { passive: false });
             }
 
-            // Initial enable
             enableDragging();
 
-            // Re-evaluate on resize
             window.addEventListener('resize', function() {
                 resetPosition();
-                // Could also dynamically remove/add listeners, but not strictly necessary
+                if (window.innerWidth <= 768) {
+                    handle.removeEventListener('mousedown', enableDragging);
+                    handle.removeEventListener('touchstart', enableDragging);
+                } else {
+                    enableDragging();
+                }
             });
         }
 
-        // Initialize on page load
+        // ================= INITIALIZATION =================
         document.addEventListener('DOMContentLoaded', function() {
             initializeSidebar();
+            initMobileNav();
             
             const mobileToggleBtn = document.getElementById('mobileToggleBtn');
             if (mobileToggleBtn) {
@@ -3411,7 +4109,15 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 }
             });
 
-            window.addEventListener('resize', handleSidebarResize);
+            window.addEventListener('resize', function() {
+                handleSidebarResize();
+                initMobileNav();
+                initMobilePanelToggle();
+                
+                if (liveTrackingMap) {
+                    setTimeout(() => liveTrackingMap.invalidateSize(), 200);
+                }
+            });
             
             const locationModal = document.getElementById('locationMapModal');
             if (locationModal) {
@@ -3423,12 +4129,14 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                 });
             }
 
-            // Clean up live tracking on modal close
             const trackingModal = document.getElementById('trackingModal');
             if (trackingModal) {
                 trackingModal.addEventListener('hidden.bs.modal', function () {
-                    // Do not call stopLiveNavigation() here because it might have been called already
-                    // Just clean up map resources
+                    if (watchPositionId) {
+                        navigator.geolocation.clearWatch(watchPositionId);
+                        watchPositionId = null;
+                    }
+                    
                     if (liveTrackingMap) {
                         liveTrackingMap.remove();
                         liveTrackingMap = null;
@@ -3438,47 +4146,6 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                     routingControl = null;
                     accuracyCircle = null;
                     currentPosition = null;
-                });
-            }
-
-            // Setup tracking button click handler
-            const trackingBtn = document.getElementById('trackingBtn');
-            if (trackingBtn) {
-                trackingBtn.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    
-                    if (trackingActive) {
-                        // Check for active deliveries before stopping
-                        const rows = document.querySelectorAll('tbody tr');
-                        let hasActiveDelivery = false;
-                        
-                        rows.forEach(row => {
-                            const statusCell = row.cells[5];
-                            if (statusCell) {
-                                const badge = statusCell.querySelector('.badge');
-                                if (badge) {
-                                    const badgeClass = badge.className;
-                                    if (badgeClass.includes('bg-primary') || badgeClass.includes('bg-info')) {
-                                        hasActiveDelivery = true;
-                                    }
-                                }
-                            }
-                        });
-                        
-                        if (hasActiveDelivery) {
-                            Swal.fire({
-                                icon: 'error',
-                                title: 'Cannot Stop Tracking',
-                                text: 'You have active deliveries. Please complete all deliveries first.',
-                                confirmButtonColor: '#28a745'
-                            });
-                            return;
-                        }
-                        
-                        stopTracking();
-                    } else {
-                        toggleTracking();
-                    }
                 });
             }
 
@@ -3506,10 +4173,10 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             });
             <?php endif; ?>
 
-            // Initialize collapsible panel and draggable if tracking modal exists
             if (document.getElementById('trackingModal')) {
                 initCollapsiblePanel();
                 makePanelDraggable();
+                initMobilePanelToggle();
             }
         });
 
@@ -3522,6 +4189,12 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             else if (e.key === 'Escape' && window.innerWidth <= 992) {
                 closeMobileSidebar();
             }
+            else if (e.key === 'Escape') {
+                const profileModal = document.getElementById('profileModal');
+                if (profileModal.classList.contains('show')) {
+                    bootstrap.Modal.getInstance(profileModal).hide();
+                }
+            }
             else if (e.ctrlKey && e.key === 'f' && !e.target.matches('input, textarea')) {
                 e.preventDefault();
                 const searchInput = document.getElementById('searchInput');
@@ -3529,6 +4202,111 @@ if ($user_role == 'delivery' && $driver_id > 0) {
                     searchInput.focus();
                 }
             }
+        });
+       
+       // ================= FOR DELIVERY FILTER FUNCTIONS =================
+
+        // Toggle filter visibility
+        function toggleDeliveryFilter() {
+            const content = document.getElementById('salesFilterContent');
+            const icon = document.getElementById('salesFilterIcon');
+            const toggleBtn = document.getElementById('salesFilterToggle');
+            
+            if (content && icon && toggleBtn) {
+                const isExpanded = toggleBtn.getAttribute('aria-expanded') === 'true';
+                
+                if (isExpanded) {
+                    content.classList.add('collapsed');
+                    toggleBtn.setAttribute('aria-expanded', 'false');
+                    icon.style.transform = 'rotate(0deg)';
+                    localStorage.setItem('deliveryFilterHidden', 'true');
+                } else {
+                    content.classList.remove('collapsed');
+                    toggleBtn.setAttribute('aria-expanded', 'true');
+                    icon.style.transform = 'rotate(180deg)';
+                    localStorage.setItem('deliveryFilterHidden', 'false');
+                }
+            }
+        }
+
+        // Apply filters
+        function applyDeliveryFilters() {
+            const search = document.getElementById('searchInput')?.value?.toLowerCase() || '';
+            const status = document.getElementById('statusFilter')?.value?.toLowerCase() || '';
+            
+            const rows = document.querySelectorAll('tbody tr');
+            let visibleCount = 0;
+            
+            rows.forEach(row => {
+                const orderId = row.cells[0]?.textContent?.toLowerCase() || '';
+                const customerName = row.cells[1]?.textContent?.toLowerCase() || '';
+                const address = row.cells[2]?.textContent?.toLowerCase() || '';
+                const contact = row.cells[3]?.textContent?.toLowerCase() || '';
+                const items = row.cells[4]?.textContent?.toLowerCase() || '';
+                const rowStatus = row.cells[5]?.textContent?.toLowerCase().trim() || '';
+                
+                const searchableText = orderId + ' ' + customerName + ' ' + address + ' ' + contact + ' ' + items;
+                
+                const matchesSearch = search === '' || searchableText.includes(search);
+                const matchesStatus = status === '' || rowStatus.includes(status);
+                
+                if (matchesSearch && matchesStatus) {
+                    row.style.display = '';
+                    visibleCount++;
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+            
+            const table = document.querySelector('tbody');
+            const noResultsRow = document.getElementById('noResultsRow');
+            
+            if (visibleCount === 0) {
+                if (!noResultsRow) {
+                    const newRow = document.createElement('tr');
+                    newRow.id = 'noResultsRow';
+                    newRow.innerHTML = '<td colspan="7" class="text-center py-4"><i class="bi bi-search"></i> No matching deliveries found</td>';
+                    table.appendChild(newRow);
+                }
+            } else if (noResultsRow) {
+                noResultsRow.remove();
+            }
+        }
+
+        // Clear filters
+        function clearDeliveryFilters() {
+            document.getElementById('searchInput') && (document.getElementById('searchInput').value = '');
+            document.getElementById('statusFilter') && (document.getElementById('statusFilter').value = '');
+            applyDeliveryFilters();
+        }
+
+        // Initialize filter state - DEFAULT CLOSED
+        function initDeliveryFilterState() {
+            const content = document.getElementById('salesFilterContent');
+            const icon = document.getElementById('salesFilterIcon');
+            const toggleBtn = document.getElementById('salesFilterToggle');
+            
+            if (content && icon && toggleBtn) {
+                content.classList.add('collapsed');
+                toggleBtn.setAttribute('aria-expanded', 'false');
+                icon.style.transform = 'rotate(0deg)';
+                localStorage.setItem('deliveryFilterHidden', 'true');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            initDeliveryFilterState();
+            
+            document.getElementById('salesFilterToggle')?.addEventListener('click', toggleDeliveryFilter);
+            document.getElementById('searchInput')?.addEventListener('input', applyDeliveryFilters);
+            document.getElementById('statusFilter')?.addEventListener('change', applyDeliveryFilters);
+            
+            document.getElementById('searchInput')?.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    applyDeliveryFilters();
+                }
+            });
         });
     </script>
 </body>
