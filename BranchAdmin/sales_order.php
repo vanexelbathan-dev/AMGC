@@ -73,6 +73,35 @@ if ($drivers_branch_column_exists && !$view_all_branches) {
     $drivers_branch_condition = "AND branch_id = $branch_id";
 }
 
+// Calculate current week sales for default stat card (Monday to Saturday)
+$current_week_sales_query = "
+    SELECT COALESCE(SUM(total_amount), 0) as week_total 
+    FROM sales_orders 
+    WHERE order_status IN ('delivered', 'confirmed', 'processing', 'ready')
+    AND YEARWEEK(created_at, 1) = YEARWEEK(NOW(), 1)
+    AND DATE(created_at) <= CURDATE() -- Only include up to today (Saturday)
+";
+
+if ($so_branch_column_exists && !$view_all_branches && $branch_id > 0) {
+    $current_week_sales_query .= " AND branch_id = $branch_id";
+}
+
+$current_week_sales_result = $conn->query($current_week_sales_query);
+$current_week_sales = $current_week_sales_result->fetch_assoc()['week_total'] ?? 0;
+$statCurrentWeekSales = '₱' . number_format($current_week_sales / 1000, 1) . 'K';
+
+// Get current week start and end dates for display (Monday to Saturday)
+$week_start = new DateTime();
+$week_start->modify('monday this week');
+$week_end = new DateTime();
+$week_end->modify('saturday this week');
+$week_start_str = $week_start->format('Y-m-d');
+$week_end_str = $week_end->format('Y-m-d');
+
+// Set default date range to current week (Monday to Saturday)
+$default_start_date = $week_start_str;
+$default_end_date = $week_end_str;
+
 // ========== GET AVAILABLE DRIVERS FOR DROPDOWN ==========
 // Updated logic: Only exclude drivers with active IN-TRANSIT trips
 // Drivers with pending/planned deliveries can still be assigned
@@ -547,6 +576,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 LEFT JOIN branches b ON so.branch_id = b.branch_id
                 LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
                 WHERE so.so_id = ?
+                GROUP BY so.so_id
             ";
             
             if ($so_branch_column_exists && !$view_all_branches) {
@@ -563,13 +593,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $order = $result->fetch_assoc();
             
             if ($order) {
-                // Get order items
+                // Get order items - use soi.unit_type for historical accuracy
                 $items_query = "
                     SELECT 
                         soi.*,
                         i.item_code,
                         i.item_name,
-                        i.unit_type,
+                        soi.unit_type,
                         i.price_case,
                         i.price_inner_pack,
                         i.price_box,
@@ -644,14 +674,142 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             exit;
         }
         
-        // PRINT SALES ORDER
+        // GET DETAILED ORDER ITEMS FOR EXPORT/PRINT
+        elseif ($_POST['action'] === 'get_order_items_detailed') {
+            $so_id = (int)$_POST['so_id'];
+            
+            $query = "
+                SELECT 
+                    soi.*,
+                    so.so_number,
+                    so.created_at as order_date,
+                    so.order_status,
+                    so.total_amount as order_total,
+                    c.customer_name,
+                    c.customer_id,
+                    b.branch_name,
+                    b.branch_id,
+                    i.item_code,
+                    i.item_name,
+                    i.unit_type as item_unit_type
+                FROM sales_order_items soi
+                JOIN sales_orders so ON soi.so_id = so.so_id
+                JOIN customers c ON so.customer_id = c.customer_id
+                LEFT JOIN branches b ON so.branch_id = b.branch_id
+                JOIN items i ON soi.item_id = i.item_id
+                WHERE soi.so_id = ?
+            ";
+            
+            if ($so_branch_column_exists && !$view_all_branches) {
+                $query .= " AND so.branch_id = ?";
+                $stmt = $conn->prepare($query);
+                $stmt->bind_param("ii", $so_id, $branch_id);
+            } else {
+                $stmt = $conn->prepare($query);
+                $stmt->bind_param("i", $so_id);
+            }
+            
+            $stmt->execute();
+            $result = $stmt->get_result();
+            $items = $result->fetch_all(MYSQLI_ASSOC);
+            
+            echo json_encode([
+                'success' => true,
+                'items' => $items
+            ]);
+            exit;
+        }
+        
+        // GET ALL ORDER ITEMS FOR EXPORT/PRINT WITH FILTERS
+        elseif ($_POST['action'] === 'get_all_order_items') {
+            $filter_data = json_decode($_POST['filter_data'] ?? '{}', true);
+            
+            $query = "
+                SELECT 
+                    soi.so_item_id,
+                    soi.so_id,
+                    soi.item_id,
+                    soi.quantity_ordered,
+                    soi.quantity_delivered,
+                    soi.unit_price,
+                    soi.unit_type,
+                    so.so_number,
+                    so.created_at as order_date,
+                    so.order_status,
+                    so.total_amount as order_total,
+                    c.customer_name,
+                    c.customer_id,
+                    b.branch_name,
+                    b.branch_id,
+                    i.item_code,
+                    i.item_name
+                FROM sales_order_items soi
+                JOIN sales_orders so ON soi.so_id = so.so_id
+                JOIN customers c ON so.customer_id = c.customer_id
+                LEFT JOIN branches b ON so.branch_id = b.branch_id
+                JOIN items i ON soi.item_id = i.item_id
+                WHERE 1=1
+            ";
+            
+            // Apply filters
+            if (!empty($filter_data['status']) && $filter_data['status'] !== '') {
+                $query .= " AND so.order_status = '" . $conn->real_escape_string($filter_data['status']) . "'";
+            }
+            
+            if (!empty($filter_data['customer']) && $filter_data['customer'] !== '') {
+                $query .= " AND c.customer_name = '" . $conn->real_escape_string($filter_data['customer']) . "'";
+            }
+            
+            if (!empty($filter_data['search']) && $filter_data['search'] !== '') {
+                $search = $conn->real_escape_string($filter_data['search']);
+                $query .= " AND (so.so_number LIKE '%$search%' OR c.customer_name LIKE '%$search%' OR i.item_name LIKE '%$search%' OR i.item_code LIKE '%$search%')";
+            }
+            
+            // Apply date range filter
+            if (!empty($filter_data['start_date']) && !empty($filter_data['end_date'])) {
+                $start_date = $conn->real_escape_string($filter_data['start_date']);
+                $end_date = $conn->real_escape_string($filter_data['end_date']);
+                $query .= " AND DATE(so.created_at) BETWEEN '$start_date' AND '$end_date'";
+            }
+            
+            // Apply branch filter
+            if ($so_branch_column_exists && !$view_all_branches) {
+                $query .= " AND so.branch_id = $branch_id";
+            }
+            
+            $query .= " ORDER BY so.created_at DESC, so.so_id DESC, soi.so_item_id";
+            
+            $result = $conn->query($query);
+            $items = $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
+            
+            echo json_encode([
+                'success' => true,
+                'items' => $items,
+                'branch_name' => $branch_id ? ('Branch ' . $branch_id) : 'All Branches',
+                'view_all' => $view_all_branches
+            ]);
+            exit;
+        }
+        
+        // PRINT SALES ORDER (single order with detailed items)
         elseif ($_POST['action'] === 'print_order') {
             $so_id = (int)$_POST['so_id'];
             
             $query = "
                 SELECT 
-                    so.*,
+                    soi.so_item_id,
+                    soi.so_id,
+                    soi.item_id,
+                    soi.quantity_ordered,
+                    soi.quantity_delivered,
+                    soi.unit_price,
+                    soi.unit_type,
+                    so.so_number,
+                    so.created_at as order_date,
+                    so.order_status,
+                    so.total_amount as order_total,
                     c.customer_name,
+                    c.customer_id,
                     c.address,
                     c.phone_number as contact_number,
                     c.email,
@@ -660,36 +818,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     b.contact_number as branch_contact,
                     u.first_name,
                     u.last_name,
-                    COUNT(soi.so_item_id) as total_items,
-                    SUM(soi.quantity_ordered) as total_quantity
-                FROM sales_orders so
+                    i.item_code,
+                    i.item_name
+                FROM sales_order_items soi
+                JOIN sales_orders so ON soi.so_id = so.so_id
                 JOIN customers c ON so.customer_id = c.customer_id
                 LEFT JOIN branches b ON so.branch_id = b.branch_id
                 LEFT JOIN users u ON so.created_by = u.user_id
-                LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
-                WHERE so.so_id = ?
-                GROUP BY so.so_id
+                JOIN items i ON soi.item_id = i.item_id
+                WHERE soi.so_id = ?
+                ORDER BY soi.so_item_id
             ";
             
             $stmt = $conn->prepare($query);
             $stmt->bind_param("i", $so_id);
             $stmt->execute();
-            $order = $stmt->get_result()->fetch_assoc();
-            
-            $items_query = "
-                SELECT 
-                    soi.*,
-                    i.item_code,
-                    i.item_name,
-                    i.unit_type
-                FROM sales_order_items soi
-                JOIN items i ON soi.item_id = i.item_id
-                WHERE soi.so_id = ?
-            ";
-            $items_stmt = $conn->prepare($items_query);
-            $items_stmt->bind_param("i", $so_id);
-            $items_stmt->execute();
-            $items = $items_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            $items = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             
             $driver_query = "
                 SELECT d.driver_name, d.vehicle_plate_number, d.vehicle_type
@@ -703,9 +847,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $driver_stmt->execute();
             $driver = $driver_stmt->get_result()->fetch_assoc();
             
+            // Get order summary from first item
+            $order_summary = !empty($items) ? $items[0] : null;
+            
             echo json_encode([
                 'success' => true,
-                'order' => $order,
+                'order' => $order_summary,
                 'items' => $items,
                 'driver' => $driver
             ]);
@@ -849,7 +996,7 @@ $sales_query = "
         b.branch_name,
         u.first_name,
         u.last_name,
-        COUNT(soi.so_item_id) as total_items,
+        COUNT(DISTINCT soi.so_item_id) as total_items,
         SUM(soi.quantity_ordered) as total_quantity,
         " . ($invoice_so_column_exists ? "inv.invoice_id, inv.invoice_number, inv.status as invoice_status" : "NULL as invoice_id, NULL as invoice_number, NULL as invoice_status") . ",
         (SELECT driver_name FROM drivers WHERE driver_id = pl.driver_id LIMIT 1) as assigned_driver
@@ -881,7 +1028,6 @@ $cancelled_orders = count(array_filter($sales_orders, fn($so) => $so['order_stat
 
 $statTotalOrders = $total_orders;
 $statPendingOrders = $pending_orders;
-$statForDelivery = $ready_orders;
 $statCompletedOrders = $delivered_orders;
 
 // Get unique customers for filter
@@ -1227,7 +1373,7 @@ function formatDate($dateStr) {
         /* Compact print styles - only logo has color */
         @media print {
             @page {
-                size: portrait;
+                size: landscape;
                 margin: 0.3in;
             }
             
@@ -1328,6 +1474,102 @@ function formatDate($dateStr) {
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
         }
+        
+        /* Date range summary box */
+        .date-range-summary {
+            background: linear-gradient(135deg, #e3f2fd, #bbdefb);
+            border-left: 4px solid #1976d2;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+        .date-range-summary i {
+            color: #1976d2;
+            margin-right: 8px;
+        }
+        .date-range-summary strong {
+            color: #0d47a1;
+        }
+        
+        /* Stat card hover effect */
+        .stat-card {
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .stat-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        /* Date range filter styling */
+        .date-filter-container {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .date-input-group {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .date-input-group label {
+            font-size: 12px;
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 0;
+            white-space: nowrap;
+        }
+        .date-input-group input {
+            width: 140px;
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+        .date-filter-btn {
+            padding: 8px 16px;
+            background-color: #1976d2;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .date-filter-btn:hover {
+            background-color: #0d47a1;
+        }
+        .date-filter-btn:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .date-clear-btn {
+            padding: 8px 16px;
+            background-color: #6c757d;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .date-clear-btn:hover {
+            background-color: #5a6268;
+        }
+        .date-reset-week-btn {
+            padding: 8px 16px;
+            background-color: #2E7D32;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .date-reset-week-btn:hover {
+            background-color: #1B5E20;
+        }
     </style>
 </head>
 <body>
@@ -1371,6 +1613,12 @@ function formatDate($dateStr) {
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="supplier.php" data-title="Suppliers">
+                            <i class="bi bi-bar-chart-line"></i>
+                            <span class="nav-text">Suppliers</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="purchase_order.php">
                             <i class="bi bi-box"></i>
                             <span class="nav-text">Purchase Orders</span>
@@ -1386,6 +1634,12 @@ function formatDate($dateStr) {
                         <a class="nav-link" href="trip_tickets.php">
                             <i class="bi bi-ticket-perforated"></i>
                             <span class="nav-text">Trip Tickets</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="approve_credit_requests.php">
+                            <i class="bi bi-pencil-square"></i>
+                            <span class="nav-text">Approve Requests</span>
                         </a>
                     </li>
                     <hr class="sidebar-divider">
@@ -1535,11 +1789,16 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                         </div>
                     </div>
                     <div class="col-md-3">
-                        <div class="stat-card delivery">
-                            <i class="bi bi-truck stat-icon"></i>
-                            <div class="stat-value"><?= $statForDelivery ?></div>
-                            <div class="stat-label">For Delivery</div>
-                            <small class="d-block mt-2">Ready to ship</small>
+                        <div class="stat-card" style="background: linear-gradient(135deg, #9C27B0, #7B1FA2);" title="Sales for selected date range">
+                            <i class="bi bi-calendar-week stat-icon"></i>
+                            <div class="stat-value" id="dateRangeSalesValue"><?= $statCurrentWeekSales ?></div>
+                            <div class="stat-label" id="dateRangeSalesLabel">Period Sales</div>
+                            <small class="d-block mt-2" id="dateRangeSalesSubtitle">
+                                <i class="bi bi-calendar-range"></i> <span id="dateRangeText">Current week (Mon-Sat)</span>
+                                <?php if (!$view_all_branches && $branch_id > 0): ?>
+                                    <br><span class="badge bg-light text-dark mt-1">Your branch</span>
+                                <?php endif; ?>
+                            </small>
                         </div>
                     </div>
                     <div class="col-md-3">
@@ -1552,19 +1811,46 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                     </div>
                 </div>
 
-                <!-- Search and Filter -->
+                <!-- Date Range Summary Box (shows when date range filter is active) -->
+                <div class="date-range-summary no-print" id="dateRangeSummary" style="display: none;">
+                    <i class="bi bi-calendar-range"></i>
+                    <span id="dateRangeSummaryText"></span>
+                </div>
+
+                <!-- Search and Filter with Manual Date Range -->
                 <div class="row g-3 mb-4 no-print">
                     <div class="col-12">
                         <div class="form-card">
-                            <div class="row g-3">
-                                <div class="col-md-5">
-                                    <div class="search-box">
-                                        <i class="bi bi-search"></i>
-                                        <input type="text" class="form-control" id="searchInput" placeholder="Search by order number or customer..." onkeyup="filterTable()">
+                            <div class="row g-3 align-items-end">
+                                <div class="col-md-12">
+                                    <div class="date-filter-container">
+                                        <div class="date-input-group">
+                                            <label for="startDate">From:</label>
+                                            <input type="date" class="form-control" id="startDate" value="<?= $default_start_date ?>">
+                                        </div>
+                                        <div class="date-input-group">
+                                            <label for="endDate">To:</label>
+                                            <input type="date" class="form-control" id="endDate" value="<?= $default_end_date ?>">
+                                        </div>
+                                        <button class="date-filter-btn" onclick="applyManualDateRangeFilter()">
+                                            <i class="bi bi-funnel"></i> Apply Filter
+                                        </button>
+                                        <button class="date-reset-week-btn" onclick="resetToCurrentWeek()">
+                                            <i class="bi bi-calendar-week"></i> Current Week
+                                        </button>
+                                        <button class="date-clear-btn" onclick="clearDateRangeFilter()">
+                                            <i class="bi bi-x-circle"></i> Clear All Filters
+                                        </button>
                                     </div>
                                 </div>
-                                <div class="col-md-3">
-                                    <select class="form-select" id="statusFilter" onchange="filterTable()">
+                                <div class="col-md-4">
+                                    <div class="search-box">
+                                        <i class="bi bi-search"></i>
+                                        <input type="text" class="form-control" id="searchInput" placeholder="Search by order number or customer..." onkeyup="applyManualFilters()">
+                                    </div>
+                                </div>
+                                <div class="col-md-4">
+                                    <select class="form-select" id="statusFilter" onchange="applyManualFilters()">
                                         <option value="">All Status</option>
                                         <option value="pending">Pending</option>
                                         <option value="confirmed">Confirmed</option>
@@ -1575,7 +1861,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                     </select>
                                 </div>
                                 <div class="col-md-4">
-                                    <select class="form-select" id="customerFilter" onchange="filterTable()">
+                                    <select class="form-select" id="customerFilter" onchange="applyManualFilters()">
                                         <option value="">All Customers</option>
                                         <?php foreach ($customers as $customer): ?>
                                             <option value="<?= htmlspecialchars($customer['customer_name']) ?>">
@@ -1627,9 +1913,9 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                     <th>Qty</th>
                                     <th>Total Amount</th>
                                     <th>Assigned Driver</th>
+                                    <th>Order Status</th>
                                     <th>Invoice</th>
                                     <th>Payment Status</th>
-                                    <th>Order Status</th>
                                     <th class="no-print">Actions</th>
                                 </tr>
                             </thead>
@@ -1680,6 +1966,11 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                             <?php endif; ?>
                                         </td>
                                         <td>
+                                            <span class="<?= getOrderStatusBadge($order['order_status']) ?>">
+                                                <?= getOrderStatusText($order['order_status']) ?>
+                                            </span>
+                                        </td>
+                                        <td>
                                             <?php if ($order['invoice_number']): ?>
                                                 <span class="badge bg-success"><?= htmlspecialchars($order['invoice_number']) ?></span>
                                             <?php else: ?>
@@ -1688,11 +1979,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                         </td>
                                         <td>
                                             <span class="badge <?= $payment['class'] ?>"><?= $payment['status'] ?></span>
-                                        </td>
-                                        <td>
-                                            <span class="<?= getOrderStatusBadge($order['order_status']) ?>">
-                                                <?= getOrderStatusText($order['order_status']) ?>
-                                            </span>
                                         </td>
                                         <td class="no-print">
                                             <div class="action-buttons">
@@ -1928,6 +2214,9 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
     const driversBranchColumnExists = <?php echo $drivers_branch_column_exists ? 'true' : 'false'; ?>;
     const logoBase64 = '<?php echo $logo_base64; ?>';
     let availableDrivers = <?= json_encode($available_drivers) ?>;
+    let activeDateRange = { start: '', end: '' }; // Initially no active date filter
+    const defaultStartDate = '<?= $default_start_date ?>';
+    const defaultEndDate = '<?= $default_end_date ?>';
 
     // ========== SIDEBAR FUNCTIONS ==========
     function toggleSidebar() {
@@ -2265,6 +2554,193 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         });
     }
 
+    // ========== MANUAL FILTER FUNCTIONS ==========
+    function applyManualDateRangeFilter() {
+        const startDate = document.getElementById('startDate').value;
+        const endDate = document.getElementById('endDate').value;
+        
+        if (!startDate || !endDate) {
+            Swal.fire('Warning', 'Please select both start and end dates', 'warning');
+            return;
+        }
+        
+        if (new Date(startDate) > new Date(endDate)) {
+            Swal.fire('Warning', 'Start date cannot be after end date', 'warning');
+            return;
+        }
+        
+        activeDateRange = { start: startDate, end: endDate };
+        applyManualFilters();
+    }
+    
+    function resetToCurrentWeek() {
+        // Reset to current week (Monday to Saturday)
+        const today = new Date();
+        const day = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
+        
+        // Calculate Monday (start of week)
+        const monday = new Date(today);
+        const diff = monday.getDate() - day + (day === 0 ? -6 : 1);
+        monday.setDate(diff);
+        
+        // Calculate Saturday (end of week - today if it's before Saturday, otherwise Saturday)
+        const saturday = new Date(monday);
+        saturday.setDate(monday.getDate() + 5); // Monday + 5 days = Saturday
+        
+        // If today is before Saturday, use today as end date
+        const endDate = today < saturday ? today : saturday;
+        
+        const formatDate = (date) => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+        
+        document.getElementById('startDate').value = formatDate(monday);
+        document.getElementById('endDate').value = formatDate(endDate);
+        
+        activeDateRange = { 
+            start: formatDate(monday), 
+            end: formatDate(endDate) 
+        };
+        
+        applyManualFilters();
+    }
+    
+    function clearDateRangeFilter() {
+        // Clear all filters (show all orders)
+        document.getElementById('startDate').value = '';
+        document.getElementById('endDate').value = '';
+        document.getElementById('searchInput').value = '';
+        document.getElementById('statusFilter').value = '';
+        document.getElementById('customerFilter').value = '';
+        
+        activeDateRange = { start: '', end: '' };
+        
+        applyManualFilters();
+        
+        // Reset stat card to default period sales (current week)
+        updatePeriodSalesStat('', '', 0, true);
+    }
+
+    // Apply all manual filters (search, status, customer, date range)
+    function applyManualFilters() {
+        const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+        const statusFilter = document.getElementById('statusFilter').value;
+        const customerFilter = document.getElementById('customerFilter').value;
+        const startDate = activeDateRange.start;
+        const endDate = activeDateRange.end;
+        
+        // Create date objects for comparison
+        const startDateTime = startDate ? new Date(startDate) : null;
+        const endDateTime = endDate ? new Date(endDate) : null;
+        if (endDateTime) {
+            endDateTime.setHours(23, 59, 59, 999); // Include entire end day
+        }
+        
+        let visibleCount = 0;
+        let totalAmount = 0;
+        let dateRangeTotal = 0;
+        
+        document.querySelectorAll('.sales-order-row').forEach(row => {
+            const orderNumber = row.dataset.orderNumber?.toLowerCase() || '';
+            const customer = row.dataset.customer?.toLowerCase() || '';
+            const status = row.dataset.status || '';
+            const driver = row.dataset.driver?.toLowerCase() || '';
+            const orderDateStr = row.dataset.date || '';
+            const amount = parseFloat(row.dataset.amount) || 0;
+            
+            // Parse order date
+            let orderDate = null;
+            let isInDateRange = true;
+            
+            if (orderDateStr) {
+                orderDate = new Date(orderDateStr);
+                
+                // Apply date range filter only if active
+                if (startDateTime && endDateTime) {
+                    isInDateRange = orderDate >= startDateTime && orderDate <= endDateTime;
+                }
+            }
+            
+            const matchesSearch = searchTerm === '' || orderNumber.includes(searchTerm) || customer.includes(searchTerm) || driver.includes(searchTerm);
+            const matchesStatus = statusFilter === '' || status === statusFilter;
+            const matchesCustomer = customerFilter === '' || row.dataset.customer === customerFilter;
+            
+            const showRow = matchesSearch && matchesStatus && matchesCustomer && isInDateRange;
+            row.style.display = showRow ? '' : 'none';
+            
+            if (showRow) {
+                visibleCount++;
+                totalAmount += amount;
+                if (isInDateRange) {
+                    dateRangeTotal += amount;
+                }
+            }
+        });
+        
+        // Update date range summary
+        updateDateRangeSummary(startDate, endDate, visibleCount, totalAmount);
+        
+        // Update Period Sales stat card
+        updatePeriodSalesStat(startDate, endDate, dateRangeTotal);
+    }
+
+    // Update Period Sales stat card
+    function updatePeriodSalesStat(startDate, endDate, totalAmount, isReset = false) {
+        const salesValue = document.getElementById('dateRangeSalesValue');
+        const salesLabel = document.getElementById('dateRangeSalesLabel');
+        const dateRangeText = document.getElementById('dateRangeText');
+        
+        if (isReset || !startDate || !endDate) {
+            // Reset to default period sales (current week)
+            salesValue.textContent = '<?= $statCurrentWeekSales ?>';
+            salesLabel.textContent = 'Period Sales';
+            dateRangeText.textContent = 'Current week (Mon-Sat)';
+            return;
+        }
+        
+        // Format the amount in thousands with 1 decimal
+        const amountInK = (totalAmount / 1000).toFixed(1);
+        salesValue.textContent = '₱' + amountInK + 'K';
+        
+        // Format dates for display
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        const options = { month: 'short', day: 'numeric' };
+        const startStr = start.toLocaleDateString('en-US', options);
+        const endStr = end.toLocaleDateString('en-US', options);
+        
+        if (startDate === endDate) {
+            dateRangeText.textContent = startStr;
+            salesLabel.textContent = 'Daily Sales';
+        } else {
+            dateRangeText.textContent = `${startStr} - ${endStr}`;
+            salesLabel.textContent = 'Period Sales';
+        }
+    }
+
+    // Update date range summary box
+    function updateDateRangeSummary(startDate, endDate, visibleCount, totalAmount) {
+        const summaryDiv = document.getElementById('dateRangeSummary');
+        const summaryText = document.getElementById('dateRangeSummaryText');
+        
+        if (!startDate || !endDate) {
+            summaryDiv.style.display = 'none';
+            return;
+        }
+        
+        const start = new Date(startDate);
+        const end = new Date(endDate);
+        const options = { year: 'numeric', month: 'long', day: 'numeric' };
+        const startStr = start.toLocaleDateString('en-US', options);
+        const endStr = end.toLocaleDateString('en-US', options);
+        
+        summaryText.innerHTML = `<strong>${startStr} - ${endStr}:</strong> ${visibleCount} orders, Total: ₱${totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+        summaryDiv.style.display = 'block';
+    }
+
     // ========== VIEW ORDER ==========
     function viewOrder(id) {
         showLoading();
@@ -2299,13 +2775,14 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 
                 let itemsHtml = '';
                 if (items && items.length > 0) {
-                    itemsHtml = '<h6 class="mt-4 mb-3 fw-bold">Order Items</h6><div class="table-responsive"><table class="table table-sm table-bordered"><thead class="table-light"><tr><th>Item Code</th><th>Item Name</th><th>Quantity</th><th>Unit Price</th><th>Subtotal</th></tr></thead><tbody>';
+                    itemsHtml = '<h6 class="mt-4 mb-3 fw-bold">Order Items</h6><div class="table-responsive"><table class="table table-sm table-bordered"><thead class="table-light"><tr><th>Item Code</th><th>Item Name</th><th>Unit</th><th>Quantity</th><th>Unit Price</th><th>Subtotal</th></tr></thead><tbody>';
                     items.forEach(item => {
                         const subtotal = item.quantity_ordered * item.unit_price;
                         itemsHtml += `<tr>
                             <td>${item.item_code}</td>
                             <td>${item.item_name}</td>
-                            <td class="text-center">${item.quantity_ordered} ${item.unit_type || ''}</td>
+                            <td class="text-center">${item.unit_type || ''}</td>
+                            <td class="text-center">${item.quantity_ordered}</td>
                             <td class="text-end">₱${Number(item.unit_price).toFixed(2)}</td>
                             <td class="text-end">₱${Number(subtotal).toFixed(2)}</td>
                         </tr>`;
@@ -2684,21 +3161,15 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         });
     }
 
-    // Optimized print function - no new tab, compact layout
+    // ========== PRINT FUNCTIONS ==========
     function printAllOrders() {
-        const rows = document.querySelectorAll('.sales-order-row');
-        const visibleRows = [];
-        
-        rows.forEach(row => {
-            if (row.style.display !== 'none') {
-                visibleRows.push(row);
-            }
-        });
-        
-        if (visibleRows.length === 0) {
-            Swal.fire('Warning', 'No orders to print', 'warning');
-            return;
-        }
+        const filterData = {
+            status: document.getElementById('statusFilter').value,
+            customer: document.getElementById('customerFilter').value,
+            search: document.getElementById('searchInput').value,
+            start_date: activeDateRange.start,
+            end_date: activeDateRange.end
+        };
         
         // Show loading indicator on button
         const printBtn = document.querySelector('.btn-primary[onclick="printAllOrders()"]');
@@ -2708,30 +3179,84 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             printBtn.disabled = true;
         }
         
-        // Generate compact HTML
-        const htmlContent = generateAllOrdersHTML(visibleRows);
+        showLoading();
         
-        // Use hidden iframe for printing
-        const iframe = document.getElementById('printFrame');
-        const iframeDoc = iframe.contentWindow.document;
+        const formData = new FormData();
+        formData.append('action', 'get_all_order_items');
+        formData.append('filter_data', JSON.stringify(filterData));
         
-        iframeDoc.open();
-        iframeDoc.write(htmlContent);
-        iframeDoc.close();
-        
-        // Restore button after a short delay
-        setTimeout(() => {
+        fetch('sales_order.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            Swal.close();
+            
+            if (data.success) {
+                const items = data.items;
+                
+                if (items.length === 0) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: 'No Data',
+                        text: 'No sales order items match the current filters',
+                        confirmButtonColor: '#0d6efd'
+                    });
+                    return;
+                }
+                
+                // Generate compact HTML with each item as a separate row
+                const htmlContent = generateAllOrdersHTML(items);
+                
+                // Use hidden iframe for printing
+                const iframe = document.getElementById('printFrame');
+                const iframeDoc = iframe.contentWindow.document;
+                
+                iframeDoc.open();
+                iframeDoc.write(htmlContent);
+                iframeDoc.close();
+                
+                // Restore button
+                setTimeout(() => {
+                    if (printBtn) {
+                        printBtn.innerHTML = '<i class="bi bi-printer"></i> Print All Orders';
+                        printBtn.disabled = false;
+                    }
+                }, 1000);
+                
+                // Trigger print dialog
+                setTimeout(() => {
+                    iframe.contentWindow.focus();
+                    iframe.contentWindow.print();
+                }, 250);
+            } else {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: data.message || 'Failed to load order data',
+                    confirmButtonColor: '#0d6efd'
+                });
+                if (printBtn) {
+                    printBtn.innerHTML = '<i class="bi bi-printer"></i> Print All Orders';
+                    printBtn.disabled = false;
+                }
+            }
+        })
+        .catch(error => {
+            Swal.close();
+            console.error('Error:', error);
+            Swal.fire({
+                icon: 'error',
+                title: 'Error',
+                text: 'An error occurred while preparing print: ' + error.message,
+                confirmButtonColor: '#0d6efd'
+            });
             if (printBtn) {
                 printBtn.innerHTML = '<i class="bi bi-printer"></i> Print All Orders';
                 printBtn.disabled = false;
             }
-        }, 1000);
-        
-        // Trigger print dialog
-        setTimeout(() => {
-            iframe.contentWindow.focus();
-            iframe.contentWindow.print();
-        }, 250);
+        });
     }
 
     function printSingleOrder(orderId) {
@@ -2744,6 +3269,8 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             printBtn.disabled = true;
         }
         
+        showLoading();
+        
         const formData = new FormData();
         formData.append('action', 'print_order');
         formData.append('so_id', orderId);
@@ -2754,12 +3281,14 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         })
         .then(response => response.json())
         .then(data => {
+            Swal.close();
+            
             if (data.success) {
                 const order = data.order;
                 const items = data.items;
                 const driver = data.driver || null;
                 
-                // Generate compact HTML
+                // Generate compact HTML with each item as a separate row
                 const htmlContent = generateSingleOrderHTML(order, items, driver);
                 
                 // Use hidden iframe for printing
@@ -2792,6 +3321,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             }
         })
         .catch(error => {
+            Swal.close();
             console.error('Error:', error);
             Swal.fire('Error', 'Network error: ' + error.message, 'error');
             if (printBtn) {
@@ -2808,62 +3338,29 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
     }
 
     // Compact HTML generator for multiple orders
-    function generateAllOrdersHTML(rows) {
+    function generateAllOrdersHTML(items) {
         let tableRows = '';
         let totalAmount = 0;
+        let totalQuantity = 0;
         
-        rows.forEach(row => {
-            const cells = row.querySelectorAll('td');
-            const hasBranchColumn = soBranchColumnExists && viewAllBranches;
-            
-            let orderNumber = cells[0].textContent.trim();
-            let date = cells[1].textContent.trim();
-            let customer = cells[2].textContent.trim();
-            let branch = '';
-            let items = '';
-            let qty = '';
-            let amount = '';
-            let driver = '';
-            let invoice = '';
-            let payment = '';
-            let status = '';
-            
-            if (hasBranchColumn) {
-                branch = cells[3].textContent.trim();
-                items = cells[4].textContent.trim();
-                qty = cells[5].textContent.trim();
-                amount = cells[6].textContent.trim();
-                driver = cells[7].textContent.trim();
-                invoice = cells[8].textContent.trim();
-                payment = cells[9].textContent.trim();
-                status = cells[10].textContent.trim();
-            } else {
-                items = cells[3].textContent.trim();
-                qty = cells[4].textContent.trim();
-                amount = cells[5].textContent.trim();
-                driver = cells[6].textContent.trim();
-                invoice = cells[7].textContent.trim();
-                payment = cells[8].textContent.trim();
-                status = cells[9].textContent.trim();
-            }
-            
-            const amountValue = parseFloat(amount.replace('₱', '').replace(',', '')) || 0;
-            totalAmount += amountValue;
+        items.forEach((item, index) => {
+            const subtotal = item.quantity_ordered * item.unit_price;
+            totalAmount += subtotal;
+            totalQuantity += parseInt(item.quantity_ordered);
             
             tableRows += '<tr>';
-            tableRows += `<td style="padding: 4px; border: 1px solid #000;">${orderNumber}</td>`;
-            tableRows += `<td style="padding: 4px; border: 1px solid #000;">${date}</td>`;
-            tableRows += `<td style="padding: 4px; border: 1px solid #000;">${customer}</td>`;
-            if (hasBranchColumn) {
-                tableRows += `<td style="padding: 4px; border: 1px solid #000;">${branch}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.so_number}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.order_date ? formatDate(item.order_date) : ''}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.customer_name}</td>`;
+            if (soBranchColumnExists && viewAllBranches) {
+                tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.branch_name || 'Branch ' + item.branch_id}</td>`;
             }
-            tableRows += `<td style="padding: 4px; border: 1px solid #000; text-align: center;">${items}</td>`;
-            tableRows += `<td style="padding: 4px; border: 1px solid #000; text-align: center;">${qty}</td>`;
-            tableRows += `<td style="padding: 4px; border: 1px solid #000; text-align: right;">${amount}</td>`;
-            tableRows += `<td style="padding: 4px; border: 1px solid #000;">${driver}</td>`;
-            tableRows += `<td style="padding: 4px; border: 1px solid #000;">${invoice}</td>`;
-            tableRows += `<td style="padding: 4px; border: 1px solid #000;">${payment}</td>`;
-            tableRows += `<td style="padding: 4px; border: 1px solid #000;">${status}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000; text-align: center;">${item.item_code}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.item_name}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000; text-align: center;">${item.unit_type || 'N/A'}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000; text-align: center;">${item.quantity_ordered}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000; text-align: right;">₱${parseFloat(item.unit_price).toFixed(2)}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000; text-align: right;">₱${parseFloat(subtotal).toFixed(2)}</td>`;
             tableRows += '</tr>';
         });
         
@@ -2873,17 +3370,14 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             day: 'numeric' 
         });
         
-        const columnCount = soBranchColumnExists && viewAllBranches ? 11 : 10;
-        const totalColspan = soBranchColumnExists && viewAllBranches ? 7 : 6;
-        
         return `
             <!DOCTYPE html>
             <html>
             <head>
                 <meta charset="UTF-8">
-                <title>Sales Orders</title>
+                <title>Sales Orders - Detailed</title>
                 <style>
-                    body { font-family: Arial, sans-serif; margin: 0; padding: 0; font-size: 10px; }
+                    body { font-family: Arial, sans-serif; margin: 0; padding: 0; font-size: 9px; }
                     .print-container { max-width: 100%; margin: 0; }
                     .print-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; border-bottom: 1px solid #000; padding-bottom: 3px; }
                     .logo-section { display: flex; align-items: center; gap: 5px; }
@@ -2911,7 +3405,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                             <img src="${logoBase64}" alt="AMGC Logo" class="company-logo">
                             <div class="company-info">
                                 <h1>AMGC</h1>
-                                <p>Sales Orders Report</p>
+                                <p>Sales Orders - Detailed</p>
                             </div>
                         </div>
                         <div class="report-title">
@@ -2921,8 +3415,9 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                     </div>
                     
                     <div class="summary-box">
-                        <div class="summary-item"><div class="summary-label">Total</div><div class="summary-value">${rows.length}</div></div>
-                        <div class="summary-item"><div class="summary-label">Amount</div><div class="summary-value">₱${totalAmount.toFixed(2)}</div></div>
+                        <div class="summary-item"><div class="summary-label">Total Items</div><div class="summary-value">${items.length}</div></div>
+                        <div class="summary-item"><div class="summary-label">Total Qty</div><div class="summary-value">${totalQuantity}</div></div>
+                        <div class="summary-item"><div class="summary-label">Total Amount</div><div class="summary-value">₱${totalAmount.toFixed(2)}</div></div>
                         <div class="summary-item"><div class="summary-label">Branch</div><div class="summary-value">${!viewAllBranches && currentBranchId > 0 ? `Branch ${currentBranchId}` : 'All'}</div></div>
                     </div>
                     
@@ -2933,21 +3428,21 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                 <th>Date</th>
                                 <th>Customer</th>
                                 ${soBranchColumnExists && viewAllBranches ? '<th>Branch</th>' : ''}
-                                <th>Items</th>
-                                <th>Qty</th>
-                                <th>Amount</th>
-                                <th>Driver</th>
-                                <th>Invoice</th>
-                                <th>Payment</th>
-                                <th>Status</th>
+                                <th>Item Code</th>
+                                <th>Item Name</th>
+                                <th>Unit</th>
+                                <th style="text-align: center;">Qty</th>
+                                <th style="text-align: right;">Unit Price</th>
+                                <th style="text-align: right;">Subtotal</th>
                             </tr>
                         </thead>
                         <tbody>
                             ${tableRows}
                             <tr class="total-row">
-                                <td colspan="${totalColspan}" style="text-align: right;">TOTAL</td>
+                                <td colspan="${soBranchColumnExists && viewAllBranches ? '7' : '6'}" style="text-align: right;">TOTAL</td>
+                                <td style="text-align: center;">${totalQuantity}</td>
+                                <td></td>
                                 <td style="text-align: right;">₱${totalAmount.toFixed(2)}</td>
-                                <td colspan="${soBranchColumnExists && viewAllBranches ? '4' : '3'}"></td>
                             </tr>
                         </tbody>
                     </table>
@@ -2965,13 +3460,17 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
     // Compact HTML generator for single order
     function generateSingleOrderHTML(order, items, driver) {
         let itemsHtml = '';
+        let totalQty = 0;
         
         if (items && items.length > 0) {
             itemsHtml = items.map(item => {
                 const subtotal = item.quantity_ordered * item.unit_price;
+                totalQty += parseInt(item.quantity_ordered);
                 return `
                     <tr>
-                        <td style="padding: 3px; border: 1px solid #000;">${item.item_name}<br><span style="font-size: 7px;">${item.item_code}</span></td>
+                        <td style="padding: 3px; border: 1px solid #000;">${item.item_code}</td>
+                        <td style="padding: 3px; border: 1px solid #000;">${item.item_name}</td>
+                        <td style="padding: 3px; border: 1px solid #000; text-align: center;">${item.unit_type || ''}</td>
                         <td style="padding: 3px; border: 1px solid #000; text-align: center;">${item.quantity_ordered}</td>
                         <td style="padding: 3px; border: 1px solid #000; text-align: right;">₱${parseFloat(item.unit_price).toFixed(2)}</td>
                         <td style="padding: 3px; border: 1px solid #000; text-align: right;">₱${parseFloat(subtotal).toFixed(2)}</td>
@@ -2980,15 +3479,20 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             }).join('');
         }
         
-        const createdByName = order.first_name ? `${order.first_name} ${order.last_name || ''}` : 'Branch Admin';
+        const createdByName = order ? (order.first_name ? `${order.first_name} ${order.last_name || ''}` : 'Branch Admin') : 'Branch Admin';
         const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+        const orderDate = order ? (order.order_date ? new Date(order.order_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : currentDate) : currentDate;
+        const customerName = order ? order.customer_name : '';
+        const orderNumber = order ? order.so_number : '';
+        const orderStatus = order ? order.order_status : '';
+        const totalAmount = order ? order.order_total : 0;
         
         return `
             <!DOCTYPE html>
             <html>
             <head>
                 <meta charset="UTF-8">
-                <title>Order #${order.so_number}</title>
+                <title>Order #${orderNumber}</title>
                 <style>
                     body { font-family: Arial, sans-serif; margin: 0; padding: 0; font-size: 10px; }
                     .print-container { max-width: 100%; margin: 0; }
@@ -3022,7 +3526,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                             </div>
                         </div>
                         <div class="report-title">
-                            <h2>${order.so_number}</h2>
+                            <h2>${orderNumber}</h2>
                             <div class="date-info">${currentDate}</div>
                         </div>
                     </div>
@@ -3030,9 +3534,9 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                     <div class="customer-section">
                         <div class="section-title">Order Info</div>
                         <div style="display: flex; flex-wrap: wrap;">
-                            <div class="info-row" style="width: 50%;"><span class="info-label">Date:</span><span class="info-value">${order.created_at.split(' ')[0]}</span></div>
-                            <div class="info-row" style="width: 50%;"><span class="info-label">Status:</span><span class="info-value">${order.order_status}</span></div>
-                            <div class="info-row" style="width: 50%;"><span class="info-label">Customer:</span><span class="info-value">${order.customer_name}</span></div>
+                            <div class="info-row" style="width: 50%;"><span class="info-label">Date:</span><span class="info-value">${orderDate}</span></div>
+                            <div class="info-row" style="width: 50%;"><span class="info-label">Status:</span><span class="info-value">${orderStatus}</span></div>
+                            <div class="info-row" style="width: 50%;"><span class="info-label">Customer:</span><span class="info-value">${customerName}</span></div>
                             ${driver ? `<div class="info-row" style="width: 50%;"><span class="info-label">Driver:</span><span class="info-value">${driver.driver_name}</span></div>` : ''}
                         </div>
                     </div>
@@ -3041,17 +3545,21 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                     <table>
                         <thead>
                             <tr>
-                                <th>Product</th>
+                                <th>Item Code</th>
+                                <th>Item Name</th>
+                                <th style="text-align: center;">Unit</th>
                                 <th style="text-align: center;">Qty</th>
-                                <th style="text-align: right;">Price</th>
-                                <th style="text-align: right;">Total</th>
+                                <th style="text-align: right;">Unit Price</th>
+                                <th style="text-align: right;">Subtotal</th>
                             </tr>
                         </thead>
                         <tbody>
                             ${itemsHtml}
                             <tr class="total-row">
                                 <td colspan="3" style="text-align: right;">TOTAL</td>
-                                <td style="text-align: right;">₱${parseFloat(order.total_amount).toFixed(2)}</td>
+                                <td style="text-align: center;">${totalQty}</td>
+                                <td></td>
+                                <td style="text-align: right;">₱${parseFloat(totalAmount).toFixed(2)}</td>
                             </tr>
                         </tbody>
                     </table>
@@ -3066,22 +3574,143 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         `;
     }
 
-    function filterTable() {
-        const searchTerm = document.getElementById('searchInput').value.toLowerCase();
-        const statusFilter = document.getElementById('statusFilter').value;
-        const customerFilter = document.getElementById('customerFilter').value;
+    // ========== EXCEL EXPORT FUNCTION ==========
+    function exportToExcel() {
+        const filterData = {
+            status: document.getElementById('statusFilter').value,
+            customer: document.getElementById('customerFilter').value,
+            search: document.getElementById('searchInput').value,
+            start_date: activeDateRange.start,
+            end_date: activeDateRange.end
+        };
         
-        document.querySelectorAll('.sales-order-row').forEach(row => {
-            const orderNumber = row.dataset.orderNumber?.toLowerCase() || '';
-            const customer = row.dataset.customer?.toLowerCase() || '';
-            const status = row.dataset.status || '';
-            const driver = row.dataset.driver?.toLowerCase() || '';
+        showLoading();
+        
+        const formData = new FormData();
+        formData.append('action', 'get_all_order_items');
+        formData.append('filter_data', JSON.stringify(filterData));
+        
+        fetch('sales_order.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            Swal.close();
             
-            const matchesSearch = searchTerm === '' || orderNumber.includes(searchTerm) || customer.includes(searchTerm) || driver.includes(searchTerm);
-            const matchesStatus = statusFilter === '' || status === statusFilter;
-            const matchesCustomer = customerFilter === '' || row.dataset.customer === customerFilter;
-            
-            row.style.display = matchesSearch && matchesStatus && matchesCustomer ? '' : 'none';
+            if (data.success) {
+                const items = data.items;
+                
+                if (items.length === 0) {
+                    Swal.fire('Warning', 'No orders to export', 'warning');
+                    return;
+                }
+                
+                // Prepare data array for Excel - each item as separate row
+                const excelData = [];
+                
+                // Add headers
+                const headers = [
+                    'Order Number',
+                    'Order Date',
+                    'Customer Name',
+                    ...(soBranchColumnExists && viewAllBranches ? ['Branch'] : []),
+                    'Item Code',
+                    'Item Name',
+                    'Unit Type',
+                    'Quantity',
+                    'Unit Price (₱)',
+                    'Subtotal (₱)'
+                ];
+                excelData.push(headers);
+
+                // Add data rows
+                items.forEach(item => {
+                    const subtotal = item.quantity_ordered * item.unit_price;
+                    
+                    const rowData = [
+                        item.so_number,
+                        item.order_date ? formatDate(item.order_date) : '',
+                        item.customer_name,
+                        ...(soBranchColumnExists && viewAllBranches ? [item.branch_name || 'Branch ' + item.branch_id] : []),
+                        item.item_code,
+                        item.item_name,
+                        item.unit_type || 'N/A',
+                        item.quantity_ordered,
+                        parseFloat(item.unit_price),
+                        parseFloat(subtotal.toFixed(2))
+                    ];
+                    
+                    excelData.push(rowData);
+                });
+
+                // Add total row
+                const totalQty = items.reduce((sum, item) => sum + parseInt(item.quantity_ordered), 0);
+                const totalAmount = items.reduce((sum, item) => sum + (item.quantity_ordered * item.unit_price), 0);
+                
+                const totalRow = [
+                    'TOTAL',
+                    '',
+                    '',
+                    ...(soBranchColumnExists && viewAllBranches ? [''] : []),
+                    '',
+                    '',
+                    '',
+                    totalQty,
+                    '',
+                    parseFloat(totalAmount.toFixed(2))
+                ];
+                excelData.push(totalRow);
+
+                // Create workbook and worksheet
+                const wb = XLSX.utils.book_new();
+                const ws = XLSX.utils.aoa_to_sheet(excelData);
+
+                // Set column widths
+                const colWidths = [
+                    { wch: 15 }, // Order Number
+                    { wch: 15 }, // Order Date
+                    { wch: 30 }, // Customer Name
+                    ...(soBranchColumnExists && viewAllBranches ? [{ wch: 15 }] : []), // Branch
+                    { wch: 15 }, // Item Code
+                    { wch: 30 }, // Item Name
+                    { wch: 10 }, // Unit Type
+                    { wch: 12 }, // Quantity
+                    { wch: 15 }, // Unit Price
+                    { wch: 18 }  // Subtotal
+                ];
+                ws['!cols'] = colWidths;
+
+                // Add worksheet to workbook
+                XLSX.utils.book_append_sheet(wb, ws, 'Sales Orders');
+
+                // Generate filename with current date
+                const date = new Date();
+                const dateStr = date.toISOString().slice(0,10).replace(/-/g, '');
+                let filename = `Sales_Orders_${dateStr}`;
+                if (!viewAllBranches && currentBranchId > 0) {
+                    filename += `_Branch_${currentBranchId}`;
+                }
+                filename += '.xlsx';
+
+                // Export Excel file
+                XLSX.writeFile(wb, filename);
+                
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Export Complete',
+                    text: 'Excel export completed successfully!',
+                    timer: 2000,
+                    showConfirmButton: false
+                });
+            } else {
+                Swal.fire('Error', data.message || 'Failed to load order data', 'error');
+            }
+        })
+        .catch(error => {
+            Swal.close();
+            console.error('Error:', error);
+            Swal.fire('Error', 'An error occurred while exporting: ' + error.message, 'error');
         });
     }
 
@@ -3091,7 +3720,8 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
 
     function formatDate(dateStr) {
         if (!dateStr) return '';
-        return new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+        const date = new Date(dateStr);
+        return date.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
     }
 
     function getStatusBadge(status) {
@@ -3116,47 +3746,6 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             'cancelled': 'Cancelled'
         };
         return texts[status] || status;
-    }
-
-    function exportToExcel() {
-        const rows = document.querySelectorAll('.sales-order-row:not([style*="display: none"])');
-        if (rows.length === 0) {
-            Swal.fire('Warning', 'No orders to export', 'warning');
-            return;
-        }
-        
-        const excelData = [];
-        const headers = ['Order Number', 'Order Date', 'Customer Name', 'Items', 'Qty', 'Total Amount (₱)', 'Assigned Driver', 'Invoice Number', 'Payment Status', 'Order Status'];
-        excelData.push(headers);
-
-        rows.forEach(row => {
-            const cells = row.querySelectorAll('td');
-            let cellIndex = 0;
-            
-            const orderNo = cells[cellIndex++]?.innerText || '';
-            const date = cells[cellIndex++]?.innerText || '';
-            const customer = cells[cellIndex++]?.innerText || '';
-            
-            if (soBranchColumnExists && viewAllBranches) cellIndex++;
-            
-            const items = cells[cellIndex++]?.innerText || '0';
-            const qty = cells[cellIndex++]?.innerText || '0';
-            const amount = cells[cellIndex++]?.innerText.replace('₱', '').replace(/,/g, '') || '0';
-            const driver = cells[cellIndex++]?.innerText || 'No Driver';
-            const invoice = cells[cellIndex++]?.innerText || 'No Invoice';
-            const payment = cells[cellIndex++]?.innerText || 'Pending';
-            const orderStatus = cells[cellIndex]?.innerText || '';
-            
-            excelData.push([orderNo, date, customer, items, qty, amount, driver, invoice, payment, orderStatus]);
-        });
-
-        const wb = XLSX.utils.book_new();
-        const ws = XLSX.utils.aoa_to_sheet(excelData);
-        ws['!cols'] = [{ wch: 18 }, { wch: 15 }, { wch: 30 }, { wch: 10 }, { wch: 10 }, { wch: 15 }, { wch: 20 }, { wch: 15 }, { wch: 15 }, { wch: 15 }];
-        XLSX.utils.book_append_sheet(wb, ws, 'Sales Orders');
-        XLSX.writeFile(wb, `Sales_Orders_${new Date().toISOString().slice(0,10).replace(/-/g, '')}.xls`);
-        
-        Swal.fire({ icon: 'success', title: 'Export Complete', timer: 2000, showConfirmButton: false });
     }
 
     function copyFixSQL() {

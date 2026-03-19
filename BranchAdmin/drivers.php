@@ -860,13 +860,19 @@ function formatDate($dateStr) {
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="supplier.php" data-title="Suppliers">
+                            <i class="bi bi-bar-chart-line"></i>
+                            <span class="nav-text">Suppliers</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="purchase_order.php">
                             <i class="bi bi-box"></i>
                             <span class="nav-text">Purchase Orders</span>
                         </a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link active" href="users.php">
+                        <a class="nav-link active" href="drivers.php">
                             <i class="bi bi-people"></i>
                             <span class="nav-text">Users</span>
                         </a>
@@ -875,6 +881,12 @@ function formatDate($dateStr) {
                         <a class="nav-link" href="trip_tickets.php">
                             <i class="bi bi-ticket-perforated"></i>
                             <span class="nav-text">Trip Tickets</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="approve_credit_requests.php">
+                            <i class="bi bi-pencil-square"></i>
+                            <span class="nav-text">Approve Requests</span>
                         </a>
                     </li>
                     <hr class="sidebar-divider">

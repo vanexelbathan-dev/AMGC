@@ -37,6 +37,7 @@ if ($po_branch_column_exists && !$view_all_branches) {
 }
 
 // ========== RESTORED BRANCH FILTER FOR ITEMS ==========
+// Ngayon ang items ay filtered base sa branch ng user
 $items_branch_condition = "";
 if ($items_branch_column_exists && !$view_all_branches) {
     $items_branch_condition = "AND branch_id = $branch_id";
@@ -46,7 +47,9 @@ if ($items_branch_column_exists && !$view_all_branches) {
 $suppliers_query = "SELECT supplier_id, supplier_name, supplier_code, contact_person, email, phone_number 
                    FROM suppliers 
                    WHERE status = 'active'";
+// Add branch filter for suppliers if needed
 if (!$view_all_branches && $branch_id > 0) {
+    // Check if branch_id exists in suppliers table first
     $check_supplier_branch = $conn->query("SHOW COLUMNS FROM suppliers LIKE 'branch_id'");
     if ($check_supplier_branch && $check_supplier_branch->num_rows > 0) {
         $suppliers_query .= " AND branch_id = $branch_id";
@@ -104,64 +107,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $supplier_name = $_POST['supplier_name'];
             $supplier_id = isset($_POST['supplier_id']) && !empty($_POST['supplier_id']) ? (int)$_POST['supplier_id'] : null;
             $order_date = $_POST['order_date'];
-            // FIX: Handle expected_delivery properly - if empty, set to NULL
-            $expected_delivery = !empty($_POST['expected_delivery']) ? $_POST['expected_delivery'] : null;
+            $expected_delivery = $_POST['expected_delivery'] ?? null;
             $total_amount = (float)$_POST['total_amount'];
             $po_status = $_POST['po_status'] ?? 'draft';
             $created_by = $user_id;
-
-            // Build insert data dynamically
-            $fields = [
-                'po_number' => $po_number,
-                'supplier_name' => $supplier_name,
-                'order_date' => $order_date,
-                'expected_delivery' => $expected_delivery,
-                'total_amount' => $total_amount,
-                'po_status' => $po_status,
-                'created_by' => $created_by,
-                'created_at' => 'NOW()',
-                'updated_at' => 'NOW()'
-            ];
-            if ($supplier_id_column_exists && $supplier_id !== null) {
-                $fields['supplier_id'] = $supplier_id;
+            
+            // Build insert query based on which columns exist
+            $fields = ["po_number", "supplier_name", "order_date", "expected_delivery", "total_amount", "po_status", "created_by", "created_at", "updated_at"];
+            $placeholders = ["?", "?", "?", "?", "?", "?", "?", "NOW()", "NOW()"];
+            $types = "ssssdsi";
+            $params = [$po_number, $supplier_name, $order_date, $expected_delivery, $total_amount, $po_status, $created_by];
+            
+            // Add supplier_id if column exists
+            if ($supplier_id_column_exists) {
+                array_splice($fields, 2, 0, "supplier_id");
+                array_splice($placeholders, 2, 0, "?");
+                $types .= "i";
+                array_splice($params, 2, 0, $supplier_id);
             }
+            
+            // Add branch_id if column exists
             if ($po_branch_column_exists) {
-                $fields['branch_id'] = $branch_id;
+                $fields[] = "branch_id";
+                $placeholders[] = "?";
+                $types .= "i";
+                $params[] = $branch_id;
             }
-
-            // Build query parts
-            $column_names = array_keys($fields);
-            $placeholders = [];
-            $types = '';
-            $values = [];
-            foreach ($fields as $col => $val) {
-                if ($val === 'NOW()') {
-                    $placeholders[] = 'NOW()';
-                } else {
-                    $placeholders[] = '?';
-                    // Determine type
-                    if (is_int($val)) {
-                        $types .= 'i';
-                    } elseif (is_float($val)) {
-                        $types .= 'd';
-                    } else {
-                        $types .= 's';
-                    }
-                    $values[] = $val;
-                }
-            }
-
-            $insert_query = "INSERT INTO purchase_orders (" . implode(', ', $column_names) . ") 
-                           VALUES (" . implode(', ', $placeholders) . ")";
+            
+            $insert_query = "INSERT INTO purchase_orders (" . implode(", ", $fields) . ") 
+                           VALUES (" . implode(", ", $placeholders) . ")";
             
             $insert_stmt = $conn->prepare($insert_query);
             if (!$insert_stmt) {
                 throw new Exception('Prepare failed: ' . $conn->error);
             }
             
-            if (!empty($values)) {
-                $insert_stmt->bind_param($types, ...$values);
-            }
+            // Dynamically bind parameters
+            $insert_stmt->bind_param($types, ...$params);
             
             if (!$insert_stmt->execute()) {
                 throw new Exception('Failed to create purchase order: ' . $insert_stmt->error);
@@ -207,8 +189,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $supplier_name = $_POST['supplier_name'];
             $supplier_id = isset($_POST['supplier_id']) && !empty($_POST['supplier_id']) ? (int)$_POST['supplier_id'] : null;
             $order_date = $_POST['order_date'];
-            // FIX: Handle expected_delivery properly - if empty, set to NULL
-            $expected_delivery = !empty($_POST['expected_delivery']) ? $_POST['expected_delivery'] : null;
+            $expected_delivery = $_POST['expected_delivery'] ?? null;
             $total_amount = (float)$_POST['total_amount'];
             $po_status = $_POST['po_status'];
             
@@ -234,51 +215,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $current_po = $status_result->fetch_assoc();
             $old_status = $current_po['po_status'];
             
-            // Build update data dynamically
-            $fields = [
-                'supplier_name' => $supplier_name,
-                'order_date' => $order_date,
-                'expected_delivery' => $expected_delivery,
-                'total_amount' => $total_amount,
-                'po_status' => $po_status,
-                'updated_at' => 'NOW()'
-            ];
+            // Build update query based on which columns exist
+            $set_fields = ["supplier_name = ?", "order_date = ?", "expected_delivery = ?", "total_amount = ?", "po_status = ?", "updated_at = NOW()"];
+            $types = "sssds";
+            $params = [$supplier_name, $order_date, $expected_delivery, $total_amount, $po_status];
+            
+            // Add supplier_id if column exists
             if ($supplier_id_column_exists) {
-                $fields['supplier_id'] = $supplier_id;
+                array_splice($set_fields, 1, 0, "supplier_id = ?");
+                $types .= "i";
+                array_splice($params, 1, 0, $supplier_id);
             }
             
-            // Build query parts
-            $set_parts = [];
-            $types = '';
-            $values = [];
-            foreach ($fields as $col => $val) {
-                if ($val === 'NOW()') {
-                    $set_parts[] = "$col = NOW()";
-                } else {
-                    $set_parts[] = "$col = ?";
-                    if (is_int($val)) {
-                        $types .= 'i';
-                    } elseif (is_float($val)) {
-                        $types .= 'd';
-                    } else {
-                        $types .= 's';
-                    }
-                    $values[] = $val;
-                }
-            }
+            $params[] = $po_id;
+            $types .= "i";
             
-            // Add WHERE clause
-            $types .= 'i';
-            $values[] = $po_id;
-            
-            $update_query = "UPDATE purchase_orders SET " . implode(', ', $set_parts) . " WHERE po_id = ?";
+            $update_query = "UPDATE purchase_orders 
+                           SET " . implode(", ", $set_fields) . " 
+                           WHERE po_id = ?";
             
             $update_stmt = $conn->prepare($update_query);
             if (!$update_stmt) {
                 throw new Exception('Prepare failed: ' . $conn->error);
             }
             
-            $update_stmt->bind_param($types, ...$values);
+            $update_stmt->bind_param($types, ...$params);
             
             if (!$update_stmt->execute()) {
                 throw new Exception('Failed to update purchase order: ' . $update_stmt->error);
@@ -680,40 +641,15 @@ function getPOStatusText($status) {
 }
 
 function formatDate($dateStr) {
-    if (!$dateStr || $dateStr == '0000-00-00' || $dateStr == '0000-00-00 00:00:00') return '';
-    try {
-        // Remove time part if present
-        $dateStr = explode(' ', $dateStr)[0];
-        $date = new DateTime($dateStr);
-        return $date->format('M d, Y');
-    } catch (Exception $e) {
-        error_log("Date formatting error: " . $e->getMessage() . " for date: " . $dateStr);
-        return '';
-    }
+    if (!$dateStr) return '';
+    $date = new DateTime($dateStr);
+    return $date->format('M d, Y');
 }
 
 function formatDateTime($dateStr) {
-    if (!$dateStr || $dateStr == '0000-00-00 00:00:00') return '';
-    try {
-        $date = new DateTime($dateStr);
-        return $date->format('M d, Y H:i');
-    } catch (Exception $e) {
-        error_log("DateTime formatting error: " . $e->getMessage() . " for date: " . $dateStr);
-        return '';
-    }
-}
-
-function formatDateForInput($dateStr) {
-    if (!$dateStr || $dateStr == '0000-00-00' || $dateStr == '0000-00-00 00:00:00') return '';
-    try {
-        // Remove time part if present
-        $dateStr = explode(' ', $dateStr)[0];
-        $date = new DateTime($dateStr);
-        return $date->format('Y-m-d');
-    } catch (Exception $e) {
-        error_log("Date input formatting error: " . $e->getMessage() . " for date: " . $dateStr);
-        return '';
-    }
+    if (!$dateStr) return '';
+    $date = new DateTime($dateStr);
+    return $date->format('M d, Y H:i');
 }
 ?>
 <!DOCTYPE html>
@@ -1081,7 +1017,7 @@ function formatDateForInput($dateStr) {
         }
         
         .po-item-row .item-select {
-            flex: 2.5;
+            flex: 3;
             min-width: 200px;
         }
         
@@ -1133,29 +1069,18 @@ function formatDateForInput($dateStr) {
             background-color: #dee2e6;
         }
         
-        /* NEW: Editable price field */
-        .po-item-row .price-container {
-            flex: 1.5;
-            min-width: 120px;
-        }
-        
-        .po-item-row .price-container .item-price {
-            width: 100%;
-            padding: 6px 8px;
-            border: 1px solid #ced4da;
+        .po-item-row .unit-price-display {
+            flex: 1;
+            min-width: 100px;
+            padding: 8px;
+            background-color: #e9ecef;
             border-radius: 4px;
-            text-align: right;
             font-weight: 600;
-        }
-        
-        .po-item-row .price-container .item-price:focus {
-            border-color: #0d6efd;
-            outline: none;
-            box-shadow: 0 0 0 0.2rem rgba(13,110,253,0.25);
+            text-align: right;
         }
         
         .po-item-row .item-subtotal {
-            flex: 1.5;
+            flex: 1;
             min-width: 100px;
             padding: 8px;
             background-color: #d1e7dd;
@@ -1179,81 +1104,6 @@ function formatDateForInput($dateStr) {
             font-size: 12px;
             font-weight: 500;
             margin-left: 10px;
-        }
-        
-        /* Discount section styling */
-        .discount-section {
-            margin-top: 15px;
-            padding: 15px;
-            background-color: #f8f9fa;
-            border-radius: 8px;
-            border: 1px solid #dee2e6;
-        }
-        
-        .discount-header {
-            display: flex;
-            align-items: center;
-            margin-bottom: 10px;
-        }
-        
-        .discount-header h6 {
-            margin: 0;
-            font-weight: 600;
-            color: #2E7D32;
-        }
-        
-        .discount-type-select {
-            width: 120px;
-            margin-right: 10px;
-        }
-        
-        .discount-input-group {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .discount-input {
-            width: 150px;
-            padding: 8px 12px;
-            border: 1px solid #ced4da;
-            border-radius: 4px;
-        }
-        
-        .discount-apply-btn {
-            padding: 8px 16px;
-        }
-        
-        .discount-summary {
-            margin-top: 10px;
-            padding: 10px;
-            background-color: white;
-            border-radius: 4px;
-            border-left: 4px solid #2E7D32;
-        }
-        
-        .discount-row {
-            display: flex;
-            justify-content: space-between;
-            margin-bottom: 5px;
-        }
-        
-        .discount-label {
-            font-weight: 500;
-            color: #495057;
-        }
-        
-        .discount-value {
-            font-weight: 600;
-        }
-        
-        .grand-total {
-            font-size: 1.1rem;
-            font-weight: 700;
-            color: #2E7D32;
-            border-top: 1px solid #dee2e6;
-            padding-top: 8px;
-            margin-top: 8px;
         }
         
         /* Text alignment utilities */
@@ -1741,7 +1591,6 @@ function formatDateForInput($dateStr) {
                             <div class="col-md-6">
                                 <label for="expectedDelivery" class="form-label">Expected Delivery</label>
                                 <input type="date" class="form-control" id="expectedDelivery">
-                                <small class="text-muted">Leave empty if not specified</small>
                             </div>
                         </div>
                         
@@ -1767,45 +1616,6 @@ function formatDateForInput($dateStr) {
                                 <!-- Item rows will be added here dynamically -->
                             </div>
                             
-                            <!-- Discount Section -->
-                            <div class="discount-section">
-                                <div class="discount-header">
-                                    <h6 class="mb-0"><i class="bi bi-tag me-2"></i>Apply Discount</h6>
-                                </div>
-                                <div class="row g-2 align-items-center">
-                                    <div class="col-auto">
-                                        <select class="form-select discount-type-select" id="discountType">
-                                            <option value="percentage">Percentage (%)</option>
-                                            <option value="fixed">Fixed Amount (₱)</option>
-                                        </select>
-                                    </div>
-                                    <div class="col-auto">
-                                        <div class="discount-input-group">
-                                            <input type="number" class="form-control discount-input" id="discountValue" placeholder="Enter value" min="0" step="0.01" value="0">
-                                            <button type="button" class="btn btn-primary discount-apply-btn" onclick="applyDiscount()">
-                                                <i class="bi bi-check-lg"></i> Apply
-                                            </button>
-                                        </div>
-                                    </div>
-                                </div>
-                                
-                                <!-- Discount Summary -->
-                                <div class="discount-summary" id="discountSummary" style="display: none;">
-                                    <div class="discount-row">
-                                        <span class="discount-label">Subtotal:</span>
-                                        <span class="discount-value" id="subtotalDisplay">₱0.00</span>
-                                    </div>
-                                    <div class="discount-row">
-                                        <span class="discount-label" id="discountLabel">Discount (0%):</span>
-                                        <span class="discount-value text-danger" id="discountAmountDisplay">-₱0.00</span>
-                                    </div>
-                                    <div class="discount-row grand-total">
-                                        <span class="discount-label">Total Amount:</span>
-                                        <span class="discount-value" id="grandTotalDisplay">₱0.00</span>
-                                    </div>
-                                </div>
-                            </div>
-                            
                             <div class="row mt-3">
                                 <div class="col-md-6 offset-md-6">
                                     <div class="card bg-light">
@@ -1823,9 +1633,6 @@ function formatDateForInput($dateStr) {
                                                 <span id="totalQuantityDisplay">0</span>
                                             </div>
                                             <input type="hidden" id="totalAmount" name="total_amount" value="0">
-                                            <input type="hidden" id="discountType_hidden" name="discount_type" value="">
-                                            <input type="hidden" id="discountValue_hidden" name="discount_value" value="0">
-                                            <input type="hidden" id="subtotalAmount" name="subtotal_amount" value="0">
                                         </div>
                                     </div>
                                 </div>
@@ -1925,7 +1732,6 @@ function formatDateForInput($dateStr) {
                             <div class="col-md-6">
                                 <label for="editExpectedDelivery" class="form-label">Expected Delivery</label>
                                 <input type="date" class="form-control" id="editExpectedDelivery">
-                                <small class="text-muted">Leave empty to clear date</small>
                             </div>
                             <div class="col-md-6">
                                 <label for="editTotalAmount" class="form-label">Total Amount (₱) *</label>
@@ -2068,12 +1874,6 @@ function formatDateForInput($dateStr) {
     const poBranchColumnExists = <?php echo $po_branch_column_exists ? 'true' : 'false'; ?>;
     const itemsBranchColumnExists = <?php echo $items_branch_column_exists ? 'true' : 'false'; ?>;
     const supplierIdColumnExists = <?php echo $supplier_id_column_exists ? 'true' : 'false'; ?>;
-    
-    // Discount variables
-    let subtotal = 0;
-    let discountType = 'percentage';
-    let discountValue = 0;
-    let grandTotal = 0;
     
     // Debug: Log items loaded
     console.log('Current Branch ID:', branchId);
@@ -2268,8 +2068,8 @@ function formatDateForInput($dateStr) {
                 <input type="number" class="form-control item-quantity" min="1" value="1" onchange="updateItemSubtotal(this)" required>
                 <button type="button" class="btn btn-sm btn-outline-secondary quantity-btn" onclick="incrementQuantity(this)">+</button>
             </div>
-            <div class="price-container">
-                <input type="number" class="form-control item-price" min="0" step="0.01" value="0.00" onchange="updateItemPrice(this)">
+            <div class="unit-price-display">
+                ₱<span class="price-value">0.00</span>
             </div>
             <div class="item-subtotal">
                 ₱0.00
@@ -2290,7 +2090,6 @@ function formatDateForInput($dateStr) {
         });
         
         updateItemCount();
-        updateTotalAmount();
     }
     
     // Format item options in Select2
@@ -2363,24 +2162,13 @@ function formatDateForInput($dateStr) {
         row.dataset.selectedUnit = unit;
         row.dataset.unitPrice = price;
         
-        // Update the price input field
-        const priceInput = row.querySelector('.item-price');
-        if (priceInput) {
-            priceInput.value = price.toFixed(2);
+        // Display the unit price
+        const priceDisplay = row.querySelector('.price-value');
+        if (priceDisplay) {
+            priceDisplay.textContent = price.toFixed(2);
         }
         
         updateItemSubtotal(row.querySelector('.item-quantity'));
-    }
-    
-    // NEW: Update item price from input
-    function updateItemPrice(input) {
-        const row = input.closest('.po-item-row');
-        const price = parseFloat(input.value) || 0;
-        
-        // Update dataset
-        row.dataset.unitPrice = price;
-        
-        updateItemSubtotal(input);
     }
     
     // Increment quantity
@@ -2406,13 +2194,9 @@ function formatDateForInput($dateStr) {
     function updateItemSubtotal(element) {
         const row = element.closest('.po-item-row');
         const quantity = parseFloat(row.querySelector('.item-quantity').value) || 0;
-        const priceInput = row.querySelector('.item-price');
-        const unitPrice = parseFloat(priceInput.value) || 0;
-        
-        // Update dataset
-        row.dataset.unitPrice = unitPrice;
-        
+        const unitPrice = parseFloat(row.dataset.unitPrice) || 0;
         const subtotal = quantity * unitPrice;
+        
         row.querySelector('.item-subtotal').textContent = `₱${subtotal.toFixed(2)}`;
         
         updateTotalAmount();
@@ -2458,62 +2242,16 @@ function formatDateForInput($dateStr) {
             if (select && select.value) {
                 validItems++;
                 const quantity = parseFloat(row.querySelector('.item-quantity').value) || 0;
-                const priceInput = row.querySelector('.item-price');
-                const unitPrice = parseFloat(priceInput.value) || 0;
+                const unitPrice = parseFloat(row.dataset.unitPrice) || 0;
                 total += quantity * unitPrice;
                 totalQty += quantity;
             }
         });
         
-        // Update subtotal
-        subtotal = total;
-        
-        // Update display
+        document.getElementById('totalAmountDisplay').textContent = `₱${total.toFixed(2)}`;
+        document.getElementById('totalAmount').value = total.toFixed(2);
         document.getElementById('totalItemsDisplay').textContent = validItems;
         document.getElementById('totalQuantityDisplay').textContent = totalQty;
-        
-        // Apply discount
-        applyDiscount();
-    }
-    
-    // Discount functions
-    function applyDiscount() {
-        discountType = document.getElementById('discountType').value;
-        discountValue = parseFloat(document.getElementById('discountValue').value) || 0;
-        
-        if (discountValue < 0) discountValue = 0;
-        
-        let discountAmount = 0;
-        
-        if (discountType === 'percentage') {
-            discountAmount = subtotal * (discountValue / 100);
-            document.getElementById('discountLabel').textContent = `Discount (${discountValue}%):`;
-        } else {
-            discountAmount = discountValue;
-            document.getElementById('discountLabel').textContent = `Discount (Fixed):`;
-        }
-        
-        // Ensure discount doesn't exceed subtotal
-        if (discountAmount > subtotal) {
-            discountAmount = subtotal;
-        }
-        
-        grandTotal = subtotal - discountAmount;
-        
-        // Update displays
-        document.getElementById('subtotalDisplay').textContent = `₱${subtotal.toFixed(2)}`;
-        document.getElementById('discountAmountDisplay').textContent = `-₱${discountAmount.toFixed(2)}`;
-        document.getElementById('grandTotalDisplay').textContent = `₱${grandTotal.toFixed(2)}`;
-        document.getElementById('totalAmountDisplay').textContent = `₱${grandTotal.toFixed(2)}`;
-        document.getElementById('totalAmount').value = grandTotal.toFixed(2);
-        
-        // Store in hidden fields
-        document.getElementById('discountType_hidden').value = discountType;
-        document.getElementById('discountValue_hidden').value = discountValue;
-        document.getElementById('subtotalAmount').value = subtotal.toFixed(2);
-        
-        // Show discount summary
-        document.getElementById('discountSummary').style.display = 'block';
     }
     
     function getItemsData() {
@@ -2524,8 +2262,7 @@ function formatDateForInput($dateStr) {
             const select = row.querySelector('.item-select');
             if (select && select.value) {
                 const quantity = parseInt(row.querySelector('.item-quantity').value) || 0;
-                const priceInput = row.querySelector('.item-price');
-                const unitPrice = parseFloat(priceInput.value) || 0;
+                const unitPrice = parseFloat(row.dataset.unitPrice) || 0;
                 
                 items.push({
                     item_id: select.value,
@@ -2580,10 +2317,6 @@ function formatDateForInput($dateStr) {
         // Quantity change handler
         document.getElementById('itemQuantity')?.addEventListener('input', calculateSubtotal);
         document.getElementById('itemUnitPrice')?.addEventListener('input', calculateSubtotal);
-        
-        // Discount input change handler
-        document.getElementById('discountValue')?.addEventListener('input', applyDiscount);
-        document.getElementById('discountType')?.addEventListener('change', applyDiscount);
         
         // Mobile menu toggle
         document.getElementById('mobileMenuBtn').addEventListener('click', function() {
@@ -2751,13 +2484,6 @@ function formatDateForInput($dateStr) {
         $('#supplierName').val(null).trigger('change');
         $('#supplierInfo').hide();
         
-        // Reset discount
-        document.getElementById('discountType').value = 'percentage';
-        document.getElementById('discountValue').value = '0';
-        document.getElementById('discountSummary').style.display = 'none';
-        subtotal = 0;
-        grandTotal = 0;
-        
         // Clear items container and destroy any Select2 instances
         const itemsContainer = document.getElementById('itemsContainer');
         const oldSelects = itemsContainer.querySelectorAll('.item-select');
@@ -2806,8 +2532,11 @@ function formatDateForInput($dateStr) {
             return;
         }
         
-        // Use grand total with discount
-        let totalAmount = grandTotal;
+        // Calculate total from items
+        let totalAmount = 0;
+        items.forEach(item => {
+            totalAmount += item.quantity * item.unit_price;
+        });
         
         showLoading();
         
@@ -2875,65 +2604,11 @@ function formatDateForInput($dateStr) {
                 currentPOData = po;
                 currentPOId = id;
                 
-                // Format dates safely
-                let orderDate = 'N/A';
-                let expectedDate = 'N/A';
-                let createdDate = 'N/A';
-                let updatedDate = 'N/A';
-                
-                try {
-                    if (po.order_date) {
-                        const dateStr = po.order_date.split(' ')[0]; // Remove time if present
-                        const date = new Date(dateStr + 'T12:00:00'); // Add noon to avoid timezone issues
-                        if (!isNaN(date.getTime())) {
-                            orderDate = date.toLocaleDateString('en-US', { 
-                                year: 'numeric', 
-                                month: 'long', 
-                                day: 'numeric' 
-                            });
-                        }
-                    }
-                } catch (e) {
-                    console.log('Error parsing order date:', po.order_date);
-                }
-                
-                try {
-                    if (po.expected_delivery && po.expected_delivery !== '0000-00-00') {
-                        const dateStr = po.expected_delivery.split(' ')[0];
-                        const date = new Date(dateStr + 'T12:00:00');
-                        if (!isNaN(date.getTime())) {
-                            expectedDate = date.toLocaleDateString('en-US', { 
-                                year: 'numeric', 
-                                month: 'long', 
-                                day: 'numeric' 
-                            });
-                        }
-                    }
-                } catch (e) {
-                    console.log('Error parsing expected delivery:', po.expected_delivery);
-                }
-                
-                try {
-                    if (po.created_at) {
-                        const date = new Date(po.created_at);
-                        if (!isNaN(date.getTime())) {
-                            createdDate = date.toLocaleString();
-                        }
-                    }
-                } catch (e) {
-                    console.log('Error parsing created date:', po.created_at);
-                }
-                
-                try {
-                    if (po.updated_at) {
-                        const date = new Date(po.updated_at);
-                        if (!isNaN(date.getTime())) {
-                            updatedDate = date.toLocaleString();
-                        }
-                    }
-                } catch (e) {
-                    console.log('Error parsing updated date:', po.updated_at);
-                }
+                // Format dates
+                const orderDate = po.order_date ? new Date(po.order_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A';
+                const expectedDate = po.expected_delivery ? new Date(po.expected_delivery).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'N/A';
+                const createdDate = po.created_at ? new Date(po.created_at).toLocaleString() : 'N/A';
+                const updatedDate = po.updated_at ? new Date(po.updated_at).toLocaleString() : 'N/A';
                 
                 let branchHtml = '';
                 if (po.branch_name) {
@@ -3135,34 +2810,9 @@ function formatDateForInput($dateStr) {
             if (data.success) {
                 const po = data.po;
                 
-                // Format dates for input safely
-                let orderDate = '';
-                let expectedDate = '';
-                
-                try {
-                    if (po.order_date) {
-                        const dateStr = po.order_date.split(' ')[0];
-                        const date = new Date(dateStr + 'T12:00:00');
-                        if (!isNaN(date.getTime())) {
-                            orderDate = date.toISOString().slice(0, 10);
-                        }
-                    }
-                } catch (e) {
-                    console.log('Error parsing order date for edit:', po.order_date);
-                }
-                
-                try {
-                    // Only set expected date if it's not empty and not '0000-00-00'
-                    if (po.expected_delivery && po.expected_delivery !== '0000-00-00') {
-                        const dateStr = po.expected_delivery.split(' ')[0];
-                        const date = new Date(dateStr + 'T12:00:00');
-                        if (!isNaN(date.getTime())) {
-                            expectedDate = date.toISOString().slice(0, 10);
-                        }
-                    }
-                } catch (e) {
-                    console.log('Error parsing expected delivery for edit:', po.expected_delivery);
-                }
+                // Format dates for input
+                const orderDate = po.order_date ? po.order_date.split(' ')[0] : '';
+                const expectedDate = po.expected_delivery ? po.expected_delivery.split(' ')[0] : '';
                 
                 document.getElementById('editPOId').value = po.po_id;
                 document.getElementById('editPONumber').value = po.po_number;
