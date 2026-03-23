@@ -15,6 +15,20 @@ $user_role = $_SESSION['role'];
 $branch_id = $_SESSION['branch_id'];
 $view_all_branches = $_SESSION['view_all_branches'] ?? false;
 
+// Get user's branch name for display
+$branch_name = 'All Branches';
+if (!$view_all_branches && $branch_id > 0) {
+    $branch_query = "SELECT branch_name FROM branches WHERE branch_id = ?";
+    $branch_stmt = $conn->prepare($branch_query);
+    $branch_stmt->bind_param("i", $branch_id);
+    $branch_stmt->execute();
+    $branch_result = $branch_stmt->get_result();
+    if ($branch_row = $branch_result->fetch_assoc()) {
+        $branch_name = $branch_row['branch_name'];
+    }
+    $branch_stmt->close();
+}
+
 // ================= GET DRIVER ID FOR DELIVERY ROLE =================
 $driver_id = 0;
 if ($user_role == 'delivery') {
@@ -275,20 +289,13 @@ $trip_tickets_query = "
         so.so_number,
         c.customer_name,
         c.address,
-        c.city,
-        -- Count deliveries for this trip
-        COUNT(DISTINCT d2.delivery_id) as delivery_count,
-        SUM(CASE WHEN d2.delivery_status = 'pending' THEN 1 ELSE 0 END) as pending_deliveries,
-        SUM(CASE WHEN d2.delivery_status = 'delivered' THEN 1 ELSE 0 END) as delivered_count,
-        SUM(CASE WHEN d2.delivery_status = 'in-transit' THEN 1 ELSE 0 END) as in_transit_deliveries,
-        SUM(CASE WHEN d2.delivery_status = 'partial' THEN 1 ELSE 0 END) as partial_deliveries
+        c.city
     FROM trip_tickets tt
     LEFT JOIN drivers d ON tt.driver_id = d.driver_id
     LEFT JOIN branches b ON tt.branch_id = b.branch_id
     LEFT JOIN pick_lists pl ON tt.picklist_id = pl.pick_list_id
     LEFT JOIN sales_orders so ON pl.so_id = so.so_id
     LEFT JOIN customers c ON so.customer_id = c.customer_id
-    LEFT JOIN deliveries d2 ON tt.trip_id = d2.trip_id
     WHERE 1=1
 ";
 
@@ -302,7 +309,7 @@ if ($user_role == 'delivery' && $driver_id > 0) {
     $trip_tickets_query .= " AND tt.driver_id = $driver_id";
 }
 
-$trip_tickets_query .= " GROUP BY tt.trip_id ORDER BY 
+$trip_tickets_query .= " ORDER BY 
     CASE 
         WHEN tt.trip_status IN ('planned', 'in-progress') THEN 1
         WHEN tt.trip_status = 'completed' THEN 2
@@ -314,36 +321,9 @@ $result = $conn->query($trip_tickets_query);
 
 if (!$result) {
     error_log("SQL Error in trip_tickets.php: " . $conn->error);
-    error_log("Query: " . $trip_tickets_query);
     $trip_tickets = [];
 } else {
     $trip_tickets = $result->fetch_all(MYSQLI_ASSOC);
-}
-
-// ================= GET ALL DELIVERIES FOR EACH TRIP =================
-$trip_deliveries = [];
-if (!empty($trip_tickets)) {
-    $trip_ids = array_column($trip_tickets, 'trip_id');
-    $trip_ids_str = implode(',', $trip_ids);
-    
-    $deliveries_query = "
-        SELECT 
-            d.*,
-            c.customer_name,
-            c.address,
-            c.city
-        FROM deliveries d
-        LEFT JOIN customers c ON d.customer_id = c.customer_id
-        WHERE d.trip_id IN ($trip_ids_str)
-        ORDER BY d.stop_sequence ASC, d.delivery_id ASC
-    ";
-    
-    $deliveries_result = $conn->query($deliveries_query);
-    if ($deliveries_result) {
-        while ($delivery = $deliveries_result->fetch_assoc()) {
-            $trip_deliveries[$delivery['trip_id']][] = $delivery;
-        }
-    }
 }
 
 // ================= GET DRIVER INFO FOR DISPLAY =================
@@ -358,16 +338,30 @@ if ($user_role == 'delivery' && $driver_id > 0) {
     $driver_info_stmt->close();
 }
 
+// Get user initials for avatar
+$user_initials = '';
+if (!empty($user_name)) {
+    $name_parts = explode(' ', $user_name);
+    foreach ($name_parts as $part) {
+        if (!empty($part)) {
+            $user_initials .= strtoupper(substr($part, 0, 1));
+        }
+    }
+}
+if (empty($user_initials)) {
+    $user_initials = 'DV';
+}
+
 // Helper function for trip status badge
 function getTripStatusBadge($status) {
     return match($status) {
-        'planned' => 'bg-warning text-dark',
-        'pending' => 'bg-warning text-dark',
-        'in-progress' => 'bg-primary text-white',
-        'completed' => 'bg-success text-white',
-        'cancelled' => 'bg-danger text-white',
-        'delayed' => 'bg-info text-white',
-        default => 'bg-secondary text-white'
+        'planned' => 'bg-warning',
+        'pending' => 'bg-warning',
+        'in-progress' => 'bg-primary',
+        'completed' => 'bg-success',
+        'cancelled' => 'bg-danger',
+        'delayed' => 'bg-info',
+        default => 'bg-secondary'
     };
 }
 
@@ -387,86 +381,538 @@ function getTripStatusText($status) {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
     <title>Trip Tickets - Delivery Management</title>
     <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
     <link rel="shortcut icon" href="../Pictures/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="../Pictures/apple-touch-icon.png" />
     <link rel="manifest" href="../Pictures/site.webmanifest" />
-    <link rel="stylesheet" href="../css/del_trip_tickets.css">
+    <link rel="stylesheet" href="../css/delivery.css">
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-        /* Mobile responsive adjustments */
-        @media (max-width: 768px) {
-            .stat-card {
-                padding: 12px;
-                min-height: 85px;
-                margin-bottom: 8px;
-            }
-            
-            .stat-icon {
-                font-size: 2rem;
-                margin-right: 12px;
-            }
-            
-            .stat-value {
-                font-size: 1.5rem;
-            }
-            
-            .stat-label {
-                font-size: 0.8rem;
-            }
-            
-            .col-md-3 {
-                width: 50%;
-                padding-left: 8px;
-                padding-right: 8px;
-            }
-            
-            .row.g-3 {
-                margin-left: -8px;
-                margin-right: -8px;
-            }
-            
-            .mb-3 {
-                margin-bottom: 8px !important;
-            }
+        /* Mobile Profile Modal Styles */
+        .user-avatar-large {
+            width: 100px;
+            height: 100px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #047857, #44D34E);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin: 0 auto;
+            border: 4px solid #d1fae5;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+        #profileModal .modal-content {
+            border: none;
+            border-radius: 20px;
+            overflow: hidden;
+        }
+
+        #profileModal .modal-header {
+            background: linear-gradient(135deg, #047857, #44D34E);
+            color: white;
+            border-bottom: none;
+            padding: 1.5rem;
+        }
+
+        #profileModal .modal-header .modal-title {
+            color: white;
+            font-weight: 600;
+        }
+
+        #profileModal .modal-header .btn-close {
+            filter: brightness(0) invert(1);
+            opacity: 0.9;
+        }
+
+        #profileModal .modal-header .btn-close:hover {
+            opacity: 1;
+            transform: rotate(90deg);
+        }
+
+        #profileModal .modal-body {
+            padding: 2rem;
+            background: linear-gradient(135deg, #f9fefc 0%, #f0fdf4 100%);
+        }
+
+        #profileModal .branch-info {
+            background: #d1fae5;
+            color: #047857;
+            padding: 0.5rem 1rem;
+            border-radius: 50px;
+            display: inline-block;
+            font-weight: 500;
+        }
+
+        #profileModal .btn-danger {
+            background: linear-gradient(135deg, #dc3545, #f87171);
+            border: none;
+            padding: 1rem;
+            border-radius: 50px;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+
+        #profileModal .btn-danger:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(220, 53, 69, 0.3);
+        }
+
+        /* Mobile Logout Button in Bottom Nav */
+        .mobile-nav .nav-link.logout-btn {
+            color: #dc3545;
+        }
+
+        .mobile-nav .nav-link.logout-btn i {
+            color: #dc3545;
+        }
+
+        .mobile-nav .nav-link.logout-btn.active,
+        .mobile-nav .nav-link.logout-btn:hover {
+            background: rgba(220, 53, 69, 0.1);
+            color: #dc3545;
+        }
+
+        .mobile-nav .nav-link.logout-btn.active i,
+        .mobile-nav .nav-link.logout-btn:hover i {
+            color: #dc3545;
+        }
+
+        /* Status option styling */
+        .status-option {
+            border: 1px solid #dee2e6;
+            border-radius: 8px;
+            padding: 10px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
         
-        @media (max-width: 576px) {
-            .stat-card {
-                min-height: 80px;
-                padding: 10px;
+        .status-option:hover {
+            background-color: #f8f9fa;
+            border-color: #0d6efd;
+        }
+        
+        .status-option.selected {
+            background-color: #e7f1ff;
+            border-color: #0d6efd;
+        }
+        
+        .status-badge {
+            min-width: 80px;
+            text-align: center;
+        }
+
+        .auto-update-badge {
+            background-color: #ffc107;
+            color: #212529;
+            font-size: 0.7rem;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+            display: inline-block;
+            margin-top: 4px;
+        }
+
+        .delivery-count {
+            font-size: 0.85rem;
+            padding: 4px 8px;
+        }
+
+        .stat-card-row {
+            margin-bottom: 1.5rem !important;
+        }
+
+        @media (max-width: 768px) {
+            .stat-card-row {
+                margin-bottom: 1rem !important;
+            }
+        }
+
+        /* ===== MOBILE LAYOUT - TRIP NUMBER | SO NUMBER, PICK LIST | STATUS, CUSTOMER | TAP TO VIEW ===== */
+        @media (max-width: 768px) {
+            /* Hide table headers */
+            .custom-table thead {
+                display: none !important;
             }
             
-            .stat-icon {
-                font-size: 1.8rem;
-                margin-right: 10px;
+            /* Make table behave like blocks */
+            .custom-table,
+            .custom-table tbody,
+            .custom-table tr,
+            .custom-table td {
+                display: block !important;
+                width: 100% !important;
             }
             
-            .stat-value {
-                font-size: 1.3rem;
+            /* Style each row as a card with reduced padding */
+            .custom-table tbody tr {
+                background: white !important;
+                border-radius: 12px !important;
+                margin-bottom: 12px !important;
+                padding: 0 !important; /* Remove padding, ilalagay sa clickable div */
+                box-shadow: 0 2px 8px rgba(0,0,0,0.08) !important;
+                border: 1px solid #e9ecef !important;
             }
             
-            .stat-label {
-                font-size: 0.75rem;
+            /* Hide all original desktop columns */
+            .custom-table td.col-trip-number,
+            .custom-table td.col-driver,
+            .custom-table td.col-branch,
+            .custom-table td.col-date,
+            .custom-table td.col-status,
+            .custom-table td.col-customer,
+            .custom-table td.col-deliveries,
+            .custom-table td.col-actions {
+                display: none !important;
             }
             
-            .col-md-3 {
-                width: 50%;
-                padding-left: 6px;
-                padding-right: 6px;
+            /* Show mobile card */
+            .custom-table td.mobile-trip-card {
+                display: block !important;
+                padding: 0 !important;
+                border: none !important;
             }
             
-            .row.g-3 {
-                margin-left: -6px;
-                margin-right: -6px;
+            /* Clickable card container */
+            .trip-card-clickable {
+                display: block !important;
+                padding: 12px !important; /* Ilipat ang padding dito */
+                cursor: pointer !important;
+                transition: background-color 0.2s ease !important;
+                width: 100% !important;
+                box-sizing: border-box !important;
             }
+            
+            .trip-card-clickable:active {
+                background-color: #f0f7ff !important; /* Light blue when tapped */
+            }
+            
+            /* ===== ROW 1: Trip Number (left) and SO Number (right) ===== */
+            .trip-first-row {
+                display: flex !important;
+                justify-content: space-between !important;
+                align-items: center !important;
+                margin-bottom: 4px !important;
+            }
+            
+            .trip-first-row .trip-number {
+                font-size: clamp(0.9rem, 4vw, 1.2rem) !important;
+                font-weight: 700 !important;
+                color: #047857 !important;
+                white-space: nowrap !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+                max-width: 60% !important;
+            }
+            
+            .trip-first-row .so-number {
+                font-size: clamp(0.75rem, 3.5vw, 0.95rem) !important;
+                color: #6c757d !important;
+                white-space: nowrap !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+                max-width: 40% !important;
+                text-align: right !important;
+            }
+            
+            /* ===== ROW 2: Pick List (left) and Status Badge (right) ===== */
+            .trip-second-row {
+                display: flex !important;
+                justify-content: space-between !important;
+                align-items: center !important;
+                margin-bottom: 4px !important;
+            }
+            
+            .trip-second-row .pick-list {
+                font-size: clamp(0.75rem, 3.5vw, 0.95rem) !important;
+                color: #6c757d !important;
+                white-space: nowrap !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+                max-width: 60% !important;
+            }
+            
+            .trip-second-row .status-badge {
+                font-size: clamp(0.7rem, 3vw, 0.9rem) !important;
+                padding: 3px 10px !important;
+                border-radius: 20px !important;
+                font-weight: 600 !important;
+                color: white !important;
+                white-space: nowrap !important;
+                max-width: 40% !important;
+                text-align: center !important;
+            }
+            
+            /* Status badge colors */
+            .trip-second-row .status-badge.bg-warning {
+                background-color: #f59e0b !important;
+            }
+            
+            .trip-second-row .status-badge.bg-success {
+                background-color: #28a745 !important;
+            }
+            
+            .trip-second-row .status-badge.bg-primary {
+                background-color: #0d6efd !important;
+            }
+            
+            .trip-second-row .status-badge.bg-info {
+                background-color: #0dcaf0 !important;
+            }
+            
+            .trip-second-row .status-badge.bg-danger {
+                background-color: #dc3545 !important;
+            }
+            
+            .trip-second-row .status-badge.bg-secondary {
+                background-color: #6c757d !important;
+            }
+            
+            /* ===== ROW 3: Customer Name (left) and Tap to view text (right) ===== */
+            .trip-third-row {
+                display: flex !important;
+                justify-content: space-between !important;
+                align-items: center !important;
+                gap: 8px !important;
+            }
+            
+            .trip-third-row .customer-name {
+                font-size: clamp(0.95rem, 4.5vw, 1.2rem) !important;
+                font-weight: 500 !important;
+                color: #212529 !important;
+                white-space: nowrap !important;
+                overflow: hidden !important;
+                text-overflow: ellipsis !important;
+                flex: 1 !important;
+                min-width: 0 !important;
+            }
+            
+            .trip-third-row .tap-to-view {
+                font-size: clamp(0.65rem, 3vw, 0.8rem) !important;
+                color: #6c757d !important;
+                white-space: nowrap !important;
+                display: inline-flex !important;
+                align-items: center !important;
+                gap: 4px !important;
+                flex-shrink: 0 !important;
+                padding: 4px 8px !important;
+                border-radius: 16px !important;
+                
+            }
+            
+            .trip-third-row .tap-to-view i {
+                font-size: clamp(0.7rem, 3.2vw, 0.85rem) !important;
+            }
+        }
+
+        /* Small phones (400px - 568px) */
+        @media (min-width: 400px) and (max-width: 568px) {
+            .trip-card-clickable {
+                padding: 10px !important;
+            }
+            
+            .trip-first-row {
+                margin-bottom: 3px !important;
+            }
+            
+            .trip-second-row {
+                margin-bottom: 3px !important;
+            }
+        }
+
+        /* Small phones (below 400px) */
+        @media (max-width: 399px) {
+            .trip-card-clickable {
+                padding: 8px !important;
+            }
+            
+            .trip-first-row {
+                margin-bottom: 2px !important;
+            }
+            
+            .trip-second-row {
+                margin-bottom: 2px !important;
+            }
+            
+            .trip-first-row .trip-number {
+                font-size: 0.9rem !important;
+            }
+            
+            .trip-first-row .so-number {
+                font-size: 0.7rem !important;
+            }
+            
+            .trip-second-row .pick-list {
+                font-size: 0.7rem !important;
+            }
+            
+            .trip-second-row .status-badge {
+                font-size: 0.65rem !important;
+                padding: 2px 8px !important;
+            }
+            
+            .trip-third-row .customer-name {
+                font-size: 0.9rem !important;
+            }
+            
+            .trip-third-row .tap-to-view {
+                font-size: 0.6rem !important;
+                padding: 3px 6px !important;
+            }
+            
+            .trip-third-row .tap-to-view i {
+                font-size: 0.65rem !important;
+            }
+        }
+
+        /* Extra small phones */
+        @media (max-width: 320px) {
+            .trip-card-clickable {
+                padding: 6px !important;
+            }
+            
+            .trip-first-row .trip-number {
+                font-size: 0.8rem !important;
+            }
+            
+            .trip-first-row .so-number {
+                font-size: 0.65rem !important;
+            }
+            
+            .trip-second-row .pick-list {
+                font-size: 0.65rem !important;
+            }
+            
+            .trip-second-row .status-badge {
+                font-size: 0.6rem !important;
+                padding: 2px 6px !important;
+            }
+            
+            .trip-third-row .customer-name {
+                font-size: 0.8rem !important;
+            }
+            
+            .trip-third-row .tap-to-view {
+                font-size: 0.55rem !important;
+                padding: 2px 5px !important;
+            }
+            
+            .trip-third-row .tap-to-view i {
+                font-size: 0.6rem !important;
+            }
+        }
+
+        /* Desktop - balik sa normal na table */
+        @media (min-width: 769px) {
+            .custom-table thead {
+                display: table-header-group !important;
+            }
+            
+            .custom-table tbody tr {
+                display: table-row !important;
+                background: none !important;
+                border-radius: 0 !important;
+                margin-bottom: 0 !important;
+                padding: 0 !important;
+                box-shadow: none !important;
+                border: none !important;
+            }
+            
+            .custom-table td {
+                display: table-cell !important;
+                padding: 0.75rem 1rem !important;
+                vertical-align: middle !important;
+            }
+            
+            .custom-table td.mobile-trip-card {
+                display: none !important;
+            }
+            
+            /* Desktop action buttons */
+            .btn-action {
+                width: 36px !important;
+                height: 36px !important;
+                border-radius: 8px !important;
+                font-size: 1.1rem !important;
+                display: inline-flex !important;
+                align-items: center !important;
+                justify-content: center !important;
+                border: 1px solid transparent !important;
+                background: transparent !important;
+                cursor: pointer !important;
+            }
+            
+            .btn-action.btn-view {
+                background: #e7f1ff !important;
+                color: #0d6efd !important;
+                border: 1px solid #0d6efd !important;
+            }
+        }
+        /* Modal height adjustments for mobile */
+@media (max-width: 768px) {
+    .modal-dialog-scrollable {
+        margin: 0.5rem;
+        height: calc(100% - 1rem);
+        max-height: none;
+    }
+    
+    .modal-dialog-scrollable .modal-content {
+        max-height: 95vh;
+        border-radius: 16px;
+    }
+    
+    .modal-dialog-scrollable .modal-body {
+        max-height: calc(95vh - 120px);
+        padding: 1rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .modal-dialog-scrollable {
+        margin: 0.3rem;
+        height: calc(100% - 0.6rem);
+    }
+    
+    .modal-dialog-scrollable .modal-content {
+        max-height: 96vh;
+        border-radius: 14px;
+    }
+    
+    .modal-dialog-scrollable .modal-body {
+        max-height: calc(96vh - 110px);
+        padding: 0.9rem;
+    }
+}
+
+@media (max-width: 360px) {
+    .modal-dialog-scrollable {
+        margin: 0.2rem;
+        height: calc(100% - 0.4rem);
+    }
+    
+    .modal-dialog-scrollable .modal-content {
+        max-height: 97vh;
+        border-radius: 12px;
+    }
+    
+    .modal-dialog-scrollable .modal-body {
+        max-height: calc(97vh - 100px);
+        padding: 0.8rem;
+    }
 }
     </style>
 </head>
@@ -512,7 +958,7 @@ function getTripStatusText($status) {
             <!-- User Profile Section at the bottom of sidebar -->
             <div class="sidebar-footer">
                 <div class="user-profile-sidebar">
-                    <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
+                    <div class="user-avatar-sidebar"><?php echo $user_initials; ?></div>
                     <div class="user-details-sidebar">
                         <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
                     </div>
@@ -592,60 +1038,51 @@ function getTripStatusText($status) {
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>
             <?php endif; ?>
-
+            
             <!-- Trip Tickets Stats -->
-            <div class="row g-3 mb-4">
-                <!-- Total Trips -->
-                <div class="col-md-3 mb-3">
+            <div class="row stat-card-row g-1 g-sm-2">
+                <!-- Card 1 - Total Trips -->
+                <div class="col">
                     <div class="stat-card inventory">
-                        <div class="stat-icon">
-                            <i class="bi bi-ticket"></i>
-                        </div>
-                        <div>
+                        <i class="bi bi-ticket"></i>
+                        <div class="stat-content">
                             <div class="stat-value"><?php echo $stats['total_trips'] ?? 0; ?></div>
                             <div class="stat-label">Total Trips</div>
                             <?php if ($user_role == 'delivery'): ?>
-                                <small class="text-white-50">Your Trips</small>
                             <?php elseif ($tt_branch_column_exists && !$view_all_branches): ?>
-                                <small class="text-white-50">Your Branch</small>
+                                <small class="text-white-50 d-block mt-1">Your Branch</small>
                             <?php endif; ?>
                         </div>
                     </div>
                 </div>
 
-                <!-- Completed -->
-                <div class="col-md-3 mb-3">
+                <!-- Card 2 - Completed -->
+                <div class="col">
                     <div class="stat-card sales">
-                        <div class="stat-icon">
-                            <i class="bi bi-check-circle"></i>
-                        </div>
-                        <div>
+                        <i class="bi bi-check-circle"></i>
+                        <div class="stat-content">
                             <div class="stat-value"><?php echo $stats['completed'] ?? 0; ?></div>
                             <div class="stat-label">Completed</div>
                         </div>
                     </div>
                 </div>
 
-                <!-- In Transit -->
-                <div class="col-md-3 mb-3">
+                <!-- Card 3 - In Transit -->
+                <div class="col">
                     <div class="stat-card pending">
-                        <div class="stat-icon">
-                            <i class="bi bi-arrow-right-circle"></i>
-                        </div>
-                        <div>
+                        <i class="bi bi-arrow-right-circle"></i>
+                        <div class="stat-content">
                             <div class="stat-value"><?php echo $stats['in_transit'] ?? 0; ?></div>
                             <div class="stat-label">In Transit</div>
                         </div>
                     </div>
                 </div>
 
-                <!-- Pending -->
-                <div class="col-md-3 mb-3">
+                <!-- Card 4 - Pending -->
+                <div class="col">
                     <div class="stat-card delivery">
-                        <div class="stat-icon">
-                            <i class="bi bi-exclamation-circle"></i>
-                        </div>
-                        <div>
+                        <i class="bi bi-exclamation-circle"></i>
+                        <div class="stat-content">
                             <div class="stat-value"><?php echo $stats['pending'] ?? 0; ?></div>
                             <div class="stat-label">Pending</div>
                         </div>
@@ -668,11 +1105,11 @@ function getTripStatusText($status) {
                 </div>
             <?php else: ?>
 
-            <!-- Trip Tickets Table - Same design as pick_list_items.php -->
+            <!-- Trip Tickets Table -->
             <div class="card">
                 <div class="table-container">
                     <table class="table custom-table compact-table">
-                        <thead>
+                        <thead class="table-light">
                             <tr>
                                 <th class="col-trip-number">TRIP NUMBER</th>
                                 <th class="col-driver">DRIVER</th>
@@ -685,58 +1122,21 @@ function getTripStatusText($status) {
                             </tr>
                         </thead>
                         <tbody id="tripTableBody">
-                            <?php 
-                            $current_status_group = '';
-                            foreach ($trip_tickets as $row): 
-                                // Determine status group for headers
-                                $status_group = '';
-                                if (in_array($row['trip_status'], ['planned', 'in-progress'])) {
-                                    $status_group = 'pending';
-                                } elseif ($row['trip_status'] == 'completed') {
-                                    $status_group = 'completed';
-                                }
-
-                                
-                                $driver_display = !empty($row['driver_name']) ? $row['driver_name'] : 'N/A';
+                            <?php foreach ($trip_tickets as $row): 
                                 $customer_display = !empty($row['customer_name']) ? $row['customer_name'] : 'N/A';
-                                $delivery_count = $row['delivery_count'] ?? 0;
-                                $pending_count = $row['pending_deliveries'] ?? 0;
-                                $delivered_count = $row['delivered_count'] ?? 0;
-                                
-                                // Check if all deliveries are delivered but trip status is not completed
-                                $needs_update = ($delivery_count > 0 && $delivered_count == $delivery_count && $row['trip_status'] != 'completed');
                             ?>
                             <tr class="trip-row" 
-                                data-status="<?php echo $row['trip_status']; ?>"
-                                data-driver-id="<?php echo $row['driver_id'] ?? ''; ?>"
                                 data-trip-id="<?php echo $row['trip_id']; ?>"
-                                data-search="<?php echo strtolower($row['trip_number'] . ' ' . ($row['driver_name'] ?? '') . ' ' . ($row['customer_name'] ?? '')); ?>">
-                                <td class="col-trip-number">
-                                    <span class="fw-semibold"><?php echo htmlspecialchars($row['trip_number']); ?></span>
-                                    <?php if (!empty($row['pick_list_number'])): ?>
-                                        <br><small class="text-muted">PL: <?php echo htmlspecialchars($row['pick_list_number']); ?></small>
-                                    <?php endif; ?>
-                                    <?php if ($needs_update): ?>
-                                        <br><span class="auto-update-badge"><i class="bi bi-arrow-repeat"></i> Auto-update ready</span>
-                                    <?php endif; ?>
-                                </td>
-                                <td class="col-driver">
-                                    <?php if ($driver_display != 'N/A'): ?>
-                                        <span">
-                                            <i></i> <?php echo htmlspecialchars($driver_display); ?>
-                                        </span>
-                                    <?php else: ?>
-                                        <span class="text-muted">—</span>
-                                    <?php endif; ?>
-                                </td>
-                                <td class="col-branch">
-                                    <?php echo htmlspecialchars($row['branch_name'] ?? 'N/A'); ?>
-                                </td>
-                                <td class="col-date">
-                                    <?php echo date('Y-m-d', strtotime($row['trip_date'])); ?>
-                                </td>
+                                data-status="<?php echo $row['trip_status']; ?>"
+                                data-driver-id="<?php echo $row['driver_id']; ?>">
+                                
+                                <!-- DESKTOP VIEW - visible on desktop, hidden on mobile via CSS -->
+                                <td class="col-trip-number"><?php echo htmlspecialchars($row['trip_number']); ?></td>
+                                <td class="col-driver"><?php echo htmlspecialchars($row['driver_name'] ?? 'N/A'); ?></td>
+                                <td class="col-branch"><?php echo htmlspecialchars($row['branch_name'] ?? 'N/A'); ?></td>
+                                <td class="col-date"><?php echo date('Y-m-d', strtotime($row['trip_date'])); ?></td>
                                 <td class="col-status">
-                                    <span class="badge <?php echo getTripStatusBadge($row['trip_status']); ?>" style="padding: 6px 12px;">
+                                    <span class="badge <?php echo getTripStatusBadge($row['trip_status']); ?> text-white">
                                         <?php echo getTripStatusText($row['trip_status']); ?>
                                     </span>
                                 </td>
@@ -748,20 +1148,45 @@ function getTripStatusText($status) {
                                 </td>
                                 <td class="col-deliveries">
                                     <span class="badge bg-primary delivery-count">
-                                        <i class="bi bi-box"></i> <?php echo $delivery_count; ?>
+                                        <i class="bi bi-box"></i> 0
                                     </span>
-                                    <?php if ($pending_count > 0): ?>
-                                        <br><small class="text-warning"><?php echo $pending_count; ?> pending</small>
-                                    <?php endif; ?>
-                                    <?php if ($delivered_count > 0): ?>
-                                        <br><small class="text-success"><?php echo $delivered_count; ?> delivered</small>
-                                    <?php endif; ?>
                                 </td>
                                 <td class="col-actions">
                                     <div class="action-buttons">
                                         <button class="btn-action btn-view" onclick="viewTripDetails(<?php echo $row['trip_id']; ?>)" title="View Details">
                                             <i class="bi bi-eye"></i>
                                         </button>
+                                    </div>
+                                </td>
+                                
+                                <!-- MOBILE VIEW - visible on mobile, hidden on desktop via CSS -->
+                                <td class="mobile-trip-card" colspan="8">
+                                    <div class="trip-card-clickable" onclick="viewTripDetails(<?php echo $row['trip_id']; ?>)" data-trip-id="<?php echo $row['trip_id']; ?>">
+                                        <!-- ROW 1: Trip Number | SO Number -->
+                                        <div class="trip-first-row">
+                                            <span class="trip-number"><?php echo htmlspecialchars($row['trip_number']); ?></span>
+                                            <?php if (!empty($row['so_number'])): ?>
+                                                <span class="so-number"><?php echo htmlspecialchars($row['so_number']); ?></span>
+                                            <?php endif; ?>
+                                        </div>
+                                        
+                                        <!-- ROW 2: Pick List | Status Badge -->
+                                        <div class="trip-second-row">
+                                            <?php if (!empty($row['pick_list_number'])): ?>
+                                                <span class="pick-list">PL: <?php echo htmlspecialchars($row['pick_list_number']); ?></span>
+                                            <?php endif; ?>
+                                            <span class="status-badge <?php echo getTripStatusBadge($row['trip_status']); ?>">
+                                                <?php echo getTripStatusText($row['trip_status']); ?>
+                                            </span>
+                                        </div>
+                                        
+                                        <!-- ROW 3: Customer Name | Tap to view text -->
+                                        <div class="trip-third-row">
+                                            <span class="customer-name"><?php echo htmlspecialchars($customer_display); ?></span>
+                                            <span class="tap-to-view">
+                                                <i class="bi bi-eye"></i> Tap to view
+                                            </span>
+                                        </div>
                                     </div>
                                 </td>
                             </tr>
@@ -771,6 +1196,77 @@ function getTripStatusText($status) {
                 </div>
             </div>
             <?php endif; ?>
+        </div>
+    </div>
+
+    <!-- Mobile Bottom Navigation -->
+    <div class="mobile-nav" id="mobileNav">
+        <ul class="nav">
+            <li class="nav-item">
+                <a class="nav-link" href="fordelivery.php">
+                    <i class="bi bi-truck"></i>
+                    <span>Delivery</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link active" href="trip_tickets.php">
+                    <i class="bi bi-ticket-perforated"></i>
+                    <span>Tickets</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="rejecteddelivery.php">
+                    <i class="bi bi-exclamation-circle"></i>
+                    <span>Rejected</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link logout-btn" href="#" onclick="showProfileModal(); return false;">
+                    <i class="bi bi-box-arrow-right"></i>
+                    <span>Logout</span>
+                </a>
+            </li>
+        </ul>
+    </div>
+
+    <!-- Mobile Profile/Logout Modal -->
+    <div class="modal fade" id="profileModal" tabindex="-1" aria-labelledby="profileModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="profileModalLabel">
+                        <i class="bi bi-person-circle me-2"></i>User Profile
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <!-- User Avatar -->
+                    <div class="user-avatar-large mb-3">
+                        <?php echo $user_initials; ?>
+                    </div>
+                    
+                    <!-- User Name -->
+                    <h4 class="mb-1"><?php echo htmlspecialchars($user_name); ?></h4>
+                    
+                    <!-- User Role -->
+                    <p class="text-muted mb-3">
+                        <span class="badge bg-success"><?php echo ucfirst($user_role); ?></span>
+                    </p>
+                    
+                    <!-- Branch Info (if applicable) -->
+                    <?php if (!$view_all_branches && $branch_id > 0): ?>
+                    <div class="branch-info mb-3">
+                        <i class="bi bi-building me-1"></i>
+                        <span><?php echo htmlspecialchars($branch_name); ?></span>
+                    </div>
+                    <?php endif; ?>
+                    
+                    <!-- Logout Button -->
+                    <button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()">
+                        <i class="bi bi-box-arrow-right me-2"></i>Logout
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -870,81 +1366,75 @@ function getTripStatusText($status) {
         </div>
     </div>
     <?php endif; ?>
-
-    <!-- View Details Modal -->
-    <div class="modal fade" id="viewDetailsModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">Trip Ticket Details</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body" id="tripDetailsContent">
-                    <!-- Content will be loaded by JavaScript -->
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                </div>
+<!-- View Details Modal -->
+<div class="modal fade" id="viewDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Trip Ticket Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
+            <div class="modal-body" id="tripDetailsContent">
+                <!-- Content will be loaded by JavaScript -->
+            </div>
+            <!-- Modal footer removed - X icon lang sa header -->
         </div>
     </div>
+</div>
 
-    <!-- Update Status Modal -->
-    <div class="modal fade" id="statusModal" tabindex="-1">
-        <div class="modal-dialog">
-            <div class="modal-content">
-                <div class="modal-header bg-warning text-dark">
-                    <h5 class="modal-title"><i class="bi bi-arrow-repeat me-2"></i>Update Trip Status</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <input type="hidden" id="statusTripId">
-                    
-                    <div class="alert alert-info mb-3">
-                        <strong>Trip #: <span id="statusTripNumber"></span></strong>
-                    </div>
-                    
-                    <div class="alert alert-success mb-3" id="autoUpdateNotice" style="display: none;">
-                        <i class="bi bi-info-circle-fill me-2"></i>
-                        <strong>Note:</strong> This trip can be auto-completed because all deliveries are marked as delivered.
-                    </div>
-                    
-                    <p class="mb-3">Select new status:</p>
-                    
-                    <div class="status-option" onclick="selectStatus('planned')" id="opt-planned">
-                        <span class="badge bg-warning text-dark status-badge">Pending</span>
-                        <span>Trip is planned but not yet started</span>
-                    </div>
-                    
-                    <div class="status-option" onclick="selectStatus('in-progress')" id="opt-in-progress">
-                        <span class="badge bg-primary text-white status-badge">In Transit</span>
-                        <span>Delivery is in progress</span>
-                    </div>
-                    
-                    <div class="status-option" onclick="selectStatus('completed')" id="opt-completed">
-                        <span class="badge bg-success text-white status-badge">Completed</span>
-                        <span>All deliveries completed</span>
-                    </div>
-                    
-                    <div class="status-option" onclick="selectStatus('delayed')" id="opt-delayed">
-                        <span class="badge bg-info text-white status-badge">Delayed</span>
-                        <span>Delivery is delayed</span>
-                    </div>
-                    
-                    <div class="status-option" onclick="selectStatus('cancelled')" id="opt-cancelled">
-                        <span class="badge bg-danger text-white status-badge">Cancelled</span>
-                        <span>Trip has been cancelled</span>
-                    </div>
-                    
-                    <input type="hidden" id="selectedStatus" value="">
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-warning" onclick="updateTripStatus()" id="updateStatusBtn">Update Status</button>
-                </div>
+<!-- Update Status Modal -->
+<div class="modal fade" id="statusModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header bg-warning text-dark">
+                <h5 class="modal-title"><i class="bi bi-arrow-repeat me-2"></i>Update Trip Status</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
+            <div class="modal-body">
+                <input type="hidden" id="statusTripId">
+                
+                <div class="alert alert-info mb-3">
+                    <strong>Trip #: <span id="statusTripNumber"></span></strong>
+                </div>
+                
+                <div class="alert alert-success mb-3" id="autoUpdateNotice" style="display: none;">
+                    <i class="bi bi-info-circle-fill me-2"></i>
+                    <strong>Note:</strong> This trip can be auto-completed because all deliveries are marked as delivered.
+                </div>
+                
+                <p class="mb-3">Select new status:</p>
+                
+                <div class="status-option" onclick="selectStatus('planned')" id="opt-planned">
+                    <span class="badge bg-warning text-dark status-badge">Pending</span>
+                    <span>Trip is planned but not yet started</span>
+                </div>
+                
+                <div class="status-option" onclick="selectStatus('in-progress')" id="opt-in-progress">
+                    <span class="badge bg-primary text-white status-badge">In Transit</span>
+                    <span>Delivery is in progress</span>
+                </div>
+                
+                <div class="status-option" onclick="selectStatus('completed')" id="opt-completed">
+                    <span class="badge bg-success text-white status-badge">Completed</span>
+                    <span>All deliveries completed</span>
+                </div>
+                
+                <div class="status-option" onclick="selectStatus('delayed')" id="opt-delayed">
+                    <span class="badge bg-info text-white status-badge">Delayed</span>
+                    <span>Delivery is delayed</span>
+                </div>
+                
+                <div class="status-option" onclick="selectStatus('cancelled')" id="opt-cancelled">
+                    <span class="badge bg-danger text-white status-badge">Cancelled</span>
+                    <span>Trip has been cancelled</span>
+                </div>
+                
+                <input type="hidden" id="selectedStatus" value="">
+            </div>
+            <!-- Modal footer removed - X icon lang sa header -->
         </div>
     </div>
+</div>
 
     <!-- JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -1108,6 +1598,78 @@ function getTripStatusText($status) {
         }
         // ================= END SIDEBAR FUNCTIONS =================
 
+        // ================= MOBILE NAVIGATION FUNCTIONS =================
+        function initMobileNav() {
+            const mobileNav = document.getElementById('mobileNav');
+            const isMobile = window.innerWidth <= 992;
+            
+            if (isMobile) {
+                mobileNav.style.display = 'block';
+                
+                // Set active state based on current page (excluding logout)
+                const currentPage = window.location.pathname.split('/').pop();
+                const navLinks = mobileNav.querySelectorAll('.nav-link:not(.logout-btn)');
+                
+                navLinks.forEach(link => {
+                    link.classList.remove('active');
+                    const href = link.getAttribute('href');
+                    if (currentPage === href) {
+                        link.classList.add('active');
+                    }
+                });
+            } else {
+                mobileNav.style.display = 'none';
+            }
+        }
+
+        // ================= PROFILE/LOGOUT FUNCTIONS =================
+        function showProfileModal() {
+            const profileModal = new bootstrap.Modal(document.getElementById('profileModal'));
+            profileModal.show();
+        }
+
+        function confirmLogout() {
+            // Close the modal first
+            const modal = bootstrap.Modal.getInstance(document.getElementById('profileModal'));
+            if (modal) {
+                modal.hide();
+            }
+            
+            // Show confirmation dialog
+            Swal.fire({
+                title: 'Are you sure?',
+                text: 'You will be logged out of the system',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#dc3545',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, logout'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    localStorage.removeItem('sidebarCollapsed');
+                    window.location.href = '../logout.php';
+                }
+            });
+        }
+
+        // Logout function
+        function logout() {
+            Swal.fire({
+                title: 'Are you sure?',
+                text: 'You will be logged out of the system',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#07d826',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, logout'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    localStorage.removeItem('sidebarCollapsed');
+                    window.location.href = '../logout.php';
+                }
+            });
+        }
+
         // View trip details
         function viewTripDetails(tripId) {
             fetch('get_trip_details.php?trip_id=' + tripId + '&branch_id=' + branchId + '&view_all=' + viewAllBranches)
@@ -1119,7 +1681,7 @@ function getTripStatusText($status) {
                 })
                 .catch(error => {
                     console.error('Error:', error);
-                    alert('Failed to load trip details');
+                    Swal.fire('Error', 'Failed to load trip details', 'error');
                 });
         }
 
@@ -1130,7 +1692,7 @@ function getTripStatusText($status) {
             // Get trip number from the row
             const row = document.querySelector(`.trip-row[data-trip-id="${tripId}"]`);
             if (row) {
-                const tripNumber = row.querySelector('.fw-semibold').textContent;
+                const tripNumber = row.querySelector('.trip-number')?.textContent || row.querySelector('.fw-semibold')?.textContent;
                 document.getElementById('statusTripNumber').textContent = tripNumber;
             }
             
@@ -1175,35 +1737,61 @@ function getTripStatusText($status) {
             const newStatus = document.getElementById('selectedStatus').value;
             
             if (!newStatus) {
-                alert('Please select a status');
+                Swal.fire('Warning', 'Please select a status', 'warning');
                 return;
             }
             
-            if (!confirm('Are you sure you want to update this trip status?')) {
-                return;
-            }
-            
-            const formData = new FormData();
-            formData.append('action', 'update_trip_status');
-            formData.append('trip_id', currentTripId);
-            formData.append('status', newStatus);
-            
-            fetch(window.location.href, {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    alert(data.message);
-                    location.reload();
-                } else {
-                    alert('Error: ' + data.message);
+            Swal.fire({
+                title: 'Are you sure?',
+                text: 'Do you want to update this trip status?',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#ffc107',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, update'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    const formData = new FormData();
+                    formData.append('action', 'update_trip_status');
+                    formData.append('trip_id', currentTripId);
+                    formData.append('status', newStatus);
+                    
+                    Swal.fire({
+                        title: 'Updating...',
+                        text: 'Please wait',
+                        allowOutsideClick: false,
+                        didOpen: () => {
+                            Swal.showLoading();
+                        }
+                    });
+                    
+                    fetch(window.location.href, {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        Swal.close();
+                        if (data.success) {
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Success!',
+                                text: data.message,
+                                timer: 1500,
+                                showConfirmButton: false
+                            }).then(() => {
+                                location.reload();
+                            });
+                        } else {
+                            Swal.fire('Error', data.message || 'Failed to update status', 'error');
+                        }
+                    })
+                    .catch(error => {
+                        Swal.close();
+                        console.error('Error:', error);
+                        Swal.fire('Error', 'Failed to update status', 'error');
+                    });
                 }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('Failed to update status');
             });
         }
 
@@ -1260,7 +1848,7 @@ function getTripStatusText($status) {
                 
                 if (showRow && driverValue) {
                     const rowDriverId = row.dataset.driverId;
-                    showRow = rowDriverId === driverValue;
+                    showRow = rowDriverId == driverValue;
                 }
                 
                 row.style.display = showRow ? '' : 'none';
@@ -1290,66 +1878,16 @@ function getTripStatusText($status) {
             }
             
             navigator.clipboard.writeText(sql).then(() => {
-                alert('SQL copied to clipboard!');
+                Swal.fire('Success', 'SQL copied to clipboard!', 'success');
             });
         }
 
-        // Logout function
-         function logout() {
-        Swal.fire({
-            title: 'Are you sure?',
-            text: 'You will be logged out of the system',
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonColor: '#07d826',
-            cancelButtonColor: '#6c757d',
-            confirmButtonText: 'Yes, logout'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                localStorage.removeItem('sidebarCollapsed');
-                window.location.href = '../logout.php';
-            }
-        });
-    }
-
-        // Form validation (for non-delivery roles)
-        const addTicketForm = document.getElementById('addTicketForm');
-        if (addTicketForm) {
-            addTicketForm.addEventListener('submit', function(e) {
-                const driverSelect = this.querySelector('select[name="driver_id"]');
-                
-                <?php if (!($tt_branch_column_exists && !$view_all_branches)): ?>
-                const branchSelect = this.querySelector('select[name="branch_id"]');
-                if (!branchSelect || !branchSelect.value) {
-                    e.preventDefault();
-                    alert('Please select a branch');
-                    if (branchSelect) branchSelect.focus();
-                    return false;
-                }
-                <?php endif; ?>
-                
-                if (!driverSelect || !driverSelect.value) {
-                    e.preventDefault();
-                    alert('Please select a driver');
-                    if (driverSelect) driverSelect.focus();
-                    return false;
-                }
-                
-                const tripDate = this.querySelector('input[name="trip_date"]');
-                if (!tripDate.value) {
-                    e.preventDefault();
-                    alert('Please select a trip date');
-                    tripDate.focus();
-                    return false;
-                }
-            });
-        }
-
-        // Initialize when page loads
+        // ================= INITIALIZATION =================
         document.addEventListener('DOMContentLoaded', function() {
-            console.log("Trip Tickets page loaded - With auto-complete when all deliveries are delivered");
+            console.log("Trip Tickets page loaded");
             
             initializeSidebar();
+            initMobileNav();
             
             const mobileToggleBtn = document.getElementById('mobileToggleBtn');
             if (mobileToggleBtn) {
@@ -1389,7 +1927,10 @@ function getTripStatusText($status) {
                 }
             });
 
-            window.addEventListener('resize', handleSidebarResize);
+            window.addEventListener('resize', function() {
+                handleSidebarResize();
+                initMobileNav();
+            });
 
             // Filter event listeners
             const searchInput = document.getElementById('searchInput');
@@ -1410,6 +1951,20 @@ function getTripStatusText($status) {
             else if (e.key === 'Escape' && window.innerWidth <= 992) {
                 closeMobileSidebar();
             }
+            else if (e.key === 'Escape') {
+                const profileModal = document.getElementById('profileModal');
+                if (profileModal.classList.contains('show')) {
+                    bootstrap.Modal.getInstance(profileModal).hide();
+                }
+                const viewModal = document.getElementById('viewDetailsModal');
+                if (viewModal.classList.contains('show')) {
+                    bootstrap.Modal.getInstance(viewModal).hide();
+                }
+                const statusModal = document.getElementById('statusModal');
+                if (statusModal.classList.contains('show')) {
+                    bootstrap.Modal.getInstance(statusModal).hide();
+                }
+            }
             else if (e.ctrlKey && e.key === 'f' && !e.target.matches('input, textarea')) {
                 e.preventDefault();
                 const searchInput = document.getElementById('searchInput');
@@ -1421,3 +1976,4 @@ function getTripStatusText($status) {
     </script>
 </body>
 </html>
+<?php $conn->close(); ?>

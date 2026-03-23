@@ -117,189 +117,682 @@ switch ($delivery['delivery_status']) {
 }
 ?>
 
-<!-- ===== SIMPLE HTML CONTENT ONLY - NO STYLES ===== -->
-<!-- Use Bootstrap classes only, no custom CSS that might affect the main page -->
+<style>
+    /* Hide scrollbar for the entire page */
+    html, body {
+        overflow: hidden;
+        height: 100%;
+        margin: 0;
+        padding: 0;
+    }
+    
+    /* Allow scrolling on the main container but hide scrollbar */
+    .delivery-details-container {
+        overflow-y: auto;
+        scrollbar-width: none; /* Firefox */
+        -ms-overflow-style: none; /* IE and Edge */
+        height: 100%;
+        padding-right: 2px; /* Prevent content shift */
+    }
+    
+    /* Chrome, Safari, Opera */
+    .delivery-details-container::-webkit-scrollbar {
+        display: none;
+    }
+    
+    /* Scope all styles to delivery-details-container */
+    .delivery-details-container {
+        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+    }
+    
+    /* Color palette variables - same as trip tickets */
+    .delivery-details-container {
+        --primary-green: #44D34E;
+        --light-green: #d1fae5;
+        --dark-green: #047857;
+        --text-primary: #212529;
+        --text-secondary: #6c757d;
+        --bg-light: #f8f9fa;
+    }
+    
+    .delivery-details-container h6 {
+        color: var(--dark-green);
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 2px solid #dee2e6;
+        font-size: clamp(0.95rem, 2vw, 1.1rem);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .delivery-details-container h6 i {
+        color: var(--primary-green);
+    }
+    
+    .delivery-details-container .detail-section {
+        background: var(--bg-light);
+        border-radius: 8px;
+        padding: 15px;
+        margin-bottom: 20px;
+    }
+    
+    .delivery-details-container .info-label {
+        font-weight: 600;
+        color: var(--text-secondary);
+        width: 80px;
+        font-size: clamp(0.8rem, 1.5vw, 0.9rem);
+        flex-shrink: 0;
+    }
+    
+    .delivery-details-container .info-value {
+        color: var(--text-primary);
+        flex: 1;
+        font-size: clamp(0.85rem, 1.8vw, 0.95rem);
+        word-break: break-word;
+        overflow-wrap: break-word;
+    }
+    
+    .delivery-details-container .badge {
+        font-weight: 500;
+        padding: 0.35rem 0.65rem;
+    }
+    
+    .delivery-details-container .badge.bg-success { 
+        background-color: var(--primary-green) !important; 
+    }
+    
+    .delivery-details-container .border {
+        border-color: #e9ecef !important;
+    }
+    
+    .delivery-details-container .bg-light {
+        background-color: var(--bg-light) !important;
+    }
+    
+    /* Header with SO on right and badge below - responsive text */
+    .delivery-details-container .delivery-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 15px;
+        flex-wrap: nowrap; /* Prevent wrapping */
+        gap: 10px;
+    }
+    
+    .delivery-details-container .delivery-title {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        flex: 0 1 auto;
+    }
+    
+    .delivery-details-container .delivery-title h6 {
+        margin-bottom: 0;
+        padding-bottom: 0;
+        border-bottom: none;
+        font-size: clamp(0.9rem, 2vw, 1.1rem);
+        white-space: nowrap;
+    }
+    
+    .delivery-details-container .delivery-right {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 6px;
+        flex: 0 1 auto;
+        max-width: 60%; /* Limit width on mobile */
+    }
+    
+    .delivery-details-container .so-badge-right {
+        background: #e9ecef;
+        color: var(--dark-green);
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: clamp(0.75rem, 1.8vw, 0.85rem);
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 100%;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+    }
+    
+    .delivery-details-container .so-badge-right i {
+        color: var(--dark-green);
+        font-size: clamp(0.7rem, 1.5vw, 0.8rem);
+    }
+    
+    .delivery-details-container .status-badge-right {
+        font-size: clamp(0.7rem, 1.5vw, 0.8rem);
+        padding: 4px 12px;
+        white-space: nowrap;
+    }
+    
+    /* Items Section - Card-based layout (no table) */
+    .delivery-details-container .items-container {
+        margin-top: 10px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .delivery-details-container .item-card {
+        background: white;
+        border-radius: 8px;
+        padding: 12px;
+        border: 1px solid #e9ecef;
+        transition: all 0.2s ease;
+    }
+    
+    .delivery-details-container .item-card:hover {
+        border-color: var(--primary-green);
+        box-shadow: 0 2px 8px rgba(68, 211, 78, 0.1);
+    }
+    
+    .delivery-details-container .item-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 8px;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    
+    .delivery-details-container .item-name {
+        font-weight: 600;
+        color: var(--text-primary);
+        font-size: clamp(0.9rem, 2vw, 1rem);
+        word-break: break-word;
+        flex: 1;
+    }
+    
+    .delivery-details-container .item-qty-badge {
+        background-color: rgba(68, 211, 78, 0.15);
+        color: var(--dark-green);
+        font-weight: 600;
+        border-radius: 20px;
+        padding: 4px 12px;
+        font-size: clamp(0.75rem, 1.5vw, 0.85rem);
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        white-space: nowrap;
+    }
+    
+    .delivery-details-container .item-qty-badge i {
+        color: var(--primary-green);
+        font-size: clamp(0.7rem, 1.3vw, 0.8rem);
+    }
+    
+    .delivery-details-container .item-details {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding-top: 8px;
+        border-top: 1px dashed #e9ecef;
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+    
+    .delivery-details-container .item-price {
+        color: var(--text-secondary);
+        font-size: clamp(0.8rem, 1.6vw, 0.9rem);
+    }
+    
+    .delivery-details-container .item-price span {
+        color: var(--text-primary);
+        font-weight: 500;
+        margin-left: 4px;
+    }
+    
+    .delivery-details-container .item-total {
+        font-weight: 700;
+        color: var(--dark-green);
+        font-size: clamp(1rem, 2.2vw, 1.1rem);
+        font-family: 'Courier New', monospace;
+    }
+    
+    .delivery-details-container .items-total-card {
+        background: linear-gradient(135deg, rgba(68, 211, 78, 0.1) 0%, rgba(68, 211, 78, 0.05) 100%);
+        border-radius: 10px;
+        margin-top: 15px;
+        padding: 15px;
+        border: 1px solid rgba(68, 211, 78, 0.3);
+    }
+    
+    .delivery-details-container .items-total-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+    
+    .delivery-details-container .total-label {
+        font-weight: 600;
+        color: var(--text-secondary);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        font-size: clamp(0.8rem, 1.6vw, 0.9rem);
+    }
+    
+    .delivery-details-container .total-amount {
+        font-size: clamp(1.2rem, 2.5vw, 1.3rem);
+        font-weight: 700;
+        color: var(--dark-green);
+        font-family: 'Courier New', monospace;
+    }
+    
+    /* Button styles */
+    .delivery-details-container .btn-outline-primary {
+        color: var(--dark-green);
+        border-color: var(--primary-green);
+    }
+    
+    .delivery-details-container .btn-outline-primary:hover {
+        background-color: var(--primary-green);
+        border-color: var(--primary-green);
+        color: white;
+    }
+    
+    .delivery-details-container .btn-outline-primary i {
+        color: var(--primary-green);
+    }
+    
+    .delivery-details-container .btn-outline-primary:hover i {
+        color: white;
+    }
+    
+    /* Responsive - text only adjustments, position stays same */
+    @media (max-width: 768px) {
+        .delivery-details-container .detail-section {
+            padding: 12px;
+            margin-bottom: 15px;
+        }
+        
+        .delivery-details-container h6 {
+            font-size: 1rem;
+            margin-bottom: 10px;
+            padding-bottom: 6px;
+        }
+        
+        .delivery-details-container .info-label {
+            width: 70px;
+            font-size: 0.8rem;
+        }
+        
+        .delivery-details-container .info-value {
+            font-size: 0.85rem;
+        }
+        
+        .delivery-details-container .btn-sm {
+            padding: 0.2rem 0.4rem;
+            font-size: 0.7rem;
+        }
+        
+        /* Stack columns on mobile but keep header position */
+        .delivery-details-container .row {
+            margin-left: -5px;
+            margin-right: -5px;
+        }
+        
+        .delivery-details-container .col-md-6 {
+            padding-left: 5px;
+            padding-right: 5px;
+        }
+        
+        /* Header adjustments - only text size changes, position same */
+        .delivery-details-container .delivery-title h6 {
+            font-size: 0.95rem;
+        }
+        
+        .delivery-details-container .so-badge-right {
+            font-size: 0.75rem;
+            padding: 3px 10px;
+        }
+        
+        .delivery-details-container .so-badge-right i {
+            font-size: 0.7rem;
+        }
+        
+        .delivery-details-container .status-badge-right {
+            font-size: 0.7rem;
+            padding: 3px 10px;
+        }
+        
+        /* Items card adjustments */
+        .delivery-details-container .item-card {
+            padding: 10px;
+        }
+        
+        .delivery-details-container .item-name {
+            font-size: 0.9rem;
+        }
+        
+        .delivery-details-container .item-qty-badge {
+            font-size: 0.75rem;
+            padding: 3px 8px;
+        }
+        
+        .delivery-details-container .item-details {
+            flex-direction: row; /* Keep row direction */
+            align-items: center;
+        }
+        
+        .delivery-details-container .item-price {
+            font-size: 0.8rem;
+        }
+        
+        .delivery-details-container .item-total {
+            font-size: 1rem;
+        }
+        
+        .delivery-details-container .total-amount {
+            font-size: 1.2rem;
+        }
+    }
+    
+    @media (max-width: 480px) {
+        .delivery-details-container .info-label {
+            width: 65px;
+            font-size: 0.75rem;
+        }
+        
+        .delivery-details-container .info-value {
+            font-size: 0.8rem;
+        }
+        
+        /* Header further text size reduction */
+        .delivery-details-container .delivery-title h6 {
+            font-size: 0.9rem;
+        }
+        
+        .delivery-details-container .so-badge-right {
+            font-size: 0.7rem;
+            padding: 2px 8px;
+        }
+        
+        .delivery-details-container .so-badge-right i {
+            font-size: 0.65rem;
+        }
+        
+        .delivery-details-container .status-badge-right {
+            font-size: 0.65rem;
+            padding: 2px 8px;
+        }
+        
+        .delivery-details-container .item-qty-badge {
+            padding: 2px 6px;
+            font-size: 0.7rem;
+        }
+        
+        .delivery-details-container .total-amount {
+            font-size: 1.1rem;
+        }
+        
+        /* Keep item details in row even on very small screens */
+        .delivery-details-container .item-details {
+            flex-direction: row;
+        }
+    }
+    
+    @media (max-width: 360px) {
+        .delivery-details-container .delivery-right {
+            max-width: 55%; /* Slightly smaller on very small screens */
+        }
+        
+        .delivery-details-container .so-badge-right {
+            font-size: 0.65rem;
+            padding: 2px 6px;
+        }
+        
+        .delivery-details-container .status-badge-right {
+            font-size: 0.6rem;
+            padding: 2px 6px;
+        }
+        
+        .delivery-details-container .item-name {
+            font-size: 0.85rem;
+        }
+        
+        .delivery-details-container .item-price {
+            font-size: 0.75rem;
+        }
+        
+        .delivery-details-container .item-total {
+            font-size: 0.95rem;
+        }
+    }
+</style>
+
+<!-- Add the same map button style from trip tickets -->
+<style>
+    .delivery-details-container .btn-map {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        background-color: white;
+        color: var(--dark-green);
+        border: 1px solid var(--primary-green);
+        border-radius: 20px;
+        padding: 4px 12px;
+        font-size: 0.8rem;
+        font-weight: 500;
+        transition: all 0.2s ease;
+        white-space: nowrap;
+        text-decoration: none;
+        cursor: pointer;
+    }
+
+    .delivery-details-container .btn-map i {
+        color: var(--primary-green);
+        font-size: 0.9rem;
+    }
+
+    .delivery-details-container .btn-map:hover {
+        background-color: var(--primary-green);
+        color: white;
+        border-color: var(--primary-green);
+    }
+
+    .delivery-details-container .btn-map:hover i {
+        color: white;
+    }
+
+    @media (max-width: 768px) {
+        .delivery-details-container .btn-map {
+            padding: 3px 10px;
+            font-size: 0.75rem;
+        }
+        
+        .delivery-details-container .btn-map i {
+            font-size: 0.8rem;
+        }
+    }
+</style>
 
 <div class="delivery-details-container">
-    <!-- Header with Status -->
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <h6 class="mb-0">
-            <i class="bi bi-truck text-primary me-1"></i>
-            Delivery #<?php echo $delivery['delivery_id']; ?> - <?php echo $delivery['so_number']; ?>
-        </h6>
-        <span class="badge bg-<?php echo $status_color; ?>">
-            <?php echo ucfirst(str_replace('-', ' ', $delivery['delivery_status'])); ?>
-        </span>
-    </div>
-
-    <div class="row g-2">
-        <!-- Order Information -->
-        <div class="col-md-6">
-            <div class="border rounded p-2 bg-light mb-2">
-                <small class="fw-bold text-secondary d-block mb-1"><i class="bi bi-cart-check me-1"></i>Order</small>
-                <div class="small">
-                    <div class="d-flex">
-                        <span style="width: 70px;" class="text-muted">Order #:</span>
-                        <span class="fw-medium"><?php echo $delivery['so_number']; ?></span>
-                    </div>
-                    <div class="d-flex">
-                        <span style="width: 70px;" class="text-muted">Date:</span>
-                        <span><?php echo date('M d, Y', strtotime($delivery['order_date'])); ?></span>
-                    </div>
-                    <div class="d-flex">
-                        <span style="width: 70px;" class="text-muted">Amount:</span>
-                        <span class="fw-bold text-primary">₱<?php echo number_format($delivery['total_amount'], 2); ?></span>
-                    </div>
-                </div>
+    <!-- Header with Status - SO on right, badge below (position same on all devices) -->
+    <div class="detail-section">
+        <div class="delivery-header">
+            <div class="delivery-title">
+                <h6 class="mb-0">
+                    <i class="bi bi-truck me-2"></i>
+                    Delivery #<?php echo $delivery['delivery_id']; ?>
+                </h6>
+            </div>
+            <div class="delivery-right">
+                <span class="so-badge-right"><i class="bi bi-receipt"></i> <?php echo $delivery['so_number']; ?></span>
+                <span class="badge bg-<?php echo $status_color; ?> p-2 status-badge-right">
+                    <?php echo ucfirst(str_replace('-', ' ', $delivery['delivery_status'])); ?>
+                </span>
             </div>
         </div>
 
-        <!-- Delivery Information -->
-        <div class="col-md-6">
-            <div class="border rounded p-2 bg-light mb-2">
-                <small class="fw-bold text-secondary d-block mb-1"><i class="bi bi-geo-alt me-1"></i>Delivery</small>
-                <div class="small">
-                    <div class="d-flex">
-                        <span style="width: 70px;" class="text-muted">Stop #:</span>
-                        <span><?php echo $delivery['stop_sequence'] ?? 'N/A'; ?></span>
-                    </div>
-                    <div class="d-flex">
-                        <span style="width: 70px;" class="text-muted">Schedule:</span>
-                        <span><?php echo $delivery['delivery_date'] ? date('M d, h:i A', strtotime($delivery['delivery_date'])) : 'N/A'; ?></span>
-                    </div>
-                    <?php if ($delivery['signed_by']): ?>
-                    <div class="d-flex">
-                        <span style="width: 70px;" class="text-muted">Signed:</span>
-                        <span class="fw-bold"><?php echo $delivery['signed_by']; ?></span>
-                    </div>
-                    <?php endif; ?>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="row g-2">
-        <!-- Customer Information -->
-        <div class="col-md-6">
-            <div class="border rounded p-2 bg-light mb-2">
-                <small class="fw-bold text-secondary d-block mb-1"><i class="bi bi-person me-1"></i>Customer</small>
-                <div class="small">
-                    <div class="d-flex">
-                        <span style="width: 70px;" class="text-muted">Name:</span>
-                        <span class="fw-medium"><?php echo $delivery['customer_name']; ?></span>
-                    </div>
-                    <div class="d-flex">
-                        <span style="width: 70px;" class="text-muted">Contact:</span>
-                        <span><?php echo $delivery['phone_number'] ?? 'N/A'; ?></span>
-                    </div>
-                    <div class="d-flex">
-                        <span style="width: 70px;" class="text-muted">Address:</span>
-                        <span><?php echo $delivery['address'] . ', ' . $delivery['city']; ?></span>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Trip Information -->
-        <div class="col-md-6">
-            <div class="border rounded p-2 bg-light mb-2">
-                <small class="fw-bold text-secondary d-block mb-1"><i class="bi bi-ticket me-1"></i>Trip</small>
-                <div class="small">
-                    <?php if ($delivery['trip_number']): ?>
-                    <div class="d-flex">
-                        <span style="width: 70px;" class="text-muted">Trip #:</span>
-                        <span><?php echo $delivery['trip_number']; ?></span>
-                    </div>
-                    <div class="d-flex">
-                        <span style="width: 70px;" class="text-muted">Driver:</span>
-                        <span><?php echo $delivery['driver_name']; ?></span>
-                    </div>
-                    <div class="d-flex">
-                        <span style="width: 70px;" class="text-muted">Vehicle:</span>
-                        <span><?php echo $delivery['vehicle_plate_number']; ?></span>
-                    </div>
-                    <?php else: ?>
-                    <div class="text-muted">Not assigned to trip</div>
-                    <?php endif; ?>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- Items List -->
-    <div class="border rounded p-2 bg-light mb-2">
-        <small class="fw-bold text-secondary d-block mb-1"><i class="bi bi-box-seam me-1"></i>Items (<?php echo count($items_list); ?>)</small>
-        <?php if (!empty($items_list)): ?>
-            <div class="table-responsive">
-                <table class="table table-sm table-borderless small mb-0">
-                    <thead>
-                        <tr class="border-bottom">
-                            <th>Item</th>
-                            <th class="text-center" width="50">Qty</th>
-                            <th class="text-end" width="70">Price</th>
-                            <th class="text-end" width="70">Total</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php 
-                        $total_amount = 0;
-                        foreach ($items_list as $item):
-                            preg_match('/(.+) \((\d+)\) - ₱([\d.]+)/', $item, $matches);
-                            if (count($matches) == 4):
-                                $item_name = $matches[1];
-                                $qty = $matches[2];
-                                $price = $matches[3];
-                                $total = $qty * $price;
-                                $total_amount += $total;
-                        ?>
-                        <tr>
-                            <td><?php echo $item_name; ?></td>
-                            <td class="text-center"><?php echo $qty; ?></td>
-                            <td class="text-end">₱<?php echo number_format($price, 2); ?></td>
-                            <td class="text-end">₱<?php echo number_format($total, 2); ?></td>
-                        </tr>
-                        <?php 
-                            endif;
-                        endforeach; 
-                        ?>
-                    </tbody>
-                    <tfoot class="border-top">
-                        <tr>
-                            <th colspan="3" class="text-end">TOTAL:</th>
-                            <th class="text-end">₱<?php echo number_format($total_amount, 2); ?></th>
-                        </tr>
-                    </tfoot>
+        <div class="row">
+            <!-- Order Information -->
+            <div class="col-md-6">
+                <table class="table table-sm table-borderless">
+                    <tr>
+                        <td class="info-label">Order #:</td>
+                        <td class="info-value"><?php echo $delivery['so_number']; ?></td>
+                    </tr>
+                    <tr>
+                        <td class="info-label">Date:</td>
+                        <td class="info-value"><?php echo date('M d, Y', strtotime($delivery['order_date'])); ?></td>
+                    </tr>
+                    <tr>
+                        <td class="info-label">Amount:</td>
+                        <td class="info-value"><span class="fw-bold text-success">₱<?php echo number_format($delivery['total_amount'], 2); ?></span></td>
+                    </tr>
                 </table>
             </div>
+
+            <!-- Delivery Information -->
+            <div class="col-md-6">
+                <table class="table table-sm table-borderless">
+                    <tr>
+                        <td class="info-label">Stop #:</td>
+                        <td class="info-value"><?php echo $delivery['stop_sequence'] ?? 'N/A'; ?></td>
+                    </tr>
+                    <tr>
+                        <td class="info-label">Schedule:</td>
+                        <td class="info-value"><?php echo $delivery['delivery_date'] ? date('M d, h:i A', strtotime($delivery['delivery_date'])) : 'N/A'; ?></td>
+                    </tr>
+                    <?php if ($delivery['signed_by']): ?>
+                    <tr>
+                        <td class="info-label">Signed:</td>
+                        <td class="info-value"><span class="fw-bold"><?php echo $delivery['signed_by']; ?></span></td>
+                    </tr>
+                    <?php endif; ?>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Customer and Trip Information -->
+    <div class="detail-section">
+        <div class="row">
+            <!-- Customer Information -->
+            <div class="col-md-6">
+                <h6><i class="bi bi-person me-2"></i>Customer Information</h6>
+                <table class="table table-sm table-borderless">
+                    <tr>
+                        <td class="info-label">Name:</td>
+                        <td class="info-value"><?php echo $delivery['customer_name']; ?></td>
+                    </tr>
+                    <tr>
+                        <td class="info-label">Contact:</td>
+                        <td class="info-value"><?php echo $delivery['phone_number'] ?? 'N/A'; ?></td>
+                    </tr>
+                    <tr>
+                        <td class="info-label">Address:</td>
+                        <td class="info-value"><?php echo $delivery['address'] . ', ' . $delivery['city']; ?></td>
+                    </tr>
+                </table>
+            </div>
+
+            <!-- Trip Information -->
+            <div class="col-md-6">
+                <h6><i class="bi bi-ticket me-2"></i>Trip Information</h6>
+                <?php if ($delivery['trip_number']): ?>
+                <table class="table table-sm table-borderless">
+                    <tr>
+                        <td class="info-label">Trip #:</td>
+                        <td class="info-value"><?php echo $delivery['trip_number']; ?></td>
+                    </tr>
+                    <tr>
+                        <td class="info-label">Driver:</td>
+                        <td class="info-value"><?php echo $delivery['driver_name']; ?></td>
+                    </tr>
+                    <tr>
+                        <td class="info-label">Vehicle:</td>
+                        <td class="info-value"><?php echo $delivery['vehicle_plate_number']; ?></td>
+                    </tr>
+                </table>
+                <?php else: ?>
+                <p class="text-muted">Not assigned to any trip</p>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+
+    <!-- Items List - Card-based layout (no table) -->
+    <div class="detail-section">
+        <h6><i class="bi bi-box-seam me-2"></i>Items (<?php echo count($items_list); ?>)</h6>
+        <?php if (!empty($items_list)): ?>
+            <div class="items-container">
+                <?php 
+                $total_amount = 0;
+                foreach ($items_list as $item):
+                    preg_match('/(.+) \((\d+)\) - ₱([\d.]+)/', $item, $matches);
+                    if (count($matches) == 4):
+                        $item_name = $matches[1];
+                        $qty = $matches[2];
+                        $price = $matches[3];
+                        $total = $qty * $price;
+                        $total_amount += $total;
+                ?>
+                <div class="item-card">
+                    <div class="item-header">
+                        <span class="item-name"><?php echo $item_name; ?></span>
+                        <span class="item-qty-badge">
+                            <i class="bi bi-box"></i> <?php echo $qty; ?> pcs
+                        </span>
+                    </div>
+                    <div class="item-details">
+                        <span class="item-price">
+                            Unit Price: <span>₱<?php echo number_format($price, 2); ?></span>
+                        </span>
+                        <span class="item-total">₱<?php echo number_format($total, 2); ?></span>
+                    </div>
+                </div>
+                <?php 
+                    endif;
+                endforeach; 
+                ?>
+                
+                <!-- Total Amount Card -->
+                <div class="items-total-card">
+                    <div class="items-total-row">
+                        <span class="total-label">Total Amount</span>
+                        <span class="total-amount">₱<?php echo number_format($total_amount, 2); ?></span>
+                    </div>
+                </div>
+            </div>
         <?php else: ?>
-            <p class="text-muted small mb-0">No items listed</p>
+            <p class="text-muted">No items listed</p>
         <?php endif; ?>
     </div>
 
     <!-- Delivered Details (if delivered) -->
     <?php if ($delivery['delivery_status'] == 'delivered'): ?>
-    <div class="border rounded p-2 bg-light mb-2">
-        <small class="fw-bold text-success d-block mb-1"><i class="bi bi-check-circle-fill me-1"></i>Delivery Completion</small>
-        <div class="row small">
+    <div class="detail-section">
+        <h6><i class="bi bi-check-circle-fill me-2 text-success"></i>Delivery Completion</h6>
+        <div class="row">
             <div class="col-md-6">
-                <div class="d-flex">
-                    <span style="width: 80px;" class="text-muted">Signed By:</span>
-                    <span class="fw-bold"><?php echo $delivery['signed_by'] ?? 'N/A'; ?></span>
-                </div>
-                <div class="d-flex">
-                    <span style="width: 80px;" class="text-muted">Delivered:</span>
-                    <span><?php echo $delivery['delivery_date'] ? date('M d, Y h:i A', strtotime($delivery['delivery_date'])) : 'N/A'; ?></span>
-                </div>
+                <table class="table table-sm table-borderless">
+                    <tr>
+                        <td class="info-label">Signed By:</td>
+                        <td class="info-value fw-bold"><?php echo $delivery['signed_by'] ?? 'N/A'; ?></td>
+                    </tr>
+                    <tr>
+                        <td class="info-label">Delivered:</td>
+                        <td class="info-value"><?php echo $delivery['delivery_date'] ? date('M d, Y h:i A', strtotime($delivery['delivery_date'])) : 'N/A'; ?></td>
+                    </tr>
+                </table>
             </div>
             <div class="col-md-6">
                 <?php if ($photo): ?>
-                <div class="d-flex">
-                    <span style="width: 80px;" class="text-muted">Proof:</span>
-                    <span>
-                        <button class="btn btn-sm btn-outline-primary py-0 view-photo-btn" data-photo="../uploads/deliveries/<?php echo $photo; ?>">
-                            <i class="bi bi-image"></i> View Photo
-                        </button>
-                    </span>
+                <div class="d-flex align-items-center mt-2">
+                    <span class="info-label">Proof:</span>
+                    <button class="btn-map ms-2 view-photo-btn" data-photo="../uploads/deliveries/<?php echo $photo; ?>">
+                        <i class="bi bi-image"></i> View Photo
+                    </button>
                 </div>
                 <?php endif; ?>
             </div>
@@ -312,31 +805,34 @@ switch ($delivery['delivery_status']) {
     $formatted_remarks = formatRemarks($delivery['remarks'] ?? '');
     if (!empty($formatted_remarks)): 
     ?>
-    <div class="border rounded p-2 bg-light">
-        <small class="fw-bold text-secondary d-block mb-1"><i class="bi bi-chat-dots me-1"></i>Remarks</small>
-        <div class="small p-2 bg-white rounded" style="max-height: 150px; overflow-y: auto;">
-            <?php echo $formatted_remarks; ?>
+    <div class="detail-section">
+        <h6><i class="bi bi-chat-dots me-2"></i>Remarks</h6>
+        <div class="border p-3 rounded bg-white" style="max-height: 150px; overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none;">
+            <div style="overflow-y: auto; scrollbar-width: none; -ms-overflow-style: none;">
+                <?php echo $formatted_remarks; ?>
+            </div>
         </div>
     </div>
     <?php endif; ?>
 </div>
 
-<!-- Simple script for photo viewer - but use existing showPhotoModal function -->
+<!-- Simple script for photo viewer -->
 <script>
-// Just trigger the existing showPhotoModal function from parent page
-document.querySelectorAll('.view-photo-btn').forEach(btn => {
-    btn.addEventListener('click', function(e) {
-        e.preventDefault();
-        const photoUrl = this.getAttribute('data-photo');
-        // Call the parent page's showPhotoModal function if it exists
-        if (typeof window.parent.showPhotoModal === 'function') {
-            window.parent.showPhotoModal(photoUrl);
-        } else if (typeof showPhotoModal === 'function') {
-            showPhotoModal(photoUrl);
-        } else {
-            // Fallback
-            window.open(photoUrl, '_blank');
-        }
+document.addEventListener('DOMContentLoaded', function() {
+    document.querySelectorAll('.view-photo-btn').forEach(btn => {
+        btn.addEventListener('click', function(e) {
+            e.preventDefault();
+            const photoUrl = this.getAttribute('data-photo');
+            // Call the parent page's showPhotoModal function if it exists
+            if (typeof window.parent.showPhotoModal === 'function') {
+                window.parent.showPhotoModal(photoUrl);
+            } else if (typeof window.showPhotoModal === 'function') {
+                window.showPhotoModal(photoUrl);
+            } else {
+                // Fallback
+                window.open(photoUrl, '_blank');
+            }
+        });
     });
 });
 </script>

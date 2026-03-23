@@ -610,11 +610,93 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             exit;
         }
         
+        // GET SALES ORDER ITEMS - FIXED: Now properly queries sales_order_items table
+        elseif ($_POST['action'] === 'get_so_items') {
+            $so_id = (int)$_POST['so_id'];
+            
+            // First verify the sales order exists
+            $check_so_query = "SELECT so_id, customer_id, branch_id FROM sales_orders WHERE so_id = ?";
+            if ($sales_orders_branch_column_exists && !$view_all_branches) {
+                $check_so_query .= " AND branch_id = ?";
+                $check_so_stmt = $conn->prepare($check_so_query);
+                $check_so_stmt->bind_param("ii", $so_id, $branch_id);
+            } else {
+                $check_so_stmt = $conn->prepare($check_so_query);
+                $check_so_stmt->bind_param("i", $so_id);
+            }
+            
+            $check_so_stmt->execute();
+            $so_result = $check_so_stmt->get_result();
+            
+            if ($so_result->num_rows === 0) {
+                throw new Exception('Sales order not found or access denied');
+            }
+            
+            $so_data = $so_result->fetch_assoc();
+            
+            // Get items from sales_order_items table with current stock from items table
+            $items_query = "
+                SELECT 
+                    soi.so_item_id,
+                    soi.so_id,
+                    soi.item_id,
+                    soi.quantity_ordered,
+                    soi.quantity_delivered,
+                    soi.unit_price,
+                    soi.unit_type,
+                    i.item_code,
+                    i.item_name,
+                    i.unit_type as item_unit_type,
+                    i.stock as current_stock,
+                    i.reorder_level,
+                    i.branch_id as item_branch_id,
+                    c.latitude,
+                    c.longitude,
+                    c.full_address,
+                    c.delivery_instructions,
+                    c.customer_name
+                FROM sales_order_items soi
+                JOIN items i ON soi.item_id = i.item_id
+                JOIN sales_orders so ON soi.so_id = so.so_id
+                LEFT JOIN customers c ON so.customer_id = c.customer_id
+                WHERE soi.so_id = ?
+            ";
+            
+            // Add item branch filter if needed
+            if ($items_branch_column_exists && !$view_all_branches) {
+                $items_query .= " AND i.branch_id = ?";
+                $items_stmt = $conn->prepare($items_query);
+                $items_stmt->bind_param("ii", $so_id, $branch_id);
+            } else {
+                $items_stmt = $conn->prepare($items_query);
+                $items_stmt->bind_param("i", $so_id);
+            }
+            
+            $items_stmt->execute();
+            $items_result = $items_stmt->get_result();
+            $items = $items_result->fetch_all(MYSQLI_ASSOC);
+            
+            // Get customer location info
+            $customer_query = "SELECT latitude, longitude, full_address, delivery_instructions FROM customers WHERE customer_id = ?";
+            $customer_stmt = $conn->prepare($customer_query);
+            $customer_stmt->bind_param("i", $so_data['customer_id']);
+            $customer_stmt->execute();
+            $customer_result = $customer_stmt->get_result();
+            $customer_data = $customer_result->fetch_assoc();
+            
+            echo json_encode([
+                'success' => true,
+                'items' => $items,
+                'customer' => $customer_data
+            ]);
+            exit;
+        }
+        
         // PRINT PICK LIST ITEMS
         elseif ($_POST['action'] === 'print_pick_list') {
             $filter_data = json_decode($_POST['filter_data'] ?? '{}', true);
             
-            // Build query based on filters
+            // Build query based on filters - INCLUDE UNIT TYPE FROM sales_order_items
             $print_query = "
                 SELECT 
                     pl.pick_list_id,
@@ -632,8 +714,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     i.item_id,
                     i.item_code,
                     i.item_name,
-                    i.unit_type,
                     i.stock as current_stock,
+                    soi.unit_type,
                     so.so_id,
                     so.so_number,
                     so.order_status,
@@ -652,6 +734,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 LEFT JOIN customers c ON so.customer_id = c.customer_id
                 LEFT JOIN users u ON pl.picked_by = u.user_id
                 LEFT JOIN drivers d ON pl.driver_id = d.driver_id
+                LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id AND pli.item_id = soi.item_id
                 WHERE pli.item_id IS NOT NULL
             ";
             
@@ -752,7 +835,8 @@ $picklist_query = "
         c.delivery_instructions,
         CONCAT(u.first_name, ' ', u.last_name) as encoded_by_name,
         u.email as encoded_by_email,
-        pl.created_at as encoded_at
+        pl.created_at as encoded_at,
+        soi.unit_type as order_unit_type
     FROM pick_lists pl
     LEFT JOIN branches b ON pl.branch_id = b.branch_id
     LEFT JOIN pick_list_items pli ON pl.pick_list_id = pli.pick_list_id
@@ -761,6 +845,7 @@ $picklist_query = "
     LEFT JOIN customers c ON so.customer_id = c.customer_id
     LEFT JOIN users u ON pl.picked_by = u.user_id
     LEFT JOIN drivers d ON pl.driver_id = d.driver_id
+    LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id AND pli.item_id = soi.item_id
     WHERE 1=1
 ";
 
@@ -775,8 +860,9 @@ $picklist_result = $conn->query($picklist_query);
 $picklist_items = $picklist_result->fetch_all(MYSQLI_ASSOC);
 
 // ========== FETCH SALES ORDERS WITH BRANCH FILTERING AND CUSTOMER LOCATION ==========
+// FIXED: Now properly joins with sales_order_items to ensure only orders with items are shown
 $so_query = "
-    SELECT 
+    SELECT DISTINCT
         so.so_id,
         so.so_number,
         so.customer_id,
@@ -789,11 +875,13 @@ $so_query = "
         c.longitude,
         c.full_address,
         c.delivery_instructions,
-        b.branch_name
+        b.branch_name,
+        (SELECT COUNT(*) FROM sales_order_items WHERE so_id = so.so_id) as item_count
     FROM sales_orders so
     LEFT JOIN customers c ON so.customer_id = c.customer_id
     LEFT JOIN branches b ON so.branch_id = b.branch_id
     WHERE so.order_status IN ('pending', 'confirmed', 'processing')
+    AND EXISTS (SELECT 1 FROM sales_order_items WHERE so_id = so.so_id)
 ";
 
 // Apply branch filter for sales_orders
@@ -807,6 +895,7 @@ $so_result = $conn->query($so_query);
 $sales_orders = $so_result->fetch_all(MYSQLI_ASSOC);
 
 // ========== FETCH SALES ORDER ITEMS WITH BRANCH FILTERING AND CUSTOMER LOCATION ==========
+// FIXED: Now properly fetches from sales_order_items table
 $so_items_query = "
     SELECT 
         soi.so_id,
@@ -814,16 +903,18 @@ $so_items_query = "
         soi.quantity_ordered,
         soi.quantity_delivered,
         soi.unit_price,
+        soi.unit_type,
         i.item_code,
         i.item_name,
-        i.unit_type,
+        i.unit_type as item_unit_type,
         i.stock as current_stock,
         i.reorder_level,
         i.branch_id as item_branch_id,
         c.latitude,
         c.longitude,
         c.full_address,
-        c.delivery_instructions
+        c.delivery_instructions,
+        c.customer_name
     FROM sales_order_items soi
     JOIN items i ON soi.item_id = i.item_id
     JOIN sales_orders so ON soi.so_id = so.so_id
@@ -1206,6 +1297,12 @@ function formatLocation($item) {
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="supplier.php" data-title="Suppliers">
+                            <i class="bi bi-bar-chart-line"></i>
+                            <span class="nav-text">Suppliers</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="purchase_order.php">
                             <i class="bi bi-box"></i>
                             <span class="nav-text">Purchase Orders</span>
@@ -1221,6 +1318,12 @@ function formatLocation($item) {
                         <a class="nav-link" href="trip_tickets.php">
                             <i class="bi bi-ticket-perforated"></i>
                             <span class="nav-text">Trip Tickets</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="approve_credit_requests.php">
+                            <i class="bi bi-pencil-square"></i>
+                            <span class="nav-text">Approve Requests</span>
                         </a>
                     </li>
                     <hr class="sidebar-divider">
@@ -1480,6 +1583,7 @@ function formatLocation($item) {
                                 <?php endif; ?>
                                 <th class="col-item-code">ITEM CODE</th>
                                 <th class="col-item-name">ITEM NAME</th>
+                                <th class="col-unit">UNIT</th>
                                 <th class="col-to-pick">TO PICK</th>
                                 <th class="col-picked">PICKED</th>
                                 <th class="col-location">DELIVERY LOCATION</th>
@@ -1507,6 +1611,9 @@ function formatLocation($item) {
                                 foreach ($picklist_items as $item): 
                                     if ($item['item_id'] === null) continue;
                                     
+                                    // Determine which unit type to use (prefer from sales_order_items, fallback to items)
+                                    $unit_type = $item['order_unit_type'] ?? $item['unit_type'] ?? 'N/A';
+                                    
                                     // Format location for display
                                     $location_display = '';
                                     if (!empty($item['latitude']) && !empty($item['longitude'])) {
@@ -1533,6 +1640,7 @@ function formatLocation($item) {
                                 data-status="<?= $item['pick_status'] ?>"
                                 data-item-code="<?= htmlspecialchars($item['item_code'] ?? '') ?>"
                                 data-item-name="<?= htmlspecialchars($item['item_name'] ?? '') ?>"
+                                data-unit-type="<?= htmlspecialchars($unit_type) ?>"
                                 data-quantity="<?= $item['quantity_to_pick'] ?? 0 ?>"
                                 data-created-date="<?= $item['created_at'] ?? '' ?>"
                                 data-driver-id="<?= $item['driver_id'] ?? '' ?>"
@@ -1567,6 +1675,7 @@ function formatLocation($item) {
                                     </span>
                                     <?php endif; ?>
                                 </td>
+                                <td class="col-unit"><?= htmlspecialchars(strtoupper($unit_type)) ?></td>
                                 <td class="col-to-pick text-center"><?= $item['quantity_to_pick'] ?? 0 ?></td>
                                 <td class="col-picked text-center"><?= $item['quantity_picked'] ?? 0 ?></td>
                                 <td class="col-location location-cell">
@@ -1625,7 +1734,7 @@ function formatLocation($item) {
                             else: 
                             ?>
                             <tr>
-                                <td colspan="<?= ($view_all_branches && $pick_lists_branch_column_exists) ? '12' : '11' ?>" class="empty-state-table">
+                                <td colspan="<?= ($view_all_branches && $pick_lists_branch_column_exists) ? '13' : '12' ?>" class="empty-state-table">
                                     <i class="bi bi-clipboard"></i>
                                     <h5>No Pick List Items Found</h5>
                                     <p class="text-muted">
@@ -1654,7 +1763,7 @@ function formatLocation($item) {
         </div>
     </div>
 
-    <!-- Add Item Modal - UPDATED WITH CUSTOMER LOCATION DISPLAY (FIXED) -->
+    <!-- Add Item Modal - UPDATED WITH CUSTOMER LOCATION DISPLAY -->
     <div class="modal fade" id="itemModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-xl">
             <div class="modal-content">
@@ -1727,7 +1836,7 @@ function formatLocation($item) {
                                 <?php endif; ?>
                             </div>
                             
-                            <!-- SO Details Preview with Location - FIXED: Only one map link -->
+                            <!-- SO Details Preview with Location -->
                             <div class="col-md-6">
                                 <div id="soDetailsPreview" style="display: none;" class="so-details">
                                     <div class="so-details-label">Sales Order Details</div>
@@ -1740,7 +1849,7 @@ function formatLocation($item) {
                                 </div>
                             </div>
                             
-                            <!-- Item Selection - Multi-Select Table with Location Info (FIXED) -->
+                            <!-- Item Selection - Multi-Select Table with Location Info -->
                             <div class="col-12">
                                 <label class="form-label fw-bold mb-2">Select Items to Pick</label>
                                 <div class="alert alert-info mb-2">
@@ -1845,7 +1954,7 @@ function formatLocation($item) {
         </div>
     </div>
 
-    <!-- Edit Item Modal - UPDATED WITH LOCATION DISPLAY -->
+    <!-- Edit Item Modal - FIXED: Added proper cleanup and reinitialization -->
     <div class="modal fade" id="editItemModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
@@ -1878,6 +1987,12 @@ function formatLocation($item) {
                                 <input type="text" class="form-control" id="editItemName" readonly>
                             </div>
                             
+                            <!-- Unit Type (Read-only) - From sales_order_items -->
+                            <div class="col-md-6">
+                                <label class="form-label">Unit Type</label>
+                                <input type="text" class="form-control" id="editUnitType" readonly>
+                            </div>
+                            
                             <!-- Customer Information (Read-only) -->
                             <div class="col-md-6">
                                 <label class="form-label">Customer</label>
@@ -1885,7 +2000,7 @@ function formatLocation($item) {
                             </div>
                             
                             <!-- Delivery Location Display -->
-                            <div class="col-md-6">
+                            <div class="col-md-12">
                                 <label class="form-label">Delivery Location</label>
                                 <div class="form-control bg-light" id="editLocationDisplay" readonly style="min-height: 38px;">
                                     <span id="editLocationText" class="text-muted">Loading...</span>
@@ -1947,7 +2062,7 @@ function formatLocation($item) {
         </div>
     </div>
 
-    <!-- View Item Modal - UPDATED WITH MAP -->
+    <!-- View Item Modal - UPDATED WITH UNIT TYPE AND MAP -->
     <div class="modal fade" id="viewItemModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
@@ -2173,13 +2288,14 @@ function formatLocation($item) {
                 const soNumber = row.dataset.soId?.toLowerCase() || '';
                 const itemCode = row.dataset.itemCode?.toLowerCase() || '';
                 const itemName = row.dataset.itemName?.toLowerCase() || '';
+                const unitType = row.dataset.unitType?.toLowerCase() || '';
                 const driverName = row.dataset.driverName?.toLowerCase() || '';
                 const encodedBy = row.dataset.encodedBy?.toLowerCase() || '';
                 const address = row.dataset.address?.toLowerCase() || '';
                 const customerName = row.dataset.customerName?.toLowerCase() || '';
                 const location = row.querySelector('.col-location')?.innerText.toLowerCase() || '';
                 
-                const searchableText = soNumber + ' ' + itemCode + ' ' + itemName + ' ' + driverName + ' ' + encodedBy + ' ' + location + ' ' + address + ' ' + customerName;
+                const searchableText = soNumber + ' ' + itemCode + ' ' + itemName + ' ' + unitType + ' ' + driverName + ' ' + encodedBy + ' ' + location + ' ' + address + ' ' + customerName;
                 
                 if (!searchableText.includes(searchTerm)) {
                     showRow = false;
@@ -2237,7 +2353,7 @@ function formatLocation($item) {
                 if (emptyStateParent) {
                     emptyStateParent.style.display = '';
                     emptyStateRow.innerHTML = `
-                        <td colspan="${viewAllBranches && pickListsBranchColumnExists ? '12' : '11'}" class="empty-state-table">
+                        <td colspan="${viewAllBranches && pickListsBranchColumnExists ? '13' : '12'}" class="empty-state-table">
                             <i class="bi bi-funnel"></i>
                             <h5>No matching pick list items</h5>
                             <p class="text-muted">No items match your filter criteria.</p>
@@ -2352,7 +2468,7 @@ function formatLocation($item) {
         modal.show();
     }
 
-    // FIXED: onSOSelected function - only one map link
+    // FIXED: onSOSelected function - now properly fetches items from database
     function onSOSelected() {
         const select = document.getElementById('soIdSelect');
         const selectedOption = select.options[select.selectedIndex];
@@ -2422,8 +2538,8 @@ function formatLocation($item) {
             document.getElementById('selectedBranchName').textContent = branchName || 'Branch ' + branchId;
             <?php endif; ?>
             
-            // Populate items table for this SO
-            populateItemsForSO(soId, latitude, longitude, address);
+            // Populate items table for this SO by fetching from database
+            fetchItemsForSO(soId, latitude, longitude, address);
             
         } else {
             document.getElementById('soId').value = '';
@@ -2450,11 +2566,47 @@ function formatLocation($item) {
         }
     }
 
-    // FIXED: populateItemsForSO function - no map links in table
-    function populateItemsForSO(soId, latitude, longitude, address) {
-        const items = soItemsData[soId] || [];
-        availableItems = items;
+    // NEW FUNCTION: Fetch items for selected SO from database
+    function fetchItemsForSO(soId, latitude, longitude, address) {
+        showLoading();
+        
+        const formData = new FormData();
+        formData.append('action', 'get_so_items');
+        formData.append('so_id', soId);
+        
+        fetch('pick_list_items.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            hideLoading();
+            
+            if (data.success) {
+                const items = data.items || [];
+                const customerData = data.customer || {};
+                
+                // Use provided coordinates or from customer data
+                const locLat = latitude || customerData.latitude;
+                const locLng = longitude || customerData.longitude;
+                const locAddress = address || customerData.full_address;
+                
+                populateItemsTable(items, locLat, locLng, locAddress);
+            } else {
+                Swal.fire('Error', 'Failed to load items for this sales order', 'error');
+            }
+        })
+        .catch(error => {
+            hideLoading();
+            console.error('Error:', error);
+            Swal.fire('Error', 'An error occurred while fetching items', 'error');
+        });
+    }
+
+    // FIXED: populateItemsTable function - no map links in table
+    function populateItemsTable(items, latitude, longitude, address) {
         const tableBody = document.getElementById('itemsSelectionBody');
+        availableItems = items;
         
         if (items.length === 0) {
             tableBody.innerHTML = `
@@ -2492,6 +2644,9 @@ function formatLocation($item) {
             // Skip if no quantity available
             if (availableToPick <= 0) return;
             
+            // Get unit type from sales_order_items (prefer this over items table)
+            const unitType = item.unit_type || item.item_unit_type || 'piece';
+            
             // Sanitize item name for HTML attribute
             const safeItemName = item.item_name.replace(/'/g, "\\'").replace(/"/g, '&quot;');
             
@@ -2503,13 +2658,13 @@ function formatLocation($item) {
                                data-item-id="${item.item_id}"
                                data-item-code="${item.item_code}"
                                data-item-name="${safeItemName}"
-                               data-unit-type="${item.unit_type}"
+                               data-unit-type="${unitType}"
                                data-max-qty="${availableToPick}"
                                onchange="toggleItemSelection(this)">
                     </td>
                     <td><strong>${item.item_code}</strong></td>
                     <td>${item.item_name}</td>
-                    <td>${item.unit_type.toUpperCase()}</td>
+                    <td>${unitType.toUpperCase()}</td>
                     <td class="text-center">${orderedQty}</td>
                     <td class="text-center">${stockQty}</td>
                     <td class="text-center">
@@ -2818,7 +2973,7 @@ function formatLocation($item) {
             });
     }
 
-    // ========== EDIT FUNCTIONS ==========
+    // ========== EDIT FUNCTIONS - FIXED: Added cleanup and proper element checks ==========
     function editItem(id) {
         // Clear any selected item from view
         selectedPickItemId = null;
@@ -2846,15 +3001,24 @@ function formatLocation($item) {
                 const latitude = row ? row.dataset.latitude : null;
                 const longitude = row ? row.dataset.longitude : null;
                 const address = row ? row.dataset.address : null;
+                const unitType = row ? row.dataset.unitType : (item.unit_type || 'N/A');
                 
+                // Set form values
                 document.getElementById('editPickItemId').value = item.pick_item_id;
                 document.getElementById('editItemId').value = item.item_id;
                 document.getElementById('editPickListId').value = item.pick_list_id;
                 document.getElementById('editItemCode').value = item.item_code;
                 document.getElementById('editItemName').value = item.item_name;
+                document.getElementById('editUnitType').value = unitType ? unitType.toUpperCase() : 'N/A';
                 document.getElementById('editCustomerName').value = customerName;
                 document.getElementById('editQuantity').value = item.quantity_to_pick;
                 document.getElementById('editLocationBin').value = item.location_bin || 'No location data';
+                
+                // Clear previous map if exists
+                if (maps.editMap) {
+                    maps.editMap.remove();
+                    maps.editMap = null;
+                }
                 
                 // Set location display
                 let locationText = '';
@@ -2870,8 +3034,10 @@ function formatLocation($item) {
                     document.getElementById('editMapLink').href = mapLink;
                     document.getElementById('editMapLink').style.display = 'inline-block';
                     
-                    // Initialize map
-                    initEditMap(latitude, longitude, address);
+                    // Initialize map after a short delay to ensure container is ready
+                    setTimeout(() => {
+                        initEditMap(latitude, longitude, address);
+                    }, 300);
                 } else if (address) {
                     locationText = `📌 ${address}`;
                     document.getElementById('editLocationDisplay').innerHTML = locationText;
@@ -2924,6 +3090,8 @@ function formatLocation($item) {
 
     function initEditMap(lat, lng, address) {
         const mapContainer = document.getElementById('editMapContainer');
+        if (!mapContainer) return;
+        
         mapContainer.style.display = 'block';
         
         // Clear previous map
@@ -2944,10 +3112,10 @@ function formatLocation($item) {
         // Store map instance
         maps.editMap = map;
         
-        // Resize map after modal is shown
+        // Resize map after a short delay
         setTimeout(() => {
             map.invalidateSize();
-        }, 300);
+        }, 100);
     }
 
     function updateItem() {
@@ -3014,7 +3182,7 @@ function formatLocation($item) {
         });
     }
 
-    // ========== VIEW FUNCTIONS ==========
+    // ========== VIEW FUNCTIONS - UPDATED WITH UNIT TYPE ==========
     function viewItem(id) {
         const row = document.querySelector(`.pick-list-row[data-id="${id}"]`);
         if (!row) return;
@@ -3024,6 +3192,7 @@ function formatLocation($item) {
         const soNumber = row.dataset.soId || 'N/A';
         const itemCode = row.dataset.itemCode || 'N/A';
         const itemName = row.querySelector('.col-item-name')?.innerText.split('\n')[0] || 'N/A';
+        const unitType = row.dataset.unitType || 'N/A';
         const quantity = row.dataset.quantity || '0';
         const location = row.querySelector('.col-location')?.innerHTML || '—';
         const status = row.dataset.status || '';
@@ -3036,6 +3205,12 @@ function formatLocation($item) {
         const latitude = row.dataset.latitude;
         const longitude = row.dataset.longitude;
         const address = row.dataset.address;
+        
+        // Clear previous map if exists
+        if (maps.viewMap) {
+            maps.viewMap.remove();
+            maps.viewMap = null;
+        }
         
         let detailsHtml = `
             <div class="col-md-6">
@@ -3054,6 +3229,10 @@ function formatLocation($item) {
                 <div class="detail-card">
                     <div class="detail-label">Item Name</div>
                     <div class="detail-value">${itemName}</div>
+                </div>
+                <div class="detail-card">
+                    <div class="detail-label">Unit Type</div>
+                    <div class="detail-value">${unitType.toUpperCase()}</div>
                 </div>
                 <div class="detail-card">
                     <div class="detail-label">Quantity to Pick</div>
@@ -3148,6 +3327,11 @@ function formatLocation($item) {
                     
                     // Store map instance
                     maps.viewMap = map;
+                    
+                    // Resize map
+                    setTimeout(() => {
+                        map.invalidateSize();
+                    }, 100);
                 }
             }, 300);
         }
@@ -3331,6 +3515,19 @@ function formatLocation($item) {
                 maps.editMap.remove();
                 maps.editMap = null;
             }
+            
+            // Clear edit modal map container
+            const editMapContainer = document.getElementById('editMapContainer');
+            if (editMapContainer) {
+                editMapContainer.innerHTML = '';
+                editMapContainer.style.display = 'none';
+            }
+            
+            // Clear view modal map container
+            const viewMapContainer = document.getElementById('viewMapContainer');
+            if (viewMapContainer) {
+                viewMapContainer.innerHTML = '';
+            }
         });
         
         // Resize maps when modal is shown
@@ -3372,7 +3569,7 @@ function formatLocation($item) {
         return texts[status] || status;
     }
 
-    // ========== EXCEL EXPORT FUNCTION ==========
+    // ========== EXCEL EXPORT FUNCTION - UPDATED WITH UNIT TYPE ==========
     function exportToExcel() {
         const rows = document.querySelectorAll('.pick-list-row:not([style*="display: none"])');
         if (rows.length === 0) {
@@ -3395,6 +3592,7 @@ function formatLocation($item) {
             ...(viewAllBranches && pickListsBranchColumnExists ? ['Branch'] : []),
             'Item Code',
             'Item Name',
+            'Unit Type',
             'Quantity to Pick',
             'Quantity Picked',
             'Delivery Location',
@@ -3424,6 +3622,7 @@ function formatLocation($item) {
                 
                 const itemCode = cells[cellIndex++]?.innerText || '';
                 const itemName = cells[cellIndex++]?.innerText.split('\n')[0].trim() || '';
+                const unitType = cells[cellIndex++]?.innerText || '';
                 const toPick = parseInt(cells[cellIndex++]?.innerText) || 0;
                 const picked = parseInt(cells[cellIndex++]?.innerText) || 0;
                 const locationHtml = cells[cellIndex++]?.innerHTML || '';
@@ -3460,6 +3659,7 @@ function formatLocation($item) {
                     ...(viewAllBranches && pickListsBranchColumnExists ? [branchName] : []),
                     itemCode,
                     itemName,
+                    unitType,
                     toPick,
                     picked,
                     locationText,
@@ -3486,6 +3686,7 @@ function formatLocation($item) {
             ...(viewAllBranches && pickListsBranchColumnExists ? [{ wch: 15 }] : []), // Branch
             { wch: 15 }, // Item Code
             { wch: 30 }, // Item Name
+            { wch: 10 }, // Unit Type
             { wch: 15 }, // Quantity to Pick
             { wch: 15 }, // Quantity Picked
             { wch: 40 }, // Delivery Location
@@ -3522,7 +3723,7 @@ function formatLocation($item) {
         });
     }
 
-    // ========== PRINT FUNCTION - UPDATED WITH OPTIMIZED FORMAT ==========
+    // ========== PRINT FUNCTION - UPDATED WITH UNIT TYPE ==========
     function printPickList() {
         // Show loading indicator on button
         const printBtn = document.querySelector('.btn-outline-primary[onclick="printPickList()"]');
@@ -3622,7 +3823,7 @@ function formatLocation($item) {
         });
     }
 
-    // Compact HTML generator for pick list print
+    // Compact HTML generator for pick list print - UPDATED WITH UNIT TYPE
     function generatePrintHTML(items, branchName, viewAll) {
         let tableRows = '';
         let totalItems = 0;
@@ -3665,6 +3866,7 @@ function formatLocation($item) {
             }
             tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.item_code}</td>`;
             tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.item_name}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.unit_type ? item.unit_type.toUpperCase() : 'N/A'}</td>`;
             tableRows += `<td style="padding: 3px; border: 1px solid #000; text-align: center;">${item.quantity_to_pick}</td>`;
             tableRows += `<td style="padding: 3px; border: 1px solid #000;">${locationDisplay}</td>`;
             tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.pick_status}</td>`;
@@ -3681,7 +3883,7 @@ function formatLocation($item) {
             minute: '2-digit'
         });
         
-        const columnCount = viewAll && pickListsBranchColumnExists ? 9 : 8;
+        const columnCount = viewAll && pickListsBranchColumnExists ? 10 : 9;
         
         return `
             <!DOCTYPE html>
@@ -3740,6 +3942,7 @@ function formatLocation($item) {
                                 ${viewAll && pickListsBranchColumnExists ? '<th>Branch</th>' : ''}
                                 <th>Item Code</th>
                                 <th>Item Name</th>
+                                <th>Unit</th>
                                 <th style="text-align: center;">Qty</th>
                                 <th>Location</th>
                                 <th>Status</th>
@@ -3750,7 +3953,7 @@ function formatLocation($item) {
                         <tbody>
                             ${tableRows}
                             <tr class="total-row">
-                                <td colspan="${viewAll && pickListsBranchColumnExists ? '4' : '3'}" style="text-align: right;">TOTAL</td>
+                                <td colspan="${viewAll && pickListsBranchColumnExists ? '5' : '4'}" style="text-align: right;">TOTAL</td>
                                 <td style="text-align: center;">${totalQuantity}</td>
                                 <td colspan="${viewAll && pickListsBranchColumnExists ? '5' : '4'}"></td>
                             </tr>
@@ -3857,6 +4060,13 @@ function formatLocation($item) {
                     if (maps.editMap) {
                         maps.editMap.remove();
                         maps.editMap = null;
+                    }
+                    
+                    // Clear edit modal map container
+                    const editMapContainer = document.getElementById('editMapContainer');
+                    if (editMapContainer) {
+                        editMapContainer.innerHTML = '';
+                        editMapContainer.style.display = 'none';
                     }
                 });
             }

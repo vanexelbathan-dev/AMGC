@@ -826,11 +826,11 @@ a:hover {
 }
 
 .stat-card.pending { 
-    background: linear-gradient(135deg, #f59e0b, #fbbf24); 
+    background: linear-gradient(135deg, #065f46, #047857); 
 }
 
 .stat-card.delivery { 
-    background: linear-gradient(135deg, #0891b2, #22d3ee); 
+    background: linear-gradient(135deg, #059669, #10b981);
 }
 
 .stat-card.complete { 
@@ -838,7 +838,7 @@ a:hover {
 }
 
 .stat-card.inventory { 
-    background: linear-gradient(135deg, #7c3aed, #8b5cf6); 
+     background: linear-gradient(135deg, var(--dark-green), var(--primary-green));  
 }
 
 .stat-card.processing { 
@@ -1017,7 +1017,7 @@ a:hover {
 .table-header {
     padding: 1.25rem 1.5rem;
     border-bottom: 1px solid var(--light-green);
-    background: #f9fafb;
+    background: var(--dark-green) !important;
 }
 
 .table-header h5 {
@@ -1292,9 +1292,10 @@ a:hover {
 }
 
 .compact-table th {
-    color: white;
+    color: white !important;
     font-weight: 600;
     border: none;
+    background: #065f46 !important;
 }
 
 .compact-table tbody tr:hover {
@@ -1303,6 +1304,59 @@ a:hover {
 
 .compact-table td {
     border-bottom: 1px solid var(--light-green);
+}
+/* ===== REMOVE ALL OUTLINES AND BORDERS FROM TABLE ===== */
+.table,
+.table thead,
+.table thead tr,
+.table thead th,
+.table tbody,
+.table tbody tr,
+.table tbody td,
+.custom-table,
+.custom-table thead,
+.custom-table thead tr,
+.custom-table thead th,
+.custom-table tbody,
+.custom-table tbody tr,
+.custom-table tbody td,
+.compact-table,
+.compact-table thead,
+.compact-table thead tr,
+.compact-table thead th,
+.compact-table tbody,
+.compact-table tbody tr,
+.compact-table tbody td {
+    outline: none !important;
+    border-top: none !important;
+    border-left: none !important;
+    border-right: none !important;
+}
+
+/* Remove border from card and table container */
+.card,
+.card-header,
+.card-body,
+.table-responsive {
+    outline: none !important;
+    border: none !important;
+}
+
+/* Only show bottom border for row separation */
+.table tbody tr td,
+.custom-table tbody tr td,
+.compact-table tbody tr td {
+    border-bottom: 1px solid var(--light-green) !important;
+    border-top: none !important;
+    border-left: none !important;
+    border-right: none !important;
+}
+
+/* Remove bottom border from last row */
+.table tbody tr:last-child td,
+.custom-table tbody tr:last-child td,
+.compact-table tbody tr:last-child td {
+    border-bottom: none !important;
 }
 
 /* Table Actions */
@@ -2634,5 +2688,650 @@ a:hover {
     .modal-header .btn-close,
     .modal-footer {
         display: none !important;
+    }
+}
+
+/* ===== MOBILE BOTTOM NAVIGATION ===== */
+.mobile-nav {
+    display: none; /* Hidden on desktop by default */
+}
+
+@media (max-width: 992px) {
+    /* Mobile bottom navigation bar */
+    .mobile-nav {
+        display: block !important;
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        background: white;
+        box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.1);
+        z-index: 1050;
+        border-top: 2px solid var(--light-green);
+        padding: 6px 4px;
+    }
+    
+    .mobile-nav .nav {
+        display: flex;
+        justify-content: space-around;
+        align-items: center;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+    }
+    
+    .mobile-nav .nav-item {
+        flex: 1;
+        text-align: center;
+    }
+    
+    .mobile-nav .nav-link {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        padding: 6px 2px;
+        color: #6b7280;
+        font-size: 0.7rem;
+        transition: all 0.2s ease;
+        border-radius: 8px;
+        background: transparent;
+        border: none;
+    }
+    
+    .mobile-nav .nav-link i {
+        font-size: 1.4rem;
+        margin-bottom: 2px;
+        color: #6b7280;
+        transition: all 0.2s ease;
+    }
+    
+    .mobile-nav .nav-link span {
+        font-size: 0.65rem;
+        font-weight: 500;
+        display: block;
+    }
+    
+    .mobile-nav .nav-link.active {
+        color: var(--primary-green);
+        background: rgba(68, 211, 78, 0.1);
+    }
+    
+    .mobile-nav .nav-link.active i {
+        color: var(--primary-green);
+    }
+    
+    .mobile-nav .nav-link:hover {
+        color: var(--primary-green);
+        background: rgba(68, 211, 78, 0.05);
+    }
+    
+    .mobile-nav .nav-link:hover i {
+        color: var(--primary-green);
+    }
+    
+    /* Adjust main content to account for bottom nav */
+    .main-content {
+        margin-left: 0;
+        padding-bottom: 75px;
+        margin-bottom: 0;
+    }
+    
+    /* Hide the mobile toggle button since we have bottom nav */
+    .mobile-toggle-btn {
+        display: none !important;
+    }
+    
+    /* Adjust navbar top for mobile */
+    .navbar-top {
+        margin-bottom: 16px;
+        padding: 12px;
+        border-radius: 10px;
+    }
+    
+    .page-title h2 {
+        font-size: 1.2rem;
+    }
+    
+    .page-title p {
+        font-size: 0.8rem;
+    }
+}
+
+/* For very small screens */
+@media (max-width: 576px) {
+    .mobile-nav .nav-link i {
+        font-size: 1.3rem;
+    }
+    
+    .mobile-nav .nav-link span {
+        font-size: 0.6rem;
+    }
+    
+    .main-content {
+        padding-bottom: 70px;
+        padding-left: 12px;
+        padding-right: 12px;
+    }
+    
+    .stat-card {
+        min-height: 90px;
+    }
+    
+    .stat-icon {
+        font-size: 1.8rem;
+    }
+    
+    .stat-value {
+        font-size: 1.3rem;
+    }
+    
+    .stat-label {
+        font-size: 0.7rem;
+    }
+}
+
+/* For extra small devices */
+@media (max-width: 380px) {
+    .mobile-nav .nav-link i {
+        font-size: 1.2rem;
+    }
+    
+    .mobile-nav .nav-link span {
+        font-size: 0.55rem;
+    }
+    
+    .main-content {
+        padding-bottom: 65px;
+    }
+    
+    .page-title h2 {
+        font-size: 1rem;
+    }
+    
+    .page-title p {
+        font-size: 0.7rem;
+    }
+}
+
+/* ===== PROFILE MODAL STYLES ===== */
+.user-avatar-large {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green));
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2.5rem;
+    font-weight: bold;
+    margin: 0 auto;
+    border: 4px solid var(--light-green);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+#profileModal .modal-content {
+    border: none;
+    border-radius: 20px;
+    overflow: hidden;
+}
+
+#profileModal .modal-header {
+    background: linear-gradient(135deg, var(--dark-green), var(--primary-green));
+    color: white;
+    border-bottom: none;
+    padding: 1.5rem;
+}
+
+#profileModal .modal-header .modal-title {
+    color: white;
+    font-weight: 600;
+}
+
+#profileModal .modal-header .btn-close {
+    filter: brightness(0) invert(1);
+    opacity: 0.9;
+}
+
+#profileModal .modal-header .btn-close:hover {
+    opacity: 1;
+    transform: rotate(90deg);
+}
+
+#profileModal .modal-body {
+    padding: 2rem;
+    background: linear-gradient(135deg, #f9fefc 0%, #f0fdf4 100%);
+}
+
+#profileModal .branch-info {
+    background: var(--light-green);
+    color: var(--dark-green);
+    padding: 0.5rem 1rem;
+    border-radius: 50px;
+    display: inline-block;
+    font-weight: 500;
+}
+
+#profileModal .btn-danger {
+    background: linear-gradient(135deg, #dc3545, #f87171);
+    border: none;
+    padding: 1rem;
+    border-radius: 50px;
+    font-weight: 600;
+    transition: all 0.3s ease;
+}
+
+#profileModal .btn-danger:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 20px rgba(220, 53, 69, 0.3);
+}
+
+/* Mobile Logout Button in Bottom Nav */
+.mobile-nav .nav-link.logout-btn {
+    color: #dc3545;
+}
+
+.mobile-nav .nav-link.logout-btn i {
+    color: #dc3545;
+}
+
+.mobile-nav .nav-link.logout-btn.active,
+.mobile-nav .nav-link.logout-btn:hover {
+    background: rgba(220, 53, 69, 0.1);
+    color: #dc3545;
+}
+
+.mobile-nav .nav-link.logout-btn.active i,
+.mobile-nav .nav-link.logout-btn:hover i {
+    color: #dc3545;
+}
+/* ===== SUPER RESPONSIVE STAT CARDS - ONE CSS TO RULE THEM ALL ===== */
+
+/* Base styles - mobile first approach */
+.stat-card {
+    border: none;
+    border-radius: 12px;
+    color: white;
+    padding: 1rem;
+    margin: 0;
+    transition: all 0.3s ease;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+    height: 100%;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center; /* Center for mobile */
+    justify-content: center;
+    text-align: center; /* Center for mobile */
+}
+
+/* Fluid typography - AUTO LUMILITI ANG TEXT AT ICONS */
+.stat-card i {
+    font-size: clamp(1.2rem, 6vw, 2.2rem);
+    margin-bottom: 0.25rem;
+    transition: font-size 0.2s ease;
+}
+
+.stat-value {
+    font-size: clamp(0.9rem, 5vw, 1.8rem);
+    font-weight: 700;
+    line-height: 1.2;
+    margin: 0.1rem 0;
+    transition: font-size 0.2s ease;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+.stat-label {
+    font-size: clamp(0.6rem, 3vw, 0.875rem);
+    font-weight: 500;
+    opacity: 0.95;
+    transition: font-size 0.2s ease;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+}
+
+.stat-content {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center; /* Center for mobile */
+    justify-content: center;
+}
+
+/* Row and column system - para sa STAT CARDS LANG */
+.row.stat-card-row {
+    display: flex;
+    flex-wrap: wrap;
+    margin-right: -6px;
+    margin-left: -6px;
+}
+
+.row.stat-card-row [class*="col-"] {
+    padding-right: 6px;
+    padding-left: 6px;
+    margin-bottom: 12px;
+}
+
+/* Responsive column system - para sa STAT CARDS LANG */
+.row.stat-card-row .col-12 { width: 100%; }
+.row.stat-card-row .col-6 { width: 50%; }
+.row.stat-card-row .col-4 { width: 33.333%; }
+.row.stat-card-row .col-3 { width: 25%; }
+.row.stat-card-row .col-2 { width: 16.666%; }
+
+/* Ultra small phones (below 400px) */
+@media (max-width: 399px) {
+    .stat-card {
+        padding: 0.4rem;
+    }
+    .stat-card i { 
+        font-size: 1.1rem; 
+        margin-bottom: 0.1rem;
+    }
+    .stat-value { 
+        font-size: 0.8rem; 
+        margin: 0;
+    }
+    .stat-label { 
+        font-size: 0.5rem; 
+    }
+    
+    .row.stat-card-row {
+        margin-right: -3px;
+        margin-left: -3px;
+    }
+    
+    .row.stat-card-row [class*="col-"] {
+        padding-right: 3px;
+        padding-left: 3px;
+        margin-bottom: 6px;
+        width: 50% !important;
+    }
+}
+
+/* Small phones (400px - 575px) */
+@media (min-width: 400px) and (max-width: 575px) {
+    .stat-card {
+        padding: 0.5rem;
+    }
+    .stat-card i { 
+        font-size: 1.2rem; 
+    }
+    .stat-value { 
+        font-size: 0.9rem; 
+    }
+    .stat-label { 
+        font-size: 0.55rem; 
+    }
+    
+    .row.stat-card-row {
+        margin-right: -4px;
+        margin-left: -4px;
+    }
+    
+    .row.stat-card-row [class*="col-"] {
+        padding-right: 4px;
+        padding-left: 4px;
+        margin-bottom: 8px;
+        width: 50% !important;
+    }
+}
+
+/* Medium phones (576px - 767px) */
+@media (min-width: 576px) and (max-width: 767px) {
+    .stat-card {
+        padding: 0.6rem;
+    }
+    .stat-card i { 
+        font-size: 1.4rem; 
+    }
+    .stat-value { 
+        font-size: 1.1rem; 
+    }
+    .stat-label { 
+        font-size: 0.65rem; 
+    }
+    
+    .row.stat-card-row {
+        margin-right: -5px;
+        margin-left: -5px;
+    }
+    
+    .row.stat-card-row [class*="col-"] {
+        padding-right: 5px;
+        padding-left: 5px;
+        margin-bottom: 10px;
+        width: 33.333% !important;
+    }
+}
+
+/* Tablets (768px - 991px) */
+@media (min-width: 768px) and (max-width: 991px) {
+    .stat-card {
+        padding: 0.8rem;
+    }
+    .stat-card i { 
+        font-size: 1.7rem; 
+    }
+    .stat-value { 
+        font-size: 1.4rem; 
+    }
+    .stat-label { 
+        font-size: 0.75rem; 
+    }
+    
+    .row.stat-card-row {
+        margin-right: -6px;
+        margin-left: -6px;
+    }
+    
+    .row.stat-card-row [class*="col-"] {
+        padding-right: 6px;
+        padding-left: 6px;
+        margin-bottom: 12px;
+        width: 25% !important;
+    }
+}
+
+/* ===== DESKTOP MODE (992px and above) ===== */
+@media (min-width: 992px) {
+    /* Left alignment para sa desktop */
+    .stat-card {
+        align-items: flex-start !important;
+        text-align: left !important;
+        padding: 1rem; /* Mas maliit na padding sa desktop */
+    }
+    
+    .stat-content {
+        align-items: flex-start !important;
+        text-align: left !important;
+    }
+    
+    /* Mas maliit na height sa desktop */
+    .stat-card {
+        min-height: 100px;
+        max-height: 130px;
+    }
+    
+    /* I-compress ang spacing */
+    .stat-card i {
+        margin-bottom: 0.15rem;
+        font-size: 1.8rem; /* Fixed size sa desktop */
+    }
+    
+    .stat-value {
+        margin: 0.05rem 0;
+        font-size: 1.5rem;
+        line-height: 1.1;
+    }
+    
+    .stat-label {
+        font-size: 0.8rem;
+        margin-top: 0.1rem;
+    }
+}
+
+/* Small desktop (992px - 1199px) */
+@media (min-width: 992px) and (max-width: 1199px) {
+    .stat-card {
+        padding: 0.9rem;
+        min-height: 95px;
+        max-height: 120px;
+    }
+    .stat-card i { 
+        font-size: 1.7rem; 
+    }
+    .stat-value { 
+        font-size: 1.4rem; 
+    }
+    .stat-label { 
+        font-size: 0.75rem; 
+    }
+    
+    .row.stat-card-row {
+        margin-right: -7px;
+        margin-left: -7px;
+    }
+    
+    .row.stat-card-row [class*="col-"] {
+        padding-right: 7px;
+        padding-left: 7px;
+        margin-bottom: 14px;
+        width: 20% !important; /* 5 columns */
+    }
+}
+
+/* Large desktop (1200px - 1399px) */
+@media (min-width: 1200px) and (max-width: 1399px) {
+    .stat-card {
+        padding: 1rem;
+        min-height: 105px;
+        max-height: 135px;
+    }
+    .stat-card i { 
+        font-size: 1.9rem; 
+    }
+    .stat-value { 
+        font-size: 1.6rem; 
+    }
+    .stat-label { 
+        font-size: 0.8rem; 
+    }
+    
+    .row.stat-card-row {
+        margin-right: -8px;
+        margin-left: -8px;
+    }
+    
+    .row.stat-card-row [class*="col-"] {
+        padding-right: 8px;
+        padding-left: 8px;
+        margin-bottom: 16px;
+        width: 16.666% !important; /* 6 columns */
+    }
+}
+
+/* Extra large desktop (1400px and above) */
+@media (min-width: 1400px) {
+    .stat-card {
+        padding: 1.1rem;
+        min-height: 115px;
+        max-height: 145px;
+    }
+    .stat-card i { 
+        font-size: 2.1rem; 
+    }
+    .stat-value { 
+        font-size: 1.8rem; 
+    }
+    .stat-label { 
+        font-size: 0.875rem; 
+    }
+    
+    .row.stat-card-row {
+        margin-right: -10px;
+        margin-left: -10px;
+    }
+    
+    .row.stat-card-row [class*="col-"] {
+        padding-right: 10px;
+        padding-left: 10px;
+        margin-bottom: 20px;
+        width: 16.666% !important;
+    }
+}
+
+/* Ultra large desktop (1600px and above) */
+@media (min-width: 1600px) {
+    .stat-card {
+        padding: 1.2rem;
+        min-height: 125px;
+        max-height: 155px;
+    }
+    .stat-card i { 
+        font-size: 2.3rem; 
+    }
+    .stat-value { 
+        font-size: 2rem; 
+    }
+    .stat-label { 
+        font-size: 0.95rem; 
+    }
+}
+
+/* Landscape mode for phones */
+@media (max-height: 500px) and (orientation: landscape) {
+    .stat-card {
+        padding: 0.3rem;
+        min-height: 60px;
+        max-height: 80px;
+    }
+    .stat-card i { 
+        font-size: 1rem; 
+        margin-bottom: 0.1rem;
+    }
+    .stat-value { 
+        font-size: 0.8rem; 
+        margin: 0;
+    }
+    .stat-label { 
+        font-size: 0.5rem; 
+    }
+    
+    .row.stat-card-row {
+        margin-right: -3px;
+        margin-left: -3px;
+    }
+    
+    .row.stat-card-row [class*="col-"] {
+        padding-right: 3px;
+        padding-left: 3px;
+        margin-bottom: 6px;
+        width: 20% !important;
+    }
+}
+
+/* Para sa sobrang daming cards */
+.row.stat-card-row > [class*="col-"] {
+    flex: 1 0 auto;
+}
+/* I-add ito sa loob ng <style> tag */
+.stat-card-row {
+    margin-bottom: 1.5rem !important;
+}
+
+/* Para sa mobile, ensure na may space */
+@media (max-width: 768px) {
+    .stat-card-row {
+        margin-bottom: 1rem !important;
+    }
+    
+    .form-card {
+        margin-top: 0.5rem;
     }
 }
