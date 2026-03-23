@@ -485,6 +485,75 @@ function formatLocation($row) {
     
     return $output;
 }
+
+// Get pick list statistics - filtered by branch and category
+// Determine branch filter condition
+$branch_condition = "";
+if ($items_branch_column_exists && !$view_all_branches) {
+    $branch_condition = "AND i.branch_id = " . $user_branch_id;
+}
+
+// Determine category filter condition
+$category_condition = "";
+if (empty($user_category)) {
+    // If no category assigned, show nothing
+    $category_condition = "AND 1=0";
+} else {
+    $category_condition = "AND i.category = '" . $conn->real_escape_string($user_category) . "'";
+}
+
+$stats = [];
+
+// Total items query with branch and category filter
+$total_items_query = "SELECT COUNT(*) as count 
+                     FROM pick_list_items pli
+                     JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
+                     JOIN items i ON pli.item_id = i.item_id
+                     WHERE 1=1 $branch_condition $category_condition";
+$result = $conn->query($total_items_query);
+$stats['total_items'] = $result->fetch_assoc()['count'] ?? 0;
+
+// Picked items query with branch and category filter
+$picked_query = "SELECT COUNT(*) as count 
+                FROM pick_list_items pli
+                JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
+                JOIN items i ON pli.item_id = i.item_id
+                WHERE pli.quantity_picked >= pli.quantity_to_pick $branch_condition $category_condition";
+$result = $conn->query($picked_query);
+$stats['picked'] = $result->fetch_assoc()['count'] ?? 0;
+
+// Pending items query with branch and category filter
+$pending_query = "SELECT COUNT(*) as count 
+                 FROM pick_list_items pli
+                 JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
+                 JOIN items i ON pli.item_id = i.item_id
+                 WHERE (pli.quantity_picked = 0 OR pli.quantity_picked < pli.quantity_to_pick) $branch_condition $category_condition";
+$result = $conn->query($pending_query);
+$stats['pending'] = $result->fetch_assoc()['count'] ?? 0;
+
+// Completed Today query - pick lists completed today (REPLACED Total Value)
+$completed_today_query = "SELECT COUNT(*) as count 
+                         FROM pick_lists pl
+                         WHERE pl.pick_status = 'completed' 
+                         AND DATE(pl.updated_at) = CURDATE()";
+
+// Add branch filter
+if (!$view_all_branches && $user_branch_id > 0) {
+    $completed_today_query .= " AND pl.branch_id = " . $user_branch_id;
+}
+
+// Add category filter via items table
+if (!empty($user_category)) {
+    $completed_today_query .= " AND EXISTS (
+        SELECT 1 FROM pick_list_items pli 
+        JOIN items i ON pli.item_id = i.item_id 
+        WHERE pli.pick_list_id = pl.pick_list_id 
+        AND i.category = '" . $conn->real_escape_string($user_category) . "'
+    )";
+}
+
+$result = $conn->query($completed_today_query);
+$stats['completed_today'] = $result->fetch_assoc()['count'] ?? 0;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -607,6 +676,7 @@ function formatLocation($row) {
             letter-spacing: 0.5px;
             background-color: #f8f9fa;
             white-space: nowrap;
+            text-align: center;
         }
         
         .table td {
@@ -935,68 +1005,8 @@ function formatLocation($row) {
             </div>
 
             <?php
-            // Get pick list statistics - filtered by branch and category
-            // Determine branch filter condition - same logic as currentinventory.php
-            $branch_condition = "";
-            if ($items_branch_column_exists && !$view_all_branches) {
-                $branch_condition = "AND i.branch_id = " . $user_branch_id;
-            }
-            
-            // Determine category filter condition
-            $category_condition = "";
-            if (empty($user_category)) {
-                // If no category assigned, show nothing
-                $category_condition = "AND 1=0";
-            } else {
-                $category_condition = "AND i.category = '" . $conn->real_escape_string($user_category) . "'";
-            }
-            
-            $stats = [];
-            
-            // Total items query with branch and category filter
-            $total_items_query = "SELECT COUNT(*) as count 
-                                 FROM pick_list_items pli
-                                 JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
-                                 JOIN items i ON pli.item_id = i.item_id
-                                 WHERE 1=1 $branch_condition $category_condition";
-            $result = $conn->query($total_items_query);
-            $stats['total_items'] = $result->fetch_assoc()['count'] ?? 0;
-            
-            // Picked items query with branch and category filter
-            $picked_query = "SELECT COUNT(*) as count 
-                            FROM pick_list_items pli
-                            JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
-                            JOIN items i ON pli.item_id = i.item_id
-                            WHERE pli.quantity_picked >= pli.quantity_to_pick $branch_condition $category_condition";
-            $result = $conn->query($picked_query);
-            $stats['picked'] = $result->fetch_assoc()['count'] ?? 0;
-            
-            // Pending items query with branch and category filter
-            $pending_query = "SELECT COUNT(*) as count 
-                             FROM pick_list_items pli
-                             JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
-                             JOIN items i ON pli.item_id = i.item_id
-                             WHERE pli.quantity_picked = 0 $branch_condition $category_condition";
-            $result = $conn->query($pending_query);
-            $stats['pending'] = $result->fetch_assoc()['count'] ?? 0;
-            
-            // Total value query with branch and category filter
-            $check_price = $conn->query("SHOW COLUMNS FROM items LIKE 'unit_price'");
-            if ($check_price && $check_price->num_rows > 0) {
-                $value_query = "SELECT SUM(pli.quantity_to_pick * i.unit_price) as total_value 
-                               FROM pick_list_items pli
-                               JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
-                               JOIN items i ON pli.item_id = i.item_id
-                               WHERE 1=1 $branch_condition $category_condition";
-                $result = $conn->query($value_query);
-                $total_value = $result->fetch_assoc()['total_value'] ?? 0;
-            } else {
-                $total_value = 0;
-            }
-            ?>
-
-            <!-- Success/Error Messages -->
-            <?php if (isset($success_message)): ?>
+            // Display success/error messages
+            if (isset($success_message)): ?>
                 <div class="alert alert-success alert-dismissible fade show" role="alert">
                     <?php echo $success_message; ?>
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
@@ -1010,132 +1020,133 @@ function formatLocation($row) {
                 </div>
             <?php endif; ?>
 
-           <!-- Stats Cards -->
-<div class="row stat-card-row g-1 g-sm-2">
-    <!-- Card 1 - Total Items -->
-    <div class="col">
-        <div class="stat-card inventory">
-            <i class="bi bi-clipboard-check"></i>
-            <div class="stat-content">
-                <div class="stat-value"><?php echo $stats['total_items']; ?></div>
-                <div class="stat-label">Total Items</div>
-            </div>
-        </div>
-    </div>
+            <!-- Stats Cards - 4 Cards (Total Value replaced by Completed Today) -->
+            <div class="row stat-card-row g-1 g-sm-2 mb-4">
+                <!-- Card 1 - Total Items -->
+                <div class="col-12 col-sm-6 col-lg-3">
+                    <div class="stat-card inventory">
+                        <i class="bi bi-clipboard-check"></i>
+                        <div class="stat-content">
+                            <div class="stat-value"><?php echo $stats['total_items']; ?></div>
+                            <div class="stat-label">Total Items</div>
+                        </div>
+                    </div>
+                </div>
 
-    <!-- Card 2 - Picked -->
-    <div class="col">
-        <div class="stat-card sales">
-            <i class="bi bi-check-circle"></i>
-            <div class="stat-content">
-                <div class="stat-value"><?php echo $stats['picked']; ?></div>
-                <div class="stat-label">Picked</div>
-            </div>
-        </div>
-    </div>
+                <!-- Card 2 - Picked -->
+                <div class="col-12 col-sm-6 col-lg-3">
+                    <div class="stat-card sales">
+                        <i class="bi bi-check-circle"></i>
+                        <div class="stat-content">
+                            <div class="stat-value"><?php echo $stats['picked']; ?></div>
+                            <div class="stat-label">Picked</div>
+                        </div>
+                    </div>
+                </div>
 
-    <!-- Card 3 - Pending Pickup -->
-    <div class="col">
-        <div class="stat-card pending">
-            <i class="bi bi-hourglass-split"></i>
-            <div class="stat-content">
-                <div class="stat-value"><?php echo $stats['pending']; ?></div>
-                <div class="stat-label">Pending Pickup</div>
-            </div>
-        </div>
-    </div>
+                <!-- Card 3 - Pending Pickup -->
+                <div class="col-12 col-sm-6 col-lg-3">
+                    <div class="stat-card pending">
+                        <i class="bi bi-hourglass-split"></i>
+                        <div class="stat-content">
+                            <div class="stat-value"><?php echo $stats['pending']; ?></div>
+                            <div class="stat-label">Pending Pickup</div>
+                        </div>
+                    </div>
+                </div>
 
-    <!-- Card 4 - Total Value -->
-    <div class="col">
-        <div class="stat-card delivery">
-            <i class="bi bi-currency-exchange"></i>
-            <div class="stat-content">
-                <div class="stat-value">₱<?php echo number_format($total_value, 0); ?></div>
-                <div class="stat-label">Total Value</div>
-            </div>
-        </div>
-    </div>
-</div>
-<!-- FILTER SECTION - PICK LISTS (Consistent with global design) -->
-<div class="form-card mb-4">
-    <div class="filter-header">
-        <h5>
-            <i class="bi bi-funnel"></i> Filter Pick Lists
-        </h5>
-        <button class="filter-toggle-btn" type="button" id="picklistFilterToggle" aria-expanded="false">
-            <i class="bi bi-chevron-down" id="picklistFilterIcon"></i>
-        </button>
-    </div>
-    
-    <div class="filter-content collapsed" id="picklistFilterContent">
-        <div class="row g-3">
-            <!-- Search Field -->
-            <div class="col-12 col-md-5">
-                <label class="form-label">
-                    <i class="bi bi-search"></i> Search
-                </label>
-                <div class="search-wrapper">
-                    <input type="text" class="form-control search-input" id="searchInput" placeholder="Search pick list or item...">
+                <!-- Card 4 - Completed Today (instead of Total Value) -->
+                <div class="col-12 col-sm-6 col-lg-3">
+                    <div class="stat-card approved">
+                        <i class="bi bi-calendar-check"></i>
+                        <div class="stat-content">
+                            <div class="stat-value"><?php echo $stats['completed_today']; ?></div>
+                            <div class="stat-label">Completed Today</div>
+                        </div>
+                    </div>
                 </div>
             </div>
-            
-            <!-- Status Filter -->
-            <div class="col-12 col-md-3">
-                <label class="form-label">
-                    <i class="bi bi-flag"></i> Order Status
-                </label>
-                <select class="form-select" id="statusFilter">
-                    <option value="">All Order Status</option>
-                    <option value="pending">Pending</option>
-                    <option value="confirmed">Confirmed</option>
-                    <option value="processing">Processing</option>
-                    <option value="ready">Ready for Delivery</option>
-                    <option value="delivered">Delivered</option>
-                    <option value="cancelled">Cancelled</option>
-                </select>
+
+            <!-- FILTER SECTION - PICK LISTS -->
+            <div class="form-card mb-4">
+                <div class="filter-header">
+                    <h5>
+                        <i class="bi bi-funnel"></i> Filter Pick Lists
+                    </h5>
+                    <button class="filter-toggle-btn" type="button" id="picklistFilterToggle" aria-expanded="false">
+                        <i class="bi bi-chevron-down" id="picklistFilterIcon"></i>
+                    </button>
+                </div>
+                
+                <div class="filter-content collapsed" id="picklistFilterContent">
+                    <div class="row g-3">
+                        <!-- Search Field -->
+                        <div class="col-12 col-md-5">
+                            <label class="form-label">
+                                <i class="bi bi-search"></i> Search
+                            </label>
+                            <div class="search-wrapper">
+                                <input type="text" class="form-control search-input" id="searchInput" placeholder="Search pick list or item...">
+                            </div>
+                        </div>
+                        
+                        <!-- Status Filter -->
+                        <div class="col-12 col-md-3">
+                            <label class="form-label">
+                                <i class="bi bi-flag"></i> Order Status
+                            </label>
+                            <select class="form-select" id="statusFilter">
+                                <option value="">All Order Status</option>
+                                <option value="pending">Pending</option>
+                                <option value="confirmed">Confirmed</option>
+                                <option value="processing">Processing</option>
+                                <option value="ready">Ready for Delivery</option>
+                                <option value="delivered">Delivered</option>
+                                <option value="cancelled">Cancelled</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Driver Filter -->
+                        <div class="col-12 col-md-4">
+                            <label class="form-label">
+                                <i class="bi bi-truck"></i> Driver
+                            </label>
+                            <select class="form-select" id="driverFilter">
+                                <option value="">All Drivers</option>
+                                <?php
+                                // Get all drivers from current branch
+                                $drivers_filter_query = "SELECT driver_id, driver_name, vehicle_plate_number 
+                                                        FROM drivers 
+                                                        WHERE status = 'active'";
+                                
+                                if (!$view_all_branches && $user_branch_id > 0) {
+                                    $drivers_filter_query .= " AND branch_id = ?";
+                                    $driver_stmt = $conn->prepare($drivers_filter_query . " ORDER BY driver_name");
+                                    $driver_stmt->bind_param("i", $user_branch_id);
+                                } else {
+                                    $drivers_filter_query .= " ORDER BY driver_name";
+                                    $driver_stmt = $conn->prepare($drivers_filter_query);
+                                }
+                                
+                                $driver_stmt->execute();
+                                $drivers_result = $driver_stmt->get_result();
+                                
+                                if ($drivers_result->num_rows > 0) {
+                                    while($driver = $drivers_result->fetch_assoc()) {
+                                        $vehicle_info = !empty($driver['vehicle_plate_number']) ? ' - ' . $driver['vehicle_plate_number'] : '';
+                                        echo '<option value="' . $driver['driver_id'] . '">' . 
+                                             htmlspecialchars($driver['driver_name'] . $vehicle_info) . '</option>';
+                                    }
+                                } else {
+                                    echo '<option value="" disabled>No drivers available</option>';
+                                }
+                                $driver_stmt->close();
+                                ?>
+                            </select>
+                        </div>
+                    </div>
+                </div>
             </div>
-            
-            <!-- Driver Filter -->
-            <div class="col-12 col-md-2">
-                <label class="form-label">
-                    <i class="bi bi-truck"></i> Driver
-                </label>
-                <select class="form-select" id="driverFilter">
-                    <option value="">All Drivers</option>
-                    <?php
-                    // Get all drivers from current branch
-                    $drivers_filter_query = "SELECT driver_id, driver_name, vehicle_plate_number 
-                                            FROM drivers 
-                                            WHERE status = 'active'";
-                    
-                    if (!$view_all_branches && $user_branch_id > 0) {
-                        $drivers_filter_query .= " AND branch_id = ?";
-                        $driver_stmt = $conn->prepare($drivers_filter_query . " ORDER BY driver_name");
-                        $driver_stmt->bind_param("i", $user_branch_id);
-                    } else {
-                        $drivers_filter_query .= " ORDER BY driver_name";
-                        $driver_stmt = $conn->prepare($drivers_filter_query);
-                    }
-                    
-                    $driver_stmt->execute();
-                    $drivers_result = $driver_stmt->get_result();
-                    
-                    if ($drivers_result->num_rows > 0) {
-                        while($driver = $drivers_result->fetch_assoc()) {
-                            $vehicle_info = !empty($driver['vehicle_plate_number']) ? ' - ' . $driver['vehicle_plate_number'] : '';
-                            echo '<option value="' . $driver['driver_id'] . '">' . 
-                                 htmlspecialchars($driver['driver_name'] . $vehicle_info) . '</option>';
-                        }
-                    } else {
-                        echo '<option value="" disabled>No drivers available</option>';
-                    }
-                    $driver_stmt->close();
-                    ?>
-                </select>
-            </div>
-        </div>
-    </div>
-</div>
 
             <!-- Clean Pick List Items Table -->
             <div class="card">
@@ -1143,15 +1154,12 @@ function formatLocation($row) {
                     <table class="table custom-table compact-table">
                         <thead>
                             <tr>
-                                <th>Pick List</th>
-                                <th>Item</th>
+                                <th class="text-center">Pick List</th>
                                 <th class="text-center">To Pick</th>
                                 <th class="text-center">Picked</th>
-                                <th>Assigned Driver</th>
-                                <th>Delivery Location</th>
-                                <th>Order Status</th>
+                                <th class="text-center">Order Status</th>
                                 <?php if ($view_all_branches): ?>
-                                    <th>Branch</th>
+                                    <th class="text-center">Branch</th>
                                 <?php endif; ?>
                                 <th class="text-center">Actions</th>
                             </tr>
@@ -1159,7 +1167,7 @@ function formatLocation($row) {
                         <tbody>
                             <?php
                             // Get pick list items with all necessary data
-                            // Determine branch filter condition - same logic as currentinventory.php
+                            // Determine branch filter condition
                             $main_branch_condition = "";
                             if ($items_branch_column_exists && !$view_all_branches) {
                                 $main_branch_condition = "AND i.branch_id = " . $user_branch_id;
@@ -1247,7 +1255,7 @@ function formatLocation($row) {
                                             elseif ($has_address) echo 'address';
                                             else echo 'none';
                                         ?>">
-                                        <td>
+                                        <td class="text-center">
                                             <span class="fw-semibold"><?php echo htmlspecialchars($row['pick_list_number']); ?></span>
                                             <?php if (!empty($row['pick_list_status'])): ?>
                                                 <br><small class="badge <?php echo getPickStatusBadge($row['pick_list_status']); ?>" style="font-size: 10px;">
@@ -1255,30 +1263,10 @@ function formatLocation($row) {
                                                 </small>
                                             <?php endif; ?>
                                         </td>
-                                        <td>
-                                            <div class="fw-semibold"><?php echo htmlspecialchars($row['item_name']); ?></div>
-                                            <small class="text-muted"><?php echo htmlspecialchars($row['item_code']); ?></small>
-                                            <?php if (!empty($row['notes'])): ?>
-                                                <br><small class="text-info"><i class="bi bi-info-circle"></i> <?php echo htmlspecialchars(substr($row['notes'], 0, 30)) . (strlen($row['notes']) > 30 ? '...' : ''); ?></small>
-                                            <?php endif; ?>
-                                        </td>
+                                       
                                         <td class="text-center"><?php echo number_format($row['quantity_to_pick']); ?></td>
                                         <td class="text-center"><?php echo number_format($row['quantity_picked']); ?></td>
-                                        <td>
-                                            <?php if (!empty($row['driver_name'])): ?>
-                                                    <?php echo htmlspecialchars($row['driver_name']); ?>
-                                                </span>
-                                                <?php if (!empty($row['vehicle_plate_number'])): ?>
-                                                    <br><small class="text-muted"><?php echo htmlspecialchars($row['vehicle_plate_number']); ?></small>
-                                                <?php endif; ?>
-                                            <?php else: ?>
-                                                <span class="text-muted">—</span>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td style="max-width: 250px;">
-                                            <?php echo formatLocation($row); ?>
-                                        </td>
-                                        <td>
+                                        <td class="text-center">
                                             <?php if (!empty($row['order_status'])): ?>
                                                 <span class="order-status-badge <?php echo getOrderStatusBadge($row['order_status']); ?>">
                                                     <?php echo getOrderStatusText($row['order_status']); ?>
@@ -1288,7 +1276,7 @@ function formatLocation($row) {
                                             <?php endif; ?>
                                         </td>
                                         <?php if ($view_all_branches): ?>
-                                            <td>
+                                            <td class="text-center">
                                                 <span class="badge bg-info text-dark"><?php echo htmlspecialchars($row['branch_name']); ?></span>
                                             </td>
                                         <?php endif; ?>
@@ -1319,7 +1307,7 @@ function formatLocation($row) {
                                     <?php
                                 }
                             } else {
-                                $colspan = $view_all_branches ? 9 : 8;
+                                $colspan = $view_all_branches ? 6 : 5;
                                 echo '<tr><td colspan="' . $colspan . '" class="text-center py-5 text-muted">';
                                 echo '<i class="bi bi-inbox fs-1 d-block mb-3"></i>';
                                 echo '<p>No pick list items found</p>';

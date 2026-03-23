@@ -127,7 +127,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Force category to user's category (cannot change)
             $category = $user_category;
             
-            $stock = (int)$_POST['stock'];
             $unit_type = $_POST['unit_type'] ?? 'piece';
             $reorder_level = (int)$_POST['reorder_level'];
             $status = $_POST['status'] ?? 'active';
@@ -137,42 +136,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception('Item name is required');
             }
             
-            if ($stock < 0) {
-                throw new Exception('Stock cannot be negative');
-            }
-            
             if ($reorder_level < 0) {
                 throw new Exception('Reorder level cannot be negative');
             }
             
-            // Get old stock to check for changes
-            $stock_query = "SELECT stock FROM items WHERE item_id = ?";
-            $stock_stmt = $conn->prepare($stock_query);
-            $stock_stmt->bind_param("i", $item_id);
-            $stock_stmt->execute();
-            $result = $stock_stmt->get_result();
-            $old_stock = $result->fetch_assoc()['stock'];
-            
             // Update
-            $stmt = $conn->prepare("UPDATE items SET item_name = ?, description = ?, category = ?, stock = ?, unit_type = ?, reorder_level = ?, status = ?, updated_at = NOW() WHERE item_id = ?");
-            $stmt->bind_param("sssisisi", $item_name, $description, $category, $stock, $unit_type, $reorder_level, $status, $item_id);
+            $stmt = $conn->prepare("UPDATE items SET item_name = ?, description = ?, category = ?, unit_type = ?, reorder_level = ?, status = ?, updated_at = NOW() WHERE item_id = ?");
+            $stmt->bind_param("ssssisi", $item_name, $description, $category, $unit_type, $reorder_level, $status, $item_id);
             
             if (!$stmt->execute()) {
                 throw new Exception('Failed to update item: ' . $stmt->error);
-            }
-            
-            // Record inventory transaction if stock changed and table exists
-            if ($stock != $old_stock && $inventory_transactions_exists) {
-                $quantity_changed = $stock - $old_stock;
-                $transaction_type = $quantity_changed > 0 ? 'in' : 'out';
-                $quantity_changed = abs($quantity_changed);
-                
-                $trans_query = "INSERT INTO inventory_transactions 
-                               (branch_id, item_id, transaction_type, quantity_changed, reference_type, reference_id, created_by, created_at) 
-                               VALUES (?, ?, ?, ?, 'stock_adjustment', ?, ?, NOW())";
-                $trans_stmt = $conn->prepare($trans_query);
-                $trans_stmt->bind_param("iiiiii", $branch_id, $item_id, $transaction_type, $quantity_changed, $item_id, $user_id);
-                $trans_stmt->execute();
             }
             
             $conn->commit();
@@ -299,7 +272,7 @@ if ($items_branch_column_exists && !$view_all_branches) {
 $category_condition = "";
 if (empty($user_category)) {
     // If no category assigned, show nothing
-    $category_condition = "AND 1=0"; // This will return no results
+    $category_condition = "AND 1=0";
 } else {
     $category_condition = "AND items.category = '" . $conn->real_escape_string($user_category) . "'";
 }
@@ -307,27 +280,24 @@ if (empty($user_category)) {
 // Get inventory statistics
 $stats = [];
 
-// Total Items
+// 1. Total Items
 $total_items_query = "SELECT COUNT(*) as total_items FROM items WHERE status = 'active' $branch_condition $category_condition";
 $result = $conn->query($total_items_query);
 $stats['total_items'] = $result->fetch_assoc()['total_items'] ?? 0;
 
-// Current Stock
-$current_stock_query = "SELECT SUM(stock) as current_stock FROM items WHERE status = 'active' $branch_condition $category_condition";
-$result = $conn->query($current_stock_query);
-$stats['current_stock'] = $result->fetch_assoc()['current_stock'] ?? 0;
-
-// Low Stock Items (stock <= reorder_level and stock > 0)
+// 2. Low Stock Items (stock <= reorder_level and stock > 0)
 $low_stock_query = "SELECT COUNT(*) as count FROM items 
                    WHERE stock <= reorder_level AND stock > 0 AND status = 'active' $branch_condition $category_condition";
 $result = $conn->query($low_stock_query);
 $stats['low_stock'] = $result->fetch_assoc()['count'] ?? 0;
 
-// Out of Stock Items
-$out_of_stock_query = "SELECT COUNT(*) as count FROM items 
-                      WHERE stock <= 0 AND status = 'active' $branch_condition $category_condition";
-$result = $conn->query($out_of_stock_query);
-$stats['out_of_stock'] = $result->fetch_assoc()['count'] ?? 0;
+// 3. Items Added This Month
+$month_query = "SELECT COUNT(*) as count FROM items 
+                WHERE MONTH(created_at) = MONTH(CURDATE()) 
+                AND YEAR(created_at) = YEAR(CURDATE())
+                AND status = 'active' $branch_condition $category_condition";
+$result = $conn->query($month_query);
+$stats['items_this_month'] = $result->fetch_assoc()['count'] ?? 0;
 
 // Get inventory items with branch info
 $inventory_query = "
@@ -336,7 +306,7 @@ $inventory_query = "
         i.item_code, 
         i.item_name, 
         i.category, 
-        i.stock, 
+        i.stock,
         i.reorder_level, 
         i.status, 
         i.unit_type, 
@@ -347,6 +317,7 @@ $inventory_query = "
         i.price_carton,
         i.description, 
         i.branch_id,
+        i.created_at,
         b.branch_name
     FROM items i
     LEFT JOIN branches b ON i.branch_id = b.branch_id
@@ -359,7 +330,6 @@ if ($items_branch_column_exists && !$view_all_branches) {
 
 // Add category filter based on user's assigned category
 if (empty($user_category)) {
-    // If no category assigned, show nothing
     $inventory_query .= " AND 1=0";
 } else {
     $inventory_query .= " AND i.category = '" . $conn->real_escape_string($user_category) . "'";
@@ -500,11 +470,6 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
         font-weight: 500;
     }
 
-    /* Category info alert */
-    .category-info-alert {
-        margin-bottom: 1rem;
-    }
-
     /* Search icon inside field */
     .search-wrapper {
         position: relative;
@@ -519,12 +484,107 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
         color: #6c757d;
         z-index: 10;
         font-size: 1rem;
-        pointer-events: none; /* Allows clicking through to the input */
+        pointer-events: none;
     }
 
     .search-input {
-        padding-left: 35px !important; /* Make room for the icon */
+        padding-left: 35px !important;
         width: 100%;
+    }
+    
+    /* New item badge */
+    .new-item-badge {
+        background-color: #28a745;
+        color: white;
+        font-size: 10px;
+        padding: 2px 6px;
+        border-radius: 10px;
+        margin-left: 5px;
+    }
+    
+    /* Low stock warning */
+    .low-stock-warning {
+        color: #dc3545;
+        font-weight: bold;
+    }
+    
+    /* ===== CLEAN STAT CARDS - NO ANIMATIONS, WHITE ICONS ===== */
+    /* Stat Cards - Clean design like warehouse.php */
+.stat-card {
+    background: white;
+    border-radius: 10px;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    cursor: pointer;
+    transition: none;
+    border: none;
+}
+
+.stat-card i {
+    font-size: 2.5rem;
+}
+
+.stat-card .stat-content {
+    flex: 1;
+}
+
+.stat-card .stat-value {
+    font-size: 2rem;
+    font-weight: bold;
+    line-height: 1.2;
+    color: white;
+}
+
+.stat-card .stat-label {
+    font-size: 0.9rem;
+    color: white;
+    opacity: 0.9;
+}
+
+/* Card variations with background colors */
+.stat-card.inventory {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.stat-card.stock {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.stat-card.delivery {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+
+.stat-card.approved {
+    background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+}
+
+.stat-card.pending {
+    background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+}
+
+/* White icons */
+.stat-card i {
+    color: white !important;
+}
+
+/* No hover effects */
+.stat-card:hover {
+    transform: none;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Active filter state - if needed */
+.stat-card.active-filter {
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    border: 2px solid #07d826;
+}
+    
+    /* Filter header */
+    .filter-header {
+        cursor: pointer;
     }
 </style>
 <body>
@@ -602,84 +662,89 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                     <h2>
                         Current Inventory
                     </h2>
-                    <p>Manage and view <?php echo !empty($user_category) ? strtolower($user_category) : ''; ?> inventory</p>
+                    <p>Manage and view inventory items</p>
                 </div>
             </div>
 
-           <!-- Inventory Stats -->
-<div class="row stat-card-row g-1 g-sm-2">
-    <!-- Card 1 - Total Items -->
-    <div class="col">
-        <div class="stat-card inventory">
-            <i class="bi bi-boxes"></i>
-            <div class="stat-content">
-                <div class="stat-value"><?php echo number_format($stats['total_items']); ?></div>
-                <div class="stat-label">Total <?php echo !empty($user_category) ? htmlspecialchars($user_category) : ''; ?> Items</div>
-            </div>
-        </div>
-    </div>
+            <!-- Inventory Stats - 3 Cards: Total Items, Low Stock, Added This Month -->
+            <div class="row stat-card-row g-1 g-sm-2 mb-4">
+                <!-- Card 1 - Total Items -->
+                <div class="col">
+                    <div class="stat-card inventory" onclick="filterItems('all')" title="Click to show all items">
+                        <i class="bi bi-boxes"></i>
+                        <div class="stat-content">
+                            <div class="stat-value"><?php echo number_format($stats['total_items']); ?></div>
+                            <div class="stat-label">Total Items</div>
+                        </div>
+                    </div>
+                </div>
 
-    <!-- Card 2 - Current Stock -->
-    <div class="col">
-        <div class="stat-card stock">
-            <i class="bi bi-box-seam"></i>
-            <div class="stat-content">
-                <div class="stat-value"><?php echo number_format($stats['current_stock']); ?></div>
-                <div class="stat-label">Current <?php echo !empty($user_category) ? htmlspecialchars($user_category) : ''; ?> Stock</div>
-            </div>
-        </div>
-    </div>
+                <!-- Card 2 - Low Stock Items -->
+                <div class="col">
+                    <div class="stat-card pending" onclick="filterItems('lowstock')" title="Click to show low stock items">
+                        <i class="bi bi-exclamation-triangle"></i>
+                        <div class="stat-content">
+                            <div class="stat-value"><?php echo number_format($stats['low_stock']); ?></div>
+                            <div class="stat-label">Low Stock Items</div>
+                        </div>
+                    </div>
+                </div>
 
-    <!-- Card 3 - Low Stock Items -->
-    <div class="col">
-        <div class="stat-card pending">
-            <i class="bi bi-exclamation-triangle"></i>
-            <div class="stat-content">
-                <div class="stat-value"><?php echo $stats['low_stock']; ?></div>
-                <div class="stat-label">Low Stock Items</div>
-            </div>
-        </div>
-    </div>
-</div>
-<!-- FILTER SECTION - ALL ITEMS -->
-<div class="form-card mb-4">
-    <div class="filter-header">
-        <h5>
-            <i class="bi bi-funnel"></i> Filter Items
-
-        </h5>
-        <button class="filter-toggle-btn" type="button" id="itemsFilterToggle" aria-expanded="false">
-            <i class="bi bi-chevron-down" id="itemsFilterIcon"></i>
-        </button>
-    </div>
-    
-    <div class="filter-content collapsed" id="itemsFilterContent">
-        <div class="row g-3">
-            <!-- Search Field -->
-            <div class="col-12 col-md-8">
-                <label class="form-label">
-                    <i class="bi bi-search"></i> Search
-                </label>
-                <div class="search-wrapper">
-                    <input type="text" class="form-control search-input" id="searchInput" placeholder="Search by item name or code...">
+                <!-- Card 3 - Added This Month -->
+                <div class="col">
+                    <div class="stat-card stock" onclick="filterItems('thismonth')" title="Click to show items added this month">
+                        <i class="bi bi-calendar-plus"></i>
+                        <div class="stat-content">
+                            <div class="stat-value"><?php echo number_format($stats['items_this_month']); ?></div>
+                            <div class="stat-label">Added This Month</div>
+                        </div>
+                    </div>
                 </div>
             </div>
-            
-            <!-- Category Field - DISABLED INPUT TEXT -->
-            <div class="col-12 col-md-4">
-                <label class="form-label">
-                    <i class="bi bi-tag"></i> Category
-                </label>
-                <?php if (!empty($user_category)): ?>
-                    <input type="text" class="form-control" id="categoryFilter" value="<?php echo htmlspecialchars($user_category); ?>" disabled readonly>
-                    <input type="hidden" id="userCategory" value="<?php echo htmlspecialchars($user_category); ?>">
-                <?php else: ?>
-                    <input type="text" class="form-control" value="No Category Assigned" disabled readonly>
-                <?php endif; ?>
+
+            <!-- Hidden fields for current filter state -->
+            <input type="hidden" id="currentFilter" value="all">
+            <input type="hidden" id="currentMonth" value="<?php echo date('m'); ?>">
+            <input type="hidden" id="currentYear" value="<?php echo date('Y'); ?>">
+
+            <!-- FILTER SECTION - ALL ITEMS -->
+            <div class="form-card mb-4">
+                <div class="filter-header">
+                    <h5>
+                        <i class="bi bi-funnel"></i> Filter Items
+                    </h5>
+                    <button class="filter-toggle-btn" type="button" id="itemsFilterToggle" aria-expanded="false">
+                        <i class="bi bi-chevron-down" id="itemsFilterIcon"></i>
+                    </button>
+                </div>
+                
+                <div class="filter-content collapsed" id="itemsFilterContent">
+                    <div class="row g-3">
+                        <!-- Search Field -->
+                        <div class="col-12 col-md-8">
+                            <label class="form-label">
+                                <i class="bi bi-search"></i> Search
+                            </label>
+                            <div class="search-wrapper">
+                                <input type="text" class="form-control search-input" id="searchInput" placeholder="Search by item name or code...">
+                            </div>
+                        </div>
+                        
+                        <!-- Category Field - DISABLED INPUT TEXT -->
+                        <div class="col-12 col-md-4">
+                            <label class="form-label">
+                                <i class="bi bi-tag"></i> Category
+                            </label>
+                            <?php if (!empty($user_category)): ?>
+                                <input type="text" class="form-control" id="categoryFilter" value="<?php echo htmlspecialchars($user_category); ?>" disabled readonly>
+                                <input type="hidden" id="userCategory" value="<?php echo htmlspecialchars($user_category); ?>">
+                            <?php else: ?>
+                                <input type="text" class="form-control" value="No Category Assigned" disabled readonly>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+                </div>
             </div>
-        </div>
-    </div>
-</div>
 
             <!-- Inventory Table -->
             <div class="card">
@@ -693,31 +758,53 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                                 <?php if ($view_all_branches && $items_branch_column_exists): ?>
                                     <th>Branch</th>
                                 <?php endif; ?>
-                                <th>Total Stock</th>
                                 <th>Unit Type</th>
                                 <th>Reorder Level</th>
                                 <th>Status</th>
+                                <th>Date Added</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody>
                             <?php
                             if (count($items) > 0) {
+                                $today = date('Y-m-d');
+                                $current_month = date('m');
+                                $current_year = date('Y');
+                                
                                 foreach($items as $row) {
                                     $status_badge = 'bg-success';
-                                    $status_text = 'In Stock';
+                                    $status_text = 'Active';
                                     
-                                    if ($row['stock'] <= 0) {
+                                    if ($row['status'] == 'inactive') {
+                                        $status_badge = 'bg-secondary';
+                                        $status_text = 'Inactive';
+                                    } elseif ($row['status'] == 'discontinued') {
                                         $status_badge = 'bg-danger';
-                                        $status_text = 'Out of Stock';
-                                    } elseif ($row['stock'] <= $row['reorder_level']) {
-                                        $status_badge = 'bg-warning';
-                                        $status_text = 'Low Stock';
+                                        $status_text = 'Discontinued';
                                     }
+                                    
+                                    // Check if low stock
+                                    $is_low_stock = ($row['stock'] <= $row['reorder_level'] && $row['stock'] > 0);
+                                    
+                                    // Check if added this month
+                                    $item_month = date('m', strtotime($row['created_at']));
+                                    $item_year = date('Y', strtotime($row['created_at']));
+                                    $is_added_this_month = ($item_month == $current_month && $item_year == $current_year);
+                                    
+                                    $month_badge = $is_added_this_month ? '<span class="new-item-badge">This Month</span>' : '';
+                                    $low_stock_class = $is_low_stock ? 'low-stock-warning' : '';
                                     ?>
-                                    <tr>
+                                    <tr data-lowstock="<?php echo $is_low_stock ? 'true' : 'false'; ?>" 
+                                        data-thismonth="<?php echo $is_added_this_month ? 'true' : 'false'; ?>">
                                         <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($row['item_code']); ?></span></td>
-                                        <td><?php echo htmlspecialchars($row['item_name']); ?></td>
+                                        <td class="<?php echo $low_stock_class; ?>">
+                                            <?php echo htmlspecialchars($row['item_name']); ?>
+                                            <?php echo $month_badge; ?>
+                                            <?php if ($is_low_stock): ?>
+                                                <i class="bi bi-exclamation-triangle-fill text-danger" title="Low Stock"></i>
+                                            <?php endif; ?>
+                                        </td>
                                         <td>
                                             <?php if (!empty($row['category'])): ?>
                                                 <span class="badge bg-info"><?php echo htmlspecialchars($row['category']); ?></span>
@@ -732,14 +819,10 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                                                 </span>
                                             </td>
                                         <?php endif; ?>
-                                        <td>
-                                            <span class="<?php echo $row['stock'] <= $row['reorder_level'] ? 'text-danger fw-bold' : ''; ?>">
-                                                <?php echo number_format($row['stock']); ?>
-                                            </span>
-                                        </td>
                                         <td><?php echo ucfirst(str_replace('-', ' ', $row['unit_type'])); ?></td>
                                         <td><?php echo number_format($row['reorder_level']); ?></td>
                                         <td><span class="badge <?php echo $status_badge; ?>"><?php echo $status_text; ?></span></td>
+                                        <td><?php echo date('Y-m-d', strtotime($row['created_at'])); ?></td>
                                         <td>
                                             <div class="action-buttons">
                                                 <button class="btn-action btn-view" onclick="viewItem(<?php echo $row['item_id']; ?>)" title="View" <?php echo empty($user_category) ? 'disabled' : ''; ?>>
@@ -765,7 +848,7 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                                 } else {
                                     $message = 'No items found - you need a category assigned';
                                 }
-                                echo '<tr><td colspan="' . $colspan . '" class="text-center py-4"><i class="bi bi-inbox fs-1 d-block text-muted mb-2"></i><p class="text-muted mb-0">' . $message . '</p>';
+                                echo '<tr class="no-items-row"><td colspan="' . $colspan . '" class="text-center py-4"><i class="bi bi-inbox fs-1 d-block text-muted mb-2"></i><p class="text-muted mb-0">' . $message . '</p>';
                                 echo '</td></tr>';
                             }
                             ?>
@@ -861,8 +944,6 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
             </div>
         </div>
     </div>
-
-    <!-- REMOVED: Add Inventory Modal -->
 
     <!-- View Item Details Modal -->
     <div class="modal fade" id="viewItemModal" tabindex="-1">
@@ -1096,10 +1177,169 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
             });
         }
 
-        // ================= INVENTORY FUNCTIONS =================
-        // REMOVED: showAddItemModal function
-        // REMOVED: submitAddForm function
+        // ================= FILTER FUNCTIONS FOR STAT CARDS =================
+        function filterItems(filterType) {
+            document.getElementById('currentFilter').value = filterType;
+            
+            const rows = document.querySelectorAll('tbody tr');
+            let visibleCount = 0;
+            
+            rows.forEach(row => {
+                // Skip the "No items found" row
+                if (row.classList.contains('no-items-row') || row.querySelector('td[colspan]')) {
+                    return;
+                }
+                
+                let showRow = false;
+                
+                switch(filterType) {
+                    case 'all':
+                        showRow = true;
+                        break;
+                        
+                    case 'lowstock':
+                        showRow = row.getAttribute('data-lowstock') === 'true';
+                        break;
+                        
+                    case 'thismonth':
+                        showRow = row.getAttribute('data-thismonth') === 'true';
+                        break;
+                }
+                
+                row.style.display = showRow ? '' : 'none';
+                if (showRow) visibleCount++;
+            });
+            
+            // Show message if no items found for filter
+            const tbody = document.querySelector('tbody');
+            let noItemsRow = tbody.querySelector('.no-items-row');
+            
+            if (visibleCount === 0) {
+                // Get colspan from any existing row or use default
+                let colspan = 9;
+                const firstRow = tbody.querySelector('tr:not(.no-items-row)');
+                if (firstRow) {
+                    colspan = firstRow.children.length;
+                }
+                
+                if (noItemsRow) {
+                    // Update existing no items row
+                    const messageCell = noItemsRow.querySelector('td');
+                    let message = '';
+                    switch(filterType) {
+                        case 'lowstock':
+                            message = 'No low stock items found';
+                            break;
+                        case 'thismonth':
+                            message = 'No items added this month';
+                            break;
+                        default:
+                            message = 'No items found';
+                    }
+                    messageCell.innerHTML = '<i class="bi bi-inbox fs-1 d-block text-muted mb-2"></i><p class="text-muted mb-0">' + message + '</p>';
+                    noItemsRow.style.display = '';
+                } else {
+                    // Create new no items row
+                    let message = '';
+                    switch(filterType) {
+                        case 'lowstock':
+                            message = 'No low stock items found';
+                            break;
+                        case 'thismonth':
+                            message = 'No items added this month';
+                            break;
+                        default:
+                            message = 'No items found';
+                    }
+                    
+                    const newRow = document.createElement('tr');
+                    newRow.className = 'no-items-row';
+                    newRow.innerHTML = '<td colspan="' + colspan + '" class="text-center py-4"><i class="bi bi-inbox fs-1 d-block text-muted mb-2"></i><p class="text-muted mb-0">' + message + '</p></td>';
+                    tbody.appendChild(newRow);
+                }
+            } else if (noItemsRow) {
+                noItemsRow.style.display = 'none';
+            }
+            
+            // Update active state on stat cards
+            updateActiveFilter(filterType);
+            
+            // Also trigger search if there's text in search box
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput && searchInput.value.trim() !== '') {
+                applySearchFilter();
+            }
+        }
 
+        function updateActiveFilter(filterType) {
+            // Remove active class from all stat cards
+            document.querySelectorAll('.stat-card').forEach(card => {
+                card.classList.remove('active-filter');
+            });
+            
+            // Add active class to the clicked card
+            let activeCard;
+            switch(filterType) {
+                case 'all':
+                    activeCard = document.querySelector('.stat-card.inventory');
+                    break;
+                case 'lowstock':
+                    activeCard = document.querySelector('.stat-card.pending');
+                    break;
+                case 'thismonth':
+                    activeCard = document.querySelector('.stat-card.stock');
+                    break;
+            }
+            
+            if (activeCard) {
+                activeCard.classList.add('active-filter');
+            }
+        }
+
+        // Reset filter (show all)
+        function resetFilter() {
+            filterItems('all');
+            document.getElementById('searchInput').value = '';
+        }
+
+        // Apply search filter on top of stat card filter
+        function applySearchFilter() {
+            const searchInput = document.getElementById('searchInput');
+            if (!searchInput) return;
+            
+            const filter = searchInput.value.toLowerCase();
+            const rows = document.querySelectorAll('tbody tr');
+            const currentFilter = document.getElementById('currentFilter').value;
+            
+            rows.forEach(row => {
+                // Skip the "No items found" row
+                if (row.classList.contains('no-items-row') || row.querySelector('td[colspan]')) {
+                    return;
+                }
+                
+                // First check if row matches the stat card filter
+                let matchesStatFilter = true;
+                
+                switch(currentFilter) {
+                    case 'lowstock':
+                        matchesStatFilter = row.getAttribute('data-lowstock') === 'true';
+                        break;
+                    case 'thismonth':
+                        matchesStatFilter = row.getAttribute('data-thismonth') === 'true';
+                        break;
+                }
+                
+                // Then check if matches search
+                if (matchesStatFilter) {
+                    const text = row.textContent.toLowerCase();
+                    row.style.display = text.includes(filter) ? '' : 'none';
+                } else {
+                    row.style.display = 'none';
+                }
+            });
+        }
+
+        // ================= INVENTORY FUNCTIONS =================
         function viewItem(itemId) {
             if (!userCategory) {
                 Swal.fire('Error', 'You do not have a category assigned. Please contact administrator.', 'error');
@@ -1159,6 +1399,10 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                         `;
                     }
                     
+                    // Determine if low stock
+                    const lowStockWarning = (item.stock <= item.reorder_level && item.stock > 0) ? 
+                        '<span class="badge bg-danger">Low Stock</span>' : '';
+                    
                     const content = `
                         <div class="row">
                             <div class="col-md-6">
@@ -1169,7 +1413,7 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                                     </tr>
                                     <tr>
                                         <th>Item Name:</th>
-                                        <td>${item.item_name}</td>
+                                        <td>${item.item_name} ${lowStockWarning}</td>
                                     </tr>
                                     <tr>
                                         <th>Category:</th>
@@ -1186,7 +1430,7 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                                     <?php if ($items_branch_column_exists): ?>
                                     <tr>
                                         <th>Branch:</th>
-                                        <td><span class="badge bg-secondary">Branch ${item.branch_id || 'N/A'}</span></td>
+                                        <td><span class="badge bg-secondary">${item.branch_name || 'Branch ' + item.branch_id}</span></td>
                                     </tr>
                                     <?php endif; ?>
                                 </table>
@@ -1194,11 +1438,7 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                             <div class="col-md-6">
                                 <table class="table table-sm table-borderless">
                                     <tr>
-                                        <th width="40%">Stock:</th>
-                                        <td>${Number(item.stock).toLocaleString()}</td>
-                                    </tr>
-                                    <tr>
-                                        <th>Unit Type:</th>
+                                        <th width="40%">Unit Type:</th>
                                         <td>${item.unit_type}</td>
                                     </tr>
                                     <tr>
@@ -1206,7 +1446,7 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                                         <td>${item.reorder_level}</td>
                                     </tr>
                                     <tr>
-                                        <th>Created:</th>
+                                        <th>Date Added:</th>
                                         <td>${new Date(item.created_at).toLocaleDateString()}</td>
                                     </tr>
                                     <tr>
@@ -1379,16 +1619,6 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                                     <small class="text-muted">Category cannot be changed</small>
                                 </div>
                                 <div class="col-md-6 mb-3">
-                                    <label class="form-label">Current Stock <span class="text-danger">*</span></label>
-                                    <input type="number" class="form-control" name="stock" value="${item.stock}" min="0" required>
-                                </div>
-                            </div>
-                            <div class="row">
-                                <div class="col-md-6 mb-3">
-                                    <label class="form-label">Reorder Level <span class="text-danger">*</span></label>
-                                    <input type="number" class="form-control" name="reorder_level" value="${item.reorder_level}" min="0" required>
-                                </div>
-                                <div class="col-md-6 mb-3">
                                     <label class="form-label">Unit Type <span class="text-danger">*</span></label>
                                     <select class="form-select" name="unit_type" required>
                                         <option value="piece" ${item.unit_type === 'piece' ? 'selected' : ''}>Piece</option>
@@ -1399,17 +1629,23 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                                     </select>
                                 </div>
                             </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Reorder Level <span class="text-danger">*</span></label>
+                                    <input type="number" class="form-control" name="reorder_level" value="${item.reorder_level}" min="0" required>
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label class="form-label">Status</label>
+                                    <select class="form-select" name="status">
+                                        <option value="active" ${item.status === 'active' ? 'selected' : ''}>Active</option>
+                                        <option value="inactive" ${item.status === 'inactive' ? 'selected' : ''}>Inactive</option>
+                                        <option value="discontinued" ${item.status === 'discontinued' ? 'selected' : ''}>Discontinued</option>
+                                    </select>
+                                </div>
+                            </div>
                             <div class="mb-3">
                                 <label class="form-label">Description</label>
                                 <textarea class="form-control" name="description" rows="3">${item.description ? item.description.replace(/"/g, '&quot;') : ''}</textarea>
-                            </div>
-                            <div class="mb-3">
-                                <label class="form-label">Status</label>
-                                <select class="form-select" name="status">
-                                    <option value="active" ${item.status === 'active' ? 'selected' : ''}>Active</option>
-                                    <option value="inactive" ${item.status === 'inactive' ? 'selected' : ''}>Inactive</option>
-                                    <option value="discontinued" ${item.status === 'discontinued' ? 'selected' : ''}>Discontinued</option>
-                                </select>
                             </div>
                         </form>
                     `;
@@ -1591,13 +1827,7 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
             const searchInput = document.getElementById('searchInput');
             if (searchInput) {
                 searchInput.addEventListener('keyup', function() {
-                    const filter = this.value.toLowerCase();
-                    const rows = document.querySelectorAll('tbody tr');
-                    
-                    rows.forEach(row => {
-                        const text = row.textContent.toLowerCase();
-                        row.style.display = text.includes(filter) ? '' : 'none';
-                    });
+                    applySearchFilter();
                 });
             }
 
@@ -1616,6 +1846,9 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                     });
                 });
             }
+            
+            // Initialize filter to 'all'
+            filterItems('all');
         });
 
         // Keyboard shortcuts
@@ -1640,137 +1873,59 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
                     searchInput.focus();
                 }
             }
+            else if (e.altKey && e.key === 'r') {
+                e.preventDefault();
+                resetFilter();
+            }
         });
 
-      // ================= FILTER TOGGLE FUNCTIONS =================
-// Toggle filter section visibility with localStorage
-function toggleFilter(filterType) {
-    const content = document.getElementById(filterType + 'FilterContent');
-    const icon = document.getElementById(filterType + 'FilterIcon');
-    const toggleBtn = document.getElementById(filterType + 'FilterToggle');
-    
-    if (content && icon && toggleBtn) {
-        const isExpanded = toggleBtn.getAttribute('aria-expanded') === 'true';
-        
-        if (isExpanded) {
-            // Collapse
-            content.classList.add('collapsed');
-            toggleBtn.setAttribute('aria-expanded', 'false');
-            icon.style.transform = 'rotate(0deg)';
-            localStorage.setItem(filterType + 'FilterHidden', 'true');
-        } else {
-            // Expand
-            content.classList.remove('collapsed');
-            toggleBtn.setAttribute('aria-expanded', 'true');
-            icon.style.transform = 'rotate(180deg)';
-            localStorage.setItem(filterType + 'FilterHidden', 'false');
+        // ================= FILTER TOGGLE FUNCTIONS =================
+        function toggleFilter(filterType) {
+            const content = document.getElementById(filterType + 'FilterContent');
+            const icon = document.getElementById(filterType + 'FilterIcon');
+            const toggleBtn = document.getElementById(filterType + 'FilterToggle');
+            
+            if (content && icon && toggleBtn) {
+                const isExpanded = toggleBtn.getAttribute('aria-expanded') === 'true';
+                
+                if (isExpanded) {
+                    content.classList.add('collapsed');
+                    toggleBtn.setAttribute('aria-expanded', 'false');
+                    icon.style.transform = 'rotate(0deg)';
+                    localStorage.setItem(filterType + 'FilterHidden', 'true');
+                } else {
+                    content.classList.remove('collapsed');
+                    toggleBtn.setAttribute('aria-expanded', 'true');
+                    icon.style.transform = 'rotate(180deg)';
+                    localStorage.setItem(filterType + 'FilterHidden', 'false');
+                }
+            }
         }
-    }
-}
 
-// Initialize picklist filter state - DEFAULT CLOSED
-function initPicklistFilterState() {
-    const content = document.getElementById('picklistFilterContent');
-    const icon = document.getElementById('picklistFilterIcon');
-    const toggleBtn = document.getElementById('picklistFilterToggle');
-    
-    if (content && icon && toggleBtn) {
-        // DEFAULT: CLOSED sa simula
-        content.classList.add('collapsed');
-        toggleBtn.setAttribute('aria-expanded', 'false');
-        icon.style.transform = 'rotate(0deg)';
-        
-        // Save sa localStorage na closed para consistent
-        localStorage.setItem('picklistFilterHidden', 'true');
-    }
-}
+        // Initialize items filter state - DEFAULT CLOSED
+        function initItemsFilterState() {
+            const content = document.getElementById('itemsFilterContent');
+            const icon = document.getElementById('itemsFilterIcon');
+            const toggleBtn = document.getElementById('itemsFilterToggle');
+            
+            if (content && icon && toggleBtn) {
+                content.classList.add('collapsed');
+                toggleBtn.setAttribute('aria-expanded', 'false');
+                icon.style.transform = 'rotate(0deg)';
+                localStorage.setItem('itemsFilterHidden', 'true');
+            }
+        }
 
-// Initialize items filter state - DEFAULT CLOSED
-function initItemsFilterState() {
-    const content = document.getElementById('itemsFilterContent');
-    const icon = document.getElementById('itemsFilterIcon');
-    const toggleBtn = document.getElementById('itemsFilterToggle');
-    
-    if (content && icon && toggleBtn) {
-        // DEFAULT: CLOSED sa simula
-        content.classList.add('collapsed');
-        toggleBtn.setAttribute('aria-expanded', 'false');
-        icon.style.transform = 'rotate(0deg)';
-        
-        // Save sa localStorage na closed para consistent
-        localStorage.setItem('itemsFilterHidden', 'true');
-    }
-}
-
-// Generic function for any filter - DEFAULT CLOSED
-function initFilterState(filterType) {
-    const content = document.getElementById(filterType + 'FilterContent');
-    const icon = document.getElementById(filterType + 'FilterIcon');
-    const toggleBtn = document.getElementById(filterType + 'FilterToggle');
-    
-    if (content && icon && toggleBtn) {
-        // DEFAULT: CLOSED sa simula
-        content.classList.add('collapsed');
-        toggleBtn.setAttribute('aria-expanded', 'false');
-        icon.style.transform = 'rotate(0deg)';
-        
-        // Save sa localStorage na closed para consistent
-        localStorage.setItem(filterType + 'FilterHidden', 'true');
-    }
-}
-
-// Add event listeners
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize picklist filter - DEFAULT CLOSED
-    initPicklistFilterState();
-    
-    // Initialize items filter - kung meron
-    if (document.getElementById('itemsFilterContent')) {
-        initItemsFilterState();
-    }
-    
-    // Toggle button for picklist
-    document.getElementById('picklistFilterToggle')?.addEventListener('click', function() {
-        toggleFilter('picklist');
-    });
-    
-    // Toggle button for items - kung meron
-    document.getElementById('itemsFilterToggle')?.addEventListener('click', function() {
-        toggleFilter('items');
-    });
-    
-    // Enter key on search (picklist)
-    document.getElementById('searchInput')?.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') applyFilters();
-    });
-});
-
-// Apply filters function (sample - i-customize per page)
-function applyFilters() {
-    // Get filter values
-    const search = document.getElementById('searchInput')?.value || '';
-    const status = document.getElementById('statusFilter')?.value || '';
-    const driver = document.getElementById('driverFilter')?.value || '';
-    
-    // Build URL parameters
-    const params = new URLSearchParams();
-    if (search) params.append('search', search);
-    if (status) params.append('status', status);
-    if (driver) params.append('driver', driver);
-    
-    // Redirect with filters
-    window.location.href = window.location.pathname + '?' + params.toString();
-}
-
-// Clear filters function
-function clearFilters() {
-    document.getElementById('searchInput') && (document.getElementById('searchInput').value = '');
-    document.getElementById('statusFilter') && (document.getElementById('statusFilter').value = '');
-    document.getElementById('driverFilter') && (document.getElementById('driverFilter').value = '');
-    
-    // Apply the cleared filters
-    applyFilters();
-}
+        // Add event listeners for filter toggle
+        document.addEventListener('DOMContentLoaded', function() {
+            if (document.getElementById('itemsFilterContent')) {
+                initItemsFilterState();
+            }
+            
+            document.getElementById('itemsFilterToggle')?.addEventListener('click', function() {
+                toggleFilter('items');
+            });
+        });
     </script>
 </body>
 </html>

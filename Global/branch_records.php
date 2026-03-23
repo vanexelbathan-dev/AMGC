@@ -181,11 +181,13 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
             case 'sales_orders':
                 // Get main Sales Order details
                 $sql = "SELECT so.*, b.branch_name, c.customer_name, c.address, c.phone_number,
-                        CONCAT(u.first_name, ' ', u.last_name) as created_by_name
+                        CONCAT(u.first_name, ' ', u.last_name) as created_by_name,
+                        CONCAT(u2.first_name, ' ', u2.last_name) as confirmed_by_name
                         FROM sales_orders so
                         LEFT JOIN branches b ON so.branch_id = b.branch_id
                         LEFT JOIN customers c ON so.customer_id = c.customer_id
                         LEFT JOIN users u ON so.created_by = u.user_id
+                        LEFT JOIN users u2 ON so.confirmed_by = u2.user_id
                         WHERE so.so_id = ?";
                 $stmt = $conn->prepare($sql);
                 if (!$stmt) {
@@ -196,20 +198,17 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                 $result = $stmt->get_result();
                 
                 if ($row = $result->fetch_assoc()) {
-                    // Get Sales Order Items (line_total is the actual column name)
+                    // Get Sales Order Items
                     $items_sql = "SELECT soi.*, i.item_name, i.item_code, i.category
                                  FROM sales_order_items soi
                                  LEFT JOIN items i ON soi.item_id = i.item_id
                                  WHERE soi.so_id = ?";
                     $items_stmt = $conn->prepare($items_sql);
+                    $items = [];
                     if ($items_stmt) {
                         $items_stmt->bind_param("i", $id);
                         $items_stmt->execute();
                         $items_result = $items_stmt->get_result();
-                    }
-                    
-                    $items = [];
-                    if (isset($items_result)) {
                         while ($item = $items_result->fetch_assoc()) {
                             $items[] = [
                                 'item_name' => $item['item_name'] ?? 'Unknown Item',
@@ -222,9 +221,11 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         }
                     }
                     
-                    // Get related Pick Lists
+                    // Get related Pick Lists with picked_at and verified_at
                     $pick_lists = [];
                     $pick_sql = "SELECT pl.*, d.driver_name,
+                                pl.picked_at,
+                                pl.verified_at,
                                 CONCAT(u1.first_name, ' ', u1.last_name) as picked_by_name,
                                 CONCAT(u2.first_name, ' ', u2.last_name) as verified_by_name
                                 FROM pick_lists pl
@@ -240,7 +241,7 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         $pick_result = $pick_stmt->get_result();
                         
                         while ($pick = $pick_result->fetch_assoc()) {
-                            // Get Pick List Items (quantity_to_pick is the actual column)
+                            // Get Pick List Items
                             $pick_items_sql = "SELECT pli.*, i.item_name, i.item_code
                                              FROM pick_list_items pli
                                              LEFT JOIN items i ON pli.item_id = i.item_id
@@ -267,19 +268,22 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                                 'pick_list_number' => $pick['pick_list_number'],
                                 'status' => $pick['pick_status'],
                                 'created_at' => $pick['created_at'],
-                                'pick_date' => $pick['pick_date'],
+                                'picked_at' => $pick['picked_at'],
+                                'verified_at' => $pick['verified_at'],
                                 'driver_name' => $pick['driver_name'] ?? 'Unassigned',
-                                'picked_by' => $pick['picked_by_name'] ?? 'N/A',
-                                'verified_by' => $pick['verified_by_name'] ?? 'N/A',
+                                'picked_by_name' => $pick['picked_by_name'] ?? 'N/A',
+                                'verified_by_name' => $pick['verified_by_name'] ?? 'N/A',
                                 'items' => $pick_items
                             ];
                         }
                     }
                     
-                    // Get related Invoices (no created_by column, status not invoice_status, no paid_at)
+                    // Get related Invoices with paid_at and paid_by (FIXED QUERY)
                     $invoices = [];
-                    $inv_sql = "SELECT i.*
+                    $inv_sql = "SELECT i.*,
+                                CONCAT(u.first_name, ' ', u.last_name) as paid_by_name
                                FROM invoices i
+                               LEFT JOIN users u ON i.paid_by = u.user_id
                                WHERE i.so_id = ?
                                ORDER BY i.created_at DESC";
                     $inv_stmt = $conn->prepare($inv_sql);
@@ -293,22 +297,25 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                                 'invoice_id' => $inv['invoice_id'],
                                 'invoice_number' => $inv['invoice_number'],
                                 'amount' => $inv['total_amount'],
-                                'status' => $inv['status'],
+                                'status' => $inv['status'], // Dapat 'paid' na ito kung paid na sa DB
                                 'created_at' => $inv['created_at'],
                                 'due_date' => $inv['due_date'] ?? null,
-                                'paid_at' => null,
-                                'created_by' => 'System'
+                                'paid_at' => $inv['paid_at'],
+                                'paid_by_name' => $inv['paid_by_name'] ?? 'System'
                             ];
                         }
                     }
                     
-                    // Get related Trip Tickets (no vehicles table, use driver plate; start_time/end_time not departure/arrival)
+                    // Get related Trip Tickets with assigned_at and assigned_by
                     $trip_tickets = [];
                     $trip_sql = "SELECT tt.*, d.driver_name, d.vehicle_plate_number,
-                               CONCAT(u.first_name, ' ', u.last_name) as created_by_name
+                                tt.assigned_at,
+                                CONCAT(u1.first_name, ' ', u1.last_name) as assigned_by_name,
+                                CONCAT(u2.first_name, ' ', u2.last_name) as created_by_name
                                FROM trip_tickets tt
                                LEFT JOIN drivers d ON tt.driver_id = d.driver_id
-                               LEFT JOIN users u ON tt.created_by = u.user_id
+                               LEFT JOIN users u1 ON tt.assigned_by = u1.user_id
+                               LEFT JOIN users u2 ON tt.created_by = u2.user_id
                                WHERE tt.so_id = ?
                                ORDER BY tt.created_at DESC";
                     $trip_stmt = $conn->prepare($trip_sql);
@@ -326,12 +333,15 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                                 'departure_time' => $trip['start_time'] ?? $trip['trip_date'],
                                 'arrival_time' => $trip['end_time'],
                                 'status' => $trip['trip_status'],
-                                'route' => $trip['remarks'] ?? 'N/A'
+                                'route' => $trip['remarks'] ?? 'N/A',
+                                'assigned_at' => $trip['assigned_at'],
+                                'assigned_by_name' => $trip['assigned_by_name'] ?? 'System',
+                                'created_by_name' => $trip['created_by_name'] ?? 'System'
                             ];
                         }
                     }
                     
-                    // Get Delivery Status (no delivery_number, delivered_at=delivery_date, signed_by, remarks)
+                    // Get Delivery Status
                     $delivery = null;
                     $del_sql = "SELECT d.*, dr.driver_name
                               FROM deliveries d
@@ -351,16 +361,15 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                                 'status' => $del_row['delivery_status'],
                                 'delivered_at' => $del_row['delivery_date'],
                                 'received_by' => $del_row['signed_by'] ?? $del_row['driver_name'] ?? 'N/A',
-                                'recipient_signature' => null,
                                 'delivery_notes' => $del_row['remarks'] ?? ''
                             ];
                         }
                     }
                     
-                    // Build complete transaction history
+                    // Build complete transaction history (correct order)
                     $history = [];
                     
-                    // Order Creation
+                    // 1. Order Created
                     $history[] = [
                         'timestamp' => $row['created_at'] ?? $row['order_date'],
                         'action' => 'Order Created',
@@ -368,70 +377,103 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         'details' => 'Sales order created'
                     ];
                     
-                    // Status change to confirmed/processing (use updated_at as approximation)
-                    if (in_array($row['order_status'], ['confirmed', 'processing', 'ready', 'delivered'])) {
+                    // 2. Order Confirmed (if confirmed)
+                    if (!empty($row['confirmed_at'])) {
                         $history[] = [
-                            'timestamp' => $row['updated_at'] ?? $row['order_date'],
+                            'timestamp' => $row['confirmed_at'],
                             'action' => 'Order Confirmed',
-                            'user' => $row['created_by_name'] ?? 'System',
+                            'user' => $row['confirmed_by_name'] ?? 'System',
                             'details' => 'Sales order confirmed for processing'
                         ];
                     }
                     
-                    // Pick List Creation
+                    // 3. Pick List Events
                     foreach ($pick_lists as $pick) {
+                        // Pick List Created
                         $history[] = [
                             'timestamp' => $pick['created_at'],
                             'action' => 'Pick List Created',
-                            'user' => $pick['picked_by'],
+                            'user' => $pick['picked_by_name'] !== 'N/A' ? $pick['picked_by_name'] : 'System',
                             'details' => 'Pick List #' . $pick['pick_list_number'] . ' created'
                         ];
                         
-                        if ($pick['pick_date'] && $pick['status'] === 'completed') {
+                        // Items Picked
+                        if (!empty($pick['picked_at'])) {
                             $history[] = [
-                                'timestamp' => $pick['pick_date'],
+                                'timestamp' => $pick['picked_at'],
                                 'action' => 'Items Picked',
-                                'user' => $pick['picked_by'],
-                                'details' => 'Items picked and verified'
+                                'user' => $pick['picked_by_name'] ?? 'N/A',
+                                'details' => 'Items picked from warehouse'
+                            ];
+                        }
+                        
+                        // Items Verified
+                        if (!empty($pick['verified_at'])) {
+                            $history[] = [
+                                'timestamp' => $pick['verified_at'],
+                                'action' => 'Items Verified',
+                                'user' => $pick['verified_by_name'] ?? 'N/A',
+                                'details' => 'Items verified by ' . ($pick['verified_by_name'] ?? 'N/A')
                             ];
                         }
                     }
                     
-                    // Invoice Creation
+                    // 4. Invoice Generated
                     foreach ($invoices as $inv) {
                         $history[] = [
                             'timestamp' => $inv['created_at'],
                             'action' => 'Invoice Generated',
-                            'user' => $inv['created_by'],
+                            'user' => 'System',
                             'details' => 'Invoice #' . $inv['invoice_number'] . ' generated for P' . number_format($inv['amount'], 2)
                         ];
+                        
+                        // Invoice Paid - lalabas lang ito kung may paid_at
+                        if (!empty($inv['paid_at'])) {
+                            $history[] = [
+                                'timestamp' => $inv['paid_at'],
+                                'action' => 'Invoice Paid',
+                                'user' => $inv['paid_by_name'] ?? 'System',
+                                'details' => 'Invoice #' . $inv['invoice_number'] . ' marked as paid'
+                            ];
+                        }
                     }
                     
-                    // Trip Assignment
+                    // 5. Trip Events
                     foreach ($trip_tickets as $trip) {
-                        $trip_time = $trip['departure_time'] ?? $trip['arrival_time'];
-                        if ($trip_time) {
+                        // Trip Assigned
+                        if (!empty($trip['assigned_at'])) {
                             $history[] = [
-                                'timestamp' => $trip_time,
+                                'timestamp' => $trip['assigned_at'],
                                 'action' => 'Trip Assigned',
-                                'user' => 'System',
+                                'user' => $trip['assigned_by_name'] ?? 'System',
                                 'details' => 'Trip #' . $trip['trip_number'] . ' assigned to driver ' . $trip['driver_name']
                             ];
                         }
                         
-                        if ($trip['arrival_time']) {
+                        // Trip Started (departure)
+                        if (!empty($trip['departure_time'])) {
+                            $history[] = [
+                                'timestamp' => $trip['departure_time'],
+                                'action' => 'Trip Started',
+                                'user' => $trip['driver_name'],
+                                'details' => 'Driver departed for delivery'
+                            ];
+                        }
+                        
+                        // Trip Completed (arrival)
+                        if (!empty($trip['arrival_time'])) {
                             $history[] = [
                                 'timestamp' => $trip['arrival_time'],
                                 'action' => 'Trip Completed',
-                                'user' => 'System',
-                                'details' => 'Trip #' . $trip['trip_number'] . ' completed'
+                                'user' => $trip['driver_name'],
+                                'details' => 'Driver returned from delivery'
                             ];
                         }
                     }
                     
-                    // Delivery
+                    // 6. Delivery Events
                     if ($delivery) {
-                        if ($delivery['delivered_at']) {
+                        if (!empty($delivery['delivered_at'])) {
                             $history[] = [
                                 'timestamp' => $delivery['delivered_at'],
                                 'action' => 'Order Delivered',
@@ -449,11 +491,9 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         }
                     }
                     
-                    // Sort history by timestamp
+                    // Sort history by timestamp (ascending)
                     usort($history, function($a, $b) {
-                        $timeA = strtotime($a['timestamp'] ?? '0');
-                        $timeB = strtotime($b['timestamp'] ?? '0');
-                        return $timeA - $timeB;
+                        return strtotime($a['timestamp'] ?? '0') - strtotime($b['timestamp'] ?? '0');
                     });
                     
                     $record = [
@@ -1592,7 +1632,7 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 text: 'You will be logged out of the system',
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonColor: '#dc3545',
+                confirmButtonColor: '#07d826',
                 cancelButtonColor: '#6c757d',
                 confirmButtonText: 'Yes, logout'
             }).then((result) => {
@@ -1758,11 +1798,15 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
             // helpers
             function pill(status) {
                 if (!status) return '';
-                const s = status.toLowerCase();
+                // I-remove ang extra spaces at gawing lowercase
+                const s = status.toString().trim().toLowerCase();
+                
                 let c = 'gray';
                 if (['completed','delivered','approved','received','paid'].includes(s)) c = 'green';
                 else if (['pending','draft','planned','open','processing','in_transit'].includes(s)) c = 'yellow';
                 else if (['cancelled','rejected'].includes(s)) c = 'red';
+                
+                // Ibalik ang original status para sa display (hindi lowercase)
                 return `<span class="s-pill ${c}">${escapeHtml(status)}</span>`;
             }
             function peso(v) { const n = parseFloat(v||0); return 'P' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
@@ -1828,8 +1872,8 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                         <div class="m-card-body">
                             <div class="m-info" style="margin-bottom:10px">
                                 <div><div class="m-info-lbl">Driver</div><div class="m-info-val">${escapeHtml(pl.driver_name)}</div></div>
-                                <div><div class="m-info-lbl">Picked By</div><div class="m-info-val">${escapeHtml(pl.picked_by)}</div></div>
-                                <div><div class="m-info-lbl">Verified By</div><div class="m-info-val">${escapeHtml(pl.verified_by)}</div></div>
+                                <div><div class="m-info-lbl">Picked By</div><div class="m-info-val">${escapeHtml(pl.picked_by_name)}</div></div>
+                                <div><div class="m-info-lbl">Verified By</div><div class="m-info-val">${escapeHtml(pl.verified_by_name)}</div></div>
                                 <div><div class="m-info-lbl">Pick Date</div><div class="m-info-val">${pl.pick_date?formatDateTime(pl.pick_date):'N/A'}</div></div>
                             </div>
                             ${(pl.items||[]).length?`<div style="overflow-x:auto"><table class="m-tbl">
@@ -1840,20 +1884,28 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 });
             }
 
-            // Invoices
+            // Invoices - Dito ididisplay ang invoice status (paid/pending)
             if (invCount > 0) {
+                // I-print sa console ang lahat ng invoice data
+                console.log("=== INVOICE DEBUG ===");
+                console.log(record.invoices);
+                
                 leftHtml += `
                     <div class="m-section-title"><i class="bi bi-receipt"></i> Invoices (${invCount})</div>
                     <div class="m-card"><div class="m-card-body" style="padding:0"><div style="overflow-x:auto">
                         <table class="m-tbl">
                             <thead><tr><th>Invoice #</th><th style="text-align:right">Amount</th><th>Status</th><th>Created</th><th>Due Date</th></tr></thead>
-                            <tbody>${record.invoices.map(inv=>`<tr>
-                                <td style="font-weight:600">${escapeHtml(inv.invoice_number)}</td>
-                                <td style="text-align:right">${peso(inv.amount)}</td>
-                                <td>${pill(inv.status)}</td>
-                                <td>${formatDateTime(inv.created_at)}</td>
-                                <td>${inv.due_date?formatDateTime(inv.due_date):'N/A'}</td>
-                            </tr>`).join('')}</tbody>
+                            <tbody>${record.invoices.map(inv=>{
+                                // I-print ang bawat invoice status
+                                console.log("Invoice status from PHP:", inv.status);
+                                return `<tr>
+                                    <td style="font-weight:600">${escapeHtml(inv.invoice_number)}</td>
+                                    <td style="text-align:right">${peso(inv.amount)}</td>
+                                    <td>${pill(inv.status)}</td>
+                                    <td>${formatDateTime(inv.created_at)}</td>
+                                    <td>${inv.due_date?formatDateTime(inv.due_date):'N/A'}</td>
+                                </tr>`;
+                            }).join('')}</tbody>
                         </table>
                     </div></div></div>`;
             }
@@ -2001,82 +2053,39 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
         });
 
         // ================= FILTER TOGGLE FUNCTIONS =================
-// Toggle filter section visibility with localStorage
-function toggleFilter(filterType) {
-    const contentId = filterType + 'FilterContent';
-    const iconId = filterType + 'FilterIcon';
-    
-    const content = document.getElementById(contentId);
-    const icon = document.getElementById(iconId);
-    
-    if (content && icon) {
-        if (content.classList.contains('collapsed')) {
-            // Show filter
-            content.classList.remove('collapsed');
-            icon.style.transform = 'rotate(0deg)';
-            localStorage.setItem(filterType + 'FilterHidden', 'false');
-        } else {
-            // Hide filter
-            content.classList.add('collapsed');
-            icon.style.transform = 'rotate(-90deg)';
-            localStorage.setItem(filterType + 'FilterHidden', 'true');
-        }
-    }
-}
-
-// ================= FILTER TOGGLE FUNCTIONS =================
-// Toggle filter section visibility with localStorage
-function toggleFilter(filterType) {
-    const contentId = filterType + 'FilterContent';
-    const iconId = filterType + 'FilterIcon';
-    
-    const content = document.getElementById(contentId);
-    const icon = document.getElementById(iconId);
-    
-    if (content && icon) {
-        if (content.classList.contains('collapsed')) {
-            // Show filter
-            content.classList.remove('collapsed');
-            icon.style.transform = 'rotate(0deg)';
-            localStorage.setItem(filterType + 'FilterHidden', 'false');
-        } else {
-            // Hide filter
-            content.classList.add('collapsed');
-            icon.style.transform = 'rotate(-90deg)';
-            localStorage.setItem(filterType + 'FilterHidden', 'true');
-        }
-    }
-}
-
-// Initialize filter states on page load - DEFAULT CLOSED
-function initFilterStates() {
-    const filterTypes = ['sales', 'branch', 'items', 'driver', 'trip'];
-    
-    filterTypes.forEach(type => {
-        const contentId = type + 'FilterContent';
-        const iconId = type + 'FilterIcon';
-        
-        const content = document.getElementById(contentId);
-        const icon = document.getElementById(iconId);
-        
-        if (content && icon) {
-            // DEFAULT: CLOSED sa simula
-            content.classList.add('collapsed');
-            icon.style.transform = 'rotate(-90deg)';
+        function toggleFilter(filterType) {
+            const content = document.getElementById(filterType + 'FilterContent');
+            const icon = document.getElementById(filterType + 'FilterIcon');
             
-            // Save sa localStorage na closed para consistent
-            localStorage.setItem(type + 'FilterHidden', 'true');
+            if (content && icon) {
+                if (content.style.display === 'none') {
+                    content.style.display = 'block';
+                    icon.style.transform = 'rotate(0deg)';
+                } else {
+                    content.style.display = 'none';
+                    icon.style.transform = 'rotate(-90deg)';
+                }
+            }
         }
-    });
-}
 
-// Call this sa loob ng DOMContentLoaded
-document.addEventListener('DOMContentLoaded', function() {
-    // ... existing code ...
-    
-    // Initialize filter states - lahat closed
-    initFilterStates();
-});
+        // Initialize filter states on page load - DEFAULT CLOSED
+        function initFilterStates() {
+            const filterTypes = ['branch'];
+            
+            filterTypes.forEach(type => {
+                const content = document.getElementById(type + 'FilterContent');
+                const icon = document.getElementById(type + 'FilterIcon');
+                
+                if (content && icon) {
+                    content.style.display = 'none';
+                    icon.style.transform = 'rotate(-90deg)';
+                }
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            initFilterStates();
+        });
     </script>
 </body>
 </html>
