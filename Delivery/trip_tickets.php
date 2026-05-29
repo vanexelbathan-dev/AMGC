@@ -393,6 +393,7 @@ function getTripStatusText($status) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         /* Mobile Profile Modal Styles */
@@ -915,6 +916,12 @@ function getTripStatusText($status) {
                         <a class="nav-link" href="driver_collections.php">
                             <i class="bi bi-cash-stack"></i>
                             <span class="nav-text">Collections</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="vehicle.php">
+                            <i class="bi bi-car-front"></i>
+                            <span class="nav-text">Vehicle</span>
                         </a>
                     </li>
                     <li class="nav-item">

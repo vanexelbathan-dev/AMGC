@@ -17569,3 +17569,1311 @@ body.modal-open {
         padding-bottom: 10px !important;
     }
 }
+
+/* ============================================ */
+/* ===== REPAIR WORKFLOW MODAL - PULSING TIMELINE CIRCLES ===== */
+/* ============================================ */
+
+/* Timeline container */
+#repairWorkflowModal .repair-timeline {
+    position: relative !important;
+    padding-left: 35px !important;
+    margin: 0 !important;
+}
+
+/* Vertical line */
+#repairWorkflowModal .repair-timeline:before {
+    content: '' !important;
+    position: absolute !important;
+    left: 15px !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    width: 2px !important;
+    background: linear-gradient(180deg, #44D34E 0%, #047857 100%) !important;
+    z-index: 1 !important;
+}
+
+/* Timeline item */
+#repairWorkflowModal .timeline-item {
+    position: relative !important;
+    margin-bottom: 24px !important;
+    background: white !important;
+    border: 1px solid #e9ecef !important;
+    border-radius: 12px !important;
+    overflow: hidden !important;
+}
+
+/* Timeline DOT / CIRCLE - WITH PULSE ANIMATION */
+#repairWorkflowModal .timeline-item:before {
+    content: '' !important;
+    position: absolute !important;
+    left: -30px !important;
+    top: 15px !important;
+    width: 18px !important;
+    height: 18px !important;
+    border-radius: 50% !important;
+    background: #07b83f !important;
+    border: 3px solid white !important;
+    box-shadow: 0 0 0 3px #07b83f !important;
+    z-index: 10 !important;
+    display: block !important;
+    animation: heartbeat-green 0.85s infinite !important;
+    filter: drop-shadow(0 0 8px rgba(7, 184, 63, 0.8)) !important;
+}
+
+/* Pending state circles - different pulse */
+#repairWorkflowModal .timeline-item.timeline-pending:before {
+    background: #f59e0b !important;
+    box-shadow: 0 0 0 2px #f59e0b !important;
+    animation: pulse-orange 2s ease-in-out infinite !important;
+}
+
+/* Completed/Done state - slower pulse */
+#repairWorkflowModal .timeline-item.timeline-done:before {
+    background: #07b83f !important;
+    box-shadow: 0 0 0 2px #07b83f !important;
+    animation: pulse-green-slow 3s ease-in-out infinite !important;
+}
+
+/* Active/Current state - fastest pulse */
+#repairWorkflowModal .timeline-item.timeline-active:before {
+    background: #0d6efd !important;
+    box-shadow: 0 0 0 2px #0d6efd !important;
+    animation: pulse-blue 1.5s ease-in-out infinite !important;
+}
+
+/* PULSE ANIMATIONS */
+@keyframes heartbeat-green {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(7, 184, 63, 0.9);
+    }
+
+    15% {
+        transform: scale(1.8);
+        box-shadow: 0 0 0 10px rgba(7, 184, 63, 0.35);
+    }
+
+    30% {
+        transform: scale(1.15);
+    }
+
+    45% {
+        transform: scale(2);
+        box-shadow: 0 0 0 18px rgba(7, 184, 63, 0.25);
+    }
+
+    60% {
+        transform: scale(1.2);
+    }
+
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(7, 184, 63, 0);
+    }
+}
+
+@keyframes pulse-green-slow {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(7, 184, 63, 0.6);
+    }
+    50% {
+        transform: scale(1.1);
+        box-shadow: 0 0 0 4px rgba(7, 184, 63, 0.15);
+    }
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(7, 184, 63, 0);
+    }
+}
+
+@keyframes pulse-orange {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7);
+    }
+    50% {
+        transform: scale(1.25);
+        box-shadow: 0 0 0 8px rgba(245, 158, 11, 0.2);
+        background: #fbbf24;
+    }
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+    }
+}
+
+@keyframes pulse-blue {
+    0% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(13, 110, 253, 0.7);
+    }
+    30% {
+        transform: scale(1.3);
+        box-shadow: 0 0 0 10px rgba(13, 110, 253, 0.2);
+    }
+    60% {
+        transform: scale(1.15);
+        box-shadow: 0 0 0 5px rgba(13, 110, 253, 0.1);
+    }
+    100% {
+        transform: scale(1);
+        box-shadow: 0 0 0 0 rgba(13, 110, 253, 0);
+    }
+}
+
+/* Additional pulse effect - outer ring */
+#repairWorkflowModal .timeline-item:after {
+    content: '' !important;
+    position: absolute !important;
+    left: -30px !important;
+    top: 15px !important;
+    width: 18px !important;
+    height: 18px !important;
+    border-radius: 50% !important;
+    border: 2px solid #07b83f !important;
+    z-index: 9 !important;
+    pointer-events: none !important;
+    animation: pulse-ring 0.85s linear infinite !important;
+}
+
+@keyframes pulse-ring {
+    0% {
+        transform: scale(1);
+        opacity: 0.8;
+    }
+    50% {
+        transform: scale(1.8);
+        opacity: 0;
+    }
+    100% {
+        transform: scale(1.8);
+        opacity: 0;
+    }
+}
+
+/* Hover effect - stop animation on hover */
+#repairWorkflowModal .timeline-item:hover:before {
+    animation-play-state: paused !important;
+}
+
+#repairWorkflowModal .timeline-item:hover:after {
+    animation-play-state: paused !important;
+}
+
+/* Different colors based on status */
+#repairWorkflowModal .timeline-item.status-completed:before {
+    background: #10b981 !important;
+    box-shadow: 0 0 0 2px #10b981 !important;
+    animation: pulse-green 2s ease-in-out infinite !important;
+}
+
+#repairWorkflowModal .timeline-item.status-in-progress:before {
+    background: #3b82f6 !important;
+    box-shadow: 0 0 0 2px #3b82f6 !important;
+    animation: pulse-blue 1.5s ease-in-out infinite !important;
+}
+
+#repairWorkflowModal .timeline-item.status-pending:before {
+    background: #f59e0b !important;
+    box-shadow: 0 0 0 2px #f59e0b !important;
+    animation: pulse-orange 2s ease-in-out infinite !important;
+}
+
+#repairWorkflowModal .timeline-item.status-approved:before {
+    background: #059669 !important;
+    box-shadow: 0 0 0 2px #059669 !important;
+    animation: pulse-green-slow 3s ease-in-out infinite !important;
+}
+
+/* Timeline status header */
+#repairWorkflowModal .timeline-status {
+    background: #f8fafc !important;
+    padding: 12px 16px !important;
+    font-weight: 700 !important;
+    font-size: 0.9rem !important;
+    color: #047857 !important;
+    border-bottom: 1px solid #e9ecef !important;
+    margin: 0 !important;
+}
+
+/* Timeline subrecord */
+#repairWorkflowModal .timeline-subrecord {
+    padding: 16px !important;
+    border-bottom: 1px solid #f0f2f5 !important;
+}
+
+#repairWorkflowModal .timeline-subrecord:last-child {
+    border-bottom: none !important;
+}
+
+/* Timeline meta info */
+#repairWorkflowModal .timeline-meta {
+    font-size: 0.75rem !important;
+    color: #6c757d !important;
+    margin-bottom: 10px !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 12px !important;
+}
+
+/* Timeline details */
+#repairWorkflowModal .timeline-details {
+    font-size: 0.85rem !important;
+    color: #334155 !important;
+    line-height: 1.5 !important;
+    white-space: pre-wrap !important;
+    word-break: break-word !important;
+}
+
+/* ===== TABLE STYLES ===== */
+#repairWorkflowModal .timeline-details table,
+#repairWorkflowModal .parts-replaced-mini-table,
+#repairWorkflowModal .approval-parts-table {
+    width: 100% !important;
+    margin: 12px 0 !important;
+    border-collapse: collapse !important;
+    font-size: 0.8rem !important;
+    background: white !important;
+    border-radius: 8px !important;
+    overflow: hidden !important;
+}
+
+#repairWorkflowModal .timeline-details table thead th,
+#repairWorkflowModal .parts-replaced-mini-table thead th,
+#repairWorkflowModal .approval-parts-table thead th {
+    background: #047857 !important;
+    color: white !important;
+    padding: 10px 12px !important;
+    font-weight: 600 !important;
+    font-size: 0.75rem !important;
+    text-align: left !important;
+    white-space: nowrap !important;
+    border: 1px solid #047857 !important;
+}
+
+#repairWorkflowModal .timeline-details table tbody td,
+#repairWorkflowModal .parts-replaced-mini-table tbody td,
+#repairWorkflowModal .approval-parts-table tbody td {
+    padding: 8px 12px !important;
+    border: 1px solid #e2e8f0 !important;
+    vertical-align: top !important;
+    background: white !important;
+    font-size: 0.75rem !important;
+    color: #334155 !important;
+    word-break: break-word !important;
+}
+
+#repairWorkflowModal .timeline-details table tbody tr:hover td,
+#repairWorkflowModal .parts-replaced-mini-table tbody tr:hover td,
+#repairWorkflowModal .approval-parts-table tbody tr:hover td {
+    background: #f8fafc !important;
+}
+
+/* Table wrapper for horizontal scroll */
+#repairWorkflowModal .table-responsive-wrapper {
+    overflow-x: auto !important;
+    margin: 12px 0 !important;
+    border-radius: 8px !important;
+}
+
+/* Responsive tables */
+@media (max-width: 768px) {
+    #repairWorkflowModal .timeline-details table,
+    #repairWorkflowModal .parts-replaced-mini-table,
+    #repairWorkflowModal .approval-parts-table {
+        display: block !important;
+        overflow-x: auto !important;
+        white-space: nowrap !important;
+    }
+    
+    #repairWorkflowModal .timeline-details table thead th,
+    #repairWorkflowModal .parts-replaced-mini-table thead th,
+    #repairWorkflowModal .approval-parts-table thead th {
+        white-space: nowrap !important;
+    }
+    
+    /* Adjust timeline for mobile */
+    #repairWorkflowModal .repair-timeline {
+        padding-left: 28px !important;
+    }
+    
+    #repairWorkflowModal .repair-timeline:before {
+        left: 12px !important;
+    }
+    
+    #repairWorkflowModal .timeline-item:before {
+        left: -23px !important;
+        width: 12px !important;
+        height: 12px !important;
+        top: 16px !important;
+    }
+    
+    /* Mobile pulse animation adjustments */
+    @keyframes pulse-green {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.15); }
+        100% { transform: scale(1); }
+    }
+    
+    @keyframes pulse-orange {
+        0% { transform: scale(1); }
+        50% { transform: scale(1.2); }
+        100% { transform: scale(1); }
+    }
+}
+
+/* Empty state */
+#repairWorkflowModal .timeline-empty {
+    text-align: center !important;
+    padding: 40px 20px !important;
+    color: #64748b !important;
+    background: white !important;
+    border: 1px dashed #cbd5e1 !important;
+    border-radius: 12px !important;
+}
+
+#repairWorkflowModal .timeline-empty i {
+    font-size: 3rem !important;
+    margin-bottom: 12px !important;
+    display: block !important;
+    color: #94a3b8 !important;
+}
+
+/* Modal footer */
+#repairWorkflowModal .modal-footer {
+    padding: 12px 20px !important;
+    border-top: 1px solid #e9ecef !important;
+    background: white !important;
+    border-radius: 0 0 16px 16px !important;
+}
+
+#repairWorkflowModal .modal-footer .btn-secondary {
+    background: #6c757d !important;
+    border: none !important;
+    padding: 8px 24px !important;
+    border-radius: 8px !important;
+    font-weight: 500 !important;
+}
+
+#repairWorkflowModal .modal-footer .btn-secondary:hover {
+    background: #5a6268 !important;
+    transform: translateY(-1px) !important;
+}
+
+/* Animation for modal */
+#repairWorkflowModal.fade .modal-dialog {
+    transform: scale(0.95) !important;
+    transition: transform 0.2s ease-out !important;
+}
+
+#repairWorkflowModal.fade.show .modal-dialog {
+    transform: scale(1) !important;
+}
+
+/* Ensure circles are visible and animated */
+#repairWorkflowModal .timeline-item {
+    overflow: visible !important;
+}
+
+#repairWorkflowModal .modal-body {
+    overflow-y: auto !important;
+    overflow-x: visible !important;
+}
+
+#repairWorkflowModal .timeline-item:before {
+    filter: drop-shadow(0 0 8px rgba(7, 184, 63, 0.8)) !important;
+}
+
+/* ============================================ */
+/* ===== CENTRAL WAREHOUSE ITEM PROFILE MODAL ===== */
+/* ============================================ */
+
+/* Base modal styles */
+#itemProfileModal .modal-dialog {
+    margin: 1rem auto !important;
+    max-width: 95% !important;
+}
+
+@media (max-width: 768px) {
+    #itemProfileModal .modal-dialog {
+        margin: 0.75rem auto !important;
+        max-width: calc(100% - 1.5rem) !important;
+        width: calc(100% - 1.5rem) !important;
+    }
+}
+
+@media (max-width: 576px) {
+    #itemProfileModal .modal-dialog {
+        margin: 0.5rem auto !important;
+        max-width: calc(100% - 1rem) !important;
+        width: calc(100% - 1rem) !important;
+    }
+}
+
+#itemProfileModal .modal-content {
+    border: none !important;
+    border-radius: 20px !important;
+    overflow: hidden !important;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2) !important;
+    max-height: 90vh !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+/* Modal Header */
+#itemProfileModal .modal-header {
+    background: linear-gradient(135deg, #047857 0%, #44D34E 100%) !important;
+    border-bottom: none !important;
+    padding: 1rem 1.5rem !important;
+    flex-shrink: 0 !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 10 !important;
+}
+
+@media (max-width: 768px) {
+    #itemProfileModal .modal-header {
+        padding: 0.875rem 1.25rem !important;
+    }
+}
+
+@media (max-width: 576px) {
+    #itemProfileModal .modal-header {
+        padding: 0.75rem 1rem !important;
+    }
+}
+
+#itemProfileModal .modal-header .modal-title {
+    font-weight: 600 !important;
+    font-size: 1.1rem !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 10px !important;
+    color: white !important;
+}
+
+#itemProfileModal .modal-header .modal-title i {
+    color: white !important;
+    font-size: 1.2rem !important;
+}
+
+@media (max-width: 576px) {
+    #itemProfileModal .modal-header .modal-title {
+        font-size: 0.95rem !important;
+    }
+}
+
+/* Close button */
+#itemProfileModal .modal-header .btn-close {
+    background: rgba(255, 255, 255, 0.25) !important;
+    border-radius: 50% !important;
+    width: 34px !important;
+    height: 34px !important;
+    padding: 0 !important;
+    margin: -0.5rem -0.5rem -0.5rem auto !important;
+    opacity: 1 !important;
+    transition: all 0.2s ease !important;
+}
+
+#itemProfileModal .modal-header .btn-close:hover {
+    background: rgba(255, 255, 255, 0.4) !important;
+    transform: rotate(90deg) !important;
+}
+
+/* Modal Body - SCROLLABLE */
+#itemProfileModal .modal-body {
+    padding: 1.5rem !important;
+    overflow-y: auto !important;
+    flex: 1 !important;
+    background: #f8fafc !important;
+    max-height: calc(90vh - 130px) !important;
+}
+
+@media (max-width: 768px) {
+    #itemProfileModal .modal-body {
+        padding: 1rem !important;
+        max-height: calc(90vh - 120px) !important;
+    }
+}
+
+@media (max-width: 576px) {
+    #itemProfileModal .modal-body {
+        padding: 0.875rem !important;
+        max-height: calc(90vh - 110px) !important;
+    }
+}
+
+/* Scrollbar styling */
+#itemProfileModal .modal-body::-webkit-scrollbar {
+    width: 5px;
+}
+
+#itemProfileModal .modal-body::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+#itemProfileModal .modal-body::-webkit-scrollbar-thumb {
+    background: #44D34E;
+    border-radius: 3px;
+}
+
+/* Modal Footer */
+#itemProfileModal .modal-footer {
+    border-top: 1px solid #e9ecef !important;
+    padding: 0.875rem 1.5rem !important;
+    background: #ffffff !important;
+    flex-shrink: 0 !important;
+    gap: 0.75rem !important;
+}
+
+@media (max-width: 576px) {
+    #itemProfileModal .modal-footer {
+        padding: 0.75rem 1rem !important;
+        gap: 0.5rem !important;
+    }
+}
+
+#itemProfileModal .modal-footer .btn {
+    padding: 0.5rem 1.25rem !important;
+    font-size: 0.85rem !important;
+    font-weight: 500 !important;
+    border-radius: 8px !important;
+    transition: all 0.2s ease !important;
+}
+
+@media (max-width: 576px) {
+    #itemProfileModal .modal-footer .btn {
+        flex: 1 !important;
+        padding: 0.45rem 0.5rem !important;
+        font-size: 0.75rem !important;
+        justify-content: center !important;
+    }
+}
+
+#itemProfileModal .modal-footer .btn-secondary {
+    background: #6c757d !important;
+    border: none !important;
+    color: white !important;
+}
+
+#itemProfileModal .modal-footer .btn-secondary:hover {
+    background: #5a6268 !important;
+    transform: translateY(-1px) !important;
+}
+
+/* ===== ITEM PROFILE CONTENT STYLES ===== */
+
+/* Hero Section */
+#itemProfileModal .item-profile-hero {
+    display: flex !important;
+    align-items: center !important;
+    gap: 1.5rem !important;
+    padding: 1.25rem !important;
+    background: white !important;
+    border-radius: 16px !important;
+    margin-bottom: 1.5rem !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04) !important;
+    border: 1px solid #e9ecef !important;
+}
+
+@media (max-width: 576px) {
+    #itemProfileModal .item-profile-hero {
+        flex-direction: column !important;
+        text-align: center !important;
+        gap: 1rem !important;
+        padding: 1rem !important;
+    }
+}
+
+#itemProfileModal .item-profile-icon {
+    width: 80px !important;
+    height: 80px !important;
+    background: linear-gradient(135deg, #e8f5e9 0%, #c8e6c9 100%) !important;
+    border-radius: 20px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+#itemProfileModal .item-profile-icon i {
+    font-size: 2.5rem !important;
+    color: #047857 !important;
+}
+
+@media (max-width: 576px) {
+    #itemProfileModal .item-profile-icon {
+        width: 70px !important;
+        height: 70px !important;
+    }
+    #itemProfileModal .item-profile-icon i {
+        font-size: 2rem !important;
+    }
+}
+
+#itemProfileModal .item-profile-title {
+    flex: 1 !important;
+}
+
+#itemProfileModal .item-profile-title h3 {
+    font-size: 1.35rem !important;
+    font-weight: 700 !important;
+    color: #1e293b !important;
+    margin-bottom: 0.5rem !important;
+}
+
+#itemProfileModal .item-profile-title .item-code-badge {
+    background: #e8f5e9 !important;
+    color: #047857 !important;
+    padding: 0.25rem 0.75rem !important;
+    border-radius: 20px !important;
+    font-size: 0.75rem !important;
+    font-weight: 600 !important;
+    display: inline-block !important;
+}
+
+/* Info Grid */
+#itemProfileModal .item-info-grid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)) !important;
+    gap: 1rem !important;
+    margin-bottom: 1.5rem !important;
+}
+
+@media (max-width: 768px) {
+    #itemProfileModal .item-info-grid {
+        grid-template-columns: 1fr !important;
+        gap: 0.75rem !important;
+    }
+}
+
+#itemProfileModal .item-info-card {
+    background: white !important;
+    border-radius: 14px !important;
+    padding: 1rem 1.25rem !important;
+    border: 1px solid #e9ecef !important;
+    transition: all 0.2s ease !important;
+}
+
+#itemProfileModal .item-info-card:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05) !important;
+}
+
+#itemProfileModal .item-info-label {
+    font-size: 0.65rem !important;
+    font-weight: 600 !important;
+    color: #6c757d !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+    margin-bottom: 0.5rem !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.35rem !important;
+}
+
+#itemProfileModal .item-info-label i {
+    color: #047857 !important;
+    font-size: 0.7rem !important;
+}
+
+#itemProfileModal .item-info-value {
+    font-size: 0.95rem !important;
+    font-weight: 600 !important;
+    color: #1e293b !important;
+    word-break: break-word !important;
+}
+
+#itemProfileModal .item-info-value.text-success {
+    color: #047857 !important;
+}
+
+#itemProfileModal .item-info-value.text-warning {
+    color: #d97706 !important;
+}
+
+#itemProfileModal .item-info-value.text-danger {
+    color: #dc2626 !important;
+}
+
+/* Section Titles */
+#itemProfileModal .profile-section-title {
+    font-size: 0.9rem !important;
+    font-weight: 700 !important;
+    color: #047857 !important;
+    margin: 1.25rem 0 0.75rem 0 !important;
+    padding-bottom: 0.5rem !important;
+    border-bottom: 2px solid #e9ecef !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
+}
+
+#itemProfileModal .profile-section-title:first-of-type {
+    margin-top: 0 !important;
+}
+
+/* Stock Levels */
+#itemProfileModal .stock-level-container {
+    background: white !important;
+    border-radius: 14px !important;
+    padding: 1rem !important;
+    margin-bottom: 1rem !important;
+    border: 1px solid #e9ecef !important;
+}
+
+#itemProfileModal .stock-progress-bar {
+    height: 8px !important;
+    background: #e2e8f0 !important;
+    border-radius: 4px !important;
+    overflow: hidden !important;
+    margin: 0.75rem 0 !important;
+}
+
+#itemProfileModal .stock-progress-fill {
+    height: 100% !important;
+    border-radius: 4px !important;
+    transition: width 0.3s ease !important;
+}
+
+#itemProfileModal .stock-progress-fill.good {
+    background: #10b981 !important;
+}
+
+#itemProfileModal .stock-progress-fill.warning {
+    background: #f59e0b !important;
+}
+
+#itemProfileModal .stock-progress-fill.critical {
+    background: #ef4444 !important;
+}
+
+#itemProfileModal .stock-stats {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    flex-wrap: wrap !important;
+    gap: 1rem !important;
+}
+
+#itemProfileModal .stock-stat-item {
+    text-align: center !important;
+    flex: 1 !important;
+}
+
+#itemProfileModal .stock-stat-value {
+    font-size: 1.25rem !important;
+    font-weight: 700 !important;
+    color: #1e293b !important;
+}
+
+#itemProfileModal .stock-stat-label {
+    font-size: 0.7rem !important;
+    color: #6c757d !important;
+}
+
+/* Warehouse Location Table */
+#itemProfileModal .warehouse-table {
+    width: 100% !important;
+    margin: 1rem 0 !important;
+    border-collapse: collapse !important;
+    background: white !important;
+    border-radius: 12px !important;
+    overflow: hidden !important;
+}
+
+#itemProfileModal .warehouse-table thead th {
+    background: #f8fafc !important;
+    padding: 0.875rem 1rem !important;
+    font-size: 0.75rem !important;
+    font-weight: 600 !important;
+    text-transform: uppercase !important;
+    color: #475569 !important;
+    border-bottom: 2px solid #e9ecef !important;
+}
+
+#itemProfileModal .warehouse-table tbody td {
+    padding: 0.75rem 1rem !important;
+    font-size: 0.85rem !important;
+    border-bottom: 1px solid #e9ecef !important;
+    color: #334155 !important;
+}
+
+#itemProfileModal .warehouse-table tbody tr:last-child td {
+    border-bottom: none !important;
+}
+
+#itemProfileModal .warehouse-table tbody tr:hover td {
+    background: #f8fafc !important;
+}
+
+/* Price Table */
+#itemProfileModal .price-table {
+    width: 100% !important;
+    margin: 1rem 0 !important;
+    border-collapse: collapse !important;
+    background: white !important;
+    border-radius: 12px !important;
+    overflow: hidden !important;
+}
+
+#itemProfileModal .price-table thead th {
+    background: #047857 !important;
+    color: white !important;
+    padding: 0.75rem 1rem !important;
+    font-size: 0.75rem !important;
+    font-weight: 600 !important;
+}
+
+#itemProfileModal .price-table tbody td {
+    padding: 0.75rem 1rem !important;
+    font-size: 0.85rem !important;
+    border-bottom: 1px solid #e9ecef !important;
+}
+
+#itemProfileModal .price-table tbody tr:last-child td {
+    border-bottom: none !important;
+}
+
+/* Loading State */
+#itemProfileModal .loading-spinner {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 3rem !important;
+    color: #64748b !important;
+}
+
+#itemProfileModal .loading-spinner i {
+    font-size: 2.5rem !important;
+    margin-bottom: 1rem !important;
+    color: #047857 !important;
+    animation: spin 1s linear infinite !important;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Error State */
+#itemProfileModal .error-message {
+    text-align: center !important;
+    padding: 3rem !important;
+    color: #dc2626 !important;
+    background: #fef2f2 !important;
+    border-radius: 12px !important;
+}
+
+#itemProfileModal .error-message i {
+    font-size: 2.5rem !important;
+    margin-bottom: 1rem !important;
+    display: block !important;
+}
+
+/* Empty State */
+#itemProfileModal .empty-message {
+    text-align: center !important;
+    padding: 3rem !important;
+    color: #94a3b8 !important;
+    background: white !important;
+    border-radius: 12px !important;
+    border: 1px dashed #cbd5e1 !important;
+}
+
+#itemProfileModal .empty-message i {
+    font-size: 2.5rem !important;
+    margin-bottom: 1rem !important;
+    display: block !important;
+}
+
+/* Stock Badge */
+#itemProfileModal .stock-badge {
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0.25rem !important;
+    padding: 0.25rem 0.65rem !important;
+    border-radius: 20px !important;
+    font-size: 0.7rem !important;
+    font-weight: 600 !important;
+}
+
+#itemProfileModal .stock-badge.in-stock {
+    background: #d1fae5 !important;
+    color: #059669 !important;
+}
+
+#itemProfileModal .stock-badge.low-stock {
+    background: #fed7aa !important;
+    color: #c2410c !important;
+}
+
+#itemProfileModal .stock-badge.out-of-stock {
+    background: #fee2e2 !important;
+    color: #dc2626 !important;
+}
+
+/* Animation for modal */
+#itemProfileModal.fade .modal-dialog {
+    transform: scale(0.95) !important;
+    transition: transform 0.2s ease-out !important;
+}
+
+#itemProfileModal.fade.show .modal-dialog {
+    transform: scale(1) !important;
+}
+
+/* Landscape mode */
+@media (max-height: 500px) and (orientation: landscape) {
+    #itemProfileModal .modal-content {
+        max-height: 95vh !important;
+    }
+    
+    #itemProfileModal .modal-body {
+        max-height: calc(95vh - 110px) !important;
+    }
+    
+    #itemProfileModal .item-profile-hero {
+        padding: 0.75rem !important;
+        margin-bottom: 1rem !important;
+    }
+    
+    #itemProfileModal .item-profile-icon {
+        width: 50px !important;
+        height: 50px !important;
+    }
+    
+    #itemProfileModal .item-profile-icon i {
+        font-size: 1.5rem !important;
+    }
+}
+
+/* ============================================ */
+/* ===== ITEM PROFILE MODAL - TABS STYLES ===== */
+/* ============================================ */
+
+/* Tabs Container */
+#itemProfileModal .nav-tabs {
+    border-bottom: 2px solid #e9ecef !important;
+    gap: 0.25rem !important;
+    margin-top: 1rem !important;
+    margin-bottom: 0 !important;
+    background: transparent !important;
+}
+
+/* Tab Navigation Items */
+#itemProfileModal .nav-tabs .nav-item {
+    margin-bottom: -2px !important;
+}
+
+/* Tab Links */
+#itemProfileModal .nav-tabs .nav-link {
+    border: none !important;
+    background: transparent !important;
+    color: #6c757d !important;
+    font-weight: 600 !important;
+    font-size: 0.85rem !important;
+    padding: 0.65rem 1.25rem !important;
+    border-radius: 10px 10px 0 0 !important;
+    transition: all 0.2s ease-in-out !important;
+    position: relative !important;
+    cursor: pointer !important;
+}
+
+/* Tab Hover Effect */
+#itemProfileModal .nav-tabs .nav-link:hover {
+    color: #047857 !important;
+    background: rgba(4, 120, 87, 0.05) !important;
+}
+
+/* Active Tab */
+#itemProfileModal .nav-tabs .nav-link.active {
+    background: transparent !important;
+    color: #047857 !important;
+    border-bottom: 3px solid #047857 !important;
+    font-weight: 700 !important;
+}
+
+/* Active Tab Hover */
+#itemProfileModal .nav-tabs .nav-link.active:hover {
+    color: #047857 !important;
+    background: transparent !important;
+}
+
+/* Tab Icons */
+#itemProfileModal .nav-tabs .nav-link i {
+    margin-right: 0.5rem !important;
+    font-size: 0.85rem !important;
+}
+
+/* Tab Content Panels */
+#itemProfileModal .tab-content {
+    margin-top: 0 !important;
+    padding-top: 1rem !important;
+}
+
+/* Tab Pane Animation */
+#itemProfileModal .tab-pane {
+    animation: profileTabFadeIn 0.25s ease-in-out !important;
+}
+
+@keyframes profileTabFadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(5px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ===== HISTORY TABLES INSIDE TABS - ADJUST FONT & PADDING ===== */
+
+/* Table Container */
+#itemProfileModal .table-responsive {
+    overflow-x: auto !important;
+    overflow-y: visible !important;
+    border-radius: 12px !important;
+    width: 100% !important;
+}
+
+/* History Tables - Auto layout para kita lahat */
+#itemProfileModal .history-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    table-layout: auto !important;
+    font-size: 0.7rem !important;
+}
+
+#itemProfileModal .history-table thead th {
+    background: #047857 !important;
+    color: #f8fafc !important;
+    font-weight: 600 !important;
+    font-size: 0.68rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+    padding: 0.6rem 0.4rem !important;
+    border-bottom: 2px solid #e9ecef !important;
+    white-space: nowrap !important;
+    text-align: center !important;
+}
+
+#itemProfileModal .history-table tbody td {
+    padding: 0.5rem 0.4rem !important;
+    border-bottom: 1px solid #e9ecef !important;
+    vertical-align: middle !important;
+    color: #334155 !important;
+    text-align: left !important;
+    font-size: 0.85rem !important;
+    white-space: nowrap !important;
+}
+
+/* Allow last column (remarks/description) to wrap */
+#itemProfileModal .history-table td:last-child {
+    white-space: normal !important;
+    word-break: break-word !important;
+    min-width: 150px !important;
+    max-width: 250px !important;
+}
+
+#itemProfileModal .history-table tbody tr:hover td {
+    background: #f8fafc !important;
+}
+
+/* Badge styles inside tables - smaller font */
+#itemProfileModal .history-table .badge {
+    padding: 0.2rem 0.5rem !important;
+    border-radius: 20px !important;
+    font-size: 0.6rem !important;
+    font-weight: 500 !important;
+    white-space: nowrap !important;
+}
+
+/* Return button inside table - smaller */
+#itemProfileModal .history-table .btn-sm {
+    padding: 0.2rem 0.5rem !important;
+    font-size: 0.6rem !important;
+    border-radius: 6px !important;
+    white-space: nowrap !important;
+}
+
+/* Make modal wider to accommodate content */
+@media (min-width: 992px) {
+    #itemProfileModal .modal-dialog {
+        max-width: 95% !important;
+        width: 95% !important;
+    }
+}
+
+@media (min-width: 1400px) {
+    #itemProfileModal .modal-dialog {
+        max-width: 90% !important;
+        width: 90% !important;
+    }
+}
+
+/* Mobile Responsive - Card style on mobile */
+@media (max-width: 768px) {
+    #itemProfileModal .table-responsive {
+        overflow-x: visible !important;
+    }
+    
+    /* Make table block on mobile */
+    #itemProfileModal .history-table,
+    #itemProfileModal .history-table thead,
+    #itemProfileModal .history-table tbody,
+    #itemProfileModal .history-table tr,
+    #itemProfileModal .history-table th,
+    #itemProfileModal .history-table td {
+        display: block !important;
+    }
+    
+    #itemProfileModal .history-table thead {
+        display: none !important;
+    }
+    
+    #itemProfileModal .history-table tr {
+        margin-bottom: 0.75rem !important;
+        border: 1px solid #e9ecef !important;
+        border-radius: 10px !important;
+        background: white !important;
+        padding: 0.5rem 0 !important;
+    }
+    
+    #itemProfileModal .history-table td {
+        display: flex !important;
+        justify-content: space-between !important;
+        align-items: flex-start !important;
+        padding: 0.4rem 0.6rem !important;
+        border-bottom: 1px solid #e9ecef !important;
+        text-align: right !important;
+        gap: 0.5rem !important;
+        white-space: normal !important;
+        font-size: 0.7rem !important;
+    }
+    
+    #itemProfileModal .history-table td:last-child {
+        border-bottom: none !important;
+    }
+    
+    #itemProfileModal .history-table td::before {
+        content: attr(data-label) !important;
+        font-weight: 600 !important;
+        color: #052A47 !important;
+        text-align: left !important;
+        min-width: 100px !important;
+        font-size: 0.65rem !important;
+    }
+}
+
+/* Small mobile */
+@media (max-width: 576px) {
+    #itemProfileModal .nav-tabs .nav-link {
+        flex: 1 !important;
+        text-align: center !important;
+        padding: 0.4rem 0.4rem !important;
+        font-size: 0.65rem !important;
+    }
+    
+    #itemProfileModal .nav-tabs .nav-link i {
+        margin-right: 0.2rem !important;
+        font-size: 0.65rem !important;
+    }
+    
+    #itemProfileModal .history-table td::before {
+        min-width: 85px !important;
+        font-size: 0.6rem !important;
+    }
+    
+    #itemProfileModal .history-table td {
+        font-size: 0.65rem !important;
+        padding: 0.35rem 0.5rem !important;
+    }
+    
+    #itemProfileModal .history-table .badge {
+        font-size: 0.55rem !important;
+        padding: 0.15rem 0.4rem !important;
+    }
+    
+    #itemProfileModal .history-table .btn-sm {
+        font-size: 0.55rem !important;
+        padding: 0.15rem 0.4rem !important;
+    }
+}
+
+/* Profile Summary Grid (above tabs) */
+#itemProfileModal .profile-summary-grid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)) !important;
+    gap: 0.75rem 1.5rem !important;
+    margin-bottom: 1.25rem !important;
+}
+
+#itemProfileModal .profile-summary-item {
+    border-bottom: 1px solid #eef2f6 !important;
+    padding-bottom: 0.5rem !important;
+}
+
+#itemProfileModal .profile-info-label {
+    font-size: 0.65rem !important;
+    font-weight: 600 !important;
+    color: #6c757d !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+    margin-bottom: 0.25rem !important;
+}
+
+#itemProfileModal .profile-info-value {
+    font-size: 0.85rem !important;
+    font-weight: 600 !important;
+    color: #1e293b !important;
+    word-break: break-word !important;
+}
+
+/* Responsive profile grid */
+@media (max-width: 768px) {
+    #itemProfileModal .profile-summary-grid {
+        grid-template-columns: 1fr !important;
+        gap: 0.5rem !important;
+    }
+}
+
+/* ATW Detail Grid (for ATW modal) */
+.atw-detail-grid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)) !important;
+    gap: 0.75rem 1.25rem !important;
+    margin-bottom: 1rem !important;
+}
+
+.atw-detail-item {
+    border-bottom: 1px solid #eef2f6 !important;
+    padding-bottom: 0.5rem !important;
+}
+
+.atw-detail-label {
+    font-size: 0.65rem !important;
+    font-weight: 600 !important;
+    color: #6c757d !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+    margin-bottom: 0.25rem !important;
+}
+
+.atw-detail-value {
+    font-size: 0.85rem !important;
+    font-weight: 600 !important;
+    color: #1e293b !important;
+    word-break: break-word !important;
+    white-space: pre-line !important;
+}
+
+@media (max-width: 768px) {
+    .atw-detail-grid {
+        grid-template-columns: 1fr !important;
+    }
+}

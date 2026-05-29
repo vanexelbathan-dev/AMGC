@@ -46,6 +46,61 @@ function tableExists(mysqli $conn, string $table): bool {
     return $res && $res->num_rows > 0;
 }
 
+
+function ensureCentralWarehouseItemsTable(mysqli $conn): void {
+    if (!tableExists($conn, 'central_warehouse_items')) {
+        @$conn->query("CREATE TABLE IF NOT EXISTS `central_warehouse_items` (
+            `item_id` INT(11) NOT NULL AUTO_INCREMENT,
+            `item_code` VARCHAR(50) NOT NULL,
+            `barcode` VARCHAR(100) DEFAULT NULL,
+            `item_name` VARCHAR(150) NOT NULL,
+            `description` TEXT DEFAULT NULL,
+            `item_image` VARCHAR(255) DEFAULT NULL,
+            `category` VARCHAR(255) DEFAULT NULL,
+            `principal` VARCHAR(150) DEFAULT NULL,
+            `unit_type` VARCHAR(50) DEFAULT NULL,
+            `default_unit_type_id` INT(11) DEFAULT NULL,
+            `default_uom_id` INT(11) DEFAULT NULL,
+            `smallest_uom_id` INT(11) DEFAULT NULL,
+            `unit_price` DECIMAL(10,2) DEFAULT 0.00,
+            `reorder_level` INT(11) DEFAULT 0,
+            `status` ENUM('active','inactive') DEFAULT 'active',
+            `created_by` INT(11) DEFAULT NULL,
+            `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`item_id`),
+            UNIQUE KEY `uk_cw_item_code` (`item_code`),
+            KEY `idx_cw_item_status` (`status`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+    }
+
+    if (tableExists($conn, 'items') && tableExists($conn, 'central_warehouse_stocks')) {
+        @$conn->query("INSERT IGNORE INTO central_warehouse_items
+            (item_id, item_code, barcode, item_name, description, item_image, category, principal, unit_type, default_unit_type_id, default_uom_id, smallest_uom_id, unit_price, reorder_level, status, created_by, created_at, updated_at)
+            SELECT DISTINCT i.item_id, i.item_code, i.barcode, i.item_name, i.description, i.product_image_url, i.category, i.principal, i.unit_type,
+                   i.default_unit_type_id, i.default_uom_id, i.smallest_uom_id, COALESCE(i.unit_price,0), COALESCE(i.reorder_level,0), COALESCE(i.status,'active'), i.created_by, i.created_at, i.updated_at
+            FROM central_warehouse_stocks cws
+            INNER JOIN items i ON i.item_id = cws.item_id");
+    }
+
+    if (tableExists($conn, 'item_images') && tableExists($conn, 'central_warehouse_items')) {
+        @$conn->query("UPDATE central_warehouse_items cwi
+            INNER JOIN (
+                SELECT ii.item_id, ii.image_path
+                FROM item_images ii
+                INNER JOIN (
+                    SELECT item_id, MAX(is_primary) AS max_primary, MIN(image_order) AS min_order, MIN(image_id) AS min_image_id
+                    FROM item_images
+                    GROUP BY item_id
+                ) pick ON pick.item_id = ii.item_id
+                WHERE ii.is_primary = pick.max_primary
+                GROUP BY ii.item_id
+            ) img ON img.item_id = cwi.item_id
+            SET cwi.item_image = img.image_path
+            WHERE (cwi.item_image IS NULL OR cwi.item_image = '')");
+    }
+}
+
 function getBranchInfo(mysqli $conn, int $branch_id): array {
     $info = ['branch_name' => '', 'business_unit' => ''];
     if ($branch_id <= 0) return $info;
@@ -88,14 +143,13 @@ function fetchCentralWarehouseItems(mysqli $conn, int $branch_id, string $busine
                    COALESCE(i.description, '') AS description,
                    COALESCE(i.category, 'Uncategorized') AS category,
                    COALESCE(i.principal, 'No Principal') AS principal,
-                   COALESCE(img.image_path, '') AS item_image_path,
-                   COALESCE(i.product_image_url, '') AS product_image_url,
+                   COALESCE(i.item_image, '') AS item_image_path,
                    COALESCE(i.reorder_level, 0) AS reorder_level,
                    COALESCE(ut.unit_type_name, i.unit_type, 'Piece') AS unit_type,
                    COALESCE(i.unit_price, 0) AS unit_price,
                    b.branch_name
             FROM central_warehouse_stocks cws
-            INNER JOIN items i ON i.item_id = cws.item_id
+            INNER JOIN central_warehouse_items i ON i.item_id = cws.item_id
             LEFT JOIN unit_types ut ON ut.unit_type_id = cws.unit_type_id
             LEFT JOIN branches b ON b.branch_id = cws.branch_id
             LEFT JOIN (
@@ -104,17 +158,6 @@ function fetchCentralWarehouseItems(mysqli $conn, int $branch_id, string $busine
                 WHERE status = 'active'
                 GROUP BY item_id, IFNULL(unit_type_id,0)
             ) total_stock ON total_stock.item_id = cws.item_id AND total_stock.unit_key = IFNULL(cws.unit_type_id,0)
-            LEFT JOIN (
-                SELECT ii.item_id, ii.image_path
-                FROM item_images ii
-                INNER JOIN (
-                    SELECT item_id, MAX(is_primary) AS max_primary, MIN(image_order) AS min_order, MIN(image_id) AS min_image_id
-                    FROM item_images
-                    GROUP BY item_id
-                ) pick ON pick.item_id = ii.item_id
-                WHERE ii.is_primary = pick.max_primary
-                GROUP BY ii.item_id
-            ) img ON img.item_id = i.item_id
             WHERE cws.status = 'active'
               AND i.status = 'active'
               AND cws.current_stock > 0";
@@ -182,7 +225,7 @@ function fetchMyAtwRequests(mysqli $conn, int $branch_id, string $business_unit,
                    MAX(r.returned_by) AS returned_by,
                    MAX(b.branch_name) AS branch_name
             FROM central_warehouse_atw_requests r
-            INNER JOIN items i ON i.item_id = r.item_id
+            INNER JOIN central_warehouse_items i ON i.item_id = r.item_id
             LEFT JOIN unit_types ut ON ut.unit_type_id = r.unit_type_id
             LEFT JOIN branches b ON b.branch_id = r.branch_id
             WHERE 1=1";
@@ -221,25 +264,14 @@ function fetchCentralWarehouseItemProfile(mysqli $conn, int $central_stock_id, i
 
     $sql = "SELECT cws.central_stock_id, cws.business_unit, cws.branch_id, cws.item_id, cws.unit_type_id, cws.current_stock, cws.as_of_date, cws.remarks, cws.encoded_by, cws.created_at, cws.updated_at,
                    i.item_code, i.item_name, COALESCE(i.category, 'Uncategorized') AS category, COALESCE(i.principal, 'No Principal') AS principal,
-                   COALESCE(i.description, '') AS description, COALESCE(img.image_path, '') AS item_image_path, COALESCE(i.product_image_url, '') AS product_image_url,
+                   COALESCE(i.description, '') AS description, COALESCE(i.item_image, '') AS item_image_path,
                    COALESCE(ut.unit_type_name, i.unit_type, 'Piece') AS unit_type, b.branch_name,
                    CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) AS encoded_by_name
             FROM central_warehouse_stocks cws
-            INNER JOIN items i ON i.item_id = cws.item_id
+            INNER JOIN central_warehouse_items i ON i.item_id = cws.item_id
             LEFT JOIN unit_types ut ON ut.unit_type_id = cws.unit_type_id
             LEFT JOIN branches b ON b.branch_id = cws.branch_id
             LEFT JOIN users u ON u.user_id = cws.encoded_by
-            LEFT JOIN (
-                SELECT ii.item_id, ii.image_path
-                FROM item_images ii
-                INNER JOIN (
-                    SELECT item_id, MAX(is_primary) AS max_primary, MIN(image_order) AS min_order, MIN(image_id) AS min_image_id
-                    FROM item_images
-                    GROUP BY item_id
-                ) pick ON pick.item_id = ii.item_id
-                WHERE ii.is_primary = pick.max_primary
-                GROUP BY ii.item_id
-            ) img ON img.item_id = i.item_id
             WHERE cws.central_stock_id = ? AND cws.status = 'active' LIMIT 1";
     $stmt = $conn->prepare($sql);
     if (!$stmt) return ['success' => false, 'message' => 'Failed to prepare item profile.'];
@@ -368,6 +400,8 @@ function syncReturnStatuses(mysqli $conn): void {
                     AND (return_date IS NULL OR return_date >= CURDATE())");
 }
 
+ensureCentralWarehouseItemsTable($conn);
+
 $branch_info = getBranchInfo($conn, $branch_id);
 $branch_name = $branch_info['branch_name'];
 $branch_business_unit = $branch_info['business_unit'];
@@ -398,79 +432,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && ($_GET['action'] ?? '') === 'fetch_i
 }
 
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'mark_returned') {
-    header('Content-Type: application/json');
-
-    if (!$central_atw_table_ready || !$central_stock_table_ready) {
-        echo json_encode(['success' => false, 'message' => 'Missing central warehouse database tables. Run the SQL patch first.']);
-        exit;
-    }
-
-    $request_no = trim($_POST['request_no'] ?? '');
-    $return_remarks = trim($_POST['return_remarks'] ?? '');
-
-    if ($request_no === '') {
-        echo json_encode(['success' => false, 'message' => 'Invalid ATW request selected.']);
-        exit;
-    }
-
-    $conn->begin_transaction();
-
-    try {
-        $req_stmt = $conn->prepare("SELECT request_id, request_no, central_stock_id, requested_qty, status, to_be_returned, return_status, returned_at, branch_id, business_unit
-                                    FROM central_warehouse_atw_requests
-                                    WHERE request_no = ?
-                                    FOR UPDATE");
-        if (!$req_stmt) throw new Exception('Failed to prepare return lookup.');
-        $req_stmt->bind_param('s', $request_no);
-        $req_stmt->execute();
-        $req_result = $req_stmt->get_result();
-
-        if ($req_result->num_rows === 0) throw new Exception('ATW request was not found.');
-
-        $rows = [];
-        while ($row = $req_result->fetch_assoc()) {
-            if (!$view_all_branches && ((int)$row['branch_id'] !== $branch_id || (trim($branch_business_unit) !== '' && $row['business_unit'] !== $branch_business_unit))) {
-                throw new Exception('This ATW request is not assigned to your branch/business unit.');
-            }
-            if ((int)$row['to_be_returned'] !== 1) throw new Exception('This ATW request is not marked as to be returned.');
-            if ($row['status'] !== 'released') throw new Exception('Only released ATW requests can be marked as returned.');
-            if (!empty($row['returned_at']) || $row['return_status'] === 'returned') throw new Exception('This ATW request is already marked as returned.');
-            $rows[] = $row;
-        }
-        $req_stmt->close();
-
-        $stock_stmt = $conn->prepare("UPDATE central_warehouse_stocks
-                                      SET current_stock = current_stock + ?, updated_at = NOW()
-                                      WHERE central_stock_id = ? AND status = 'active'");
-        $upd_stmt = $conn->prepare("UPDATE central_warehouse_atw_requests
-                                    SET return_status = 'returned',
-                                        returned_at = NOW(),
-                                        returned_by = ?,
-                                        return_remarks = ?
-                                    WHERE request_id = ?");
-        if (!$stock_stmt || !$upd_stmt) throw new Exception('Failed to prepare return save.');
-
-        foreach ($rows as $row) {
-            $qty = (float)$row['requested_qty'];
-            $central_stock_id = (int)$row['central_stock_id'];
-            $request_id = (int)$row['request_id'];
-
-            $stock_stmt->bind_param('di', $qty, $central_stock_id);
-            if (!$stock_stmt->execute()) throw new Exception('Failed to restore returned stock.');
-
-            $upd_stmt->bind_param('ssi', $user_name, $return_remarks, $request_id);
-            if (!$upd_stmt->execute()) throw new Exception('Failed to mark item as returned.');
-        }
-
-        $conn->commit();
-        echo json_encode(['success' => true, 'message' => 'ATW request marked as returned and stock was restored.']);
-    } catch (Throwable $e) {
-        $conn->rollback();
-        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
-    }
-    exit;
-}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'submit_atw') {
     header('Content-Type: application/json');
@@ -944,6 +905,58 @@ $atw_requests = fetchMyAtwRequests($conn, $branch_id, $branch_business_unit, (bo
         font-size: 0.75rem;
     }
 }
+
+/* Skeleton Loading */
+.skeleton{
+    position:relative;
+    overflow:hidden;
+    background:#e5e7eb;
+    border-radius:8px;
+}
+
+.skeleton::after{
+    content:'';
+    position:absolute;
+    top:0;
+    left:-150%;
+    width:150%;
+    height:100%;
+    background:linear-gradient(
+        90deg,
+        transparent,
+        rgba(255,255,255,.6),
+        transparent
+    );
+    animation:skeletonLoading 1.2s infinite;
+}
+
+@keyframes skeletonLoading{
+    100%{
+        left:100%;
+    }
+}
+
+.skeleton-title{
+    height:32px;
+    width:280px;
+    margin-bottom:20px;
+}
+
+.skeleton-card{
+    height:75px;
+    width:100%;
+}
+
+.skeleton-section{
+    height:24px;
+    width:200px;
+    margin:20px 0;
+}
+
+.skeleton-row{
+    height:40px;
+    width:100%;
+}
 </style>
 </head>
 <body>
@@ -1204,9 +1217,7 @@ $atw_requests = fetchMyAtwRequests($conn, $branch_id, $branch_business_unit, (bo
                 <td>
                     <div class="item-thumbnail">
                         <?php if (!empty($item['item_image_path'])): ?>
-                            <img src="../uploads/items/<?= h($item['item_image_path']) ?>" alt="<?= h($item['item_name']) ?>">
-                        <?php elseif (!empty($item['product_image_url'])): ?>
-                            <img src="../uploads/products/<?= h($item['product_image_url']) ?>" alt="<?= h($item['item_name']) ?>">
+                            <img src="../uploads/central_warehouse_items/<?= h($item['item_image_path']) ?>" alt="<?= h($item['item_name']) ?>">
                         <?php else: ?>
                             <i class="bi bi-image text-muted"></i>
                         <?php endif; ?>
@@ -1540,7 +1551,29 @@ function openItemProfile(row) {
     const modalEl = document.getElementById('itemProfileModal');
     const body = document.getElementById('itemProfileModalBody');
     const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
-    body.innerHTML = '<div class="text-center text-muted py-4"><div class="spinner-border spinner-border-sm me-2"></div>Loading item profile...</div>';
+    body.innerHTML = `
+<div class="skeleton-profile">
+    <div class="skeleton skeleton-title"></div>
+
+    <div class="profile-summary-grid">
+        <div class="skeleton skeleton-card"></div>
+        <div class="skeleton skeleton-card"></div>
+        <div class="skeleton skeleton-card"></div>
+        <div class="skeleton skeleton-card"></div>
+    </div>
+
+    <div class="skeleton skeleton-section"></div>
+
+    <table class="table">
+        <tbody>
+            <tr><td><div class="skeleton skeleton-row"></div></td></tr>
+            <tr><td><div class="skeleton skeleton-row"></div></td></tr>
+            <tr><td><div class="skeleton skeleton-row"></div></td></tr>
+            <tr><td><div class="skeleton skeleton-row"></div></td></tr>
+        </tbody>
+    </table>
+</div>
+`;
     modal.show();
 
     fetch(`central_warehouse.php?action=fetch_item_profile&central_stock_id=${encodeURIComponent(stockId)}`)
@@ -1589,9 +1622,7 @@ function renderItemProfile(data) {
         }
         const returnStatusClass = !isReturnable ? 'bg-secondary' : (returnStatus === 'returned' ? 'bg-success' : (returnStatus === 'overdue' ? 'bg-danger' : 'bg-warning text-dark'));
         const returnStatusLabel = !isReturnable ? 'Not Required' : (returnStatus === 'returned' ? 'Returned' : (returnStatus === 'overdue' ? 'Overdue' : 'Pending Return'));
-        const canMarkReturned = isReturnable && row.status === 'released' && returnStatus !== 'returned' && !returnedAt;
-        const returnAction = canMarkReturned ? `<button type="button" class="btn btn-sm btn-success mt-1" onclick="markAtwReturned('${escapeHtml(row.request_no || '')}')"><i class="bi bi-arrow-return-left me-1"></i>Mark Returned</button>` : '';
-        const returnInfo = isReturnable ? `<br><small class="text-muted">Return Date: ${escapeHtml(row.return_date || '-')}</small><br><span class="badge ${returnStatusClass}">${returnStatusLabel}</span>${returnAction}` : '<br><span class="badge bg-secondary">Not Required</span>';
+        const returnInfo = isReturnable ? `<br><small class="text-muted">Return Date: ${escapeHtml(row.return_date || '-')}</small><br><span class="badge ${returnStatusClass}">${returnStatusLabel}</span>` : '<br><span class="badge bg-secondary">Not Required</span>';
         return `
             <tr>
                 <td><strong>${escapeHtml(row.request_no || '-')}</strong>${returnInfo}</td>
@@ -1610,7 +1641,7 @@ function renderItemProfile(data) {
     }).join('') || '<tr><td colspan="9" class="text-center text-muted py-3">No withdrawal history found.</td></tr>';
 
     const profileImage = p.item_image_path
-        ? `<div class="mb-3 d-flex align-items-center gap-3"><div class="item-thumbnail" style="width:70px;height:70px;"><img src="../uploads/items/${escapeHtml(p.item_image_path)}" alt="${escapeHtml(p.item_name || 'Item')}"></div><div><div class="profile-info-label">Item Image</div><div class="profile-info-value">Uploaded from Central Warehouse Encode Stocks</div></div></div>`
+        ? `<div class="mb-3 d-flex align-items-center gap-3"><div class="item-thumbnail" style="width:70px;height:70px;"><img src="../uploads/central_warehouse_items/${escapeHtml(p.item_image_path)}" alt="${escapeHtml(p.item_name || 'Item')}"></div><div><div class="profile-info-label">Item Image</div><div class="profile-info-value">Uploaded from Central Warehouse Encode Stocks</div></div></div>`
         : '';
 
     body.innerHTML = `
@@ -1675,45 +1706,7 @@ function renderItemProfile(data) {
     `;
 }
 
-function markAtwReturned(requestNo) {
-    if (!requestNo) return;
 
-    Swal.fire({
-        title: 'Mark as returned?',
-        input: 'textarea',
-        inputLabel: 'Return remarks (optional)',
-        inputPlaceholder: 'Enter remarks...',
-        showCancelButton: true,
-        confirmButtonText: 'Yes, mark returned',
-        confirmButtonColor: '#198754',
-        cancelButtonText: 'Cancel'
-    }).then(result => {
-        if (!result.isConfirmed) return;
-
-        const formData = new FormData();
-        formData.append('action', 'mark_returned');
-        formData.append('request_no', requestNo);
-        formData.append('return_remarks', result.value || '');
-
-        fetch('central_warehouse.php', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            if (!data.success) {
-                Swal.fire('Unable to update', data.message || 'Failed to mark as returned.', 'warning');
-                return;
-            }
-
-            Swal.fire('Returned', data.message || 'ATW request marked as returned.', 'success')
-                .then(() => location.reload());
-        })
-        .catch(() => {
-            Swal.fire('Error', 'Something went wrong while saving the return.', 'error');
-        });
-    });
-}
 
 
 // ========== SIDEBAR FUNCTIONS ==========

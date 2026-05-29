@@ -224,6 +224,7 @@ try {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         /* Branch badge styling */
@@ -577,6 +578,12 @@ try {
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="vehicle.php">
+                            <i class="bi bi-car-front"></i>
+                            <span class="nav-text">Vehicle</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link active" href="rejecteddelivery.php">
                             <i class="bi bi-exclamation-circle"></i>
                             <span class="nav-text">Rejected Delivery</span>
@@ -585,7 +592,6 @@ try {
                 </ul>
             </div>
             <hr class="sidebar-divider">
-            <!-- User Profile Section at the bottom of sidebar -->
             <div class="sidebar-footer">
                 <div class="user-profile-sidebar">
                     <div class="user-avatar-sidebar"><?php echo $user_initials; ?></div>
@@ -593,7 +599,7 @@ try {
                         <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
                     </div>
                 </div>
-                    
+                
                 <button class="logout-btn-sidebar" onclick="logout()">
                     <i class="bi bi-box-arrow-right"></i>
                     <span class="logout-text">Logout</span>

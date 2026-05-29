@@ -1238,6 +1238,7 @@ if (empty($user_initials)) {
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <!-- Leaflet Routing Machine for directions -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         /* Pickup Modal Styles */
@@ -2657,6 +2658,12 @@ td{
                         <a class="nav-link" href="driver_collections.php">
                             <i class="bi bi-cash-stack"></i>
                             <span class="nav-text">Collections</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="vehicle.php">
+                            <i class="bi bi-car-front"></i>
+                            <span class="nav-text">Vehicle</span>
                         </a>
                     </li>
                     <li class="nav-item">

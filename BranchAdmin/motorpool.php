@@ -216,6 +216,25 @@ $conn->query("CREATE TABLE IF NOT EXISTS `motorpool_ris_assessments` (
     UNIQUE KEY `uniq_ris_assessment` (`ris_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
+
+$conn->query("CREATE TABLE IF NOT EXISTS `motorpool_ris_workflow_history` (
+    `history_id` INT AUTO_INCREMENT PRIMARY KEY,
+    `ris_id` INT NOT NULL,
+    `ris_number` VARCHAR(50) DEFAULT NULL,
+    `vehicle_db_id` INT DEFAULT NULL,
+    `vehicle_id` VARCHAR(50) DEFAULT NULL,
+    `plate_no` VARCHAR(100) DEFAULT NULL,
+    `workflow_status` VARCHAR(100) NOT NULL,
+    `details` LONGTEXT DEFAULT NULL,
+    `attachment` LONGTEXT DEFAULT NULL,
+    `processed_by` INT DEFAULT NULL,
+    `processed_at` DATETIME DEFAULT CURRENT_TIMESTAMP,
+    KEY `idx_ris_id` (`ris_id`),
+    KEY `idx_vehicle_db_id` (`vehicle_db_id`),
+    KEY `idx_workflow_status` (`workflow_status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+
 $conn->query("CREATE TABLE IF NOT EXISTS `vehicle_repair_history` (
     `repair_id` INT AUTO_INCREMENT PRIMARY KEY,
     `ris_id` INT DEFAULT NULL,
@@ -322,6 +341,26 @@ $conn->query("CREATE TABLE IF NOT EXISTS `motorpool_registration_history` (
     KEY `idx_vehicle_db_id` (`vehicle_db_id`),
     KEY `idx_branch_id` (`branch_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+$conn->query("CREATE TABLE IF NOT EXISTS `motorpool_fuel_monitoring` (
+    `fuel_id` INT AUTO_INCREMENT PRIMARY KEY,
+    `vehicle_db_id` INT NOT NULL,
+    `vehicle_id` VARCHAR(50) DEFAULT NULL,
+    `plate_no` VARCHAR(100) DEFAULT NULL,
+    `fuel_date` DATE NOT NULL,
+    `current_odometer` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    `previous_odometer` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    `distance_covered` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    `liters_consumed` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    `fuel_efficiency` DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    `branch_id` INT DEFAULT NULL,
+    `encoded_by` INT DEFAULT NULL,
+    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    KEY `idx_vehicle_db_id` (`vehicle_db_id`),
+    KEY `idx_branch_id` (`branch_id`),
+    KEY `idx_fuel_date` (`fuel_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
 
 function generateRisNumber(mysqli $conn): string {
     $prefix = 'RIS-' . date('Ymd') . '-';
@@ -444,6 +483,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'submi
     jsonResponse(['success' => false, 'message' => 'Failed to send RIS request: ' . $stmt->error]);
 }
 
+
+function logRisWorkflowHistory(mysqli $conn, int $ris_id, string $status, string $details = '', string $attachment = '', int $processed_by = 0): void {
+    $stmt = $conn->prepare("SELECT ris_number, vehicle_db_id, vehicle_id, plate_no FROM motorpool_ris_requests WHERE ris_id = ? LIMIT 1");
+    if (!$stmt) return;
+    $stmt->bind_param('i', $ris_id);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    if (!$row) return;
+
+    $check = $conn->prepare("SELECT history_id FROM motorpool_ris_workflow_history WHERE ris_id = ? AND workflow_status = ? ORDER BY history_id DESC LIMIT 1");
+    $existing_id = 0;
+    if ($check) {
+        $check->bind_param('is', $ris_id, $status);
+        $check->execute();
+        $existing = $check->get_result()->fetch_assoc();
+        $existing_id = $existing ? (int)$existing['history_id'] : 0;
+        $check->close();
+    }
+
+    if ($existing_id > 0) {
+        $update = $conn->prepare("UPDATE motorpool_ris_workflow_history SET details = ?, attachment = CASE WHEN ? <> '' THEN ? ELSE attachment END, processed_by = ?, processed_at = NOW() WHERE history_id = ?");
+        if ($update) {
+            $update->bind_param('sssii', $details, $attachment, $attachment, $processed_by, $existing_id);
+            $update->execute();
+            $update->close();
+        }
+        return;
+    }
+
+    $insert = $conn->prepare("INSERT INTO motorpool_ris_workflow_history (ris_id, ris_number, vehicle_db_id, vehicle_id, plate_no, workflow_status, details, attachment, processed_by, processed_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
+    if (!$insert) return;
+    $insert->bind_param('isisssssi', $ris_id, $row['ris_number'], $row['vehicle_db_id'], $row['vehicle_id'], $row['plate_no'], $status, $details, $attachment, $processed_by);
+    $insert->execute();
+    $insert->close();
+}
+
 $vehicle_columns = $vehicle_table_exists ? getColumns($conn, $vehicle_table) : [];
 $save_message = '';
 $save_status = '';
@@ -515,6 +591,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'branc
                 $stmt->bind_param('isi', $user_id, $remarks, $ris_id);
                 if ($stmt->execute() && $stmt->affected_rows > 0) {
                     $save_status = 'success';
+                    $approvalDetails = 'Assessment approved by Branch Admin.' . ($remarks !== '' ? "\nRemarks: " . $remarks : '');
+                    logRisWorkflowHistory($conn, $ris_id, 'For Approval', $approvalDetails, '', (int)$user_id);
+                    logRisWorkflowHistory($conn, $ris_id, 'For Parts Completion', 'Branch Admin approved the assessment. Motorpool may now complete the required parts.' . ($remarks !== '' ? "\nRemarks: " . $remarks : ''), '', (int)$user_id);
                     $save_message = 'Motorpool assessment approved. Request is now for parts completion.';
                 } else {
                     $save_status = 'error';
@@ -544,6 +623,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'branc
                     $stmt->bind_param('isi', $user_id, $remarks, $ris_id);
                     if ($stmt->execute() && $stmt->affected_rows > 0) {
                         $save_status = 'success';
+                        logRisWorkflowHistory($conn, $ris_id, 'For Approval', 'Assessment returned by Branch Admin for revision.' . "\nRemarks: " . $remarks, '', (int)$user_id);
+                        logRisWorkflowHistory($conn, $ris_id, 'For Assessment', 'Assessment was returned for revision by Branch Admin.' . "\nRemarks: " . $remarks, '', (int)$user_id);
                         $save_message = 'Assessment returned to Motorpool for revision.';
                     } else {
                         $save_status = 'error';
@@ -669,6 +750,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'edit_
             }
         }
     }
+}
+
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_fuel_monitoring') {
+    $vehicle_db_id = (int)($_POST['vehicle_db_id'] ?? 0);
+    $vehicle_id_value = trim($_POST['vehicle_id'] ?? '');
+    $plate_no = trim($_POST['plate_no'] ?? '');
+    $fuel_date = trim($_POST['fuel_date'] ?? date('Y-m-d'));
+    $current_odometer = (float)($_POST['current_odometer'] ?? 0);
+    $previous_odometer = (float)($_POST['previous_odometer'] ?? 0);
+    $distance_covered = (float)($_POST['distance_covered'] ?? 0);
+    $liters_consumed = (float)($_POST['liters_consumed'] ?? 0);
+    $fuel_efficiency = (float)($_POST['fuel_efficiency'] ?? 0);
+
+    if ($vehicle_db_id <= 0) jsonResponse(['success' => false, 'message' => 'Vehicle record was not found.']);
+    if ($fuel_date === '') jsonResponse(['success' => false, 'message' => 'Date is required.']);
+    if ($current_odometer < 0 || $previous_odometer < 0 || $liters_consumed < 0) jsonResponse(['success' => false, 'message' => 'Odometer and liters values cannot be negative.']);
+    if ($distance_covered <= 0) $distance_covered = max(0, $current_odometer - $previous_odometer);
+    if ($fuel_efficiency <= 0 && $liters_consumed > 0) $fuel_efficiency = $distance_covered / $liters_consumed;
+    if ($distance_covered <= 0) jsonResponse(['success' => false, 'message' => 'Distance covered must be greater than zero.']);
+    if ($liters_consumed <= 0) jsonResponse(['success' => false, 'message' => 'Liters consumed must be greater than zero.']);
+
+    $stmt = $conn->prepare("INSERT INTO motorpool_fuel_monitoring
+        (vehicle_db_id, vehicle_id, plate_no, fuel_date, current_odometer, previous_odometer, distance_covered, liters_consumed, fuel_efficiency, branch_id, encoded_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    if (!$stmt) jsonResponse(['success' => false, 'message' => 'Failed to prepare fuel monitoring save: ' . $conn->error]);
+    $stmt->bind_param('isssdddddii', $vehicle_db_id, $vehicle_id_value, $plate_no, $fuel_date, $current_odometer, $previous_odometer, $distance_covered, $liters_consumed, $fuel_efficiency, $branch_id, $user_id);
+    if ($stmt->execute()) {
+        jsonResponse([
+            'success' => true,
+            'message' => 'Fuel monitoring record saved successfully.',
+            'fuel_id' => $conn->insert_id,
+            'vehicle_db_id' => $vehicle_db_id,
+            'vehicle_id' => $vehicle_id_value,
+            'plate_no' => $plate_no,
+            'fuel_date' => $fuel_date,
+            'current_odometer' => number_format($current_odometer, 2, '.', ''),
+            'previous_odometer' => number_format($previous_odometer, 2, '.', ''),
+            'distance_covered' => number_format($distance_covered, 2, '.', ''),
+            'liters_consumed' => number_format($liters_consumed, 2, '.', ''),
+            'fuel_efficiency' => number_format($fuel_efficiency, 2, '.', ''),
+            'created_at' => date('Y-m-d H:i:s')
+        ]);
+    }
+    jsonResponse(['success' => false, 'message' => 'Failed to save fuel monitoring record: ' . $stmt->error]);
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'renew_registration') {
@@ -911,6 +1037,202 @@ function fetchVehicleRepairHistories(mysqli $conn, array $vehicles, int $branch_
 }
 
 
+
+function normalizeWorkflowStatusPHP(string $status): string {
+    $value = strtolower(trim(str_replace('-', ' ', $status)));
+    $value = preg_replace('/\s+/', ' ', $value);
+    if (strpos($value, 'endorsement') !== false) return 'For Vehicle Endorsement';
+    if (strpos($value, 'assessment') !== false) return 'For Assessment';
+    if (strpos($value, 'approval') !== false) return 'For Approval';
+    if (strpos($value, 'parts completion') !== false) return 'For Parts Completion';
+    if ($value === 'for repair' || strpos($value, 'for repair') !== false) return 'For Repair';
+    if (strpos($value, 'ongoing repair') !== false || strpos($value, 'on going repair') !== false) return 'On-going Repair';
+    if (strpos($value, 'release') !== false || strpos($value, 'completed repair') !== false) return 'For Release';
+    return $status;
+}
+
+function workflowKeyExists(array $items, int $risId, string $status): bool {
+    foreach ($items as $item) {
+        if ((int)($item['ris_id'] ?? 0) === $risId && normalizeWorkflowStatusPHP((string)($item['workflow_status'] ?? '')) === $status) {
+            return true;
+        }
+    }
+    return false;
+}
+
+function fetchVehicleWorkflowHistories(mysqli $conn, array $vehicles): array {
+    $histories = [];
+    $ids = [];
+    foreach ($vehicles as $vehicle) {
+        if (!empty($vehicle['id'])) $ids[] = (int)$vehicle['id'];
+    }
+    $ids = array_values(array_unique(array_filter($ids)));
+    if (empty($ids)) return $histories;
+
+    $idList = implode(',', array_map('intval', $ids));
+
+    if (tableExists($conn, 'motorpool_ris_workflow_history')) {
+        $sql = "SELECT h.*, CONCAT(COALESCE(u.first_name,''), ' ', COALESCE(u.last_name,'')) AS processed_by_name
+                FROM motorpool_ris_workflow_history h
+                LEFT JOIN users u ON u.user_id = h.processed_by
+                WHERE h.vehicle_db_id IN ($idList)
+                ORDER BY h.processed_at ASC, h.history_id ASC";
+        $result = $conn->query($sql);
+        if ($result) {
+            while ($row = $result->fetch_assoc()) {
+                $histories[(int)$row['vehicle_db_id']][] = $row;
+            }
+        }
+    }
+
+    $sql = "SELECT r.*, 
+                   a.repairs_summary, a.parts_summary, a.assessment_json, a.assessed_at,
+                   CONCAT(COALESCE(assessor.first_name,''), ' ', COALESCE(assessor.last_name,'')) AS assessed_by_name,
+                   CONCAT(COALESCE(approver.first_name,''), ' ', COALESCE(approver.last_name,'')) AS approved_by_name
+            FROM motorpool_ris_requests r
+            LEFT JOIN motorpool_ris_assessments a ON a.ris_id = r.ris_id
+            LEFT JOIN users assessor ON assessor.user_id = a.assessed_by
+            LEFT JOIN users approver ON approver.user_id = r.branch_approval_by
+            WHERE r.vehicle_db_id IN ($idList)
+            ORDER BY r.created_at ASC, r.ris_id ASC";
+    $result = $conn->query($sql);
+    if ($result) {
+        while ($r = $result->fetch_assoc()) {
+            $vid = (int)($r['vehicle_db_id'] ?? 0);
+            if ($vid <= 0) continue;
+            if (!isset($histories[$vid])) $histories[$vid] = [];
+            $risId = (int)($r['ris_id'] ?? 0);
+            $risNo = (string)($r['ris_number'] ?? '');
+            $common = [
+                'ris_id' => $risId,
+                'ris_number' => $risNo,
+                'vehicle_db_id' => $vid,
+                'vehicle_id' => $r['vehicle_id'] ?? '',
+                'plate_no' => $r['plate_no'] ?? '',
+                'processed_by' => $r['requested_by'] ?? '',
+                'processed_by_name' => 'System'
+            ];
+
+            if (!workflowKeyExists($histories[$vid], $risId, 'For Vehicle Endorsement')) {
+                $histories[$vid][] = $common + [
+                    'workflow_status' => 'For Vehicle Endorsement',
+                    'details' => 'RIS submitted for vehicle endorsement.' . (!empty($r['concerns']) ? "\nConcern/s: " . $r['concerns'] : ''),
+                    'attachment' => '',
+                    'processed_at' => $r['created_at'] ?? $r['date_requested'] ?? ''
+                ];
+            }
+
+            if (!empty($r['repairs_summary']) || !empty($r['parts_summary'])) {
+                $assessmentDetails = "Repairs to Make:\n" . (string)($r['repairs_summary'] ?? '') . "\n\nItems / Parts Needed:\n" . (string)($r['parts_summary'] ?? '');
+                if (!workflowKeyExists($histories[$vid], $risId, 'For Assessment')) {
+                    $histories[$vid][] = $common + [
+                        'workflow_status' => 'For Assessment',
+                        'details' => $assessmentDetails,
+                        'attachment' => '',
+                        'processed_by_name' => trim((string)($r['assessed_by_name'] ?? '')) ?: 'Motorpool',
+                        'processed_at' => $r['assessed_at'] ?? $r['updated_at'] ?? ''
+                    ];
+                }
+                if (!workflowKeyExists($histories[$vid], $risId, 'For Approval')) {
+                    $histories[$vid][] = $common + [
+                        'workflow_status' => 'For Approval',
+                        'details' => 'Assessment sent to Branch Admin for approval.' . "\n\n" . $assessmentDetails,
+                        'attachment' => '',
+                        'processed_by_name' => trim((string)($r['assessed_by_name'] ?? '')) ?: 'Motorpool',
+                        'processed_at' => $r['assessed_at'] ?? $r['updated_at'] ?? ''
+                    ];
+                }
+            }
+
+            if (strtolower((string)($r['branch_approval_status'] ?? '')) === 'approved') {
+                $approvalDetails = 'Assessment approved by Branch Admin.';
+                if (!empty($r['branch_approval_remarks'])) $approvalDetails .= "\nRemarks: " . $r['branch_approval_remarks'];
+                if (!workflowKeyExists($histories[$vid], $risId, 'For Parts Completion')) {
+                    $histories[$vid][] = $common + [
+                        'workflow_status' => 'For Parts Completion',
+                        'details' => $approvalDetails . "\nMotorpool may now complete the required parts.",
+                        'attachment' => '',
+                        'processed_by_name' => trim((string)($r['approved_by_name'] ?? '')) ?: 'Branch Admin',
+                        'processed_at' => $r['branch_approval_at'] ?? $r['updated_at'] ?? ''
+                    ];
+                }
+            }
+
+            if (!workflowKeyExists($histories[$vid], $risId, 'For Release') && !empty($r['completed_at'])) {
+                $histories[$vid][] = $common + [
+                    'workflow_status' => 'For Release',
+                    'details' => 'Repair completed and released.',
+                    'attachment' => $r['ris_attachment'] ?? '',
+                    'processed_by_name' => 'Motorpool',
+                    'processed_at' => $r['completed_at']
+                ];
+            }
+        }
+    }
+
+    if (tableExists($conn, 'motorpool_vehicle_receipt_photos')) {
+        $sql = "SELECT p.ris_id, p.filename, p.timestamp_text, p.uploaded_at, r.ris_number, r.vehicle_db_id, r.vehicle_id, r.plate_no, vr.received_by_name, vr.received_datetime
+                FROM motorpool_vehicle_receipt_photos p
+                INNER JOIN motorpool_ris_requests r ON r.ris_id = p.ris_id
+                LEFT JOIN motorpool_vehicle_receipts vr ON vr.ris_id = p.ris_id
+                WHERE r.vehicle_db_id IN ($idList)
+                ORDER BY p.uploaded_at ASC, p.photo_id ASC";
+        $result = $conn->query($sql);
+        $byRis = [];
+        if ($result) {
+            while ($p = $result->fetch_assoc()) {
+                $byRis[(int)$p['ris_id']]['row'] = $p;
+                $byRis[(int)$p['ris_id']]['photos'][] = [
+                    'filename' => $p['filename'],
+                    'timestamp_text' => $p['timestamp_text'],
+                    'uploaded_at' => $p['uploaded_at']
+                ];
+            }
+        }
+        foreach ($byRis as $risId => $pack) {
+            $p = $pack['row'];
+            $vid = (int)$p['vehicle_db_id'];
+            if (!isset($histories[$vid])) $histories[$vid] = [];
+            if (!workflowKeyExists($histories[$vid], $risId, 'For Vehicle Endorsement')) {
+                $histories[$vid][] = [
+                    'ris_id' => $risId,
+                    'ris_number' => $p['ris_number'],
+                    'vehicle_db_id' => $vid,
+                    'vehicle_id' => $p['vehicle_id'],
+                    'plate_no' => $p['plate_no'],
+                    'workflow_status' => 'For Vehicle Endorsement',
+                    'details' => 'Vehicle received by ' . ($p['received_by_name'] ?? 'Motorpool') . '.',
+                    'attachment' => json_encode($pack['photos']),
+                    'processed_by_name' => 'Motorpool',
+                    'processed_at' => $p['received_datetime'] ?? $p['uploaded_at']
+                ];
+            }
+        }
+    }
+
+    foreach ($histories as $vid => $items) {
+        usort($items, function($a, $b) {
+            $order = [
+                'For Vehicle Endorsement' => 1,
+                'For Assessment' => 2,
+                'For Approval' => 3,
+                'For Parts Completion' => 4,
+                'For Repair' => 5,
+                'On-going Repair' => 6,
+                'For Release' => 7
+            ];
+            $oa = $order[normalizeWorkflowStatusPHP((string)($a['workflow_status'] ?? ''))] ?? 99;
+            $ob = $order[normalizeWorkflowStatusPHP((string)($b['workflow_status'] ?? ''))] ?? 99;
+            if ($oa === $ob) return strcmp((string)($a['processed_at'] ?? ''), (string)($b['processed_at'] ?? ''));
+            return $oa <=> $ob;
+        });
+        $histories[$vid] = $items;
+    }
+
+    return $histories;
+}
+
+
 function fetchVehicleRegistrationHistories(mysqli $conn, array $vehicles): array {
     $histories = [];
     $ids = [];
@@ -963,6 +1285,23 @@ function fetchMotorpoolAssessmentsForApproval(mysqli $conn, int $branch_id, bool
     return $rows;
 }
 
+
+function fetchVehicleFuelHistories(mysqli $conn, array $vehicles): array {
+    $histories = [];
+    $ids = [];
+    foreach ($vehicles as $vehicle) if (!empty($vehicle['id'])) $ids[] = (int)$vehicle['id'];
+    $ids = array_values(array_unique(array_filter($ids)));
+    if (empty($ids)) return $histories;
+    $idList = implode(',', array_map('intval', $ids));
+    $sql = "SELECT fuel_id, vehicle_db_id, vehicle_id, plate_no, fuel_date, current_odometer, previous_odometer, distance_covered, liters_consumed, fuel_efficiency, created_at
+            FROM motorpool_fuel_monitoring
+            WHERE vehicle_db_id IN ($idList)
+            ORDER BY fuel_date DESC, fuel_id DESC";
+    $result = $conn->query($sql);
+    if ($result) while ($row = $result->fetch_assoc()) $histories[(int)$row['vehicle_db_id']][] = $row;
+    return $histories;
+}
+
 function branchApprovalBadge(string $status): string {
     $status = trim($status) !== '' ? $status : 'Pending';
     $class = 'secondary';
@@ -974,7 +1313,9 @@ function branchApprovalBadge(string $status): string {
 
 $vehicles = fetchVehicles($conn, $vehicle_table, $vehicle_table_exists, $vehicle_columns, (int)$branch_id, (bool)$view_all_branches);
 $vehicleRepairHistories = fetchVehicleRepairHistories($conn, $vehicles, (int)$branch_id, (bool)$view_all_branches);
+$vehicleWorkflowHistories = fetchVehicleWorkflowHistories($conn, $vehicles);
 $vehicleRegistrationHistories = fetchVehicleRegistrationHistories($conn, $vehicles);
+$vehicleFuelHistories = fetchVehicleFuelHistories($conn, $vehicles);
 $motorpoolApprovalRequests = fetchMotorpoolAssessmentsForApproval($conn, (int)$branch_id, (bool)$view_all_branches);
 ?>
 <!DOCTYPE html>
@@ -2307,6 +2648,12 @@ body.modal-open {
         font-size: 0.75rem;
     }
 }
+
+
+/* Detailed repair workflow modal and parts table */
+.repair-timeline{position:relative;padding:6px 0 6px 24px}.repair-timeline:before{content:'';position:absolute;left:8px;top:8px;bottom:8px;width:2px;background:#dbe7e0}.timeline-item{position:relative;margin-bottom:14px;padding:12px 14px;background:#fff;border:1px solid #e3e8ef;border-radius:12px}.timeline-item:before{content:'';position:absolute;left:-22px;top:16px;width:12px;height:12px;border-radius:50%;background:#07b83f;border:2px solid #fff;box-shadow:0 0 0 2px #07b83f}.timeline-status{font-weight:700;color:#052A47}.timeline-meta{font-size:.85rem;color:#64748b;margin-top:2px}.timeline-details{margin-top:8px;white-space:normal}.timeline-empty{padding:28px;text-align:center;color:#64748b;border:1px dashed #cbd5e1;border-radius:12px;background:#f8fafc}.repair-history-click-row{cursor:pointer}.repair-history-click-row:hover td{background:#f4fbf6!important}.parts-replaced-mini-table-wrap{min-width:520px}.parts-replaced-mini-table th{background:#eaf8ef!important;color:#212529!important;font-size:.78rem;white-space:nowrap}.parts-replaced-mini-table td{font-size:.84rem;white-space:normal;vertical-align:top}
+#repairWorkflowModal .modal-content{border-radius:14px;overflow:hidden}#repairWorkflowModal .modal-header{background:#16894f;color:#fff;border-bottom:0}#repairWorkflowModal .btn-close{filter:invert(1) grayscale(100%) brightness(200%);opacity:.95}#repairWorkflowModal .modal-body{background:#f8fafc;max-height:76vh;overflow-y:auto}
+
 </style>
 </head>
 <body>
@@ -2626,8 +2973,12 @@ body.modal-open {
                         }
                         $repairHistoryJson = json_encode($vehicleRepairHistories[$vehicleDbId] ?? [], JSON_HEX_APOS | JSON_HEX_QUOT);
                         $dataAttrs .= ' data-repair-history="' . h($repairHistoryJson) . '"';
+                        $workflowHistoryJson = json_encode($vehicleWorkflowHistories[$vehicleDbId] ?? [], JSON_HEX_APOS | JSON_HEX_QUOT);
+                        $dataAttrs .= ' data-workflow-history="' . h($workflowHistoryJson) . '"';
                         $registrationHistoryJson = json_encode($vehicleRegistrationHistories[$vehicleDbId] ?? [], JSON_HEX_APOS | JSON_HEX_QUOT);
                         $dataAttrs .= ' data-registration-history="' . h($registrationHistoryJson) . '"';
+                        $fuelHistoryJson = json_encode($vehicleFuelHistories[$vehicleDbId] ?? [], JSON_HEX_APOS | JSON_HEX_QUOT);
+                        $dataAttrs .= ' data-fuel-history="' . h($fuelHistoryJson) . '"';
                     ?>
                         <tr class="vehicle-click-row" onclick="viewVehicleDetails(this)"<?= $dataAttrs; ?>>
                             <td class="col-image"><?= motorpoolImageCell($vehicleImage, $plateNo); ?></td>
@@ -2638,7 +2989,8 @@ body.modal-open {
                             <td><?= h($color); ?></td>
                             <td><?= h($yearModel); ?></td>
                             <td class="action-col text-end">
-                                <button type="button" class="btn btn-success btn-sm btn-action-text" onclick="event.stopPropagation(); openRisModal(this)"><i class="bi bi-clipboard-check me-1"></i>Request for inspection</button>
+                                <button type="button" class="btn btn-success btn-sm btn-action-text me-1" onclick="event.stopPropagation(); openRisModal(this)"><i class="bi bi-clipboard-check me-1"></i>Request for inspection</button>
+                                <button type="button" class="btn btn-outline-success btn-sm btn-action-text" onclick="event.stopPropagation(); openFuelMonitoringModal(this)"><i class="bi bi-fuel-pump me-1"></i>Fuel Monitoring</button>
                             </td>
                         </tr>
                     <?php endforeach; endif; ?>
@@ -2880,6 +3232,7 @@ body.modal-open {
             <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#vehicleImagesTab" type="button" role="tab"><i class="bi bi-paperclip me-1"></i>Attachments</button></li>
             <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#vehicleUsageTab" type="button" role="tab"><i class="bi bi-clock-history me-1"></i>Usage History</button></li>
             <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#vehicleRepairTab" type="button" role="tab"><i class="bi bi-tools me-1"></i>Repair History</button></li>
+            <li class="nav-item" role="presentation"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#vehicleFuelMonitoringTab" type="button" role="tab"><i class="bi bi-fuel-pump me-1"></i>Fuel Monitoring</button></li>
         </ul>
         <div class="tab-content border border-top-0 rounded-bottom p-3 bg-white">
             <div class="tab-pane fade show active" id="vehicleOverviewTab" role="tabpanel"><div class="detail-info-grid" id="overviewDetailsGrid"></div></div>
@@ -2905,6 +3258,7 @@ body.modal-open {
             <div class="tab-pane fade" id="vehicleImagesTab" role="tabpanel"><div class="vehicle-image-preview-wrap" id="vehicleImagesGrid"></div></div>
             <div class="tab-pane fade" id="vehicleUsageTab" role="tabpanel"><div class="table-responsive"><table class="table table-bordered history-table mb-0"><thead><tr><th>Date</th><th>Transaction</th><th>Business Unit</th><th>Branch</th><th>Customer</th><th>Driver</th><th>Starting Odometer</th><th>Ending Odometer</th></tr></thead><tbody><tr><td colspan="8" class="text-muted text-center py-3">Usage history will appear here once available.</td></tr></tbody></table></div></div>
             <div class="tab-pane fade" id="vehicleRepairTab" role="tabpanel"><div class="table-responsive"><table class="table table-bordered history-table mb-0"><thead><tr><th>Date</th><th>RIS No.</th><th>Repairs Done</th><th>Parts Replaced</th><th>Mechanics</th><th>Start Date</th><th>End Date</th><th>Attachment/s</th></tr></thead><tbody id="detailRepairHistoryBody"><tr><td colspan="8" class="text-muted text-center py-3">Repair history will appear here once available.</td></tr></tbody></table></div></div>
+            <div class="tab-pane fade" id="vehicleFuelMonitoringTab" role="tabpanel"><div class="table-responsive"><table class="table table-bordered history-table mb-0"><thead><tr><th>Date</th><th>Current Odometer Reading</th><th>Previous Odometer Reading</th><th>Distance Covered (km)</th><th>Liters Consumed</th><th>Fuel Efficiency (km/L)</th></tr></thead><tbody id="detailFuelMonitoringBody"><tr><td colspan="6" class="text-muted text-center py-3">Fuel monitoring records will appear here once available.</td></tr></tbody></table></div></div>
         </div>
       </div>
       <div class="modal-footer bg-white sticky-bottom" style="border-top:1px solid #dee2e6;z-index:10;">
@@ -2955,6 +3309,59 @@ body.modal-open {
           <button type="button" class="btn btn-success" onclick="saveRenewRegistration()"><i class="bi bi-save me-1"></i>Save Renewal</button>
         </div>
       </form>
+    </div>
+  </div>
+</div>
+
+
+
+<div class="modal fade" id="fuelMonitoringModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <form id="fuelMonitoringForm">
+        <input type="hidden" name="action" value="save_fuel_monitoring">
+        <input type="hidden" name="vehicle_db_id" id="fuelVehicleDbId">
+        <input type="hidden" name="vehicle_id" id="fuelVehicleCode">
+        <input type="hidden" name="plate_no" id="fuelPlateNo">
+        <div class="modal-header bg-success text-white">
+          <h5 class="modal-title"><i class="bi bi-fuel-pump me-2"></i>Fuel Monitoring</h5>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-light border mb-3"><strong id="fuelVehicleTitle">Vehicle</strong><div class="small text-muted" id="fuelVehicleSubtitle">Fuel monitoring record</div></div>
+          <div class="row g-3">
+            <div class="col-md-4"><label class="form-label">Date <span class="required-mark">*</span></label><input type="date" class="form-control" name="fuel_date" id="fuelDate" required></div>
+            <div class="col-md-4"><label class="form-label">Current Odometer Reading <span class="required-mark">*</span></label><input type="number" step="0.01" min="0" class="form-control fuel-calc-field" name="current_odometer" id="fuelCurrentOdometer" required></div>
+            <div class="col-md-4"><label class="form-label">Previous Odometer Reading <span class="required-mark">*</span></label><input type="number" step="0.01" min="0" class="form-control fuel-calc-field" name="previous_odometer" id="fuelPreviousOdometer" required></div>
+            <div class="col-md-4"><label class="form-label">Distance Covered (km) <span class="required-mark">*</span></label><input type="number" step="0.01" min="0" class="form-control fuel-calc-field" name="distance_covered" id="fuelDistanceCovered" required></div>
+            <div class="col-md-4"><label class="form-label">Liters Consumed <span class="required-mark">*</span></label><input type="number" step="0.01" min="0" class="form-control fuel-calc-field" name="liters_consumed" id="fuelLitersConsumed" required></div>
+            <div class="col-md-4"><label class="form-label">Fuel Efficiency (km/L) <span class="required-mark">*</span></label><input type="number" step="0.01" min="0" class="form-control" name="fuel_efficiency" id="fuelEfficiency" required></div>
+          </div>
+        </div>
+        <div class="modal-footer bg-white"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button><button type="button" class="btn btn-success" onclick="saveFuelMonitoring()"><i class="bi bi-save me-1"></i>Save Fuel Record</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="repairWorkflowModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" style="max-width:95%;">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title mb-0"><i class="bi bi-clock-history me-2"></i><span id="repairWorkflowTitle">Detailed Repair Workflow</span></h5>
+          <small id="repairWorkflowSubtitle" class="d-block mt-1 text-white-50"></small>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="repair-timeline" id="repairWorkflowTimelineBody">
+          <div class="timeline-empty">No workflow history found.</div>
+        </div>
+      </div>
+      <div class="modal-footer bg-white">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
     </div>
   </div>
 </div>
@@ -3770,6 +4177,7 @@ function viewVehicleDetails(row){
 
     renderVehiclePictures(row);
     renderVehicleRepairHistory(row);
+    renderVehicleFuelMonitoring(row);
     bootstrap.Modal.getOrCreateInstance(document.getElementById('vehicleDetailsModal')).show();
 }
 
@@ -4025,41 +4433,219 @@ function renderVehiclePictures(row) {
     }).join('');
 }
 
+
+function parseJsonSafe(value, fallback) {
+    if (fallback === undefined) fallback = [];
+    if (value === null || value === undefined || value === '') return fallback;
+    try { return JSON.parse(value); } catch (e) { return fallback; }
+}
+
+function parsePartsRowsForBranch(value) {
+    const rows = [];
+    String(value || '').split(/\n+/).forEach(function (line) {
+        let cleanLine = String(line || '').trim();
+        if (!cleanLine) return;
+        cleanLine = cleanLine.replace(/^Parts\s+Replaced\s*:\s*/i, '');
+        cleanLine = cleanLine.replace(/^Items\s*\/\s*Parts\s+Needed\s*:\s*/i, '');
+        cleanLine = cleanLine.replace(/^Part\s*\d+\s*:\s*/i, '');
+        cleanLine = cleanLine.replace(/^Item\s*\d+\s*:\s*/i, '');
+        const current = { quantity: '', item: '', description: '', specification: '', purpose: '' };
+        cleanLine.split('|').forEach(function (segment) {
+            const pair = segment.split(':');
+            const key = String(pair.shift() || '').trim().toLowerCase();
+            const val = pair.join(':').trim();
+            if (key === 'quantity' || key === 'qty') current.quantity = val;
+            if (key === 'item' || key === 'item no.' || key === 'item no' || key === 'item number') current.item = val;
+            if (key === 'description') current.description = val;
+            if (key === 'specification' || key === 'specs') current.specification = val;
+            if (key === 'purpose') current.purpose = val;
+        });
+        if (current.quantity || current.item || current.description || current.specification || current.purpose) rows.push(current);
+    });
+    return rows;
+}
+
+function renderPartsTableForBranch(rows) {
+    if (!rows || !rows.length) return '';
+    return '<div class="table-responsive parts-replaced-mini-table-wrap mt-2 mb-2">'
+        + '<table class="table table-bordered table-sm align-middle mb-0 parts-replaced-mini-table">'
+        + '<thead><tr><th>Quantity</th><th>Item</th><th>Description</th><th>Specification</th><th>Purpose</th></tr></thead><tbody>'
+        + rows.map(function (part) {
+            return '<tr><td>' + escapeHtml(part.quantity || '') + '</td><td>' + escapeHtml(part.item || '') + '</td><td>' + escapeHtml(part.description || '') + '</td><td>' + escapeHtml(part.specification || '') + '</td><td>' + escapeHtml(part.purpose || '') + '</td></tr>';
+        }).join('')
+        + '</tbody></table></div>';
+}
+
+function renderPartsColumnsForBranch(value) {
+    const rows = parsePartsRowsForBranch(value);
+    if (!rows.length) return escapeHtml(value || '');
+    return renderPartsTableForBranch(rows);
+}
+
+function partsTextForBranchTimeline(value) {
+    const rows = parsePartsRowsForBranch(value);
+    if (!rows.length) return value || '';
+    return rows.map(function (part, index) {
+        return 'Part ' + (index + 1) + ': Quantity: ' + (part.quantity || 'N/A') + ' | Item: ' + (part.item || 'N/A') + ' | Description: ' + (part.description || 'N/A') + ' | Specification: ' + (part.specification || 'N/A') + ' | Purpose: ' + (part.purpose || 'N/A');
+    }).join('\n');
+}
+
+function isWorkflowPartLineForBranch(line) {
+    const cleanLine = String(line || '').trim();
+    if (!cleanLine || cleanLine.indexOf('|') === -1) return false;
+    const value = cleanLine.toLowerCase();
+    return value.includes('quantity:') || value.includes('qty:') || value.includes('item no.:') || value.includes('item no:') || value.includes('item:') || value.includes('description:') || value.includes('specification:') || value.includes('purpose:');
+}
+
+function formatWorkflowDetailsForBranch(details) {
+    const lines = String(details || '').split(/\n/);
+    const html = [];
+    let partBuffer = [];
+    function flushParts() {
+        if (!partBuffer.length) return;
+        const rows = parsePartsRowsForBranch(partBuffer.join('\n'));
+        if (rows.length) html.push(renderPartsTableForBranch(rows));
+        else html.push('<div>' + escapeHtml(partBuffer.join('\n')) + '</div>');
+        partBuffer = [];
+    }
+    lines.forEach(function (line) {
+        let current = String(line || '').trim();
+        if (!current) { flushParts(); html.push('<div class="my-1"></div>'); return; }
+        const lower = current.toLowerCase();
+        const prefixedParts = lower.startsWith('parts replaced:') || lower.startsWith('items / parts needed:');
+        if (prefixedParts && current.indexOf('|') !== -1) {
+            const label = current.substring(0, current.indexOf(':') + 1);
+            const rest = current.substring(current.indexOf(':') + 1).trim();
+            flushParts();
+            html.push('<div class="fw-semibold mt-2 mb-1">' + escapeHtml(label) + '</div>');
+            if (rest) partBuffer.push(rest);
+            return;
+        }
+        if (isWorkflowPartLineForBranch(current)) { partBuffer.push(current); return; }
+        flushParts();
+        html.push('<div>' + escapeHtml(current) + '</div>');
+    });
+    flushParts();
+    return html.join('') || 'No additional details recorded.';
+}
+
 function renderVehicleRepairHistory(row) {
     const tbody = document.getElementById('detailRepairHistoryBody');
     if (!tbody) return;
-
     let history = [];
     const raw = dataValue(row, 'repairHistory');
-    if (raw) {
-        try {
-            history = JSON.parse(raw);
-        } catch (e) {
-            history = [];
-        }
-    }
-
+    if (raw) history = parseJsonSafe(raw, []);
     if (!Array.isArray(history) || history.length === 0) {
         tbody.innerHTML = '<tr><td colspan="8" class="text-muted text-center py-3">Repair history will appear here once available.</td></tr>';
         return;
     }
-
-    tbody.innerHTML = history.map(item => {
+    tbody.innerHTML = history.map(function(item) {
         const attachment = item.attachment || item.ris_attachment || '';
-        const attachmentHtml = attachment
-            ? `<button type="button" class="btn btn-link p-0 text-success fw-semibold text-decoration-none" onclick="openMotorpoolFilePreview('${escapeHtml(attachment)}', 'Repair Attachment')"><i class="bi bi-paperclip me-1"></i>View</button>`
-            : 'N/A';
-        return `<tr>
-            <td>${escapeHtml(item.repair_date || '')}</td>
-            <td>${escapeHtml(item.ris_number || '')}</td>
-            <td>${escapeHtml(item.repairs_done || '')}</td>
-            <td>${escapeHtml(item.parts_replaced || '')}</td>
-            <td>${escapeHtml(item.mechanic || '')}</td>
-            <td>${escapeHtml(item.start_date || '')}</td>
-            <td>${escapeHtml(item.end_date || '')}</td>
-            <td>${attachmentHtml}</td>
-        </tr>`;
+        const attachmentHtml = attachment ? '<button type="button" class="btn btn-link p-0 text-success fw-semibold text-decoration-none" onclick="event.stopPropagation(); openMotorpoolFilePreview(\'' + escapeHtml(attachment) + '\', \'Repair Attachment\')"><i class="bi bi-paperclip me-1"></i>View</button>' : 'N/A';
+        const risNumber = escapeHtml(item.ris_number || '');
+        return '<tr class="repair-history-click-row" onclick="openRepairWorkflowModal(\'' + risNumber + '\')" title="Click to view detailed repair workflow">'
+            + '<td>' + escapeHtml(item.repair_date || '') + '</td><td>' + escapeHtml(item.ris_number || '') + '</td><td>' + escapeHtml(item.repairs_done || '') + '</td><td>' + renderPartsColumnsForBranch(item.parts_replaced || '') + '</td><td>' + escapeHtml(item.mechanic || '') + '</td><td>' + escapeHtml(item.start_date || '') + '</td><td>' + escapeHtml(item.end_date || '') + '</td><td>' + attachmentHtml + '</td></tr>';
     }).join('');
+}
+
+function renderTimelineAttachmentButtonsForBranch(attachment) {
+    if (!attachment) return '';
+    const raw = String(attachment).trim();
+    if (!raw) return '';
+    if (raw.startsWith('[') || raw.startsWith('{')) {
+        const parsed = parseJsonSafe(raw, null);
+        const list = Array.isArray(parsed) ? parsed : (parsed ? [parsed] : []);
+        const links = list.map(function(p, index) {
+            const file = p.filename || p.proof_photo || p.release_attachment || p.attachment || p.file || '';
+            return file ? '<button type="button" class="btn btn-outline-success btn-sm me-1 mt-2" onclick="openMotorpoolFilePreview(\'' + escapeHtml(file) + '\', \'Workflow Attachment\')">Attachment ' + (index + 1) + '</button>' : '';
+        }).join('');
+        return links ? '<div>' + links + '</div>' : '';
+    }
+    return '<div><button type="button" class="btn btn-outline-success btn-sm mt-2" onclick="openMotorpoolFilePreview(\'' + escapeHtml(raw) + '\', \'Workflow Attachment\')">View Attachment</button></div>';
+}
+
+function buildFallbackTimelineFromRepairHistoryForBranch(row) {
+    let repairHistories = parseJsonSafe(dataValue(row, 'repairHistory'), []);
+    if (!Array.isArray(repairHistories) || !repairHistories.length) return [];
+    return repairHistories.map(function(item) {
+        const details = [];
+        if (item.repairs_done) details.push('Repairs Done: ' + item.repairs_done);
+        if (item.parts_replaced) details.push('Parts Replaced:\n' + partsTextForBranchTimeline(item.parts_replaced));
+        if (item.mechanic) details.push('Mechanic: ' + item.mechanic);
+        if (item.start_date || item.end_date) details.push('Repair Period: ' + (item.start_date || 'N/A') + ' to ' + (item.end_date || 'N/A'));
+        return { workflow_status: 'For Release', processed_at: item.created_at || item.repair_date || '', processed_by_name: item.mechanic || 'Motorpool', ris_number: item.ris_number || '', details: details.join('\n'), attachment: item.attachment || '' };
+    });
+}
+
+function normalizeWorkflowStatusForBranch(status) {
+    const value = String(status || '').trim().toLowerCase().replace(/[\s\-]+/g, ' ');
+    if (value.includes('endorsement')) return 'For Vehicle Endorsement';
+    if (value.includes('assessment')) return 'For Assessment';
+    if (value.includes('approval')) return 'For Approval';
+    if (value.includes('parts completion')) return 'For Parts Completion';
+    if (value === 'for repair' || value.includes('for repair')) return 'For Repair';
+    if (value.includes('ongoing repair') || value.includes('on going repair') || value.includes('on-going repair')) return 'On-going Repair';
+    if (value.includes('release') || value.includes('completed repair')) return 'For Release';
+    return status || '';
+}
+
+function getWorkflowRowsForBranch(row, risNumber) {
+    let histories = parseJsonSafe(dataValue(row, 'workflowHistory'), []);
+    if (!Array.isArray(histories)) histories = [];
+    if (!histories.length) histories = buildFallbackTimelineFromRepairHistoryForBranch(row);
+    const wantedRis = String(risNumber || '').trim();
+    if (!wantedRis) return histories;
+    const filtered = histories.filter(function(item) { return String(item.ris_number || '').trim() === wantedRis; });
+    return filtered.length ? filtered : histories;
+}
+
+function renderWorkflowTimelineForBranch(targetId, row, risNumber) {
+    const body = document.getElementById(targetId);
+    if (!body) return;
+    const workflowStages = ['For Vehicle Endorsement','For Assessment','For Approval','For Parts Completion','For Repair','On-going Repair','For Release'];
+    const histories = getWorkflowRowsForBranch(row, risNumber);
+    const grouped = {};
+    histories.forEach(function(item) {
+        const key = normalizeWorkflowStatusForBranch(item.workflow_status || item.status || '');
+        if (!key) return;
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(item);
+    });
+    body.innerHTML = workflowStages.map(function(stage) {
+        const rows = grouped[stage] || [];
+        const cards = rows.length ? rows.map(function(item) {
+            const attachmentHtml = renderTimelineAttachmentButtonsForBranch(item.attachment || '');
+            const processedBy = (item.processed_by_name || '').trim() || (item.processed_by ? 'User #' + item.processed_by : 'System');
+            const details = formatWorkflowDetailsForBranch(item.details || '');
+            const risNo = item.ris_number ? ' • RIS No.: ' + escapeHtml(item.ris_number) : '';
+            return '<div class="timeline-subrecord"><div class="timeline-meta">' + escapeHtml(item.processed_at || '') + ' • Processed by: ' + escapeHtml(processedBy) + risNo + '</div><div class="timeline-details">' + details + '</div>' + attachmentHtml + '</div>';
+        }).join('') : '<div class="timeline-meta text-muted">No record yet for this step.</div>';
+        return '<div class="timeline-item ' + (rows.length ? 'timeline-done' : 'timeline-pending') + '"><div class="timeline-status">' + escapeHtml(stage) + '</div>' + cards + '</div>';
+    }).join('');
+}
+
+function openRepairWorkflowModal(risNumber) {
+    if (!selectedVehicleRow) return;
+    const title = document.getElementById('repairWorkflowTitle');
+    const subtitle = document.getElementById('repairWorkflowSubtitle');
+    if (title) title.textContent = risNumber ? 'Detailed Repair Workflow - ' + risNumber : 'Detailed Repair Workflow';
+    if (subtitle) subtitle.textContent = (dataValue(selectedVehicleRow, 'plateNo') ? 'Plate No.: ' + dataValue(selectedVehicleRow, 'plateNo') : '');
+    renderWorkflowTimelineForBranch('repairWorkflowTimelineBody', selectedVehicleRow, risNumber);
+
+    const parentModalEl = document.getElementById('vehicleDetailsModal');
+    const workflowModalEl = document.getElementById('repairWorkflowModal');
+
+    if (parentModalEl && workflowModalEl) {
+        const parentModal = bootstrap.Modal.getInstance(parentModalEl) || bootstrap.Modal.getOrCreateInstance(parentModalEl);
+        const workflowModal = bootstrap.Modal.getInstance(workflowModalEl) || bootstrap.Modal.getOrCreateInstance(workflowModalEl);
+
+        sessionStorage.setItem('repairWorkflowReturnModalId', 'vehicleDetailsModal');
+        parentModal.hide();
+
+        setTimeout(function () {
+            workflowModal.show();
+        }, 250);
+    }
 }
 
 
@@ -4067,6 +4653,88 @@ function getRowData(btn, key){
     const tr = btn.closest('tr');
     return tr ? (tr.dataset[key] || '') : '';
 }
+
+function getFuelMonitoringHistory(row) {
+    const raw = row ? (row.dataset.fuelHistory || '') : '';
+    if (!raw) return [];
+    return parseJsonSafe(raw, []);
+}
+function renderVehicleFuelMonitoring(row) {
+    const tbody = document.getElementById('detailFuelMonitoringBody');
+    if (!tbody) return;
+    const history = getFuelMonitoringHistory(row);
+    if (!Array.isArray(history) || history.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-muted text-center py-3">Fuel monitoring records will appear here once available.</td></tr>';
+        return;
+    }
+    tbody.innerHTML = history.map(function(item) {
+        return '<tr><td>' + escapeHtml(item.fuel_date || '') + '</td><td>' + escapeHtml(item.current_odometer || '') + '</td><td>' + escapeHtml(item.previous_odometer || '') + '</td><td>' + escapeHtml(item.distance_covered || '') + '</td><td>' + escapeHtml(item.liters_consumed || '') + '</td><td>' + escapeHtml(item.fuel_efficiency || '') + '</td></tr>';
+    }).join('');
+}
+function computeFuelMonitoringValues(changedFieldId = '') {
+    const currentInput = document.getElementById('fuelCurrentOdometer');
+    const previousInput = document.getElementById('fuelPreviousOdometer');
+    const litersInput = document.getElementById('fuelLitersConsumed');
+    const distanceInput = document.getElementById('fuelDistanceCovered');
+    const efficiencyInput = document.getElementById('fuelEfficiency');
+
+    const current = parseFloat(currentInput?.value || '0');
+    const previous = parseFloat(previousInput?.value || '0');
+    const liters = parseFloat(litersInput?.value || '0');
+
+    let distance = parseFloat(distanceInput?.value || '0');
+    const odometerChanged = changedFieldId === 'fuelCurrentOdometer' || changedFieldId === 'fuelPreviousOdometer';
+
+    if (currentInput?.value !== '' && previousInput?.value !== '' && current >= previous) {
+        distance = current - previous;
+        if (distanceInput) distanceInput.value = distance > 0 ? distance.toFixed(2) : '';
+    } else if (odometerChanged && distanceInput) {
+        distance = 0;
+        distanceInput.value = '';
+    }
+
+    if (distance > 0 && liters > 0 && efficiencyInput) {
+        efficiencyInput.value = (distance / liters).toFixed(2);
+    } else if ((odometerChanged || changedFieldId === 'fuelLitersConsumed' || changedFieldId === 'fuelDistanceCovered') && efficiencyInput) {
+        efficiencyInput.value = '';
+    }
+}
+document.addEventListener('input', function(e) {
+    if (e.target && e.target.classList && e.target.classList.contains('fuel-calc-field')) {
+        computeFuelMonitoringValues(e.target.id || '');
+    }
+});
+function openFuelMonitoringModal(btn) {
+    const row = btn.closest('tr'); if (!row) return;
+    selectedVehicleRow = row;
+    const form = document.getElementById('fuelMonitoringForm'); if (form) form.reset();
+    document.getElementById('fuelVehicleDbId').value = dataValue(row, 'dbId');
+    document.getElementById('fuelVehicleCode').value = dataValue(row, 'vehicleId');
+    document.getElementById('fuelPlateNo').value = dataValue(row, 'plateNo');
+    document.getElementById('fuelDate').value = today();
+    document.getElementById('fuelVehicleTitle').textContent = [dataValue(row, 'makeBrand'), dataValue(row, 'vehicleType')].filter(Boolean).join(' - ') || 'Vehicle';
+    document.getElementById('fuelVehicleSubtitle').textContent = dataValue(row, 'plateNo') ? 'Plate No.: ' + dataValue(row, 'plateNo') : 'Fuel monitoring record';
+    const history = getFuelMonitoringHistory(row);
+    if (history.length && history[0].current_odometer) document.getElementById('fuelPreviousOdometer').value = history[0].current_odometer;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('fuelMonitoringModal')).show();
+}
+function saveFuelMonitoring() {
+    const form = document.getElementById('fuelMonitoringForm'); if (!form) return;
+    computeFuelMonitoringValues();
+    const formData = new FormData(form);
+    fetch('motorpool.php', { method: 'POST', body: formData }).then(r => r.json()).then(data => {
+        if (!data.success) { alert(data.message || 'Failed to save fuel monitoring record.'); return; }
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('fuelMonitoringModal')).hide();
+        if (selectedVehicleRow) {
+            const history = getFuelMonitoringHistory(selectedVehicleRow);
+            history.unshift({ fuel_id: data.fuel_id || '', vehicle_db_id: data.vehicle_db_id || '', vehicle_id: data.vehicle_id || '', plate_no: data.plate_no || '', fuel_date: data.fuel_date || '', current_odometer: data.current_odometer || '', previous_odometer: data.previous_odometer || '', distance_covered: data.distance_covered || '', liters_consumed: data.liters_consumed || '', fuel_efficiency: data.fuel_efficiency || '', created_at: data.created_at || '' });
+            selectedVehicleRow.dataset.fuelHistory = JSON.stringify(history);
+            renderVehicleFuelMonitoring(selectedVehicleRow);
+        }
+        setTimeout(function(){ bootstrap.Modal.getOrCreateInstance(document.getElementById('vehicleDetailsModal')).show(); const fuelTabBtn = document.querySelector('[data-bs-target="#vehicleFuelMonitoringTab"]'); if (fuelTabBtn) bootstrap.Tab.getOrCreateInstance(fuelTabBtn).show(); }, 200);
+    }).catch(error => { console.error('Fuel monitoring save error:', error); alert('Failed to save fuel monitoring record. Please try again.'); });
+}
+
 function openRisModal(btn){
     const vehicleId = getRowData(btn, 'vehicleId');
     const vehicleDbId = getRowData(btn, 'dbId');
@@ -4801,6 +5469,27 @@ setTimeout(() => {
     expandActiveDropdownContainers();  // Buksan ang dropdown kung nasa loob ang active item
     scrollToActiveSidebarItem();       // I-scroll papunta sa active item
 }, 150);
+
+
+document.addEventListener('DOMContentLoaded', function () {
+    const workflowModalEl = document.getElementById('repairWorkflowModal');
+
+    if (workflowModalEl) {
+        workflowModalEl.addEventListener('hidden.bs.modal', function () {
+            const returnModalId = sessionStorage.getItem('repairWorkflowReturnModalId');
+            sessionStorage.removeItem('repairWorkflowReturnModalId');
+
+            if (returnModalId) {
+                const parentModalEl = document.getElementById(returnModalId);
+                if (parentModalEl) {
+                    setTimeout(function () {
+                        bootstrap.Modal.getOrCreateInstance(parentModalEl).show();
+                    }, 200);
+                }
+            }
+        });
+    }
+});
 </script>
 </body>
 </html>

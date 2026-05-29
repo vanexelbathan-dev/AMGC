@@ -16,6 +16,20 @@ $branch_id = (int)($_SESSION['branch_id'] ?? (function_exists('getUserBranchId')
 $user_name = trim(($_SESSION['first_name'] ?? 'Driver') . ' ' . ($_SESSION['last_name'] ?? 'User'));
 if ($user_name === '') $user_name = 'Driver User';
 
+// Get user initials for avatar
+$user_initials = '';
+if (!empty($user_name)) {
+    $name_parts = explode(' ', $user_name);
+    foreach ($name_parts as $part) {
+        if (!empty($part)) {
+            $user_initials .= strtoupper(substr($part, 0, 1));
+        }
+    }
+}
+if (empty($user_initials)) {
+    $user_initials = 'DV';
+}
+
 function esc($v) {
     return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8');
 }
@@ -877,6 +891,7 @@ foreach ($collected_records as $cr) {
     <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         :root{--green:#047857;--bright:#44D34E;--dark:#052A47}
@@ -970,30 +985,68 @@ foreach ($collected_records as $cr) {
 </head>
 <body>
 <div id="appPage">
-    <div class="sidebar" id="sidebar">
-        <div class="sidebar-header">
-            <h3>
-                <button class="desktop-toggle-btn" id="desktopToggleBtn"><i class="bi bi-list" id="toggleIcon"></i></button>
-                <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon">
-                <span class="nav-text">Delivery</span>
-            </h3>
-        </div>
-        <div class="sidebar-menu">
-            <ul class="nav flex-column">
-                <li class="nav-item"><a class="nav-link" href="fordelivery.php"><i class="bi bi-truck"></i><span class="nav-text">For Delivery</span></a></li>
-                <li class="nav-item"><a class="nav-link" href="trip_tickets.php"><i class="bi bi-ticket"></i><span class="nav-text">Trip Tickets</span></a></li>
-                <li class="nav-item"><a class="nav-link active" href="driver_collections.php"><i class="bi bi-cash-stack"></i><span class="nav-text">Collections</span></a></li>
-                <li class="nav-item"><a class="nav-link" href="rejecteddelivery.php"><i class="bi bi-exclamation-circle"></i><span class="nav-text">Rejected Delivery</span></a></li>
-            </ul>
-        </div>
-        <div class="sidebar-footer">
-            <div class="user-profile-sidebar">
-                <div class="user-avatar-sidebar"><?php echo esc(substr($user_name,0,2)); ?></div>
-                <div class="user-details-sidebar"><span class="user-name-sidebar"><?php echo esc($user_name); ?></span></div>
+    <!-- Sidebar -->
+        <div class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <h3>
+                    <button class="desktop-toggle-btn" id="desktopToggleBtn">
+                        <i class="bi bi-list" id="toggleIcon"></i>
+                    </button>
+                    <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
+                    <span class="nav-text">Delivery</span>
+                </h3>
             </div>
-            <button class="logout-btn-sidebar" onclick="logout()"><i class="bi bi-box-arrow-right"></i><span class="logout-text">Logout</span></button>
+            
+           <div class="sidebar-menu">
+                <ul class="nav flex-column">
+                     <li class="nav-item">
+                        <a class="nav-link" href="fordelivery.php">
+                            <i class="bi bi-truck"></i>
+                            <span class="nav-text">For Delivery</span>
+                        </a>
+                    </li>
+
+                    <li class="nav-item">
+                        <a class="nav-link" href="trip_tickets.php">
+                            <i class="bi bi-ticket"></i>
+                            <span class="nav-text">Trip Tickets</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="driver_collections.php">
+                            <i class="bi bi-cash-stack"></i>
+                            <span class="nav-text">Collections</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="vehicle.php">
+                            <i class="bi bi-car-front"></i>
+                            <span class="nav-text">Vehicle</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="rejecteddelivery.php">
+                            <i class="bi bi-exclamation-circle"></i>
+                            <span class="nav-text">Rejected Delivery</span>
+                        </a>
+                    </li>
+                </ul>
+            </div>
+            <hr class="sidebar-divider">
+            <div class="sidebar-footer">
+                <div class="user-profile-sidebar">
+                    <div class="user-avatar-sidebar"><?php echo $user_initials; ?></div>
+                    <div class="user-details-sidebar">
+                        <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
+                    </div>
+                </div>
+                
+                <button class="logout-btn-sidebar" onclick="logout()">
+                    <i class="bi bi-box-arrow-right"></i>
+                    <span class="logout-text">Logout</span>
+                </button>
+            </div>
         </div>
-    </div>
 
     <div class="main-content">
         <div class="navbar-top">
