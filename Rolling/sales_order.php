@@ -4,7 +4,11 @@ require_once '../config/session_handler.php';
 
 // Protect page - only Rolling Account role can access
 requireLogin();
+<<<<<<< HEAD
 requireRole(['rolling']);
+=======
+requireRole(['rolling_account']);
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
 // Check if payments table exists, if not create it
 $check_payments = $conn->query("SHOW TABLES LIKE 'payments'");
@@ -68,6 +72,7 @@ if ($check_invoice_column && $check_invoice_column->num_rows > 0) {
     $invoice_so_column_exists = true;
 }
 
+<<<<<<< HEAD
 
 // Check if collection_records table/columns exist for Completed Today tab
 $collection_records_exists = false;
@@ -88,6 +93,8 @@ if ($check_collection_table && $check_collection_table->num_rows > 0) {
     $collection_has_created_at = ($check_collection_created && $check_collection_created->num_rows > 0);
 }
 
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 // Check if trip_tickets has additional columns
 $trip_has_so_id = false;
 $check_trip_so = $conn->query("SHOW COLUMNS FROM trip_tickets LIKE 'so_id'");
@@ -158,9 +165,12 @@ $branch_condition = "";
 if ($so_branch_column_exists && !$view_all_branches) {
     $branch_condition = "AND so.branch_id = $branch_id";
 }
+<<<<<<< HEAD
 // Rolling account can only access sales orders encoded by the logged-in Rolling user.
 $rolling_owner_condition = " AND so.created_by = " . intval($user_id);
 $branch_condition .= $rolling_owner_condition;
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
 $customers_branch_condition = "";
 if ($customers_branch_column_exists && !$view_all_branches) {
@@ -172,6 +182,7 @@ if ($drivers_branch_column_exists && !$view_all_branches) {
     $drivers_branch_condition = "AND branch_id = $branch_id";
 }
 
+<<<<<<< HEAD
 
 // ------------------------------------------------------------
 // Rolling Serve/Deliver helpers
@@ -276,6 +287,8 @@ if (!function_exists('ensureRollingServeCollectionTables')) {
     }
 }
 
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 // ------------------------------------------------------------
 // Helper: Recalculate customer credit_used based on all unpaid invoices
 // ------------------------------------------------------------
@@ -466,7 +479,10 @@ $current_week_sales_query = "
 if ($so_branch_column_exists && !$view_all_branches && $branch_id > 0) {
     $current_week_sales_query .= " AND branch_id = $branch_id";
 }
+<<<<<<< HEAD
 $current_week_sales_query .= " AND created_by = " . intval($user_id);
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
 $current_week_sales_result = $conn->query($current_week_sales_query);
 $current_week_sales = $current_week_sales_result->fetch_assoc()['week_total'] ?? 0;
@@ -551,6 +567,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     header('Content-Type: application/json');
     
     try {
+<<<<<<< HEAD
         // View-only page: Rolling can view/print records only. No edit, delete, or invoice-status updates allowed.
         $readonly_actions = ['update_order', 'delete_order', 'update_invoice_status'];
         if (in_array($_POST['action'], $readonly_actions, true)) {
@@ -713,6 +730,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             ]);
             exit;
         }
+=======
+        $conn->begin_transaction();
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         
         // UPDATE SALES ORDER
         if ($_POST['action'] === 'update_order') {
@@ -723,6 +743,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $selected_driver_id = isset($_POST['driver_id']) && !empty($_POST['driver_id']) ? (int)$_POST['driver_id'] : null;
             $selected_vehicle_id = isset($_POST['vehicle_id']) && !empty($_POST['vehicle_id']) ? (int)$_POST['vehicle_id'] : null;
             
+<<<<<<< HEAD
             $status_query = "SELECT order_status, customer_id, branch_id, so_number FROM sales_orders WHERE so_id = ? AND created_by = ?";
             $status_stmt = $conn->prepare($status_query);
             $status_stmt->bind_param("ii", $so_id, $user_id);
@@ -731,14 +752,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             if (!$order_info) {
                 throw new Exception('Order not found or access denied');
             }
+=======
+            $status_query = "SELECT order_status, customer_id, branch_id, so_number FROM sales_orders WHERE so_id = ?";
+            $status_stmt = $conn->prepare($status_query);
+            $status_stmt->bind_param("i", $so_id);
+            $status_stmt->execute();
+            $order_info = $status_stmt->get_result()->fetch_assoc();
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             $old_status = $order_info['order_status'];
             $order_branch_id = $order_info['branch_id'];
             $customer_id = $order_info['customer_id'];
             
             if ($so_branch_column_exists && !$view_all_branches) {
+<<<<<<< HEAD
                 $check_query = "SELECT so_id FROM sales_orders WHERE so_id = ? AND branch_id = ? AND created_by = ?";
                 $check_stmt = $conn->prepare($check_query);
                 $check_stmt->bind_param("iii", $so_id, $branch_id, $user_id);
+=======
+                $check_query = "SELECT so_id FROM sales_orders WHERE so_id = ? AND branch_id = ?";
+                $check_stmt = $conn->prepare($check_query);
+                $check_stmt->bind_param("ii", $so_id, $branch_id);
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 $check_stmt->execute();
                 $check_result = $check_stmt->get_result();
                 
@@ -1154,9 +1188,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $so_id = (int)$_POST['so_id'];
             
             if ($so_branch_column_exists && !$view_all_branches) {
+<<<<<<< HEAD
                 $check_query = "SELECT so_id FROM sales_orders WHERE so_id = ? AND branch_id = ? AND created_by = ?";
                 $check_stmt = $conn->prepare($check_query);
                 $check_stmt->bind_param("iii", $so_id, $branch_id, $user_id);
+=======
+                $check_query = "SELECT so_id FROM sales_orders WHERE so_id = ? AND branch_id = ?";
+                $check_stmt = $conn->prepare($check_query);
+                $check_stmt->bind_param("ii", $so_id, $branch_id);
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 $check_stmt->execute();
                 $check_result = $check_stmt->get_result();
                 
@@ -1204,9 +1244,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $delete_items_stmt->bind_param("i", $so_id);
             $delete_items_stmt->execute();
             
+<<<<<<< HEAD
             $delete_order_query = "DELETE FROM sales_orders WHERE so_id = ? AND created_by = ?";
             $delete_order_stmt = $conn->prepare($delete_order_query);
             $delete_order_stmt->bind_param("ii", $so_id, $user_id);
+=======
+            $delete_order_query = "DELETE FROM sales_orders WHERE so_id = ?";
+            $delete_order_stmt = $conn->prepare($delete_order_query);
+            $delete_order_stmt->bind_param("i", $so_id);
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             
             if (!$delete_order_stmt->execute()) {
                 throw new Exception('Failed to delete sales order');
@@ -1247,11 +1293,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 LEFT JOIN users u ON so.created_by = u.user_id
                 LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
                 WHERE so.so_id = ?
+<<<<<<< HEAD
                   AND so.created_by = ?
+=======
+                GROUP BY so.so_id
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             ";
             
             if ($so_branch_column_exists && !$view_all_branches) {
                 $query .= " AND so.branch_id = ?";
+<<<<<<< HEAD
                 $query .= " GROUP BY so.so_id";
                 $stmt = $conn->prepare($query);
                 $stmt->bind_param("iii", $so_id, $user_id, $branch_id);
@@ -1259,6 +1310,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $query .= " GROUP BY so.so_id";
                 $stmt = $conn->prepare($query);
                 $stmt->bind_param("ii", $so_id, $user_id);
+=======
+                $stmt = $conn->prepare($query);
+                $stmt->bind_param("ii", $so_id, $branch_id);
+            } else {
+                $stmt = $conn->prepare($query);
+                $stmt->bind_param("i", $so_id);
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             }
             
             $stmt->execute();
@@ -1405,16 +1463,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 LEFT JOIN branches b ON so.branch_id = b.branch_id
                 JOIN items i ON soi.item_id = i.item_id
                 WHERE soi.so_id = ?
+<<<<<<< HEAD
                   AND so.created_by = ?
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             ";
             
             if ($so_branch_column_exists && !$view_all_branches) {
                 $query .= " AND so.branch_id = ?";
                 $stmt = $conn->prepare($query);
+<<<<<<< HEAD
                 $stmt->bind_param("iii", $so_id, $user_id, $branch_id);
             } else {
                 $stmt = $conn->prepare($query);
                 $stmt->bind_param("ii", $so_id, $user_id);
+=======
+                $stmt->bind_param("ii", $so_id, $branch_id);
+            } else {
+                $stmt = $conn->prepare($query);
+                $stmt->bind_param("i", $so_id);
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             }
             
             $stmt->execute();
@@ -1457,7 +1525,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 LEFT JOIN branches b ON so.branch_id = b.branch_id
                 JOIN items i ON soi.item_id = i.item_id
                 WHERE 1=1
+<<<<<<< HEAD
                   AND so.created_by = " . intval($user_id) . "
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             ";
             
             if (!empty($filter_data['status']) && $filter_data['status'] !== '') {
@@ -1524,7 +1595,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 JOIN items i ON soi.item_id = i.item_id
                 JOIN users u ON so.created_by = u.user_id
                 WHERE 1=1
+<<<<<<< HEAD
                   AND so.created_by = " . intval($user_id) . "
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             ";
             
             if (!empty($start_date) && !empty($end_date)) {
@@ -1585,7 +1659,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 JOIN items i ON soi.item_id = i.item_id
                 JOIN users u ON so.created_by = u.user_id
                 WHERE 1=1
+<<<<<<< HEAD
                   AND so.created_by = " . intval($user_id) . "
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             ";
             
             if (!empty($start_date) && !empty($end_date)) {
@@ -1621,6 +1698,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 <meta charset="UTF-8">
                 <title>All Sales Orders Report</title>
                 <style>
+<<<<<<< HEAD
         /* Rolling Sales Order is view-only */
         .btn-edit,
         .btn-delete,
@@ -1630,6 +1708,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             display: none !important;
         }
 
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     body { font-family: Arial, sans-serif; margin: 20px; font-size: 12px; }
                     .header { text-align: center; margin-bottom: 20px; }
                     .header h1 { margin: 5px 0; font-size: 20px; }
@@ -1642,6 +1722,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         body { margin: 0; }
                         .no-print { display: none; }
                     }
+<<<<<<< HEAD
                 
 
 /* Serve / Deliver action for Rolling Pending Today */
@@ -1678,6 +1759,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     color: #ffffff;
 }
 </style>
+=======
+                </style>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             </head>
             <body>
                 <div class="header">
@@ -1768,12 +1852,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 LEFT JOIN users u ON so.created_by = u.user_id
                 JOIN items i ON soi.item_id = i.item_id
                 WHERE soi.so_id = ?
+<<<<<<< HEAD
                   AND so.created_by = ?
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 ORDER BY soi.so_item_id
             ";
             
             $stmt = $conn->prepare($query);
+<<<<<<< HEAD
             $stmt->bind_param("ii", $so_id, $user_id);
+=======
+            $stmt->bind_param("i", $so_id);
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             $stmt->execute();
             $items = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             
@@ -1814,9 +1905,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             
             $so_id = (int)$_POST['so_id'];
             
+<<<<<<< HEAD
             $query = "SELECT inv.* FROM invoices inv JOIN sales_orders so ON inv.so_id = so.so_id WHERE inv.so_id = ? AND so.created_by = ?";
             $stmt = $conn->prepare($query);
             $stmt->bind_param("ii", $so_id, $user_id);
+=======
+            $query = "SELECT * FROM invoices WHERE so_id = ?";
+            $stmt = $conn->prepare($query);
+            $stmt->bind_param("i", $so_id);
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             $stmt->execute();
             $result = $stmt->get_result();
             $invoice = $result->fetch_assoc();
@@ -1886,6 +1983,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     i.item_name,
                     i.stock as available_stock
                 FROM sales_order_items soi
+<<<<<<< HEAD
                 JOIN sales_orders so ON soi.so_id = so.so_id
                 JOIN items i ON soi.item_id = i.item_id
                 WHERE soi.so_id = ?
@@ -1893,6 +1991,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             ";
             $items_stmt = $conn->prepare($items_query);
             $items_stmt->bind_param("ii", $so_id, $user_id);
+=======
+                JOIN items i ON soi.item_id = i.item_id
+                WHERE soi.so_id = ?
+            ";
+            $items_stmt = $conn->prepare($items_query);
+            $items_stmt->bind_param("i", $so_id);
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             $items_stmt->execute();
             $items = $items_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             
@@ -1942,6 +2047,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 }
 
 // FETCH SALES ORDERS WITH CUSTOMER, ITEM COUNTS, AND INVOICE DATA
+<<<<<<< HEAD
 $collection_date_expr_parts = [];
 if ($collection_records_exists) {
     if ($collection_has_approved_at) $collection_date_expr_parts[] = "cr.approved_at";
@@ -1988,6 +2094,8 @@ if ($invoice_so_column_exists) {
     }
 }
 
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 $sales_query = "
     SELECT 
         so.so_id,
@@ -2005,7 +2113,11 @@ $sales_query = "
         u.last_name,
         COUNT(DISTINCT soi.so_item_id) as total_items,
         SUM(soi.quantity_ordered) as total_quantity,
+<<<<<<< HEAD
         " . $invoice_select_sql . ",
+=======
+        " . ($invoice_so_column_exists ? "inv.invoice_id, inv.invoice_number, inv.status as invoice_status, pay.collected_by_name, pay.payment_date as collected_at" : "NULL as invoice_id, NULL as invoice_number, NULL as invoice_status, NULL as collected_by_name, NULL as collected_at") . ",
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         (SELECT driver_name FROM drivers WHERE driver_id = pl.driver_id LIMIT 1) as assigned_driver
     FROM sales_orders so
     JOIN customers c ON so.customer_id = c.customer_id
@@ -2013,7 +2125,18 @@ $sales_query = "
     LEFT JOIN users u ON so.created_by = u.user_id
     LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
     LEFT JOIN pick_lists pl ON so.so_id = pl.so_id
+<<<<<<< HEAD
     " . $invoice_join_sql . "
+=======
+    " . ($invoice_so_column_exists ? "LEFT JOIN invoices inv ON so.so_id = inv.so_id
+       LEFT JOIN (
+           SELECT p1.invoice_id, p1.payment_date, CONCAT(COALESCE(u.first_name, ''), CASE WHEN u.last_name IS NOT NULL AND u.last_name != '' THEN CONCAT(' ', u.last_name) ELSE '' END) AS collected_by_name
+           FROM payments p1
+           LEFT JOIN users u ON p1.created_by = u.user_id
+           INNER JOIN (SELECT invoice_id, MAX(payment_id) AS latest_payment_id FROM payments GROUP BY invoice_id) p2
+               ON p1.payment_id = p2.latest_payment_id
+       ) pay ON inv.invoice_id = pay.invoice_id" : "") . "
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     WHERE 1=1
     $branch_condition
     GROUP BY so.so_id
@@ -2039,12 +2162,16 @@ $statPendingOrders = $pending_orders;
 $statCompletedOrders = $delivered_orders;
 
 // Get unique customers for filter
+<<<<<<< HEAD
 $customers_query = "SELECT DISTINCT c.customer_id, c.customer_name
     FROM customers c
     JOIN sales_orders so ON so.customer_id = c.customer_id
     WHERE c.status = 'active'
       AND so.created_by = " . intval($user_id) . " " . ($customers_branch_column_exists && !$view_all_branches ? "AND c.branch_id = " . intval($branch_id) : "") . "
     ORDER BY c.customer_name";
+=======
+$customers_query = "SELECT customer_id, customer_name FROM customers WHERE status = 'active' $customers_branch_condition ORDER BY customer_name";
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 $customers_result = $conn->query($customers_query);
 $customers = $customers_result->fetch_all(MYSQLI_ASSOC);
 
@@ -2557,6 +2684,7 @@ if (!$view_all_branches && $branch_id > 0) {
             opacity: 0;
             pointer-events: none;
         }
+<<<<<<< HEAD
 
         .print-preview-modal .modal-content {
             border: none;
@@ -2594,6 +2722,8 @@ if (!$view_all_branches && $branch_id > 0) {
             background: #ffffff;
             border-radius: 8px;
         }
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         
         .sidebar, .navbar-top, .footer, .action-buttons, 
         .btn, .table-header .btn, .form-card, 
@@ -2669,7 +2799,11 @@ if (!$view_all_branches && $branch_id > 0) {
             }
             
             body {
+<<<<<<< HEAD
                 padding-bottom: 76px;
+=======
+                padding-bottom: 70px;
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             }
         }
 
@@ -2712,10 +2846,13 @@ if (!$view_all_branches && $branch_id > 0) {
             color: #2E7D32;
         }
 
+<<<<<<< HEAD
         .mobile-nav .nav-link.has-active {
             color: #2E7D32;
         }
 
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .mobile-nav .nav-link.active::after {
             content: '';
             position: absolute;
@@ -2817,6 +2954,7 @@ if (!$view_all_branches && $branch_id > 0) {
             background: #f5f5f5;
         }
 
+<<<<<<< HEAD
         .more-dropdown .dropdown-item.active {
             background: #ecfdf5;
             color: #047857;
@@ -2827,6 +2965,8 @@ if (!$view_all_branches && $branch_id > 0) {
             color: #047857;
         }
 
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .more-dropdown .dropdown-item i {
             width: 20px;
             font-size: 1rem;
@@ -3691,6 +3831,7 @@ if (!$view_all_branches && $branch_id > 0) {
         color: #2E7D32 !important;
     }
 }
+<<<<<<< HEAD
     
 
 
@@ -3947,6 +4088,9 @@ if (!$view_all_branches && $branch_id > 0) {
     }
 }
 </style>
+=======
+    </style>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 </head>
 <body>
     <div id="appPage">
@@ -3992,6 +4136,7 @@ if (!$view_all_branches && $branch_id > 0) {
                 <li class="nav-item">
                     <a class="nav-link" href="purchase_order.php">
                         <i class="bi bi-truck"></i>
+<<<<<<< HEAD
                         <span class="nav-text">Recieve Inventory</span>
                     </a>
                 </li>
@@ -4007,6 +4152,11 @@ if (!$view_all_branches && $branch_id > 0) {
                             <span class="nav-text">Reports</span>
                         </a>
                     </li>
+=======
+                        <span class="nav-text">Purchase Orders</span>
+                    </a>
+                </li>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             </ul>
         </div>
     </div>
@@ -4293,6 +4443,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                     </button>
                 </div>
 
+<<<<<<< HEAD
                 <!-- Sales Order Tabs - gaya ng current_inventory.php -->
 <div class="sales-order-tabs no-print mb-3">
     <div class="category-tabs" id="salesOrderTabs">
@@ -4314,6 +4465,8 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
     </div>
 </div>
 
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 <!-- Sales Orders Table -->
                 <div class="data-table">
                     <div class="table-header d-flex justify-content-between align-items-center no-print">
@@ -4389,7 +4542,18 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                                                 <button class="btn-action btn-print" onclick="printSingleOrder(<?= $order['so_id'] ?>)" title="Print Order">
                                                     <i class="bi bi-printer"></i>
                                                 </button>
+<<<<<<< HEAD
                                                 <!-- View-only: edit/delete actions removed for Rolling -->
+=======
+                                                <?php if ($order['order_status'] == 'pending'): ?>
+                                                    <button class="btn-action btn-edit" onclick="editOrder(<?= $order['so_id'] ?>)" title="Edit">
+                                                        <i class="bi bi-pencil"></i>
+                                                    </button>
+                                                    <button class="btn-action btn-delete" onclick="deleteOrder(<?= $order['so_id'] ?>)" title="Delete">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                <?php endif; ?>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                             </div>
                                         </div>
                                     </tr>
@@ -4406,6 +4570,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
      <!-- Mobile Bottom Navigation -->
     <div class="mobile-nav" id="mobileNav">
         <ul class="nav">
+<<<<<<< HEAD
             <li class="nav-item">
                 <a class="nav-link" href="current_inventory.php">
                     <i class="bi bi-box-seam"></i>
@@ -4455,6 +4620,13 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                     </a>
                 </div>
             </li>
+=======
+            <li class="nav-item dropdown-more" id="inventoryDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'inventoryDropdownMenu')"><i class="bi bi-box-seam"></i><span>Inventory</span></a><div class="more-dropdown" id="inventoryDropdownMenu"><a href="current_inventory.php" class="dropdown-item"><i class="bi bi-bar-chart-line"></i><span>Current Inventory</span></a><a href="bad_orders.php" class="dropdown-item"><i class="bi bi-recycle"></i><span>Bad Orders</span></a></div></li>
+            <li class="nav-item dropdown-more" id="salesDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'salesDropdownMenu')"><i class="bi bi-cart"></i><span>Sales</span></a><div class="more-dropdown" id="salesDropdownMenu"><a href="sales_order.php" class="dropdown-item"><i class="bi bi-cart"></i><span>Sales Orders</span></a><a href="pick_list_items.php" class="dropdown-item"><i class="bi bi-list-check"></i><span>Pick Lists</span></a></div></li>
+            <li class="nav-item dropdown-more" id="purchaseDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'purchaseDropdownMenu')"><i class="bi bi-truck"></i><span>Purchase</span></a><div class="more-dropdown" id="purchaseDropdownMenu" style="right: 0 !important; left: auto !important;"><a href="purchase_order.php" class="dropdown-item"><i class="bi bi-box"></i><span>Purchase Orders</span></a><a href="supplier.php" class="dropdown-item"><i class="bi bi-building"></i><span>Suppliers</span></a></div></li>
+            <li class="nav-item"><a class="nav-link" href="trip_tickets.php"><i class="bi bi-ticket-perforated"></i><span>Trips</span></a></li>
+            <li class="nav-item dropdown-more" id="moreDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'moreDropdownMenu')"><i class="bi bi-three-dots-vertical"></i><span>More</span></a><div class="more-dropdown" id="moreDropdownMenu"><a href="drivers.php" class="dropdown-item"><i class="bi bi-people"></i><span>Users</span></a><a href="approve_credit_requests.php" class="dropdown-item"><i class="bi bi-pencil-square"></i><span>Approve Requests</span></a><div class="dropdown-divider"></div><a href="#" class="dropdown-item logout-item" onclick="showProfileModal(); return false;"><i class="bi bi-box-arrow-right"></i><span>Logout</span></a></div></li>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         </ul>
     </div>
 
@@ -4474,6 +4646,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             <div class="modal-footer">
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
                 <button type="button" class="btn btn-primary" onclick="printOrder(currentOrderId)" id="printOrderBtn">Print Order</button>
+<<<<<<< HEAD
                 <!-- View-only: edit/delete buttons removed -->
             </div>
         </div>
@@ -4573,6 +4746,10 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 <button type="button" class="btn btn-success" onclick="submitServeDeliverOrder()" id="serveDeliverSubmitBtn">
                     <i class="bi bi-check2-circle me-1"></i> Mark as Delivered & Save Collection
                 </button>
+=======
+                <button type="button" class="btn btn-warning" onclick="editFromView()" id="editFromViewBtn">Edit Order</button>
+                <button type="button" class="btn btn-danger" onclick="deleteFromView()" id="deleteFromViewBtn" style="display: none;">Delete Order</button>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             </div>
         </div>
     </div>
@@ -4745,6 +4922,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
     <!-- Print Frame (hidden) -->
     <iframe id="printFrame" name="printFrame"></iframe>
 
+<<<<<<< HEAD
     <!-- PRINT PREVIEW MODAL -->
     <div class="modal fade no-print print-preview-modal" id="printPreviewModal" tabindex="-1" data-bs-backdrop="true" data-bs-keyboard="true">
         <div class="modal-dialog modal-dialog-centered modal-lg">
@@ -4768,6 +4946,8 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         </div>
     </div>
 
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     
@@ -4831,11 +5011,14 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 'customer' => strtolower($order['customer_name']),
                 'customerDisplay' => $order['customer_name'],
                 'status' => $order['order_status'],
+<<<<<<< HEAD
                 'invoiceStatus' => strtolower((string)($order['invoice_status'] ?? '')),
                 'collectionStatus' => strtolower((string)($order['collection_status'] ?? '')),
                 // Completed Today uses the sales order date and delivered/completed status only.
                                 'completedDate' => !empty($order['collected_at']) ? $order['collected_at'] : $order['created_at'],
                 'collectedAt' => $order['collected_at'] ?? '',
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 'date' => $order['created_at'],
                 'dateDisplay' => formatDate($order['created_at']),
                 'amount' => floatval($order['total_amount']),
@@ -4854,6 +5037,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         console.log('MASTER ORDER DATA loaded:', MASTER_ORDER_DATA.length, 'orders');
     }
 
+<<<<<<< HEAD
     // ========== SERVE / DELIVER WITH COLLECTION ==========
     let currentServeOrder = null;
     let selectedServePaymentMethod = 'cash';
@@ -4995,6 +5179,8 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         });
     }
 
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     // ========== RENDER TABLE ==========
     function renderTable(dataToRender) {
         if (isRendering) return;
@@ -5064,6 +5250,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                 <td><span class="${statusBadgeClass}">${statusText}</span><\/td>
                 <td class="no-print">
                     <div class="action-buttons">
+<<<<<<< HEAD
                         ${activeSalesOrderTab === 'pending_today' ? `
                             <button class="btn-action btn-serve-deliver" onclick="event.stopPropagation(); openServeDeliverModal(${order.id})" title="Serve / Deliver">
                                 <i class="bi bi-truck"></i>
@@ -5076,6 +5263,19 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
                         <button class="btn-action btn-print" onclick="event.stopPropagation(); printSingleOrder(${order.id})" title="Print Order">
                             <i class="bi bi-printer"></i>
                         </button>
+=======
+                        <button class="btn-action btn-print" onclick="printSingleOrder(${order.id})" title="Print Order">
+                            <i class="bi bi-printer"></i>
+                        </button>
+                        ${order.status === 'pending' ? `
+                            <button class="btn-action btn-edit" onclick="editOrder(${order.id})" title="Edit">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                            <button class="btn-action btn-delete" onclick="deleteOrder(${order.id})" title="Delete">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        ` : ''}
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     </div>
                 <\/td>
             `;
@@ -5089,6 +5289,7 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         isRendering = false;
     }
     
+<<<<<<< HEAD
     // ========== SALES ORDER TAB FILTERS ==========
     let activeSalesOrderTab = 'historical';
 
@@ -5170,6 +5371,8 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         updateSalesOrderTabCounts();
     }
 
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     // ========== APPLY FILTERS ==========
     function applyManualFilters() {
         const searchTerm = document.getElementById('searchInput')?.value.toLowerCase().trim() || '';
@@ -5194,11 +5397,18 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         }
         
         const hasDateFilter = startDateTime !== null && endDateTime !== null;
+<<<<<<< HEAD
         const tabBaseData = getActiveTabBaseData();
         const noFilters = searchTerm === '' && statusFilter === '' && customerFilter === '' && !hasDateFilter;
         
         if (noFilters) {
             currentDisplayData = [...tabBaseData];
+=======
+        const noFilters = searchTerm === '' && statusFilter === '' && customerFilter === '' && !hasDateFilter;
+        
+        if (noFilters) {
+            currentDisplayData = [...MASTER_ORDER_DATA];
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             renderTable(currentDisplayData);
             const totalAmount = currentDisplayData.reduce((sum, order) => sum + order.amount, 0);
             updateTotalAmountDisplay(totalAmount);
@@ -5209,7 +5419,11 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
             return;
         }
         
+<<<<<<< HEAD
         const filteredOrders = tabBaseData.filter(order => {
+=======
+        const filteredOrders = MASTER_ORDER_DATA.filter(order => {
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             let isInDateRange = true;
             
             if (order.date && startDateTime && endDateTime) {
@@ -5515,9 +5729,14 @@ ALTER TABLE invoices ADD FOREIGN KEY (so_id) REFERENCES sales_orders(so_id);</co
         handleSalesOrderTap();
         attachRowClickEvents();
         
+<<<<<<< HEAD
         updateSalesOrderTabCounts();
         if (MASTER_ORDER_DATA && MASTER_ORDER_DATA.length > 0) {
             currentDisplayData = getActiveTabBaseData();
+=======
+        if (MASTER_ORDER_DATA && MASTER_ORDER_DATA.length > 0) {
+            currentDisplayData = [...MASTER_ORDER_DATA];
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             renderTable(currentDisplayData);
             updateTotalAmountDisplay(currentDisplayData.reduce((sum, o) => sum + o.amount, 0));
             console.log('Initial render from MASTER_ORDER_DATA:', MASTER_ORDER_DATA.length, 'orders');
@@ -6397,10 +6616,103 @@ function viewOrder(id) {
             .then(data => {
                 Swal.close();
                 if (data.success) {
+<<<<<<< HEAD
                     const order = data.order || null;
                     const items = data.items || [];
                     const html = generateRollingOrderReceiptHTML(order, items);
                     showReceiptPrintPreview(html);
+=======
+                    const order = data.order;
+                    const items = data.items;
+                    const driver = data.driver;
+                    
+                    // Build HTML for single order
+                    const orderDate = order ? new Date(order.order_date).toLocaleString() : '';
+                    const customerName = order ? order.customer_name : '';
+                    const orderNumber = order ? order.so_number : '';
+                    const orderStatus = order ? order.order_status : '';
+                    const totalAmount = order ? order.order_total : 0;
+                    const driverName = driver ? driver.driver_name : (order?.assigned_driver !== 'No Driver' ? order?.assigned_driver : 'No Driver');
+                    const vehicleName = driver && driver.vehicle_type ? `${driver.vehicle_type} - ${driver.plate_number || ''}` : 'No Vehicle';
+                    
+                    let itemsHtml = '';
+                    let totalQty = 0;
+                    if (items && items.length > 0) {
+                        items.forEach(item => {
+                            const subtotal = item.quantity_ordered * item.unit_price;
+                            totalQty += parseInt(item.quantity_ordered);
+                            itemsHtml += `
+                                <tr>
+                                    <td style="padding: 3px; border: 1px solid #000;">${escapeHtml(item.item_code)}</div>
+                                    <td style="padding: 3px; border: 1px solid #000;">${escapeHtml(item.item_name)}</div>
+                                    <td style="padding: 3px; border: 1px solid #000; text-align: center;">${escapeHtml(item.unit_type || '')}</div>
+                                    <td style="padding: 3px; border: 1px solid #000; text-align: center;">${item.quantity_ordered}</div>
+                                    <td style="padding: 3px; border: 1px solid #000; text-align: right;">${formatCurrency(item.unit_price)}</div>
+                                    <td style="padding: 3px; border: 1px solid #000; text-align: right;">${formatCurrency(subtotal)}</div>
+                                </tr>
+                            `;
+                        });
+                    }
+                    
+                    const statusText = getStatusText(orderStatus);
+                    
+                    const html = `
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                            <meta charset="UTF-8">
+                            <title>Order #${orderNumber}</title>
+                            <style>
+                                body { font-family: Arial, sans-serif; margin: 20px; font-size: 12px; }
+                                .header { text-align: center; margin-bottom: 20px; }
+                                .header h1 { margin: 5px 0; font-size: 18px; }
+                                .order-info { border: 1px solid #000; padding: 10px; margin-bottom: 15px; }
+                                .order-info-row { display: flex; margin-bottom: 5px; }
+                                .order-info-label { width: 120px; font-weight: bold; }
+                                .order-info-value { flex: 1; }
+                                table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                                th, td { border: 1px solid #000; padding: 6px; text-align: left; }
+                                th { background: #f2f2f2; }
+                                .total-row { font-weight: bold; }
+                                .footer { margin-top: 20px; text-align: center; font-size: 10px; }
+                            </style>
+                        </head>
+                        <body>
+                            <div class="header">
+                                <h1>Sales Order</h1>
+                                <p>${orderNumber}</p>
+                            </div>
+                            <div class="order-info">
+                                <div class="order-info-row"><div class="order-info-label">Order Date:</div><div class="order-info-value">${orderDate}</div></div>
+                                <div class="order-info-row"><div class="order-info-label">Customer:</div><div class="order-info-value">${escapeHtml(customerName)}</div></div>
+                                <div class="order-info-row"><div class="order-info-label">Status:</div><div class="order-info-value">${statusText}</div></div>
+                                <div class="order-info-row"><div class="order-info-label">Driver:</div><div class="order-info-value">${escapeHtml(driverName)}</div></div>
+                                <div class="order-info-row"><div class="order-info-label">Vehicle:</div><div class="order-info-value">${escapeHtml(vehicleName)}</div></div>
+                            </div>
+                            <table>
+                                <thead>
+                                    <tr><th>Item Code</th><th>Item Name</th><th>Unit</th><th>Qty</th><th>Unit Price</th><th>Subtotal</th></tr>
+                                </thead>
+                                <tbody>
+                                    ${itemsHtml}
+                                    <tr class="total-row"><td colspan="3" style="text-align: right;">TOTAL</div><td style="text-align: center;">${totalQty}</div><td></div><td style="text-align: right;">${formatCurrency(totalAmount)}</div></tr>
+                                </tbody>
+                            </table>
+                            <div class="footer">Generated: ${new Date().toLocaleString()}</div>
+                        </body>
+                        </html>
+                    `;
+                    
+                    const iframe = document.getElementById('printFrame');
+                    const iframeDoc = iframe.contentWindow.document;
+                    iframeDoc.open();
+                    iframeDoc.write(html);
+                    iframeDoc.close();
+                    setTimeout(() => {
+                        iframe.contentWindow.focus();
+                        iframe.contentWindow.print();
+                    }, 200);
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 } else {
                     Swal.fire('Error', data.message || 'Failed to load order details', 'error');
                 }
@@ -6410,6 +6722,7 @@ function viewOrder(id) {
                 Swal.fire('Error', 'An error occurred while preparing print', 'error');
             });
     }
+<<<<<<< HEAD
 
     function writeHtmlToIframe(iframe, html) {
         const iframeDoc = iframe.contentWindow.document;
@@ -6692,6 +7005,8 @@ body {
 </html>
         `;
     }
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     
     function printOrder(id) { 
         if (id) printSingleOrder(id); 
@@ -6768,7 +7083,11 @@ body {
             dropdown.classList.remove('show');
             btn.classList.remove('active');
         } else {
+<<<<<<< HEAD
             ['moreDropdownMenu'].forEach(id => {
+=======
+            ['inventoryDropdownMenu', 'salesDropdownMenu', 'purchaseDropdownMenu', 'moreDropdownMenu'].forEach(id => {
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 const d = document.getElementById(id);
                 if (d && d !== dropdown) d.classList.remove('show');
             });
@@ -6789,7 +7108,11 @@ body {
     };
     
     function closeAllDropdowns() {
+<<<<<<< HEAD
         ['moreDropdownMenu'].forEach(id => {
+=======
+        ['inventoryDropdownMenu', 'salesDropdownMenu', 'purchaseDropdownMenu', 'moreDropdownMenu'].forEach(id => {
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             const dropdown = document.getElementById(id);
             if (dropdown) dropdown.classList.remove('show');
         });
@@ -6861,12 +7184,16 @@ body {
     function rowClickHandler(e) {
         if (e.target.closest('.btn-action')) return;
         const orderId = this.getAttribute('data-id');
+<<<<<<< HEAD
         if (!orderId) return;
         if (activeSalesOrderTab === 'pending_today' && typeof openServeDeliverModal === 'function') {
             openServeDeliverModal(orderId);
             return;
         }
         if (typeof viewOrder === 'function') viewOrder(orderId);
+=======
+        if (orderId && typeof viewOrder === 'function') viewOrder(orderId);
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     }
     
     function forceRemoveBackdrop() {
@@ -6880,7 +7207,11 @@ body {
     setTimeout(function() {
         handleSalesOrderTap();
         attachRowClickEvents();
+<<<<<<< HEAD
         ['viewOrderModal', 'serveDeliverModal', 'editOrderModal', 'deleteOrderModal', 'stockWarningModal'].forEach(modalId => {
+=======
+        ['viewOrderModal', 'editOrderModal', 'deleteOrderModal', 'stockWarningModal'].forEach(modalId => {
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             const modalElement = document.getElementById(modalId);
             if (modalElement) {
                 modalElement.addEventListener('hidden.bs.modal', forceRemoveBackdrop);
@@ -7150,6 +7481,7 @@ body {
             }
         });
     });
+<<<<<<< HEAD
 
 
     // ===== VIEW-ONLY LOCK FOR ROLLING =====
@@ -7207,6 +7539,8 @@ function setSalesOrderTab(tabName) {
     applyManualFilters();
     updateSalesOrderTabCounts();
 }
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 </script>
 </body>
 </html>

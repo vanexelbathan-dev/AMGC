@@ -513,11 +513,16 @@ $page_subtitle = 'Record flat tire, vulcanizing, fuel, repair, and other route e
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title><?php echo h($page_title); ?> - AMGC</title>
 <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
+<<<<<<< HEAD
 <link rel="stylesheet" href="../css/rolling.css">
+=======
+<link rel="stylesheet" href="../css/current_inventory.css">
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <style>
+<<<<<<< HEAD
 .mobile-menu-btn {
     display:none;
     background:transparent;
@@ -1118,11 +1123,16 @@ $page_subtitle = 'Record flat tire, vulcanizing, fuel, repair, and other route e
 }
 
 
+=======
+:root{--primary-green:#44D34E;--secondary-green:#44D34E;--light-green:#d1fae5;--dark-green:#047857;--dark-color:#052A47;--light-color:#f9fafb}
+body{background:#f4f6f9;font-family:Segoe UI,sans-serif}.main-content{margin-left:260px;padding:20px}.navbar-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:1.5rem}.mobile-menu-btn{display:none;background:transparent;border:none;font-size:1.5rem;color:#052A47}.section-card,.form-card{background:#fff;border-radius:18px;border:1px solid rgba(68,211,78,.12);box-shadow:0 8px 20px rgba(15,23,42,.05);margin-bottom:1rem;overflow:hidden}.section-header{padding:1rem 1.25rem;border-bottom:1px solid #eef2f7;display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap}.section-body{padding:1rem 1.25rem}.table thead th{background-color:#f8f9fa;color:#052A47;border-bottom:2px solid #dee2e6;white-space:nowrap;font-weight:600}.amount-negative{color:#dc2626;font-weight:700}.amount-neutral{color:#052A47;font-weight:700}.form-control,.form-select{border-radius:10px;min-height:44px}.expense-group-table .group-header{background:#f8f9fa;font-weight:700;border-bottom:2px solid #dee2e6}.clickable-expense-row{cursor:pointer}.clickable-expense-row:hover td{background-color:#f8fff9!important}.expense-name-link{color:#047857;font-weight:800}.child-row td:first-child{padding-left:2rem!important}.filter-header{padding:1rem 1.25rem;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #eef2f7}.filter-header h5{margin:0;color:#052A47;font-weight:800;display:flex;align-items:center;gap:.5rem}.filter-toggle-btn{width:38px;height:38px;border-radius:50%;border:none;background:#ecfdf5;color:#047857;display:flex;align-items:center;justify-content:center;transition:.2s}.filter-toggle-btn:hover{background:#d1fae5}.filter-content{padding:1rem 1.25rem;transition:.2s}.filter-content.collapsed{display:none}.filter-active-badge{display:none;background:#fff7ed;color:#c2410c;border:1px solid #fed7aa;border-radius:999px;padding:.25rem .6rem;font-size:.72rem;font-weight:700}.filter-active-badge.show{display:inline-block}.sticky-filter-wrap{position:sticky;top:10px;z-index:99}.stat-card-row{margin-bottom:1.5rem}.stat-card{background:linear-gradient(135deg,#047857,#059669)!important;border:none!important;box-shadow:0 4px 10px rgba(0,0,0,.08)!important;padding:1rem!important;color:#fff!important;border-radius:14px!important;min-height:120px;display:flex;gap:.75rem;align-items:flex-start}.stat-card *{color:#fff!important}.stat-card:hover{transform:translateY(-2px);box-shadow:0 6px 15px rgba(0,0,0,.15)!important}.stat-icon{font-size:1.6rem}.stat-value{font-size:1.25rem;font-weight:800}.stat-label{font-size:.8rem}.btn-amgc-primary,.btn-amgc-dark,.btn-amgc-light,.btn-outline-amgc-dark{padding:.5rem 1rem;border-radius:999px!important;font-weight:700;font-size:14px;display:inline-flex;align-items:center;gap:.5rem;box-shadow:0 4px 10px rgba(0,0,0,.12);border:none}.btn-amgc-primary{background:linear-gradient(135deg,#047857,#44D34E);color:#fff}.btn-amgc-dark{background:linear-gradient(135deg,#052A47,#047857);color:#fff}.btn-amgc-light{background:#d1fae5;color:#047857;border:1px solid #44D34E}.btn-outline-amgc-dark{background:#fff;color:#047857;border:2px solid #047857}.btn-amgc-primary:hover,.btn-amgc-dark:hover{color:#fff;transform:translateY(-1px)}.btn-amgc-light:hover,.btn-outline-amgc-dark:hover{color:#047857}.mobile-nav{position:fixed;bottom:0;left:0;right:0;background:#fff;box-shadow:0 -2px 10px rgba(0,0,0,.1);padding:8px 12px;z-index:1000;display:none}.mobile-nav .nav{display:flex;justify-content:space-around;list-style:none;margin:0;padding:0}.mobile-nav .nav-link{display:flex;flex-direction:column;align-items:center;font-size:.72rem;color:#6c757d;text-decoration:none}.mobile-nav .nav-link.active{color:#047857}.mobile-nav i{font-size:1.25rem}@media(max-width:992px){.sidebar{transform:translateX(-100%)}.sidebar.active{transform:translateX(0)}.main-content{margin-left:0!important;padding:14px}.mobile-menu-btn{display:block}.mobile-nav{display:block}body{padding-bottom:76px}}@media(max-width:768px){.stat-card{aspect-ratio:1/1;min-height:auto;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:.5rem!important}.stat-card small{display:none}.stat-value{font-size:.95rem}.stat-label{font-size:.62rem}.table{min-width:850px}.section-header{display:block}}
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 </style>
 </head>
 <body>
 <div id="appPage">
 <div class="sidebar" id="sidebar">
+<<<<<<< HEAD
     <div class="sidebar-header">
         <h3>
             <button class="desktop-toggle-btn" id="desktopToggleBtn">
@@ -1211,6 +1221,22 @@ $page_subtitle = 'Record flat tire, vulcanizing, fuel, repair, and other route e
 
 <div class="main-content" id="mainContent">
     <div class="navbar-top no-print"><button class="mobile-toggle-btn mobile-menu-btn" id="mobileToggleBtn"><i class="bi bi-list"></i></button><div class="page-title"><h2><?php echo h($page_title); ?></h2><p><?php echo h($page_subtitle); ?></p></div></div>
+=======
+    <div class="sidebar-header"><h3><button class="desktop-toggle-btn" id="desktopToggleBtn"><i class="bi bi-list"></i></button><img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"><span class="nav-text">Rolling</span></h3></div>
+    <div class="sidebar-content"><div class="sidebar-menu"><ul class="nav flex-column">
+        <li class="nav-item"><a class="nav-link" href="rollingdashboard.php"><i class="bi bi-speedometer2"></i><span class="nav-text">Dashboard</span></a></li>
+        <li class="nav-item"><a class="nav-link" href="current_inventory.php"><i class="bi bi-box-seam"></i><span class="nav-text">Current Inventory</span></a></li>
+        <li class="nav-item"><a class="nav-link" href="customer.php"><i class="bi bi-people"></i><span class="nav-text">Customers</span></a></li>
+        <li class="nav-item"><a class="nav-link" href="sales_order.php"><i class="bi bi-cart-check"></i><span class="nav-text">Sales Order</span></a></li>
+        <li class="nav-item"><a class="nav-link" href="collections.php"><i class="bi bi-cash-stack"></i><span class="nav-text">Collections</span></a></li>
+        <li class="nav-item"><a class="nav-link active" href="expenses.php"><i class="bi bi-receipt-cutoff"></i><span class="nav-text">Expenses</span></a></li>
+    </ul></div></div>
+    <div class="sidebar-footer"><div class="user-profile-sidebar"><div class="user-avatar-sidebar"><?php echo h($user_initials); ?></div><div class="user-details-sidebar"><span class="user-name-sidebar"><?php echo h($user_name); ?></span><span class="user-role-sidebar">Rolling Account</span></div></div><button class="logout-btn-sidebar" onclick="logout()"><i class="bi bi-box-arrow-right"></i><span class="logout-text">Logout</span></button></div>
+</div>
+
+<div class="main-content" id="mainContent">
+    <div class="navbar-top no-print"><button class="mobile-menu-btn" id="mobileMenuBtn"><i class="bi bi-list"></i></button><div class="page-title"><h2><?php echo h($page_title); ?></h2><p><?php echo h($page_subtitle); ?></p></div></div>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
     <div class="row stat-card-row g-1 g-sm-2 mb-4 no-print">
         <div class="col"><div class="stat-card"><i class="bi bi-cash-stack stat-icon"></i><div class="stat-content"><div class="stat-value"><?php echo money($total_expenses); ?></div><div class="stat-label">Total Expenses</div><small>All recorded expenses</small></div></div></div>
@@ -1245,6 +1271,7 @@ $page_subtitle = 'Record flat tire, vulcanizing, fuel, repair, and other route e
 </div>
 </div>
 
+<<<<<<< HEAD
 <!-- Mobile Bottom Navigation -->
 <div class="mobile-nav" id="mobileNav">
     <ul class="nav">
@@ -1263,6 +1290,17 @@ $page_subtitle = 'Record flat tire, vulcanizing, fuel, repair, and other route e
         </li>
     </ul>
 </div>
+=======
+<nav class="mobile-nav">
+    <ul class="nav">
+        <li class="nav-item"><a class="nav-link" href="current_inventory.php"><i class="bi bi-box-seam"></i><span>Inventory</span></a></li>
+        <li class="nav-item"><a class="nav-link" href="customer.php"><i class="bi bi-people"></i><span>Customer</span></a></li>
+        <li class="nav-item"><a class="nav-link" href="sales_order.php"><i class="bi bi-cart-check"></i><span>Orders</span></a></li>
+        <li class="nav-item"><a class="nav-link" href="collections.php"><i class="bi bi-cash-stack"></i><span>Collect</span></a></li>
+        <li class="nav-item"><a class="nav-link active" href="expenses.php"><i class="bi bi-receipt-cutoff"></i><span>Expense</span></a></li>
+    </ul>
+</nav>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
 <div class="modal fade" id="expenseModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered modal-xl"><div class="modal-content" style="border-radius:20px"><div class="modal-header"><h5 class="modal-title"><i class="bi bi-cash-stack me-2"></i><span id="expenseModalTitle">Expense Details</span></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body" id="expenseModalBody"><div class="text-center py-5"><div class="spinner-border text-success"></div> Loading expenses...</div></div><div class="modal-footer"><button type="button" class="btn btn-outline-amgc-dark" data-bs-dismiss="modal"><i class="bi bi-x-lg"></i> Close</button></div></div></div></div>
 
@@ -1272,6 +1310,7 @@ $page_subtitle = 'Record flat tire, vulcanizing, fuel, repair, and other route e
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+<<<<<<< HEAD
 function toggleSidebar(){
     const s=document.getElementById('sidebar');
     if(!s)return;
@@ -1289,6 +1328,10 @@ function toggleSidebar(){
 }
 function toggleSidebarDropdown(e,id){e.preventDefault();const t=document.getElementById(id);if(t)t.classList.toggle('show')}
 function toggleDropdown(e,id){e.preventDefault();e.stopPropagation();document.querySelectorAll('.more-dropdown').forEach(d=>{if(d.id!==id)d.classList.remove('show')});const el=document.getElementById(id);if(el)el.classList.toggle('show')}
+=======
+function toggleSidebar(){const s=document.getElementById('sidebar');if(window.innerWidth<=992){s.classList.toggle('active')}else{s.classList.toggle('collapsed');localStorage.setItem('sidebarCollapsed',s.classList.contains('collapsed'))}}
+function toggleSidebarDropdown(e,id){e.preventDefault();const t=document.getElementById(id);if(t)t.classList.toggle('show')}
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 function logout(){Swal.fire({title:'Are you sure?',text:'You will be logged out of the system',icon:'question',showCancelButton:true,confirmButtonColor:'#07d826',cancelButtonColor:'#6c757d',confirmButtonText:'Yes, logout'}).then((r)=>{if(r.isConfirmed)window.location.href='../logout.php';})}
 let expenseModal;
 function updateFilterBadge(){const active=!!(document.getElementById('filter_from_date').value||document.getElementById('filter_to_date').value||document.getElementById('filter_search').value.trim());document.getElementById('activeFilterBadge')?.classList.toggle('show',active)}
@@ -1296,9 +1339,15 @@ async function loadFilteredData(){const fromDate=document.getElementById('filter
 function resetFiltersAJAX(){document.getElementById('filter_from_date').value='';document.getElementById('filter_to_date').value='';document.getElementById('filter_search').value='';loadFilteredData()}
 function attachExpenseRowClickListeners(){document.querySelectorAll('.clickable-expense-row').forEach(row=>{row.onclick=function(){openExpenseModal(this.getAttribute('data-expense-account'),this.getAttribute('data-payee')||'')}})}
 async function openExpenseModal(expenseAccount,payee){document.getElementById('expenseModalTitle').innerText=payee?`${expenseAccount} / ${payee}`:expenseAccount;document.getElementById('expenseModalBody').innerHTML='<div class="text-center py-5"><div class="spinner-border text-success"></div> Loading expenses...</div>';expenseModal.show();try{const params=new URLSearchParams(window.location.search);let url=`${window.location.pathname}?ajax=get_expense_transactions&expense_account=${encodeURIComponent(expenseAccount)}&payee=${encodeURIComponent(payee||'')}`;['from_date','to_date','search'].forEach(k=>{if(params.get(k))url+=`&${k}=${encodeURIComponent(params.get(k))}`});const response=await fetch(url,{cache:'no-store'});document.getElementById('expenseModalBody').innerHTML=await response.text()}catch(e){document.getElementById('expenseModalBody').innerHTML='<div class="alert alert-danger">Failed to load expense transactions.</div>'}}
+<<<<<<< HEAD
 document.addEventListener('DOMContentLoaded',function(){expenseModal=new bootstrap.Modal(document.getElementById('expenseModal'));if(localStorage.getItem('sidebarCollapsed')==='true'&&window.innerWidth>992)document.getElementById('sidebar')?.classList.add('collapsed');document.getElementById('mobileMenuBtn')?.addEventListener('click',toggleSidebar);document.getElementById('mobileToggleBtn')?.addEventListener('click',toggleSidebar);document.getElementById('desktopToggleBtn')?.addEventListener('click',toggleSidebar);const toggleBtn=document.getElementById('filterToggleBtn');const filterContent=document.getElementById('filterContent');const filterIcon=document.getElementById('filterIcon');toggleBtn?.addEventListener('click',function(){const collapsed=filterContent.classList.contains('collapsed');filterContent.classList.toggle('collapsed',!collapsed);this.setAttribute('aria-expanded',collapsed?'true':'false');filterIcon.classList.toggle('bi-chevron-down',!collapsed);filterIcon.classList.toggle('bi-chevron-up',collapsed)});document.getElementById('applyFilterBtn')?.addEventListener('click',loadFilteredData);document.getElementById('resetFilterBtn')?.addEventListener('click',resetFiltersAJAX);document.getElementById('filter_search')?.addEventListener('keypress',function(e){if(e.key==='Enter'){e.preventDefault();loadFilteredData()}});['filter_from_date','filter_to_date','filter_search'].forEach(id=>document.getElementById(id)?.addEventListener('input',updateFilterBadge));updateFilterBadge();const chk=document.getElementById('is_sub_account');const parentGroup=document.getElementById('parent_bank_group');const parentInput=document.getElementById('parent_bank_name');chk?.addEventListener('change',function(){parentGroup.style.display=this.checked?'block':'none';parentInput.required=this.checked;if(!this.checked)parentInput.value=''})
 const expenseForm=document.getElementById('addExpenseForm');expenseForm?.addEventListener('submit',function(e){e.preventDefault();const fd=new FormData(this);fd.append('action','add_expense');fetch(window.location.pathname,{method:'POST',body:fd}).then(r=>r.json()).then(data=>{if(data.success){Swal.fire('Success',data.message,'success').then(()=>window.location.reload())}else{Swal.fire('Error',data.message||'Failed to save expense','error')}}).catch(()=>Swal.fire('Error','Network error. Please try again.','error'))});
 const accountForm=document.getElementById('addExpenseAccountForm');accountForm?.addEventListener('submit',function(e){e.preventDefault();const fd=new FormData(this);fd.append('action','add_expense_account');fetch(window.location.pathname,{method:'POST',body:fd}).then(r=>r.json()).then(data=>{if(data.success){Swal.fire('Success',data.message,'success').then(()=>window.location.reload())}else{Swal.fire('Error',data.message||'Failed to save account','error')}}).catch(()=>Swal.fire('Error','Network error. Please try again.','error'))});document.addEventListener('click',function(e){if(!e.target.closest('.dropdown-more'))document.querySelectorAll('.more-dropdown').forEach(d=>d.classList.remove('show'));});attachExpenseRowClickListeners()});
+=======
+document.addEventListener('DOMContentLoaded',function(){expenseModal=new bootstrap.Modal(document.getElementById('expenseModal'));if(localStorage.getItem('sidebarCollapsed')==='true'&&window.innerWidth>992)document.getElementById('sidebar')?.classList.add('collapsed');document.getElementById('mobileMenuBtn')?.addEventListener('click',toggleSidebar);document.getElementById('desktopToggleBtn')?.addEventListener('click',toggleSidebar);const toggleBtn=document.getElementById('filterToggleBtn');const filterContent=document.getElementById('filterContent');const filterIcon=document.getElementById('filterIcon');toggleBtn?.addEventListener('click',function(){const collapsed=filterContent.classList.contains('collapsed');filterContent.classList.toggle('collapsed',!collapsed);this.setAttribute('aria-expanded',collapsed?'true':'false');filterIcon.classList.toggle('bi-chevron-down',!collapsed);filterIcon.classList.toggle('bi-chevron-up',collapsed)});document.getElementById('applyFilterBtn')?.addEventListener('click',loadFilteredData);document.getElementById('resetFilterBtn')?.addEventListener('click',resetFiltersAJAX);document.getElementById('filter_search')?.addEventListener('keypress',function(e){if(e.key==='Enter'){e.preventDefault();loadFilteredData()}});['filter_from_date','filter_to_date','filter_search'].forEach(id=>document.getElementById(id)?.addEventListener('input',updateFilterBadge));updateFilterBadge();const chk=document.getElementById('is_sub_account');const parentGroup=document.getElementById('parent_bank_group');const parentInput=document.getElementById('parent_bank_name');chk?.addEventListener('change',function(){parentGroup.style.display=this.checked?'block':'none';parentInput.required=this.checked;if(!this.checked)parentInput.value=''})
+const expenseForm=document.getElementById('addExpenseForm');expenseForm?.addEventListener('submit',function(e){e.preventDefault();const fd=new FormData(this);fd.append('action','add_expense');fetch(window.location.pathname,{method:'POST',body:fd}).then(r=>r.json()).then(data=>{if(data.success){Swal.fire('Success',data.message,'success').then(()=>window.location.reload())}else{Swal.fire('Error',data.message||'Failed to save expense','error')}}).catch(()=>Swal.fire('Error','Network error. Please try again.','error'))});
+const accountForm=document.getElementById('addExpenseAccountForm');accountForm?.addEventListener('submit',function(e){e.preventDefault();const fd=new FormData(this);fd.append('action','add_expense_account');fetch(window.location.pathname,{method:'POST',body:fd}).then(r=>r.json()).then(data=>{if(data.success){Swal.fire('Success',data.message,'success').then(()=>window.location.reload())}else{Swal.fire('Error',data.message||'Failed to save account','error')}}).catch(()=>Swal.fire('Error','Network error. Please try again.','error'))});attachExpenseRowClickListeners()});
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 </script>
 </body>
 </html>

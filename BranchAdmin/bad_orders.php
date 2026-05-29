@@ -1570,12 +1570,15 @@ function formatDate($dateTimeStr) {
     <div class="sidebar-content">
         <div class="sidebar-menu">
             <ul class="nav flex-column">
+<<<<<<< HEAD
                 
             <li class="nav-item">
                 <a class="nav-link" href="branchdashboard.php">
                 <i class="bi bi-speedometer2"></i>
                 <span class="nav-text">Dashboard</span></a>
             </li>
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 <!-- Warehouse Dropdown - walang dropdown-toggle class -->
 <li class="nav-item dropdown-nav">
     <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'warehouseMenu')">
@@ -1603,11 +1606,14 @@ function formatDate($dateTimeStr) {
                     <span class="nav-text">Pick List Items</span>
                 </a>
             </li>
+<<<<<<< HEAD
                                             <li class="nav-item">
                                     <a class="nav-link" href="warehouses.php">
                                     <i class="bi bi-shop"></i>
                                     <span class="nav-text">Warehouses</span></a>
                                 </li>
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         </ul>
     </div>
 </li>
@@ -1625,7 +1631,11 @@ function formatDate($dateTimeStr) {
             <li class="nav-item">
                 <a class="nav-link" href="purchase_order.php">
                     <i class="bi bi-box"></i>
+<<<<<<< HEAD
                     <span class="nav-text">Receive Inventory</span>
+=======
+                    <span class="nav-text">Purchase Order</span>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 </a>
             </li>
             <li class="nav-item">
@@ -1638,6 +1648,7 @@ function formatDate($dateTimeStr) {
     </div>
 </li>
 
+<<<<<<< HEAD
 <li class="nav-item dropdown-nav">
                             <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'customerMenu')">
                                 <i class="bi bi-people"></i><span class="nav-text">Customer</span><i class="bi bi-chevron-down dropdown-arrow"></i>
@@ -1651,6 +1662,43 @@ function formatDate($dateTimeStr) {
                                 </ul>
                             </div>
                         </li>
+=======
+<!-- Customer Dropdown - walang dropdown-toggle class -->
+<li class="nav-item dropdown-nav">
+    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'customerMenu')">
+        <i class="bi bi-people"></i>
+        <span class="nav-text">Customer</span>
+        <i class="bi bi-chevron-down dropdown-arrow"></i>
+    </a>
+    <div class="collapse" id="customerMenu">
+        <ul class="nav flex-column ps-4">
+            <li class="nav-item">
+                <a class="nav-link" href="sales_order.php">
+                    <i class="bi bi-cart"></i>
+                    <span class="nav-text">Sales Order</span>
+                </a>
+            </li>
+            <li class="nav-item"><a class="nav-link" href="collections.php">
+                <i class="bi bi-cash-stack"></i>
+                    <span class="nav-text">Collections</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="customer_list.php">
+                    <i class="bi bi-person-badge"></i>
+                    <span class="nav-text">Customer List</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="approve_credit_requests.php">
+                    <i class="bi bi-pencil-square"></i>
+                    <span class="nav-text">Approved Credit Request</span>
+                </a>
+            </li>
+        </ul>
+    </div>
+</li>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
 <!-- Delivery Dropdown - walang dropdown-toggle class -->
 <li class="nav-item dropdown-nav">
@@ -1670,6 +1718,7 @@ function formatDate($dateTimeStr) {
         </ul>
     </div>
 </li>
+<<<<<<< HEAD
                                     <!-- Banking Dropdown -->
                     <li class="nav-item dropdown-nav">
                         <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'bankingMenu')">
@@ -1736,6 +1785,14 @@ function formatDate($dateTimeStr) {
     </div>
 </li>
                     
+=======
+                <li class="nav-item">
+    <a class="nav-link" href="banking.php">
+        <i class="bi bi-bank2"></i>
+        <span class="nav-text">Banking</span>
+    </a>
+</li>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 <!-- Users -->
                 <li class="nav-item">
                     <a class="nav-link" href="drivers.php">
@@ -1743,8 +1800,11 @@ function formatDate($dateTimeStr) {
                         <span class="nav-text">Users</span>
                     </a>
                 </li>
+<<<<<<< HEAD
                 
                 
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             </ul>
         </div>
     </div>
@@ -1841,15 +1901,25 @@ function formatDate($dateTimeStr) {
             <i class="bi bi-check-circle stat-icon"></i>
             <div class="stat-content">
                 <div class="stat-value"><?= $statApprovedRMR ?></div>
+<<<<<<< HEAD
                 <div class="stat-label">Confirmed</div>
+=======
+                <div class="stat-label">Approved</div>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             </div>
         </div>
     </div>
 </div>
 
+<<<<<<< HEAD
                <!-- FILTER SECTION - COLLAPSIBLE DESIGN (Entire header clickable) -->
 <div class="form-card mb-4" id="filterCard">
     <div class="filter-header" id="filterHeader" style="cursor: pointer;">
+=======
+               <!-- FILTER SECTION - COLLAPSIBLE DESIGN -->
+<div class="form-card mb-4">
+    <div class="filter-header">
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         <h5>
             <i class="bi bi-funnel"></i> Filter RMR Requests
             <span class="filter-count-badge" id="filterCountBadge">0</span>
@@ -1890,7 +1960,11 @@ function formatDate($dateTimeStr) {
                     <option value="all">All Status</option>
                     <option value="pending">Pending</option>
                     <option value="processing">Processing</option>
+<<<<<<< HEAD
                     <option value="approved">Confirmed</option>
+=======
+                    <option value="approved">Approved</option>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     <option value="rejected">Rejected</option>
                     <option value="resolved">Resolved</option>
                 </select>
@@ -1949,6 +2023,17 @@ function formatDate($dateTimeStr) {
     </div>
 </div>
 
+<<<<<<< HEAD
+=======
+<!-- Filter Summary (shows when filters are active) -->
+<div id="filterSummary" class="filter-summary" style="display: none;">
+    <i class="bi bi-funnel-fill"></i>
+    <span id="filterSummaryText">Active filters applied</span>
+    <button class="clear-filters" onclick="clearAllFilters()">
+        <i class="bi bi-x-circle"></i> Clear All
+    </button>
+</div>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                <div class="category-tabs">
     <div class="category-tab active" data-tab="rmr-list">
         <i class="bi bi-list-ul me-1"></i> RMR List
@@ -2093,10 +2178,14 @@ function formatDate($dateTimeStr) {
                 </tr>
                 <?php else: ?>
                     <?php foreach ($rejected_deliveries as $delivery): ?>
+<<<<<<< HEAD
                     <tr class="rejected-row"
                         data-delivery-date="<?= htmlspecialchars($delivery['delivery_date'] ?? '') ?>"
                         data-status="rejected"
                         data-branch="<?= htmlspecialchars($delivery['branch_id'] ?? '') ?>">
+=======
+                    <tr>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         <td><span class="badge bg-light text-dark">#<?= $delivery['delivery_id'] ?></span></td>
                         <td data-so-id="<?= $delivery['so_id'] ?? 0 ?>"><strong><?= htmlspecialchars($delivery['so_number'] ?? 'N/A') ?></strong></td>
                         <td data-customer-id="<?= $delivery['customer_id'] ?? 0 ?>"><?= htmlspecialchars($delivery['customer_name'] ?? 'Unknown') ?></td>
@@ -2123,6 +2212,12 @@ function formatDate($dateTimeStr) {
                                 <?php if ($delivery['has_rmr'] > 0): ?>
                                     <span class="badge bg-info">RMR Created</span>
                                 <?php else: ?>
+<<<<<<< HEAD
+=======
+                                    <button class="btn-action btn-view" onclick='viewRejectedDelivery(<?= $delivery['delivery_id'] ?>, "<?= addslashes($delivery['rejection_photo'] ?? '') ?>", "<?= addslashes(trim(preg_replace('/\s+/', ' ', $delivery['rejection_reason'] ?? 'No rejection reason provided'))) ?>", <?= json_encode($delivery['remarks'] ?? 'No remarks provided') ?>)' title="View Details">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                     <button class="btn-action btn-create" onclick="showCreateRMRModal(<?= $delivery['delivery_id'] ?>, <?= $delivery['so_id'] ?? 0 ?>, <?= $delivery['customer_id'] ?? 0 ?>)" title="Create RMR">
                                         <i class="bi bi-plus-circle"></i>
                                     </button>
@@ -2414,6 +2509,7 @@ function formatDate($dateTimeStr) {
         </div>
     </div>
 
+<<<<<<< HEAD
 <!-- Mobile Bottom Navigation - Clean Version (No Arrows) -->
 <div class="mobile-nav" id="mobileNav">
     <ul class="nav">
@@ -2560,6 +2656,21 @@ function formatDate($dateTimeStr) {
 
     <!-- Mobile Profile Modal -->
     <div class="modal fade" id="profileModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title"><i class="bi bi-person-circle me-2"></i>User Profile</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body text-center"><div class="user-avatar-large mb-3"><?php echo $user_initials; ?></div><h4 class="mb-1"><?php echo htmlspecialchars($user_name); ?></h4><p class="text-muted mb-3"><span class="badge bg-success"><?php echo ucfirst($user_role); ?></span></p><?php if (!$view_all_branches && $branch_id > 0): ?><div class="branch-info mb-3"><i class="bi bi-building me-1"></i><span><?php echo htmlspecialchars($branch_name); ?></span></div><?php endif; ?><div class="user-id text-muted small mb-4"><i class="bi bi-hash"></i> User ID: <?php echo $user_id; ?></div><button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()"><i class="bi bi-box-arrow-right me-2"></i>Logout</button></div></div></div></div>
+=======
+        <!-- Mobile Bottom Navigation -->
+    <div class="mobile-nav" id="mobileNav">
+        <ul class="nav">
+            <li class="nav-item dropdown-more" id="inventoryDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'inventoryDropdownMenu')"><i class="bi bi-box-seam"></i><span>Inventory</span></a><div class="more-dropdown" id="inventoryDropdownMenu"><a href="current_inventory.php" class="dropdown-item"><i class="bi bi-bar-chart-line"></i><span>Current Inventory</span></a><a href="bad_orders.php" class="dropdown-item"><i class="bi bi-recycle"></i><span>Bad Orders</span></a></div></li>
+            <li class="nav-item dropdown-more" id="salesDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'salesDropdownMenu')"><i class="bi bi-cart"></i><span>Sales</span></a><div class="more-dropdown" id="salesDropdownMenu"><a href="sales_order.php" class="dropdown-item"><i class="bi bi-cart"></i><span>Sales Orders</span></a><a href="pick_list_items.php" class="dropdown-item"><i class="bi bi-list-check"></i><span>Pick Lists</span></a></div></li>
+            <li class="nav-item dropdown-more" id="purchaseDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'purchaseDropdownMenu')"><i class="bi bi-truck"></i><span>Purchase</span></a><div class="more-dropdown" id="purchaseDropdownMenu" style="right: 0 !important; left: auto !important;"><a href="purchase_order.php" class="dropdown-item"><i class="bi bi-box"></i><span>Purchase Orders</span></a><a href="supplier.php" class="dropdown-item"><i class="bi bi-building"></i><span>Suppliers</span></a></div></li>
+            <li class="nav-item"><a class="nav-link" href="trip_tickets.php"><i class="bi bi-ticket-perforated"></i><span>Trips</span></a></li>
+            <li class="nav-item dropdown-more" id="moreDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'moreDropdownMenu')"><i class="bi bi-three-dots-vertical"></i><span>More</span></a><div class="more-dropdown" id="moreDropdownMenu"><a href="drivers.php" class="dropdown-item"><i class="bi bi-people"></i><span>Users</span></a><a href="approve_credit_requests.php" class="dropdown-item"><i class="bi bi-pencil-square"></i><span>Approve Requests</span></a><div class="dropdown-divider"></div><a href="#" class="dropdown-item logout-item" onclick="showProfileModal(); return false;"><i class="bi bi-box-arrow-right"></i><span>Logout</span></a></div></li>
+        </ul>
+    </div>
+
+     <!-- Mobile Profile Modal -->
+        <div class="modal fade" id="profileModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title"><i class="bi bi-person-circle me-2"></i>User Profile</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body text-center"><div class="user-avatar-large mb-3"><?php echo $user_initials; ?></div><h4 class="mb-1"><?php echo htmlspecialchars($user_name); ?></h4><p class="text-muted mb-3"><span class="badge bg-success"><?php echo ucfirst($user_role); ?></span></p><?php if (!$view_all_branches && $branch_id > 0): ?><div class="branch-info mb-3"><i class="bi bi-building me-1"></i><span><?php echo htmlspecialchars($branch_name); ?></span></div><?php endif; ?><div class="user-id text-muted small mb-4"></div><button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()"><i class="bi bi-box-arrow-right me-2"></i>Logout</button></div></div></div></div>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -2629,6 +2740,7 @@ function formatDate($dateTimeStr) {
         document.getElementById('loadingOverlay').style.display = 'none';
     }
 
+<<<<<<< HEAD
     // ========== FILTER FUNCTIONS - FIXED ===========
     function getDateRangeForFilter(filterValue) {
         const now = new Date();
@@ -2714,11 +2826,15 @@ function formatDate($dateTimeStr) {
         return rowDate >= range.start && rowDate < range.end;
     }
 
+=======
+    // ========== FILTER FUNCTIONS - FIXED ==========
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     function applyFilters() {
         const dateFilter = document.getElementById('dateFilter')?.value || 'all';
         const statusFilter = document.getElementById('statusFilter')?.value || 'all';
         const reasonFilter = document.getElementById('reasonFilter')?.value || 'all';
         const branchFilter = document.getElementById('branchFilter')?.value || 'all';
+<<<<<<< HEAD
 
         activeFilters = { date: dateFilter, status: statusFilter, reason: reasonFilter, branch: branchFilter };
 
@@ -2729,6 +2845,19 @@ function formatDate($dateTimeStr) {
         const rmrRows = document.querySelectorAll('#rmrTableBody tr.rmr-row');
 
         rmrRows.forEach(row => {
+=======
+        
+        // Update active filters
+        activeFilters = { date: dateFilter, status: statusFilter, reason: reasonFilter, branch: branchFilter };
+        
+        updateFilterCountBadge();
+        updateFilterSummary();
+        
+        const rows = document.querySelectorAll('.rmr-row');
+        let visibleCount = 0;
+        
+        rows.forEach(row => {
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             let showRow = true;
 
             if (statusFilter !== 'all') {
@@ -2742,12 +2871,52 @@ function formatDate($dateTimeStr) {
             }
 
             if (showRow && rmrBranchColumnExists && viewAllBranches && branchFilter !== 'all') {
+<<<<<<< HEAD
                 const rowBranch = row.dataset.branch || '';
                 showRow = String(rowBranch) === String(branchFilter);
+=======
+                const rowBranch = row.dataset.branch;
+                if (String(rowBranch) !== branchFilter) showRow = false;
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             }
 
             if (showRow && dateFilter !== 'all') {
+<<<<<<< HEAD
                 showRow = rowDateMatches(row.dataset.receivedDate || '', dateFilter);
+=======
+                const rowDate = row.dataset.receivedDate;
+                if (rowDate) {
+                    const date = new Date(rowDate);
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    
+                    switch(dateFilter) {
+                        case 'today':
+                            if (date.toDateString() !== today.toDateString()) showRow = false;
+                            break;
+                        case 'yesterday':
+                            const yesterday = new Date(today);
+                            yesterday.setDate(yesterday.getDate() - 1);
+                            if (date.toDateString() !== yesterday.toDateString()) showRow = false;
+                            break;
+                        case 'this_week':
+                            const startOfWeek = new Date(today);
+                            startOfWeek.setDate(today.getDate() - today.getDay());
+                            const endOfWeek = new Date(today);
+                            endOfWeek.setDate(today.getDate() + (6 - today.getDay()));
+                            if (date < startOfWeek || date > endOfWeek) showRow = false;
+                            break;
+                        case 'this_month':
+                            if (date.getMonth() !== today.getMonth() || date.getFullYear() !== today.getFullYear()) showRow = false;
+                            break;
+                        case 'last_month':
+                            const lastMonth = new Date(today);
+                            lastMonth.setMonth(lastMonth.getMonth() - 1);
+                            if (date.getMonth() !== lastMonth.getMonth() || date.getFullYear() !== lastMonth.getFullYear()) showRow = false;
+                            break;
+                    }
+                }
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             }
 
             row.style.display = showRow ? '' : 'none';
@@ -2959,6 +3128,174 @@ function formatDate($dateTimeStr) {
             row.removeEventListener('click', handleRejectedRowClick);
             row.addEventListener('click', handleRejectedRowClick);
         });
+        
+        // Show/hide "no results" message
+        const tableBody = document.getElementById('rmrTableBody');
+        const noResultsRow = document.getElementById('noResultsRow');
+        
+        if (visibleCount === 0) {
+            if (!noResultsRow && tableBody) {
+                const tr = document.createElement('tr');
+                tr.id = 'noResultsRow';
+                const colspan = rmrBranchColumnExists && viewAllBranches ? 9 : 8;
+                tr.innerHTML = `<td colspan="${colspan}" class="text-center py-4 text-muted">
+                    <i class="bi bi-inbox fs-1"></i><br>No RMR requests match the selected filters
+                 </td>`;
+                tableBody.appendChild(tr);
+            } else if (noResultsRow) {
+                noResultsRow.style.display = '';
+            }
+        } else {
+            if (noResultsRow) {
+                noResultsRow.style.display = 'none';
+            }
+        }
+    }
+
+<<<<<<< HEAD
+    function handleRMRRowClick(event) {
+        if (event.target.closest('.btn-action')) {
+            return;
+        }
+        const row = event.currentTarget;
+        const rmrId = row.getAttribute('data-id');
+        if (rmrId) {
+            viewRMR(rmrId);
+        }
+    }
+
+    function handleRejectedRowClick(event) {
+        if (event.target.closest('.btn-action') || event.target.closest('.photo-thumbnail')) {
+            return;
+        }
+        const row = event.currentTarget;
+        const deliveryId = row.querySelector('td:first-child .badge')?.innerText.replace('#', '') || '';
+        const soId = row.querySelector('td:nth-child(2)')?.getAttribute('data-so-id') || '0';
+        const customerId = row.querySelector('td:nth-child(3)')?.getAttribute('data-customer-id') || '0';
+        const photoPath = row.querySelector('.photo-thumbnail')?.getAttribute('src')?.split('/').pop() || '';
+        const rejectionReason = row.querySelector('td:nth-child(7) .badge')?.innerText || 'No rejection reason provided';
+        const remarks = row.querySelector('td:nth-child(2)')?.getAttribute('data-remarks') || 'No remarks provided';
+        
+        if (deliveryId) {
+            viewRejectedDelivery(parseInt(deliveryId), photoPath, rejectionReason, remarks);
+        }
+    }
+
+=======
+    function initFilterToggle() {
+        const filterToggleBtn = document.getElementById('filterToggleBtn');
+        const filterContent = document.getElementById('filterContent');
+        
+        if (filterToggleBtn && filterContent) {
+            // Start collapsed on page load
+            filterContent.classList.add('collapsed');
+            filterToggleBtn.setAttribute('aria-expanded', 'false');
+            
+            filterToggleBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+                const expanded = this.getAttribute('aria-expanded') === 'true';
+                this.setAttribute('aria-expanded', !expanded);
+                
+                if (filterContent.classList.contains('collapsed')) {
+                    filterContent.classList.remove('collapsed');
+                } else {
+                    filterContent.classList.add('collapsed');
+                }
+            });
+        }
+    }
+
+    function updateFilterCountBadge() {
+        const filterBadge = document.getElementById('filterCountBadge');
+        if (filterBadge) {
+            const activeCount = Object.values(activeFilters).filter(v => v !== 'all' && v !== '' && v !== null).length;
+            filterBadge.textContent = activeCount;
+            
+            if (activeCount > 0) {
+                filterBadge.style.background = '#dc3545';
+                filterBadge.style.transform = 'scale(1.05)';
+                setTimeout(() => {
+                    filterBadge.style.transform = '';
+                }, 200);
+            } else {
+                filterBadge.style.background = '#44d34e';
+            }
+        }
+    }
+
+    function updateFilterSummary() {
+        const filterSummary = document.getElementById('filterSummary');
+        const filterSummaryText = document.getElementById('filterSummaryText');
+        
+        if (filterSummary && filterSummaryText) {
+            const activeCount = Object.values(activeFilters).filter(v => v !== 'all' && v !== '' && v !== null).length;
+            
+            if (activeCount > 0) {
+                let summaryParts = [];
+                
+                if (activeFilters.date && activeFilters.date !== 'all') {
+                    const dateSelect = document.getElementById('dateFilter');
+                    const dateText = dateSelect?.options[dateSelect.selectedIndex]?.text || activeFilters.date;
+                    summaryParts.push(`📅 ${dateText}`);
+                }
+                if (activeFilters.status && activeFilters.status !== 'all') {
+                    const statusSelect = document.getElementById('statusFilter');
+                    const statusText = statusSelect?.options[statusSelect.selectedIndex]?.text || activeFilters.status;
+                    summaryParts.push(`📊 ${statusText}`);
+                }
+                if (activeFilters.reason && activeFilters.reason !== 'all') {
+                    const reasonSelect = document.getElementById('reasonFilter');
+                    const reasonText = reasonSelect?.options[reasonSelect.selectedIndex]?.text || activeFilters.reason;
+                    summaryParts.push(`🏷️ ${reasonText}`);
+                }
+                if (activeFilters.branch && activeFilters.branch !== 'all') {
+                    const branchSelect = document.getElementById('branchFilter');
+                    if (branchSelect) {
+                        const branchText = branchSelect.options[branchSelect.selectedIndex]?.text || activeFilters.branch;
+                        summaryParts.push(`🏢 ${branchText}`);
+                    }
+                }
+                
+                filterSummaryText.textContent = summaryParts.join(' • ');
+                filterSummary.style.display = 'flex';
+            } else {
+                filterSummary.style.display = 'none';
+            }
+        }
+    }
+
+    function clearAllFilters() {
+        const dateFilter = document.getElementById('dateFilter');
+        const statusFilter = document.getElementById('statusFilter');
+        const reasonFilter = document.getElementById('reasonFilter');
+        const branchFilter = document.getElementById('branchFilter');
+        
+        if (dateFilter) dateFilter.value = 'all';
+        if (statusFilter) statusFilter.value = 'all';
+        if (reasonFilter) reasonFilter.value = 'all';
+        if (branchFilter) branchFilter.value = 'all';
+        
+        activeFilters = { date: 'all', status: 'all', reason: 'all', branch: 'all' };
+        
+        updateFilterCountBadge();
+        updateFilterSummary();
+        applyFilters();
+    }
+
+    // ========== TAP TO VIEW FUNCTIONALITY ==========
+    function initTapToView() {
+        const rmrRows = document.querySelectorAll('#rmr-list-content .table-container tbody tr.rmr-row');
+        rmrRows.forEach(row => {
+            row.removeEventListener('click', handleRMRRowClick);
+            row.addEventListener('click', handleRMRRowClick);
+        });
+        
+        const rejectedRows = document.querySelectorAll('#rejected-deliveries-content .table-container tbody tr');
+        rejectedRows.forEach(row => {
+            row.removeEventListener('click', handleRejectedRowClick);
+            row.addEventListener('click', handleRejectedRowClick);
+        });
     }
 
     function handleRMRRowClick(event) {
@@ -2989,6 +3326,7 @@ function formatDate($dateTimeStr) {
         }
     }
 
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     // ========== MAIN RMR FUNCTIONS ==========
     function showCreateRMRModal(deliveryId, soId, customerId) {
         document.getElementById('rmrDeliveryId').value = deliveryId;
@@ -3690,6 +4028,15 @@ function formatDate($dateTimeStr) {
         }
     }
 }
+<<<<<<< HEAD
+=======
+
+   function showProfileModal() { 
+    cleanupModalBackdrops();
+    new bootstrap.Modal(document.getElementById('profileModal')).show(); 
+}
+
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 function confirmLogout() {
             // Close the modal first
             const modal = bootstrap.Modal.getInstance(document.getElementById('profileModal'));
@@ -3716,6 +4063,7 @@ function confirmLogout() {
 
 function logout() { confirmLogout(); }
     
+<<<<<<< HEAD
 
     // ========== MOBILE BOTTOM NAVBAR FIX ==========
     // Global functions because mobile bottom nav uses inline onclick handlers.
@@ -3824,6 +4172,8 @@ function logout() { confirmLogout(); }
     });
 
 
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     // ========== DROPDOWN FUNCTIONS ==========
     function toggleMoreDropdown(event) {
         event.preventDefault();
@@ -3862,6 +4212,41 @@ function logout() { confirmLogout(); }
         }
     }
 
+<<<<<<< HEAD
+=======
+    if (typeof window.toggleDropdown !== 'function') {
+        window.toggleDropdown = function(event, dropdownId) {
+            event.preventDefault();
+            event.stopPropagation();
+            const dropdown = document.getElementById(dropdownId);
+            const btn = event.currentTarget;
+            if (dropdown.classList.contains('show')) {
+                dropdown.classList.remove('show');
+                btn.classList.remove('active');
+            } else {
+                ['inventoryDropdownMenu', 'salesDropdownMenu', 'purchaseDropdownMenu', 'moreDropdownMenu'].forEach(id => {
+                    const d = document.getElementById(id);
+                    if (d && d !== dropdown) d.classList.remove('show');
+                });
+                document.querySelectorAll('.more-btn').forEach(b => b.classList.remove('active'));
+                dropdown.classList.add('show');
+                btn.classList.add('active');
+                if (dropdownId === 'purchaseDropdownMenu') setTimeout(fixPurchaseDropdownPosition, 10);
+                setTimeout(() => {
+                    document.addEventListener('click', function closeHandler(e) {
+                        if (!dropdown.contains(e.target) && !btn.contains(e.target)) {
+                            dropdown.classList.remove('show');
+                            btn.classList.remove('active');
+                            document.removeEventListener('click', closeHandler);
+                        }
+                    });
+                }, 100);
+            }
+            if (dropdownId === 'purchaseDropdownMenu') setTimeout(fixPurchaseDropdownPosition, 10);
+        };
+    }
+
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     function initTabs() {
         const tabs = document.querySelectorAll('.category-tab');
         const panes = document.querySelectorAll('.tab-pane');

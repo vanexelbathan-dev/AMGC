@@ -1124,11 +1124,19 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                         </a>
                     </li>
                     <li class="nav-item">
+<<<<<<< HEAD
                         <a class="nav-link" href="location_verification.php">
                             <i class="bi bi-geo-alt-fill"></i>
                             <span class="nav-text">Location Verification</span>
                         </a>
                     </li>
+=======
+    					<a class="nav-link" href="location_verification.php">
+        					<i class="bi bi-geo-alt-fill"></i>
+        					<span class="nav-text">Location Verification</span>
+    					</a>
+					</li>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     <li class="nav-item">
                         <a class="nav-link" href="drivers.php">
                             <i class="bi bi-people"></i>
@@ -1270,6 +1278,10 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                     <div class="table-container">
                         <table class="table custom-table compact-table" id="itemsTable">
                             <thead>
+<<<<<<< HEAD
+=======
+                                <tr>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                     <th>Item Name</th>
                                     <th>Category</th>
                                     <th>Unit Price</th>
@@ -1295,6 +1307,7 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                                             $statusText = 'Low Stock';
                                         }
                                         ?>
+<<<<<<< HEAD
                                         <tr data-id="<?php echo $item['id']; ?>" 
                                             data-item-name="<?php echo htmlspecialchars($item['item_name']); ?>" 
                                             data-category="<?php echo htmlspecialchars($item['category'] ?? 'N/A'); ?>"
@@ -1303,6 +1316,9 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                                             data-status="<?php echo $statusText; ?>"
                                             data-status-class="<?php echo $statusBadge; ?>"
                                             onclick="viewItemFromRow(this)">
+=======
+                                        <tr>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                             <td><strong><?php echo htmlspecialchars($item['item_name']); ?></strong></td>
                                             <td><?php echo htmlspecialchars($item['category'] ?? 'N/A'); ?></td>
                                             <td>₱<?php echo number_format($item['unit_price'] ?? 0, 2); ?></td>

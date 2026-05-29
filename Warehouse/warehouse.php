@@ -241,6 +241,9 @@ if ($tables_exist['pick_lists']) {
 }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 // GET PENDING TASKS FOR MODAL
 // Tasks are only shown if they are NOT yet processed (PO not yet received, Pick List not yet completed)
 $pending_tasks = [
@@ -321,8 +324,11 @@ if ($tables_exist['sales_orders'] && $tables_exist['pick_lists']) {
 // Check if there are any tasks to show
 $has_tasks = (count($pending_tasks['purchase_orders']) > 0) || (count($pending_tasks['pending_pickup']) > 0);
 
+<<<<<<< HEAD
 =======
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 // Show a warning if any important tables are missing
 $missing_tables = array_keys(array_filter($tables_exist, fn($v) => !$v));
 ?>
@@ -391,7 +397,12 @@ $missing_tables = array_keys(array_filter($tables_exist, fn($v) => !$v));
         .status-delivered { background-color: #d1e7dd; color: #0a3622; }
         .status-cancelled { background-color: #f8d7da; color: #721c24; }
 <<<<<<< HEAD
+<<<<<<< HEAD
         
+=======
+        
+        /* Task Modal Styles */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .task-modal .modal-content {
             border-radius: 15px;
             overflow: hidden;
@@ -444,8 +455,11 @@ $missing_tables = array_keys(array_filter($tables_exist, fn($v) => !$v));
             background: #17a2b8;
             color: #fff;
         }
+<<<<<<< HEAD
 =======
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     </style>
 </head>
 <body>
@@ -580,6 +594,9 @@ $missing_tables = array_keys(array_filter($tables_exist, fn($v) => !$v));
             </div>
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             <!-- TASK MODAL - Shows pending tasks on page load -->
             <div class="modal fade" id="taskModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
                 <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
@@ -689,10 +706,13 @@ $missing_tables = array_keys(array_filter($tables_exist, fn($v) => !$v));
                     </div>
                 </div>
             </div>
+<<<<<<< HEAD
             
             <!-- Purchase Orders Modal (FIXED) -->
 =======
             <!-- MODALS -->
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
             <!-- Purchase Orders Modal -->
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
@@ -728,10 +748,14 @@ $missing_tables = array_keys(array_filter($tables_exist, fn($v) => !$v));
                                         <?php
                                         if ($tables_exist['purchase_orders']) {
 <<<<<<< HEAD
+<<<<<<< HEAD
                                             $po_detail_sql = "SELECT po.po_id, po.po_number, po.order_date, po.expected_delivery, po.po_status, 
 =======
                                             $po_detail_sql = "SELECT po.po_number, po.order_date, po.expected_delivery, po.po_status, 
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+=======
+                                            $po_detail_sql = "SELECT po.po_id, po.po_number, po.order_date, po.expected_delivery, po.po_status, 
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                                                     s.supplier_name, b.branch_name,
                                                                     (SELECT COUNT(*) FROM purchase_order_items WHERE po_id = po.po_id) as item_count
                                                               FROM purchase_orders po
@@ -740,9 +764,12 @@ $missing_tables = array_keys(array_filter($tables_exist, fn($v) => !$v));
                                                               WHERE po.po_status NOT IN ('cancelled')";
                                             
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
                                             // Add category filter if needed
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                             if (!empty($user_category)) {
                                                 $po_detail_sql .= " AND EXISTS (
                                                     SELECT 1 FROM purchase_order_items poi 
@@ -827,10 +854,14 @@ $missing_tables = array_keys(array_filter($tables_exist, fn($v) => !$v));
             </div>
 
 <<<<<<< HEAD
+<<<<<<< HEAD
             <!-- Pending Pickup Modal (Confirmed Orders) -->
 =======
             <!-- Pending Pickup Modal (Confirmed Orders) - FIXED -->
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+=======
+            <!-- Pending Pickup Modal (Confirmed Orders) -->
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             <div class="modal fade" id="pickupModal" tabindex="-1" aria-hidden="true">
                 <div class="modal-dialog modal-xl modal-dialog-scrollable">
                     <div class="modal-content">
@@ -853,15 +884,22 @@ $missing_tables = array_keys(array_filter($tables_exist, fn($v) => !$v));
                                             <th>Status</th>
 =======
                                         <tr>
-                                            <th>PL #</th>
+                                            <th>SO #</th>
                                             <th>Order Date</th>
-                                            <th>Item Name</th>
+                                            <th>Customer</th>
+                                            <th>Branch</th>
+                                            <th>Total Amount</th>
                                             <th>Items</th>
+<<<<<<< HEAD
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+=======
+                                            <th>Status</th>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <?php
+<<<<<<< HEAD
 <<<<<<< HEAD
                                         if ($tables_exist['sales_orders']) {
 =======
@@ -869,6 +907,9 @@ $missing_tables = array_keys(array_filter($tables_exist, fn($v) => !$v));
                                         if ($tables_exist['sales_orders']) {
                                             // Build the query
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+=======
+                                        if ($tables_exist['sales_orders']) {
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                             $pickup_detail_sql = "SELECT
                                                 so.so_id,
                                                 so.so_number, 
@@ -879,14 +920,18 @@ $missing_tables = array_keys(array_filter($tables_exist, fn($v) => !$v));
                                                 (SELECT COUNT(*) FROM sales_order_items WHERE so_id = so.so_id) as item_count,
                                                 pl.pick_list_id,
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
                                                 pl.pick_list_number,
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                                 pl.pick_status
                                               FROM sales_orders so
                                               LEFT JOIN branches b ON so.branch_id = b.branch_id
                                               LEFT JOIN customers c ON so.customer_id = c.customer_id
                                               LEFT JOIN pick_lists pl ON so.so_id = pl.so_id
+<<<<<<< HEAD
 <<<<<<< HEAD
                                               WHERE so.order_status = 'confirmed'
                                               AND (pl.pick_list_id IS NULL OR pl.pick_status != 'completed')";
@@ -899,6 +944,11 @@ $missing_tables = array_keys(array_filter($tables_exist, fn($v) => !$v));
                                             
                                             // Add category filter if needed
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+=======
+                                              WHERE so.order_status = 'confirmed'
+                                              AND (pl.pick_list_id IS NULL OR pl.pick_status != 'completed')";
+                                            
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                             if (!empty($user_category)) {
                                                 $pickup_detail_sql .= " AND EXISTS (
                                                     SELECT 1 FROM sales_order_items soi 
@@ -909,6 +959,7 @@ $missing_tables = array_keys(array_filter($tables_exist, fn($v) => !$v));
                                             }
                                             
 <<<<<<< HEAD
+<<<<<<< HEAD
                                             if (!$view_all_branches && $user_branch_id > 0 && $so_has_branch) {
                                                 $pickup_detail_sql .= " AND so.branch_id = " . intval($user_branch_id);
 =======
@@ -918,20 +969,28 @@ $missing_tables = array_keys(array_filter($tables_exist, fn($v) => !$v));
                                                     $pickup_detail_sql .= " AND so.branch_id = " . intval($user_branch_id);
                                                 }
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+=======
+                                            if (!$view_all_branches && $user_branch_id > 0 && $so_has_branch) {
+                                                $pickup_detail_sql .= " AND so.branch_id = " . intval($user_branch_id);
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                             }
                                             
                                             $pickup_detail_sql .= " GROUP BY so.so_id ORDER BY so.order_date DESC";
                                             
+<<<<<<< HEAD
 <<<<<<< HEAD
 =======
                                             // Debug output as HTML comment
                                             echo '<!-- SQL Query: ' . htmlspecialchars($pickup_detail_sql) . ' -->';
                                             
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                             $result = $conn->query($pickup_detail_sql);
                                             
                                             if ($result && $result->num_rows > 0) {
                                                 while ($row = $result->fetch_assoc()) {
+<<<<<<< HEAD
 <<<<<<< HEAD
                                                     $status_text = $row['pick_status'] ?? 'Not Started';
                                                     $status_badge = match($status_text) {
@@ -955,69 +1014,27 @@ $missing_tables = array_keys(array_filter($tables_exist, fn($v) => !$v));
 =======
                                                     $pick_status = $row['pick_status'] ?? 'Not Started';
                                                     $status_badge = match($pick_status) {
+=======
+                                                    $status_text = $row['pick_status'] ?? 'Not Started';
+                                                    $status_badge = match($status_text) {
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                                         'in-progress' => 'bg-info',
-                                                        'open' => 'bg-warning',
                                                         'completed' => 'bg-success',
-                                                        default => 'bg-secondary'
+                                                        default => 'bg-warning'
                                                     };
                                                     
                                                     echo '<tr>';
-                                                    echo '<td>' . htmlspecialchars($row['pick_list_number']) . '</td>';
+                                                    echo '<td>' . htmlspecialchars($row['so_number']) . '</td>';
                                                     echo '<td>' . date('Y-m-d', strtotime($row['order_date'])) . '</td>';
-                                                   echo '<td>';
-
-$item_sql = "SELECT i.item_name 
-             FROM sales_order_items soi
-             JOIN items i ON soi.item_id = i.item_id
-             WHERE soi.so_id = " . intval($row['so_id']);
-
-// Filter by category
-if (!empty($user_category)) {
-    $item_sql .= " AND i.category = '" . $conn->real_escape_string($user_category) . "'";
-}
-
-// Filter by branch (if meron sa items table)
-if (!$view_all_branches && $user_branch_id > 0) {
-    $item_sql .= " AND i.branch_id = " . intval($user_branch_id);
-}
-
-$item_result = $conn->query($item_sql);
-
-if ($item_result && $item_result->num_rows > 0) {
-    while ($item = $item_result->fetch_assoc()) {
-        echo htmlspecialchars($item['item_name']) . '<br>';
-    }
-} else {
-    echo '<span class="text-muted">No items</span>';
-}
-
-echo '</td>';
-echo '<td>';
-
-$count_sql = "SELECT COUNT(*) as total
-              FROM sales_order_items soi
-              JOIN items i ON soi.item_id = i.item_id
-              WHERE soi.so_id = " . intval($row['so_id']);
-
-// Filter by category
-if (!empty($user_category)) {
-    $count_sql .= " AND i.category = '" . $conn->real_escape_string($user_category) . "'";
-}
-
-// Filter by branch
-if (!$view_all_branches && $user_branch_id > 0) {
-    $count_sql .= " AND i.branch_id = " . intval($user_branch_id);
-}
-
-$count_result = $conn->query($count_sql);
-$count_row = $count_result->fetch_assoc();
-
-echo intval($count_row['total']);
-
-echo '</td>';
+                                                    echo '<td>' . htmlspecialchars($row['customer_name'] ?? 'N/A') . '</td>';
+                                                    echo '<td>' . htmlspecialchars($row['branch_name'] ?? 'N/A') . '</td>';
+                                                    echo '<td>₱' . number_format($row['total_amount'], 2) . '</td>';
+                                                    echo '<td>' . $row['item_count'] . '</td>';
+                                                    echo '<td><span class="badge ' . $status_badge . '">' . ucfirst($status_text) . '</span></td>';
                                                     echo '</tr>';
                                                 }
                                             } else {
+<<<<<<< HEAD
                                                 $colspan = $view_all_branches ? 7 : 6;
                                                 echo '<tr><td colspan="' . $colspan . '" class="text-center">';
                                                 echo '<div class="py-4">';
@@ -1031,6 +1048,9 @@ echo '</td>';
                                                 echo '</div>';
                                                 echo '</td></tr>';
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+=======
+                                                echo '<tr><td colspan="7" class="text-center">No pending pickups found</td></tr>';
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                             }
                                         } else {
                                             echo '<tr><td colspan="7" class="text-center">Sales orders table not available</td></tr>';
@@ -1045,10 +1065,14 @@ echo '</td>';
             </div>
 
 <<<<<<< HEAD
+<<<<<<< HEAD
             <!-- For Release Modal (Completed Pick Lists Waiting for Driver) -->
 =======
             <!-- For Release Modal (Completed Pick Lists Waiting for Driver) - FIXED -->
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+=======
+            <!-- For Release Modal (Completed Pick Lists Waiting for Driver) -->
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             <div class="modal fade" id="releaseModal" tabindex="-1" aria-hidden="true">
                 <div class="modal-dialog modal-xl modal-dialog-scrollable">
                     <div class="modal-content">
@@ -1076,9 +1100,12 @@ echo '</td>';
                                         <?php
                                         if ($tables_exist['pick_lists'] && $tables_exist['sales_orders']) {
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
                                             // Build the query
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                             $release_detail_sql = "SELECT 
                                                 pl.pick_list_id,
                                                 pl.pick_list_number, 
@@ -1102,12 +1129,15 @@ echo '</td>';
                                             
 =======
                                               WHERE LOWER(TRIM(pl.pick_status)) = 'completed'
-												AND LOWER(TRIM(so.order_status)) = 'ready'";
+                                              AND LOWER(TRIM(so.order_status)) = 'ready'";
                                             
+<<<<<<< HEAD
                                             
                                             
                                             // Add category filter if needed
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                             if (!empty($user_category)) {
                                                 $release_detail_sql .= " AND EXISTS (
                                                     SELECT 1 FROM pick_list_items pli 
@@ -1118,9 +1148,12 @@ echo '</td>';
                                             }
                                             
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
                                             // Add branch filter
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                             if (!$view_all_branches && $user_branch_id > 0) {
                                                 $release_detail_sql .= " AND pl.branch_id = " . intval($user_branch_id);
                                             }
@@ -1128,11 +1161,14 @@ echo '</td>';
                                             $release_detail_sql .= " GROUP BY pl.pick_list_id ORDER BY pl.updated_at DESC";
                                             
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
                                             // Debug output
                                             echo '<!-- Release SQL: ' . htmlspecialchars($release_detail_sql) . ' -->';
                                             
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                             $result = $conn->query($release_detail_sql);
                                             
                                             if ($result && $result->num_rows > 0) {
@@ -1159,6 +1195,7 @@ echo '</td>';
                                                 }
                                             } else {
 <<<<<<< HEAD
+<<<<<<< HEAD
                                                 echo '<tr><td colspan="5" class="text-center">No items waiting for driver pickup</td></tr>';
                                             }
                                         } else {
@@ -1180,6 +1217,12 @@ echo '</td>';
                                         } else {
                                             echo '<tr><td colspan="8" class="text-center">Tables not available</td></tr>';
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+=======
+                                                echo '<tr><td colspan="5" class="text-center">No items waiting for driver pickup</td></tr>';
+                                            }
+                                        } else {
+                                            echo '<tr><td colspan="5" class="text-center">Tables not available</td></tr>';
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                         }
                                         ?>
                                     </tbody>
@@ -1239,9 +1282,12 @@ echo '</td>';
                                               AND DATE(pl.updated_at) = CURDATE()";
                                             
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
                                             // Add category filter if needed
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                             if (!empty($user_category)) {
                                                 $today_detail_sql .= " AND EXISTS (
                                                     SELECT 1 FROM pick_list_items pli 
@@ -1252,9 +1298,12 @@ echo '</td>';
                                             }
                                             
 <<<<<<< HEAD
+<<<<<<< HEAD
 =======
                                             // Add branch filter
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                             if (!$view_all_branches && $user_branch_id > 0) {
                                                 $today_detail_sql .= " AND pl.branch_id = ?";
                                                 $result = safeQuery($conn, $today_detail_sql, $user_branch_id);
@@ -1393,6 +1442,7 @@ echo '</td>';
                 </div>
 
 <<<<<<< HEAD
+<<<<<<< HEAD
                 <!-- Inventory Alerts -->
                 <div class="col-lg-6 mb-4">
                     <div class="card">
@@ -1443,39 +1493,53 @@ echo '</td>';
 =======
             <!-- Inventory Alerts -->
             <div class="col-lg-6 mb-4">
+=======
+                <!-- Inventory Alerts -->
+                <div class="col-lg-6 mb-4">
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Low Stock Alerts</h5>
-                </div>
-                <div class="card-body">
-                    <?php
-                    if ($tables_exist['items']) {
-                        $low_stock_query = "SELECT i.item_name, i.stock, i.reorder_level, b.branch_name 
-                                           FROM items i
-                                           LEFT JOIN branches b ON i.branch_id = b.branch_id
-                                           WHERE i.stock <= i.reorder_level AND i.status = 'active'";
-                        
-                        if (!empty($user_category)) {
-                            $low_stock_query .= " AND i.category = '" . $conn->real_escape_string($user_category) . "'";
-                        }
-                        
-                        if (!$view_all_branches && $user_branch_id > 0 && $items_has_branch) {
-                            $low_stock_query .= " AND i.branch_id = ? LIMIT 5";
-                            $result = safeQuery($conn, $low_stock_query, $user_branch_id);
-                        } else {
-                            $low_stock_query .= " LIMIT 5";
-                            $result = $conn->query($low_stock_query);
-                        }
-                        
-                        if ($result && $result->num_rows > 0) {
-                            while($row = $result->fetch_assoc()) {
-                                $branch_info = $view_all_branches ? ' [' . $row['branch_name'] . ']' : '';
-                                echo '<div class="alert alert-warning mb-2">';
-                                echo '<i class="bi bi-exclamation-triangle me-2"></i>';
-                                echo '<strong>' . htmlspecialchars($row['item_name'] . $branch_info) . ':</strong> ';
-                                echo 'Stock level at ' . $row['stock'] . ' units (Below threshold of ' . $row['reorder_level'] . ')';
-                                echo '</div>';
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Low Stock Alerts</h5>
+                        </div>
+                        <div class="card-body">
+                            <?php
+                            if ($tables_exist['items']) {
+                                $low_stock_query = "SELECT i.item_name, i.stock, i.reorder_level, b.branch_name 
+                                                   FROM items i
+                                                   LEFT JOIN branches b ON i.branch_id = b.branch_id
+                                                   WHERE i.stock <= i.reorder_level AND i.status = 'active'";
+                                
+                                if (!empty($user_category)) {
+                                    $low_stock_query .= " AND i.category = '" . $conn->real_escape_string($user_category) . "'";
+                                }
+                                
+                                if (!$view_all_branches && $user_branch_id > 0 && $items_has_branch) {
+                                    $low_stock_query .= " AND i.branch_id = ? LIMIT 5";
+                                    $result = safeQuery($conn, $low_stock_query, $user_branch_id);
+                                } else {
+                                    $low_stock_query .= " LIMIT 5";
+                                    $result = $conn->query($low_stock_query);
+                                }
+                                
+                                if ($result && $result->num_rows > 0) {
+                                    while($row = $result->fetch_assoc()) {
+                                        $branch_info = $view_all_branches ? ' [' . $row['branch_name'] . ']' : '';
+                                        echo '<div class="alert alert-warning mb-2">';
+                                        echo '<i class="bi bi-exclamation-triangle me-2"></i>';
+                                        echo '<strong>' . htmlspecialchars($row['item_name'] . $branch_info) . ':</strong> ';
+                                        echo 'Stock level at ' . $row['stock'] . ' units (Below threshold of ' . $row['reorder_level'] . ')';
+                                        echo '</div>';
+                                    }
+                                } else {
+                                    echo '<div class="alert alert-success mb-0">';
+                                    echo '<i class="bi bi-check-circle me-2"></i>';
+                                    echo 'All items are adequately stocked';
+                                    echo '</div>';
+                                }
+                            } else {
+                                echo '<div class="alert alert-warning mb-0">Items table not available</div>';
                             }
+<<<<<<< HEAD
                         } else {
                             echo '<div class="alert alert-success mb-0">';
                             echo '<i class="bi bi-check-circle me-2"></i>';
@@ -1487,15 +1551,24 @@ echo '</td>';
                     }
                     ?>
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+=======
+                            ?>
+                        </div>
+                    </div>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 </div>
             </div>
         </div>
     </div>
 <<<<<<< HEAD
+<<<<<<< HEAD
     
 =======
 </div>
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+=======
+    
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     <!-- Mobile Bottom Navigation -->
     <div class="mobile-nav" id="mobileNav">
         <ul class="nav">
@@ -1737,12 +1810,18 @@ echo '</td>';
         function initMobileNav() {
             const mobileNav = document.getElementById('mobileNav');
 <<<<<<< HEAD
+<<<<<<< HEAD
             if (mobileNav) {
                 mobileNav.style.display = window.innerWidth <= 992 ? 'block' : 'none';
             }
 =======
             mobileNav.style.display = window.innerWidth <= 992 ? 'block' : 'none';
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+=======
+            if (mobileNav) {
+                mobileNav.style.display = window.innerWidth <= 992 ? 'block' : 'none';
+            }
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         }
 
         function showProfileModal() {
@@ -1798,6 +1877,9 @@ echo '</td>';
             initializeSidebar();
             initMobileNav();
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             
             // Show task modal if there are tasks
             setTimeout(() => {
@@ -1807,8 +1889,11 @@ echo '</td>';
             // Check if we just came back from processing
             checkPageReload();
             
+<<<<<<< HEAD
 =======
 >>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             document.getElementById('mobileToggleBtn')?.addEventListener('click', toggleSidebar);
             document.getElementById('desktopToggleBtn')?.addEventListener('click', toggleSidebar);
             window.addEventListener('resize', function() {

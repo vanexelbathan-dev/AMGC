@@ -411,6 +411,7 @@ $totalReceivedQty = array_sum(array_map(fn($r) => (float)($r['quantity'] ?? 0), 
 $totalActivities = count($salesOrders) + count($collections) + count($expenses) + count($inventoryReceives) + count($customers) + count($rsrRows);
 
 function shouldShowSection(string $current, string $section): bool {
+<<<<<<< HEAD
     return $current === $section;
 }
 
@@ -475,6 +476,9 @@ $logo_path = '../Pictures/amgc3DLogo.png';
 $logo_base64 = '';
 if (file_exists($logo_path)) {
     $logo_base64 = 'data:image/png;base64,' . base64_encode(file_get_contents($logo_path));
+=======
+    return $current === 'all' || $current === $section;
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 }
 ?>
 <!DOCTYPE html>
@@ -490,6 +494,7 @@ if (file_exists($logo_path)) {
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <style>
 :root{--primary-green:#44D34E;--secondary-green:#44D34E;--light-green:#d1fae5;--dark-green:#047857;--dark-color:#052A47;--light-color:#f9fafb}
+<<<<<<< HEAD
 body{background:#f4f6f9;font-family:'Segoe UI',sans-serif}.main-content{margin-left:260px;padding:20px}.navbar-top{display:flex;align-items:center;gap:1rem;justify-content:space-between;margin-bottom:24px;background:#fff;padding:14px 20px;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.05)}.mobile-toggle-btn{display:none;border:none;background:transparent;color:var(--dark-color);font-size:1.6rem}.page-title h2{margin:0;color:var(--dark-color);font-weight:800}.page-title p{margin:0;color:#64748b}.report-card{background:#fff;border-radius:18px;border:1px solid #edf2f7;box-shadow:0 8px 20px rgba(15,23,42,.05);overflow:hidden;margin-bottom:1rem}.report-card-header{padding:1rem 1.25rem;border-bottom:1px solid #eef2f7;display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap}.report-card-body{padding:1rem 1.25rem}.filter-card{position:sticky;top:10px;z-index:20}.filter-header{display:flex;justify-content:space-between;align-items:center;padding:1rem 1.25rem;border-bottom:1px solid #eef2f7}.filter-toggle-btn{border:none;background:#ecfdf5;color:#047857;border-radius:999px;width:40px;height:40px}.filter-content{overflow:hidden;transition:max-height .25s ease,padding .25s ease}.filter-content.collapsed{max-height:0;padding:0 1.25rem}.filter-content.expanded{max-height:900px;padding:1rem 1.25rem}.stat-card{background:linear-gradient(135deg,#047857,#059669)!important;border:none!important;border-radius:16px!important;box-shadow:0 4px 10px rgba(0,0,0,.08)!important;padding:1rem!important;color:#fff!important;min-height:110px;display:flex;gap:.75rem;align-items:flex-start}.stat-card *{color:#fff!important}.stat-icon{font-size:1.55rem}.stat-value{font-size:1.25rem;font-weight:800;line-height:1.1}.stat-label{font-size:.78rem;font-weight:600}.table thead th{background:#f8fafc;color:#052A47;border-bottom:2px solid #e5e7eb;white-space:nowrap}.table td{vertical-align:middle}.badge-soft{border-radius:999px;padding:.25rem .6rem;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-weight:700}.btn-amgc-primary{background:linear-gradient(135deg,#047857,#44D34E);color:#fff;border:none;border-radius:999px;padding:.55rem 1rem;font-weight:700;box-shadow:0 4px 10px rgba(4,120,87,.18)}.btn-amgc-dark{background:linear-gradient(135deg,#052A47,#047857);color:#fff;border:none;border-radius:999px;padding:.55rem 1rem;font-weight:700}.btn-amgc-light{background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;border-radius:999px;padding:.55rem 1rem;font-weight:700}.form-control,.form-select{border-radius:12px;min-height:44px}.empty-state{text-align:center;color:#64748b;padding:2rem}.print-only{display:none}.mobile-nav{position:fixed;bottom:0;left:0;right:0;background:#fff;box-shadow:0 -2px 10px rgba(0,0,0,.1);padding:8px 12px;z-index:1000;display:none}.mobile-nav .nav{display:flex;justify-content:space-around;margin:0;padding:0;list-style:none}.mobile-nav .nav-link{display:flex;flex-direction:column;align-items:center;padding:6px 4px;color:#6c757d;text-decoration:none;font-size:.72rem}.mobile-nav .nav-link i{font-size:1.25rem;margin-bottom:4px}.mobile-nav .nav-link.active{color:#047857}.dropdown-more{position:relative}.more-dropdown{position:absolute;bottom:100%;right:0;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.15);min-width:205px;display:none;margin-bottom:8px;z-index:1100}.more-dropdown.show{display:block}.more-dropdown .dropdown-item{display:flex;align-items:center;gap:12px;padding:12px 16px;color:#333;text-decoration:none;border-bottom:1px solid #f0f0f0;font-size:.85rem}.more-dropdown .dropdown-item:last-child{border-bottom:none}@media(max-width:992px){.sidebar{transform:translateX(-100%)}.sidebar.active{transform:translateX(0)}.main-content{margin-left:0;padding:14px}.mobile-toggle-btn{display:block}.mobile-nav{display:block}body{padding-bottom:76px}.filter-card{top:0}.stat-card{aspect-ratio:1/1;align-items:center;justify-content:center;text-align:center;flex-direction:column}.stat-card small{display:none!important}}
 /* ===== Responsive Reports UI Improvements ===== */
 .mobile-nav .nav-item{flex:1;text-align:center;min-width:0}
@@ -912,12 +917,52 @@ body{background:#f4f6f9;font-family:'Segoe UI',sans-serif}.main-content{margin-l
 }
 
 
+=======
+body{background:#f4f6f9;font-family:'Segoe UI',sans-serif}.main-content{margin-left:260px;padding:20px}.navbar-top{display:flex;align-items:center;gap:1rem;justify-content:space-between;margin-bottom:24px;background:#fff;padding:14px 20px;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.05)}.mobile-toggle-btn{display:none;border:none;background:transparent;color:var(--dark-color);font-size:1.6rem}.page-title h2{margin:0;color:var(--dark-color);font-weight:800}.page-title p{margin:0;color:#64748b}.report-card{background:#fff;border-radius:18px;border:1px solid #edf2f7;box-shadow:0 8px 20px rgba(15,23,42,.05);overflow:hidden;margin-bottom:1rem}.report-card-header{padding:1rem 1.25rem;border-bottom:1px solid #eef2f7;display:flex;justify-content:space-between;align-items:center;gap:1rem;flex-wrap:wrap}.report-card-body{padding:1rem 1.25rem}.filter-card{position:sticky;top:10px;z-index:20}.filter-header{display:flex;justify-content:space-between;align-items:center;padding:1rem 1.25rem;border-bottom:1px solid #eef2f7}.filter-toggle-btn{border:none;background:#ecfdf5;color:#047857;border-radius:999px;width:40px;height:40px}.filter-content{overflow:hidden;transition:max-height .25s ease,padding .25s ease}.filter-content.collapsed{max-height:0;padding:0 1.25rem}.filter-content.expanded{max-height:900px;padding:1rem 1.25rem}.stat-card{background:linear-gradient(135deg,#047857,#059669)!important;border:none!important;border-radius:16px!important;box-shadow:0 4px 10px rgba(0,0,0,.08)!important;padding:1rem!important;color:#fff!important;min-height:110px;display:flex;gap:.75rem;align-items:flex-start}.stat-card *{color:#fff!important}.stat-icon{font-size:1.55rem}.stat-value{font-size:1.25rem;font-weight:800;line-height:1.1}.stat-label{font-size:.78rem;font-weight:600}.table thead th{background:#f8fafc;color:#052A47;border-bottom:2px solid #e5e7eb;white-space:nowrap}.table td{vertical-align:middle}.badge-soft{border-radius:999px;padding:.25rem .6rem;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;font-weight:700}.btn-amgc-primary{background:linear-gradient(135deg,#047857,#44D34E);color:#fff;border:none;border-radius:999px;padding:.55rem 1rem;font-weight:700;box-shadow:0 4px 10px rgba(4,120,87,.18)}.btn-amgc-dark{background:linear-gradient(135deg,#052A47,#047857);color:#fff;border:none;border-radius:999px;padding:.55rem 1rem;font-weight:700}.btn-amgc-light{background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;border-radius:999px;padding:.55rem 1rem;font-weight:700}.form-control,.form-select{border-radius:12px;min-height:44px}.empty-state{text-align:center;color:#64748b;padding:2rem}.print-only{display:none}.mobile-nav{position:fixed;bottom:0;left:0;right:0;background:#fff;box-shadow:0 -2px 10px rgba(0,0,0,.1);padding:8px 12px;z-index:1000;display:none}.mobile-nav .nav{display:flex;justify-content:space-around;margin:0;padding:0;list-style:none}.mobile-nav .nav-link{display:flex;flex-direction:column;align-items:center;padding:6px 4px;color:#6c757d;text-decoration:none;font-size:.72rem}.mobile-nav .nav-link i{font-size:1.25rem;margin-bottom:4px}.mobile-nav .nav-link.active{color:#047857}.dropdown-more{position:relative}.more-dropdown{position:absolute;bottom:100%;right:0;background:#fff;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.15);min-width:205px;display:none;margin-bottom:8px;z-index:1100}.more-dropdown.show{display:block}.more-dropdown .dropdown-item{display:flex;align-items:center;gap:12px;padding:12px 16px;color:#333;text-decoration:none;border-bottom:1px solid #f0f0f0;font-size:.85rem}.more-dropdown .dropdown-item:last-child{border-bottom:none}@media(max-width:992px){.sidebar{transform:translateX(-100%)}.sidebar.active{transform:translateX(0)}.main-content{margin-left:0;padding:14px}.mobile-toggle-btn{display:block}.mobile-nav{display:block}body{padding-bottom:76px}.filter-card{top:0}.stat-card{aspect-ratio:1/1;align-items:center;justify-content:center;text-align:center;flex-direction:column}.stat-card small{display:none!important}}@media print{
+    @page{size:A4 portrait;margin:12mm 10mm 14mm 10mm}
+    *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
+    html,body{background:#fff!important;color:#111827!important;padding:0!important;margin:0!important;font-family:Arial,Helvetica,sans-serif!important;font-size:11px;line-height:1.35}
+    .no-print,.sidebar,.mobile-nav,.navbar-top,.filter-card,.btn,.bi{display:none!important}
+    .main-content{margin:0!important;padding:0!important;width:100%!important}
+    .print-only{display:block!important}
+    .print-report-header{border-bottom:2px solid #111827;padding-bottom:10px;margin-bottom:10px;text-align:center;position:relative}
+    .print-report-header img{height:54px;width:auto;margin-bottom:4px}
+    .print-company{font-size:15px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#111827!important;margin:0}
+    .print-title{font-size:13px;font-weight:700;margin:2px 0 4px;color:#047857!important;text-transform:uppercase;letter-spacing:.03em}
+    .print-meta{font-size:10px;color:#374151!important;margin:1px 0}
+    .print-summary-grid{display:grid!important;grid-template-columns:repeat(4,1fr);gap:6px;margin:10px 0 12px 0;page-break-inside:avoid}
+    .print-summary-box{border:1px solid #9ca3af;border-left:4px solid #047857;border-radius:6px;padding:7px 8px;background:#f9fafb!important;min-height:44px}
+    .print-summary-label{font-size:8.5px;color:#6b7280!important;text-transform:uppercase;letter-spacing:.04em;font-weight:700;margin-bottom:2px}
+    .print-summary-value{font-size:12px;color:#111827!important;font-weight:800;line-height:1.15;word-break:break-word}
+    .report-card{box-shadow:none!important;border:1px solid #d1d5db!important;border-radius:6px!important;margin-bottom:10px!important;overflow:visible!important;page-break-inside:auto;background:#fff!important}
+    .report-card-header{padding:8px 10px!important;border-bottom:1px solid #d1d5db!important;background:#f3f4f6!important;display:flex!important;align-items:center!important;justify-content:space-between!important;gap:8px!important;page-break-inside:avoid}
+    .report-card-header h5{font-size:12px!important;margin:0!important;font-weight:800!important;color:#052A47!important}
+    .report-card-body{padding:8px 10px!important}
+    .badge-soft{background:#fff!important;border:1px solid #9ca3af!important;color:#374151!important;font-size:9px!important;padding:2px 7px!important;border-radius:999px!important}
+    .text-muted,.small{color:#4b5563!important}
+    .row.g-3{display:grid!important;grid-template-columns:repeat(4,1fr)!important;gap:6px!important;margin:0!important}
+    .row.g-3>[class*=col-]{width:auto!important;max-width:none!important;padding:0!important;font-size:10px!important}
+    .table-responsive{overflow:visible!important}
+    table.table{width:100%!important;border-collapse:collapse!important;margin:0!important;page-break-inside:auto!important}
+    .table thead{display:table-header-group!important}
+    .table tfoot{display:table-row-group!important}
+    .table tr{page-break-inside:avoid!important;break-inside:avoid!important}
+    .table th,.table td{border:1px solid #d1d5db!important;padding:5px 6px!important;font-size:9.5px!important;vertical-align:top!important;color:#111827!important;background:#fff!important}
+    .table thead th{background:#e5e7eb!important;color:#052A47!important;font-weight:800!important;text-transform:uppercase;font-size:8.8px!important;letter-spacing:.02em;white-space:normal!important}
+    .table tfoot th{background:#f3f4f6!important;font-weight:800!important;color:#111827!important}
+    .fw-bold{font-weight:800!important}.text-end{text-align:right!important}.text-center{text-align:center!important}.text-danger{color:#991b1b!important}
+    .empty-state{padding:12px!important;text-align:center!important;color:#6b7280!important;font-size:10px!important}
+    .stat-card-row{display:none!important}
+    a[href]:after{content:''!important}
+}
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 </style>
 </head>
 <body>
 <div id="appPage">
     <div class="sidebar" id="sidebar">
         <div class="sidebar-header">
+<<<<<<< HEAD
             <h3>
                 <button class="desktop-toggle-btn" id="desktopToggleBtn">
                     <i class="bi bi-list" id="toggleIcon"></i>
@@ -994,6 +1039,30 @@ body{background:#f4f6f9;font-family:'Segoe UI',sans-serif}.main-content{margin-l
                 <i class="bi bi-box-arrow-right"></i>
                 <span class="logout-text">Logout</span>
             </button>
+=======
+            <h3><button class="desktop-toggle-btn" id="desktopToggleBtn"><i class="bi bi-list"></i></button><img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"><span class="nav-text">Rolling</span></h3>
+        </div>
+        <div class="sidebar-content">
+            <div class="sidebar-menu">
+                <ul class="nav flex-column">
+                    <li class="nav-item"><a class="nav-link" href="current_inventory.php"><i class="bi bi-box-seam"></i><span class="nav-text">Current Inventory</span></a></li>
+                    <li class="nav-item"><a class="nav-link" href="customer.php"><i class="bi bi-people"></i><span class="nav-text">Customers</span></a></li>
+                    <li class="nav-item"><a class="nav-link" href="orderproduct.php"><i class="bi bi-cart-plus"></i><span class="nav-text">Orders</span></a></li>
+                    <li class="nav-item"><a class="nav-link" href="sales_order.php"><i class="bi bi-receipt"></i><span class="nav-text">Sales Orders</span></a></li>
+                    <li class="nav-item"><a class="nav-link" href="collections.php"><i class="bi bi-cash-stack"></i><span class="nav-text">Collections</span></a></li>
+                    <li class="nav-item"><a class="nav-link" href="purchase_order.php"><i class="bi bi-truck"></i><span class="nav-text">Receive Inventory</span></a></li>
+                    <li class="nav-item"><a class="nav-link" href="expenses.php"><i class="bi bi-wallet2"></i><span class="nav-text">Expenses</span></a></li>
+                    <li class="nav-item"><a class="nav-link active" href="reports.php"><i class="bi bi-file-earmark-bar-graph"></i><span class="nav-text">Reports</span></a></li>
+                </ul>
+            </div>
+        </div>
+        <div class="sidebar-footer">
+            <div class="user-profile-sidebar">
+                <div class="user-avatar-sidebar"><?php echo h($user_initials); ?></div>
+                <div class="user-details-sidebar"><span class="user-name-sidebar"><?php echo h($user_name); ?></span><span class="user-role-sidebar"><?php echo h(ucfirst($user_role)); ?></span></div>
+            </div>
+            <button class="logout-btn-sidebar" onclick="logout()"><i class="bi bi-box-arrow-right"></i><span class="logout-text">Logout</span></button>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         </div>
     </div>
 
@@ -1001,6 +1070,7 @@ body{background:#f4f6f9;font-family:'Segoe UI',sans-serif}.main-content{margin-l
         <div class="navbar-top no-print">
             <button class="mobile-toggle-btn" id="mobileToggleBtn"><i class="bi bi-list"></i></button>
             <div class="page-title"><h2>Reports</h2><p>Generate simple reports for all Rolling activities</p></div>
+<<<<<<< HEAD
             <button class="btn btn-amgc-dark" onclick="window.print()"><i class="bi bi-printer"></i> Print Report</button>
         </div>
 
@@ -1010,11 +1080,21 @@ body{background:#f4f6f9;font-family:'Segoe UI',sans-serif}.main-content{margin-l
             <?php endif; ?>
             <div class="print-company">A. MACALINDONG DEVELOPMENT CORP.</div>
             <div class="print-title">ROLLING ACTIVITY REPORT</div>
+=======
+            <button class="btn btn-amgc-dark" onclick="printRollingReport()"><i class="bi bi-printer"></i> Print Report</button>
+        </div>
+
+        <div class="print-only print-report-header">
+            <img src="../Pictures/amgc3DLogo.png" alt="AMGC Logo">
+            <p class="print-company">A. Macalindong Development Corp.</p>
+            <div class="print-title">Rolling Activity Report</div>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             <div class="print-meta"><strong>Branch:</strong> <?php echo h($branch_name); ?> &nbsp; | &nbsp; <strong>Rolling:</strong> <?php echo h($user_name); ?></div>
             <div class="print-meta"><strong>Report Type:</strong> <?php echo h(ucwords(str_replace('_',' ', $report_type))); ?> &nbsp; | &nbsp; <strong>Period:</strong> <?php echo h($period_label); ?> &nbsp; | &nbsp; <?php echo h(date('M d, Y', strtotime($date_from))); ?> - <?php echo h(date('M d, Y', strtotime($date_to))); ?></div>
             <div class="print-meta"><strong>Generated:</strong> <?php echo h(date('M d, Y h:i A')); ?></div>
         </div>
 
+<<<<<<< HEAD
         <!-- Statistics Cards - gaya ng customer.php - No Print -->
 <div class="row stat-card-row g-1 g-sm-2 mb-4 no-print">
     <!-- Stat 1: Total Activities -->
@@ -1077,6 +1157,22 @@ body{background:#f4f6f9;font-family:'Segoe UI',sans-serif}.main-content{margin-l
         </div>
     </div>
 </div>
+=======
+        <div class="print-only print-summary-grid">
+            <div class="print-summary-box"><div class="print-summary-label">Total Activities</div><div class="print-summary-value"><?php echo number_format($totalActivities); ?></div></div>
+            <div class="print-summary-box"><div class="print-summary-label">Sales Amount</div><div class="print-summary-value"><?php echo moneyFmt($totalSales); ?></div></div>
+            <div class="print-summary-box"><div class="print-summary-label">Collections</div><div class="print-summary-value"><?php echo moneyFmt($totalCollections); ?></div></div>
+            <div class="print-summary-box"><div class="print-summary-label">Expenses</div><div class="print-summary-value"><?php echo moneyFmt($totalExpenses); ?></div></div>
+        </div>
+
+        <div class="row stat-card-row g-2 mb-4 no-print">
+            <div class="col-6 col-lg"><div class="stat-card"><i class="bi bi-list-check stat-icon"></i><div><div class="stat-value"><?php echo number_format($totalActivities); ?></div><div class="stat-label">Total Activities</div><small>Within selected period</small></div></div></div>
+            <div class="col-6 col-lg"><div class="stat-card"><i class="bi bi-cart-check stat-icon"></i><div><div class="stat-value"><?php echo moneyFmt($totalSales); ?></div><div class="stat-label">Sales Orders</div><small><?php echo count($salesOrders); ?> records</small></div></div></div>
+            <div class="col-6 col-lg"><div class="stat-card"><i class="bi bi-cash-stack stat-icon"></i><div><div class="stat-value"><?php echo moneyFmt($totalCollections); ?></div><div class="stat-label">Collections</div><small><?php echo count($collections); ?> records</small></div></div></div>
+            <div class="col-6 col-lg"><div class="stat-card"><i class="bi bi-wallet2 stat-icon"></i><div><div class="stat-value"><?php echo moneyFmt($totalExpenses); ?></div><div class="stat-label">Expenses</div><small><?php echo count($expenses); ?> records</small></div></div></div>
+            <div class="col-6 col-lg"><div class="stat-card"><i class="bi bi-box-arrow-in-down stat-icon"></i><div><div class="stat-value"><?php echo number_format($totalReceivedQty, 2); ?></div><div class="stat-label">Received Qty</div><small><?php echo count($inventoryReceives); ?> rows</small></div></div></div>
+        </div>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
         <div class="report-card filter-card no-print mb-4">
             <div class="filter-header">
@@ -1091,12 +1187,17 @@ body{background:#f4f6f9;font-family:'Segoe UI',sans-serif}.main-content{margin-l
                         <div class="col-12 col-lg-3 period-base"><label class="form-label">Date</label><input type="date" name="base_date" class="form-control" value="<?php echo h($base_date); ?>"></div>
                         <div class="col-12 col-lg-3 custom-date"><label class="form-label">Date From</label><input type="date" name="date_from" class="form-control" value="<?php echo h($date_from); ?>"></div>
                         <div class="col-12 col-lg-3 custom-date"><label class="form-label">Date To</label><input type="date" name="date_to" class="form-control" value="<?php echo h($date_to); ?>"></div>
+<<<<<<< HEAD
                         <div class="col-12 d-flex gap-2 flex-wrap"><button class="btn btn-amgc-primary" type="submit"><i class="bi bi-file-earmark-bar-graph"></i> Generate Report</button><a href="reports.php" class="btn btn-amgc-light"><i class="bi bi-arrow-clockwise"></i> Today Default</a><button class="btn btn-amgc-dark" type="button" onclick="window.print()"><i class="bi bi-printer"></i> Print</button></div>
+=======
+                        <div class="col-12 d-flex gap-2 flex-wrap"><button class="btn btn-amgc-primary" type="submit"><i class="bi bi-file-earmark-bar-graph"></i> Generate Report</button><a href="reports.php" class="btn btn-amgc-light"><i class="bi bi-arrow-clockwise"></i> Today Default</a><button class="btn btn-amgc-dark" type="button" onclick="printRollingReport()"><i class="bi bi-printer"></i> Print</button></div>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     </div>
                 </form>
             </div>
         </div>
 
+<<<<<<< HEAD
         <?php if ($report_type === 'all'): ?>
         <div class="report-card">
             <div class="report-card-header"><h5 class="mb-0"><i class="bi bi-list-check me-2"></i>All Activities</h5><span class="badge-soft"><?php echo count($allActivities); ?> records</span></div>
@@ -1140,6 +1241,22 @@ body{background:#f4f6f9;font-family:'Segoe UI',sans-serif}.main-content{margin-l
             </div>
         </div>
         <?php endif; ?>
+=======
+        <div class="report-card">
+            <div class="report-card-header">
+                <div><h5 class="mb-1">Report Summary</h5><div class="text-muted small">Period: <?php echo h($period_label); ?> | <?php echo h(date('M d, Y', strtotime($date_from))); ?> - <?php echo h(date('M d, Y', strtotime($date_to))); ?></div></div>
+                <span class="badge-soft"><?php echo h($branch_name); ?></span>
+            </div>
+            <div class="report-card-body">
+                <div class="row g-3">
+                    <div class="col-md-3"><strong>Generated By:</strong><br><?php echo h($user_name); ?></div>
+                    <div class="col-md-3"><strong>Role:</strong><br><?php echo h(ucfirst($user_role)); ?></div>
+                    <div class="col-md-3"><strong>Generated At:</strong><br><?php echo h(date('M d, Y h:i A')); ?></div>
+                    <div class="col-md-3"><strong>Report Type:</strong><br><?php echo h(ucwords(str_replace('_',' ', $report_type))); ?></div>
+                </div>
+            </div>
+        </div>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
         <?php if (shouldShowSection($report_type, 'sales_orders')): ?>
         <div class="report-card">
@@ -1208,6 +1325,7 @@ body{background:#f4f6f9;font-family:'Segoe UI',sans-serif}.main-content{margin-l
     </div>
 </div>
 
+<<<<<<< HEAD
 <!-- Mobile Bottom Navigation -->
 <div class="mobile-nav" id="mobileNav">
     <ul class="nav">
@@ -1224,6 +1342,15 @@ body{background:#f4f6f9;font-family:'Segoe UI',sans-serif}.main-content{margin-l
                 <button type="button" class="dropdown-item logout-dropdown-item" onclick="logout()"><i class="bi bi-box-arrow-right"></i><span>Logout</span></button>
             </div>
         </li>
+=======
+<div class="mobile-nav" id="mobileNav">
+    <ul class="nav">
+        <li class="nav-item"><a class="nav-link" href="current_inventory.php"><i class="bi bi-box-seam"></i><span>Inventory</span></a></li>
+        <li class="nav-item"><a class="nav-link" href="orderproduct.php"><i class="bi bi-cart-plus"></i><span>Order</span></a></li>
+        <li class="nav-item"><a class="nav-link" href="sales_order.php"><i class="bi bi-receipt"></i><span>Sales</span></a></li>
+        <li class="nav-item"><a class="nav-link" href="collections.php"><i class="bi bi-cash-stack"></i><span>Collect</span></a></li>
+        <li class="nav-item dropdown-more" id="moreDropdown"><a class="nav-link active more-btn" href="#" onclick="toggleDropdown(event,'moreDropdownMenu')"><i class="bi bi-three-dots"></i><span>More</span></a><div class="more-dropdown" id="moreDropdownMenu"><a href="customer.php" class="dropdown-item"><i class="bi bi-people"></i><span>Customers</span></a><a href="purchase_order.php" class="dropdown-item"><i class="bi bi-truck"></i><span>Receive Inventory</span></a><a href="expenses.php" class="dropdown-item"><i class="bi bi-wallet2"></i><span>Expenses</span></a><a href="reports.php" class="dropdown-item"><i class="bi bi-file-earmark-bar-graph"></i><span>Reports</span></a></div></li>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     </ul>
 </div>
 
@@ -1232,6 +1359,16 @@ body{background:#f4f6f9;font-family:'Segoe UI',sans-serif}.main-content{margin-l
 function logout(){Swal.fire({title:'Are you sure?',text:'You will be logged out of the system',icon:'question',showCancelButton:true,confirmButtonColor:'#047857',cancelButtonColor:'#6c757d',confirmButtonText:'Yes, logout'}).then((r)=>{if(r.isConfirmed)window.location.href='../logout.php';});}
 function toggleSidebar(){const s=document.getElementById('sidebar');if(!s)return;if(window.innerWidth<=992){s.classList.toggle('active')}else{s.classList.toggle('collapsed');localStorage.setItem('sidebarCollapsed',s.classList.contains('collapsed'))}}
 function toggleDropdown(e,id){e.preventDefault();e.stopPropagation();document.querySelectorAll('.more-dropdown').forEach(d=>{if(d.id!==id)d.classList.remove('show')});const el=document.getElementById(id);if(el)el.classList.toggle('show')}
+<<<<<<< HEAD
+=======
+
+function printRollingReport(){
+    const originalTitle = document.title;
+    document.title = 'Rolling Report - <?php echo h($user_name); ?> - <?php echo h($date_from); ?> to <?php echo h($date_to); ?>';
+    window.print();
+    setTimeout(()=>{ document.title = originalTitle; }, 500);
+}
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 function updatePeriodFields(){const period=document.getElementById('periodSelect')?.value||'daily';document.querySelectorAll('.custom-date').forEach(el=>el.style.display=period==='custom'?'block':'none');document.querySelectorAll('.period-base').forEach(el=>el.style.display=period==='custom'?'none':'block')}
 document.addEventListener('DOMContentLoaded',function(){const sidebar=document.getElementById('sidebar');if(sidebar&&window.innerWidth>992&&localStorage.getItem('sidebarCollapsed')==='true')sidebar.classList.add('collapsed');document.getElementById('mobileToggleBtn')?.addEventListener('click',toggleSidebar);document.getElementById('desktopToggleBtn')?.addEventListener('click',toggleSidebar);const filterBtn=document.getElementById('filterToggleBtn');const filterContent=document.getElementById('filterContent');const filterIcon=document.getElementById('filterIcon');filterBtn?.addEventListener('click',function(){const collapsed=filterContent.classList.contains('collapsed');filterContent.classList.toggle('collapsed',!collapsed);filterContent.classList.toggle('expanded',collapsed);filterBtn.setAttribute('aria-expanded',collapsed?'true':'false');filterIcon.classList.toggle('bi-chevron-down',!collapsed);filterIcon.classList.toggle('bi-chevron-up',collapsed);});document.getElementById('periodSelect')?.addEventListener('change',updatePeriodFields);updatePeriodFields();document.addEventListener('click',function(e){if(!e.target.closest('.dropdown-more'))document.querySelectorAll('.more-dropdown').forEach(d=>d.classList.remove('show'));if(window.innerWidth<=992&&sidebar&&sidebar.classList.contains('active')&&!sidebar.contains(e.target)&&!e.target.closest('#mobileToggleBtn'))sidebar.classList.remove('active');});});
 </script>

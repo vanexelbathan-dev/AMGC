@@ -4,14 +4,21 @@ require_once '../config/session_handler.php';
 
 // Protect page - only Rolling Account role can access
 requireLogin();
+<<<<<<< HEAD
 requireRole(['rolling']);
+=======
+requireRole(['rolling_account']);
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
 // Get current user info and branch context
 $user_id = $_SESSION['user_id'] ?? 0;
 $user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Rolling Account';
 $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'rolling_account';
 $branch_id = $_SESSION['rolling_branch_id'] ?? $_SESSION['branch_id'] ?? 0;
+<<<<<<< HEAD
 $source_branch_id = $_SESSION['source_branch_id'] ?? $_SESSION['branch_id'] ?? $branch_id;
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 $view_all_branches = false; // Rolling accounts are restricted to their assigned branch
 
 // Get user initials for avatar
@@ -61,6 +68,10 @@ if ($check_items_column && $check_items_column->num_rows > 0) {
     $items_branch_column_exists = true;
 }
 
+<<<<<<< HEAD
+=======
+// Check for discount columns in purchase_order_items
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 $discount_type_column_exists = false;
 $check_discount_type = $conn->query("SHOW COLUMNS FROM purchase_order_items LIKE 'discount_type'");
 if ($check_discount_type && $check_discount_type->num_rows > 0) {
@@ -73,15 +84,24 @@ if ($check_discount_value && $check_discount_value->num_rows > 0) {
     $discount_value_column_exists = true;
 }
 
+<<<<<<< HEAD
+=======
+// Determine branch filter condition
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 $po_branch_condition = "";
 if ($po_branch_column_exists && !$view_all_branches) {
     $po_branch_condition = "AND po.branch_id = $branch_id";
 }
 
 $items_branch_condition = "";
+<<<<<<< HEAD
 $source_items_branch_id = (int)($source_branch_id ?: $branch_id);
 if ($items_branch_column_exists && !$view_all_branches && $source_items_branch_id > 0) {
     $items_branch_condition = "AND branch_id = " . $source_items_branch_id;
+=======
+if ($items_branch_column_exists && !$view_all_branches) {
+    $items_branch_condition = "AND branch_id = $branch_id";
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 }
 
 // ========== FETCH SUPPLIERS ==========
@@ -111,6 +131,10 @@ if ($check_item_unit_types && $check_item_unit_types->num_rows > 0) {
     $item_unit_types_exists = true;
 }
 
+<<<<<<< HEAD
+=======
+// Receive Inventory category support.
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 $item_category_column = null;
 foreach (['category', 'item_category', 'category_name'] as $category_candidate) {
     $check_category_column = $conn->query("SHOW COLUMNS FROM items LIKE '" . $conn->real_escape_string($category_candidate) . "'");
@@ -229,6 +253,16 @@ if (!empty($items_list)) {
     unset($item);
 }
 
+<<<<<<< HEAD
+=======
+if (empty($items_list)) {
+    error_log("WARNING: No items found for branch ID: " . $branch_id);
+} else {
+    error_log("SUCCESS: " . count($items_list) . " items loaded for branch ID: " . $branch_id);
+}
+
+
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 // ========== RECEIVE ATTACHMENT HELPERS ==========
 function receiveAttachmentBaseDir(): string {
     return __DIR__ . '/../uploads/receive_attachments';
@@ -352,6 +386,10 @@ function loadReceiveManifestByContext(array $context): ?array {
     return $bestMatch;
 }
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 function deleteReceiveAttachmentFiles(?array $manifest): void {
     if (!is_array($manifest)) return;
     foreach (($manifest['attachments'] ?? []) as $file) {
@@ -375,6 +413,10 @@ function findReceiveManifestForDelete(int $transactionId, array $context = []): 
     return loadReceiveManifestByContext($context);
 }
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 // ========== RETURNED MERCHANDISE (RMR) HELPERS ==========
 function dbTableExists(mysqli $conn, string $tableName): bool {
     $safe = $conn->real_escape_string($tableName);
@@ -449,6 +491,10 @@ function getConfirmedProcessedRmrRequests(mysqli $conn, int $branchId, bool $vie
     $reasonExpr = sqlExpr('r', $reasonCol, "''");
     $processedAtExpr = sqlExpr('r', $processedAtCol, "''");
 
+<<<<<<< HEAD
+=======
+    // Build customer fallback safely. Priority: rmr_requests customer_name -> customers via customer_id -> deliveries customer -> blank.
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     $joins = "";
     $customerParts = [];
     if ($customerCol) {
@@ -501,6 +547,11 @@ function getConfirmedProcessedRmrRequests(mysqli $conn, int $branchId, bool $vie
     return $result ? $result->fetch_all(MYSQLI_ASSOC) : [];
 }
 
+<<<<<<< HEAD
+=======
+// Fix older invalid confirmed records caused by ENUM columns that do not allow confirmed.
+// We store confirmed RMR as rmr_status = approved so it stays compatible with existing Bad Orders database.
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 if (dbTableExists($conn, 'rmr_requests')) {
     $rmrFixCols = dbTableColumns($conn, 'rmr_requests');
     if (in_array('rmr_status', $rmrFixCols, true) && in_array('disposition_type', $rmrFixCols, true)) {
@@ -510,6 +561,7 @@ if (dbTableExists($conn, 'rmr_requests')) {
 
 $rmr_requests_list = getConfirmedProcessedRmrRequests($conn, (int)$branch_id, (bool)$view_all_branches);
 
+<<<<<<< HEAD
 // ========== ROLLING RECEIVE TRANSFER HELPERS ==========
 function ensureRollingTransferTables($conn) {
     $conn->query("CREATE TABLE IF NOT EXISTS `rolling_inventory_transfers` (
@@ -764,6 +816,8 @@ function resolveUnitTypeForReceive($conn, $item_id, $uom_name, $branch_id) {
     return [0, ($uom_name !== '' ? $uom_name : 'Piece')];
 }
 
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 // ========== HANDLE AJAX REQUESTS ==========
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     header('Content-Type: application/json');
@@ -782,6 +836,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $po_status = $_POST['po_status'] ?? 'draft';
             $created_by = $user_id;
 
+<<<<<<< HEAD
+=======
+            // Build insert data dynamically
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             $fields = [
                 'po_number' => $po_number,
                 'supplier_name' => $supplier_name,
@@ -800,6 +858,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $fields['branch_id'] = $branch_id;
             }
 
+<<<<<<< HEAD
+=======
+            // Build query
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             $column_names = array_keys($fields);
             $placeholders = [];
             $types = '';
@@ -825,6 +887,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             
             $po_id = $conn->insert_id;
             
+<<<<<<< HEAD
+=======
+            // Add items if provided
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             if (isset($_POST['items']) && !empty($_POST['items'])) {
                 $items = json_decode($_POST['items'], true);
                 if (is_array($items) && count($items) > 0) {
@@ -835,6 +901,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         $discount_type = isset($item['discount_type']) ? $item['discount_type'] : null;
                         $discount_value = isset($item['discount_value']) ? (float)$item['discount_value'] : 0;
                         
+<<<<<<< HEAD
+=======
+                        // Build item insert
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         $item_fields = ['po_id', 'item_id', 'quantity_ordered', 'unit_price'];
                         $item_placeholders = ['?', '?', '?', '?'];
                         $item_types = 'iiid';
@@ -874,6 +944,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             exit;
         }
         
+<<<<<<< HEAD
         // RECEIVE INVENTORY - ROLLING BRANCH ADMIN TRANSFER ONLY
         elseif ($_POST['action'] === 'receive_inventory') {
             $source = 'branch_admin_transfer';
@@ -884,6 +955,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $saved_attachments = [];
             $manifest_created_at = date('Y-m-d H:i:s');
             $transfer_number = 'RIT-' . date('YmdHis') . '-' . rand(100, 999);
+=======
+
+        // RECEIVE INVENTORY
+        elseif ($_POST['action'] === 'receive_inventory') {
+            $source = $_POST['source'] ?? 'supplier';
+            $supplier_id = isset($_POST['supplier_id']) && $_POST['supplier_id'] !== '' ? (int)$_POST['supplier_id'] : null;
+            $supplier_name = trim($_POST['supplier'] ?? '');
+            $po_number = trim($_POST['poNumber'] ?? '');
+            $with_po = isset($_POST['withPO']) && (string)$_POST['withPO'] === '1';
+            $receive_date = trim($_POST['receiveDate'] ?? '');
+            $items = json_decode($_POST['items'] ?? '[]', true);
+            $rmr_id = isset($_POST['rmr_id']) && $_POST['rmr_id'] !== '' ? (int)$_POST['rmr_id'] : 0;
+            $upload_field = $source === 'production' ? 'productionAttachments' : 'supplierAttachments';
+            if ($source === 'rmr') {
+                $upload_field = '';
+            }
+            $saved_attachments = [];
+            $manifest_item_rows = [];
+            $saved_transaction_ids = [];
+            $manifest_created_at = date('Y-m-d H:i:s');
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
             if (!$receive_date) {
                 throw new Exception('Receive date is required.');
@@ -891,6 +983,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             if (!is_array($items) || count($items) === 0) {
                 throw new Exception('Please add at least one item to receive.');
             }
+<<<<<<< HEAD
 
             ensureRollingTransferTables($conn);
 
@@ -904,6 +997,162 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
             $transfer_id = (int)$conn->insert_id;
             $transfer_stmt->close();
+=======
+            if ($source === 'supplier' && $supplier_name === '') {
+                throw new Exception('Please select a supplier.');
+            }
+            if ($source === 'rmr' && $rmr_id <= 0) {
+                throw new Exception('Please select a confirmed or processed RMR request.');
+            }
+
+            $quantity_received_column_exists = false;
+            $check_qty_received_col = $conn->query("SHOW COLUMNS FROM purchase_order_items LIKE 'quantity_received'");
+            if ($check_qty_received_col && $check_qty_received_col->num_rows > 0) {
+                $quantity_received_column_exists = true;
+            }
+
+            $reference_po_id = null;
+            $received_total_amount = 0.00;
+            if ($upload_field !== '' && isset($_FILES[$upload_field]) && is_array($_FILES[$upload_field]['name'] ?? null)) {
+                ensureReceiveAttachmentDirectories();
+                $allowed_extensions = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'];
+                $upload_count = count($_FILES[$upload_field]['name']);
+                for ($i = 0; $i < $upload_count; $i++) {
+                    if (($_FILES[$upload_field]['error'][$i] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+                        continue;
+                    }
+                    if (($_FILES[$upload_field]['error'][$i] ?? UPLOAD_ERR_OK) !== UPLOAD_ERR_OK) {
+                        throw new Exception('One of the attachments failed to upload.');
+                    }
+                    $original_name = (string)($_FILES[$upload_field]['name'][$i] ?? 'attachment');
+                    $tmp_name = (string)($_FILES[$upload_field]['tmp_name'][$i] ?? '');
+                    $size = (int)($_FILES[$upload_field]['size'][$i] ?? 0);
+                    $ext = strtolower(pathinfo($original_name, PATHINFO_EXTENSION));
+                    if (!in_array($ext, $allowed_extensions, true)) {
+                        throw new Exception('Invalid attachment type. Allowed files: PDF, JPG, JPEG, PNG, DOC, DOCX.');
+                    }
+                    if ($size > 10 * 1024 * 1024) {
+                        throw new Exception('Attachment file size must be 10MB or below.');
+                    }
+                    if ($tmp_name === '' || !is_uploaded_file($tmp_name)) {
+                        throw new Exception('Invalid uploaded attachment.');
+                    }
+                    $safe_original = sanitizeReceiveAttachmentName(pathinfo($original_name, PATHINFO_FILENAME));
+                    $stored_name = date('YmdHis') . '_' . bin2hex(random_bytes(4)) . '_' . $safe_original . ($ext !== '' ? '.' . $ext : '');
+                    $target_dir = ensureReceiveAttachmentDirectories() . '/files';
+                    $target_path = $target_dir . '/' . $stored_name;
+                    $moved = move_uploaded_file($tmp_name, $target_path);
+                    if (!$moved && is_file($tmp_name)) {
+                        $moved = @rename($tmp_name, $target_path) || @copy($tmp_name, $target_path);
+                    }
+                    if (!$moved) {
+                        throw new Exception('Failed to save attachment file.');
+                    }
+                    $saved_attachments[] = [
+                        'original_name' => $original_name,
+                        'stored_name' => $stored_name,
+                        'relative_path' => 'files/' . $stored_name,
+                        'url' => receiveAttachmentBaseUrl() . '/files/' . rawurlencode($stored_name),
+                        'size' => $size
+                    ];
+                }
+            }
+
+            foreach ($items as $rowItem) {
+                $received_total_amount += ((float)($rowItem['qty'] ?? 0)) * ((float)($rowItem['price'] ?? 0));
+            }
+
+            if ($source === 'supplier') {
+                if ($with_po && $po_number !== '') {
+                    $po_lookup_query = "SELECT po_id FROM purchase_orders WHERE po_number = ?";
+                    if ($po_branch_column_exists && !$view_all_branches) {
+                        $po_lookup_query .= " AND branch_id = ?";
+                    }
+                    $po_lookup_stmt = $conn->prepare($po_lookup_query);
+                    if (!$po_lookup_stmt) {
+                        throw new Exception('Unable to prepare PO lookup.');
+                    }
+                    if ($po_branch_column_exists && !$view_all_branches) {
+                        $po_lookup_stmt->bind_param("si", $po_number, $branch_id);
+                    } else {
+                        $po_lookup_stmt->bind_param("s", $po_number);
+                    }
+                    $po_lookup_stmt->execute();
+                    $po_lookup_result = $po_lookup_stmt->get_result();
+                    if ($po_lookup_row = $po_lookup_result->fetch_assoc()) {
+                        $reference_po_id = (int)$po_lookup_row['po_id'];
+                    } else {
+                        throw new Exception('Selected PO was not found.');
+                    }
+                    $po_lookup_stmt->close();
+                } else {
+                    $generated_po_number = 'PO-RCV-' . date('YmdHis');
+                    $fields = [
+                        'po_number' => $generated_po_number,
+                        'supplier_name' => $supplier_name,
+                        'order_date' => $receive_date,
+                        'expected_delivery' => $receive_date,
+                        'total_amount' => $received_total_amount,
+                        'po_status' => 'received',
+                        'created_by' => $user_id,
+                        'created_at' => 'NOW()',
+                        'updated_at' => 'NOW()'
+                    ];
+                    if ($po_branch_column_exists) {
+                        $fields['branch_id'] = $branch_id;
+                    }
+                    if ($supplier_id_column_exists && $supplier_id) {
+                        $fields['supplier_id'] = $supplier_id;
+                    }
+
+                    $column_names = array_keys($fields);
+                    $placeholders = [];
+                    $types = '';
+                    $values = [];
+                    foreach ($fields as $col => $val) {
+                        if ($val === 'NOW()') {
+                            $placeholders[] = 'NOW()';
+                        } else {
+                            $placeholders[] = '?';
+                            if (is_int($val)) $types .= 'i';
+                            elseif (is_float($val)) $types .= 'd';
+                            else $types .= 's';
+                            $values[] = $val;
+                        }
+                    }
+
+                    $create_receive_po = $conn->prepare("INSERT INTO purchase_orders (" . implode(', ', $column_names) . ") VALUES (" . implode(', ', $placeholders) . ")");
+                    if (!$create_receive_po) {
+                        throw new Exception('Unable to prepare supplier receipt save.');
+                    }
+                    if (!empty($values)) {
+                        $create_receive_po->bind_param($types, ...$values);
+                    }
+                    if (!$create_receive_po->execute()) {
+                        throw new Exception('Unable to save supplier source: ' . $create_receive_po->error);
+                    }
+                    $reference_po_id = (int)$conn->insert_id;
+                    $po_number = $generated_po_number;
+                    $create_receive_po->close();
+                }
+            }
+
+            $reference_rmr_id = 0;
+            if ($source === 'rmr') {
+                $rmrValid = false;
+                foreach ($rmr_requests_list as $rmrRow) {
+                    if ((int)($rmrRow['rmr_id'] ?? 0) === $rmr_id) {
+                        $rmrValid = true;
+                        break;
+                    }
+                }
+                if (!$rmrValid) {
+                    throw new Exception('Selected RMR request is not confirmed/processed/approved, already returned to inventory, or not found.');
+                }
+                $reference_rmr_id = $rmr_id;
+                $po_number = 'RMR-' . $rmr_id;
+            }
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
             foreach ($items as $rowItem) {
                 $item_id = isset($rowItem['item_id']) && $rowItem['item_id'] !== null && $rowItem['item_id'] !== '' ? (int)$rowItem['item_id'] : 0;
@@ -915,6 +1164,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $item_qty = (float)($rowItem['qty'] ?? 0);
                 $item_price = (float)($rowItem['price'] ?? 0);
 
+<<<<<<< HEAD
                 if ($item_id <= 0 || $item_name === '' || $item_uom === '' || $item_qty <= 0) {
                     throw new Exception('Please complete all received item details.');
                 }
@@ -970,12 +1220,205 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $saved_transaction_ids[] = (int)$conn->insert_id;
                 $in_transaction->close();
 
+=======
+                if ($item_name === '' || $item_code === '' || $item_description === '' || $item_category === '' || $item_uom === '' || $item_qty <= 0) {
+                    throw new Exception('Please complete all received item details.');
+                }
+
+                if ($item_id <= 0) {
+                    $existing_item_stmt = $conn->prepare("SELECT item_id FROM items WHERE item_code = ? LIMIT 1");
+                    if ($existing_item_stmt) {
+                        $existing_item_stmt->bind_param("s", $item_code);
+                        $existing_item_stmt->execute();
+                        $existing_item_result = $existing_item_stmt->get_result();
+                        if ($existing_item_row = $existing_item_result->fetch_assoc()) {
+                            $item_id = (int)$existing_item_row['item_id'];
+                        }
+                        $existing_item_stmt->close();
+                    }
+                }
+
+                if ($item_id <= 0) {
+                    $item_insert_fields = ['item_code', 'item_name', 'description'];
+                    $item_insert_placeholders = ['?', '?', '?'];
+                    $item_insert_types = 'sss';
+                    $item_insert_values = [$item_code, $item_name, $item_description];
+
+                    if ($item_category_column) {
+                        $item_insert_fields[] = '`' . $item_category_column . '`';
+                        $item_insert_placeholders[] = '?';
+                        $item_insert_types .= 's';
+                        $item_insert_values[] = $item_category;
+                    }
+
+                    $item_insert_fields = array_merge($item_insert_fields, ['unit_type', 'unit_price', 'stock', 'stock_in_default_uom', 'status', 'created_at', 'updated_at']);
+                    $item_insert_placeholders = array_merge($item_insert_placeholders, ['?', '?', '?', '?', "'active'", 'NOW()', 'NOW()']);
+                    $item_insert_types .= 'sddd';
+                    array_push($item_insert_values, $item_uom, $item_price, $item_qty, $item_qty);
+
+                    if ($items_branch_column_exists) {
+                        $item_insert_fields[] = 'branch_id';
+                        $item_insert_placeholders[] = '?';
+                        $item_insert_types .= 'i';
+                        $item_insert_values[] = $branch_id;
+                    }
+
+                    $insert_item_query = "INSERT INTO items (" . implode(', ', $item_insert_fields) . ") VALUES (" . implode(', ', $item_insert_placeholders) . ")";
+                    $insert_item_stmt = $conn->prepare($insert_item_query);
+                    if (!$insert_item_stmt) {
+                        throw new Exception('Unable to prepare new item save.');
+                    }
+                    $insert_item_stmt->bind_param($item_insert_types, ...$item_insert_values);
+                    if (!$insert_item_stmt->execute()) {
+                        throw new Exception('Failed to create new item: ' . $insert_item_stmt->error);
+                    }
+                    $item_id = (int)$conn->insert_id;
+                    $insert_item_stmt->close();
+                } else {
+                    if ($item_category_column) {
+                        $update_item_stmt = $conn->prepare("UPDATE items SET item_name = ?, description = ?, `{$item_category_column}` = ?, unit_type = ?, unit_price = ?, updated_at = NOW() WHERE item_id = ?");
+                    } else {
+                        $update_item_stmt = $conn->prepare("UPDATE items SET item_name = ?, description = ?, unit_type = ?, unit_price = ?, updated_at = NOW() WHERE item_id = ?");
+                    }
+                    if ($update_item_stmt) {
+                        if ($item_category_column) {
+                            $update_item_stmt->bind_param("ssssdi", $item_name, $item_description, $item_category, $item_uom, $item_price, $item_id);
+                        } else {
+                            $update_item_stmt->bind_param("sssdi", $item_name, $item_description, $item_uom, $item_price, $item_id);
+                        }
+                        if (!$update_item_stmt->execute()) {
+                            throw new Exception('Failed to update item details.');
+                        }
+                        $update_item_stmt->close();
+                    }
+                }
+
+                if ($source === 'supplier' && $reference_po_id) {
+                    $find_po_item = $conn->prepare("SELECT po_item_id FROM purchase_order_items WHERE po_id = ? AND item_id = ? LIMIT 1");
+                    if ($find_po_item) {
+                        $find_po_item->bind_param("ii", $reference_po_id, $item_id);
+                        $find_po_item->execute();
+                        $find_po_item_result = $find_po_item->get_result();
+                        if ($find_po_item_row = $find_po_item_result->fetch_assoc()) {
+                            $po_item_id = (int)$find_po_item_row['po_item_id'];
+                            if ($quantity_received_column_exists) {
+                                $update_po_item = $conn->prepare("UPDATE purchase_order_items SET quantity_ordered = ?, quantity_received = ?, unit_price = ? WHERE po_item_id = ?");
+                                $update_po_item->bind_param("dddi", $item_qty, $item_qty, $item_price, $po_item_id);
+                            } else {
+                                $update_po_item = $conn->prepare("UPDATE purchase_order_items SET quantity_ordered = ?, unit_price = ? WHERE po_item_id = ?");
+                                $update_po_item->bind_param("ddi", $item_qty, $item_price, $po_item_id);
+                            }
+                            if (!$update_po_item->execute()) {
+                                throw new Exception('Failed to update purchase order item.');
+                            }
+                            $update_po_item->close();
+                        } else {
+                            if ($quantity_received_column_exists) {
+                                $insert_po_item = $conn->prepare("INSERT INTO purchase_order_items (po_id, item_id, quantity_ordered, quantity_received, unit_price) VALUES (?, ?, ?, ?, ?)");
+                                $insert_po_item->bind_param("iiddd", $reference_po_id, $item_id, $item_qty, $item_qty, $item_price);
+                            } else {
+                                $insert_po_item = $conn->prepare("INSERT INTO purchase_order_items (po_id, item_id, quantity_ordered, unit_price) VALUES (?, ?, ?, ?)");
+                                $insert_po_item->bind_param("iidd", $reference_po_id, $item_id, $item_qty, $item_price);
+                            }
+                            if (!$insert_po_item->execute()) {
+                                throw new Exception('Failed to insert purchase order item.');
+                            }
+                            $insert_po_item->close();
+                        }
+                        $find_po_item->close();
+                    }
+                }
+
+                // NOTE: Don't update 'inventory' table here
+                // The inventory_transactions record below will be synced to item_unit_inventory by current_inventory.php
+                // This ensures a single source of truth for inventory data
+
+                $reference_type = $source === 'supplier' ? 'purchase_order' : ($source === 'rmr' ? 'rmr' : 'production');
+                $reference_id = $source === 'rmr' ? $reference_rmr_id : ($reference_po_id ?: 0);
+                $inventory_transaction = $conn->prepare("INSERT INTO inventory_transactions (branch_id, item_id, transaction_type, quantity_changed, reference_type, reference_id, created_by, created_at) VALUES (?, ?, 'in', ?, ?, ?, ?, NOW())");
+                if (!$inventory_transaction) {
+                    throw new Exception('Unable to prepare inventory transaction save.');
+                }
+                $inventory_transaction->bind_param("iidsii", $branch_id, $item_id, $item_qty, $reference_type, $reference_id, $user_id);
+                if (!$inventory_transaction->execute()) {
+                    throw new Exception('Failed to save inventory transaction.');
+                }
+                $saved_transaction_ids[] = (int)$conn->insert_id;
+                
+                // DIRECTLY UPDATE EXISTING item_unit_inventory ROW ONLY
+                // IMPORTANT: Do NOT insert a new unit type inventory row here.
+                // The item already has its UoM rows from Current Inventory > Add/Edit Item.
+                // We only add the received quantity to the matching existing UoM row.
+                $matched_inventory_id = 0;
+                $matched_unit_type_id = 0;
+                $matched_current_inventory = 0.00;
+
+                // 1) Match existing item_unit_inventory by item + UoM name.
+                // This prevents creating duplicate UoM rows when unit_types has the same name in another branch/global scope.
+                $find_existing_unit_inventory = $conn->prepare("\n                    SELECT \n                        iui.inventory_id,\n                        iui.unit_type_id,\n                        COALESCE(iui.current_inventory, 0) AS current_inventory\n                    FROM item_unit_inventory iui\n                    INNER JOIN unit_types ut ON ut.unit_type_id = iui.unit_type_id\n                    WHERE iui.item_id = ?\n                      AND LOWER(TRIM(ut.unit_type_name)) = LOWER(TRIM(?))\n                    ORDER BY \n                        CASE WHEN ut.branch_id = ? THEN 0 WHEN ut.branch_id IS NULL THEN 1 ELSE 2 END ASC,\n                        iui.inventory_id ASC\n                    LIMIT 1\n                ");
+                if ($find_existing_unit_inventory) {
+                    $find_existing_unit_inventory->bind_param("isi", $item_id, $item_uom, $branch_id);
+                    $find_existing_unit_inventory->execute();
+                    $existing_unit_inventory_result = $find_existing_unit_inventory->get_result();
+                    if ($existing_unit_inventory_row = $existing_unit_inventory_result->fetch_assoc()) {
+                        $matched_inventory_id = (int)$existing_unit_inventory_row['inventory_id'];
+                        $matched_unit_type_id = (int)$existing_unit_inventory_row['unit_type_id'];
+                        $matched_current_inventory = (float)$existing_unit_inventory_row['current_inventory'];
+                    }
+                    $find_existing_unit_inventory->close();
+                }
+
+                // 2) Fallback: if no UoM name match, use this item's default UoM inventory row only.
+                // Still update only an existing row; never insert a duplicate UoM row from receiving.
+                if ($matched_inventory_id <= 0) {
+                    $find_default_unit_inventory = $conn->prepare("\n                        SELECT \n                            iui.inventory_id,\n                            iui.unit_type_id,\n                            COALESCE(iui.current_inventory, 0) AS current_inventory\n                        FROM items i\n                        INNER JOIN item_unit_inventory iui \n                            ON iui.item_id = i.item_id \n                           AND iui.unit_type_id = i.default_unit_type_id\n                        WHERE i.item_id = ?\n                        LIMIT 1\n                    ");
+                    if ($find_default_unit_inventory) {
+                        $find_default_unit_inventory->bind_param("i", $item_id);
+                        $find_default_unit_inventory->execute();
+                        $default_unit_inventory_result = $find_default_unit_inventory->get_result();
+                        if ($default_unit_inventory_row = $default_unit_inventory_result->fetch_assoc()) {
+                            $matched_inventory_id = (int)$default_unit_inventory_row['inventory_id'];
+                            $matched_unit_type_id = (int)$default_unit_inventory_row['unit_type_id'];
+                            $matched_current_inventory = (float)$default_unit_inventory_row['current_inventory'];
+                        }
+                        $find_default_unit_inventory->close();
+                    }
+                }
+
+                if ($matched_inventory_id > 0) {
+                    $new_current_inventory = $matched_current_inventory + (float)$item_qty;
+                    $update_existing_unit_inventory = $conn->prepare("\n                        UPDATE item_unit_inventory\n                        SET current_inventory = ?,\n                            as_of_date = ?,\n                            updated_at = NOW()\n                        WHERE inventory_id = ?\n                        LIMIT 1\n                    ");
+                    if (!$update_existing_unit_inventory) {
+                        throw new Exception('Unable to prepare unit inventory update.');
+                    }
+                    $as_of_date_for_receive = $receive_date ?: date('Y-m-d');
+                    $update_existing_unit_inventory->bind_param("dsi", $new_current_inventory, $as_of_date_for_receive, $matched_inventory_id);
+                    if (!$update_existing_unit_inventory->execute()) {
+                        throw new Exception('Failed to update existing unit inventory stock.');
+                    }
+                    $update_existing_unit_inventory->close();
+
+                    // Keep the items summary synced when the updated UoM is the default UoM.
+                    $sync_default_summary = $conn->prepare("\n                        UPDATE items i\n                        INNER JOIN unit_types ut ON ut.unit_type_id = ?\n                        SET i.stock = CASE WHEN i.default_unit_type_id = ? THEN ? ELSE i.stock END,\n                            i.unit_type = CASE WHEN i.default_unit_type_id = ? THEN ut.unit_type_name ELSE i.unit_type END,\n                            i.updated_at = NOW()\n                        WHERE i.item_id = ?\n                    ");
+                    if ($sync_default_summary) {
+                        $sync_default_summary->bind_param("iidii", $matched_unit_type_id, $matched_unit_type_id, $new_current_inventory, $matched_unit_type_id, $item_id);
+                        $sync_default_summary->execute();
+                        $sync_default_summary->close();
+                    }
+                } else {
+                    // No matching UoM row exists for this item.
+                    // Do not create a new UoM row here because that causes duplicate unit types in Current Inventory.
+                    throw new Exception('No existing Unit Type inventory row found for this item/UoM. Please add the UoM first in Current Inventory before receiving stock.');
+                }
+                
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 $manifest_item_rows[] = [
                     'item_id' => (int)$item_id,
                     'item_name' => $item_name,
                     'item_code' => $item_code,
                     'item_description' => $item_description,
                     'category' => $item_category,
+<<<<<<< HEAD
                     'uom' => $unit_type_name,
                     'qty' => $item_qty,
                     'unit_price' => $item_price,
@@ -1001,19 +1444,114 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 'items' => $manifest_item_rows
             ];
             @file_put_contents(receiveAttachmentBaseDir() . '/manifests/' . $manifest_id . '.json', json_encode($manifest_payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+=======
+                    'uom' => $item_uom,
+                    'qty' => $item_qty,
+                    'unit_price' => $item_price
+                ];
+                $inventory_transaction->close();
+            }
+
+            if (!empty($saved_transaction_ids) || !empty($saved_attachments)) {
+                ensureReceiveAttachmentDirectories();
+                $manifest_id = 'receive_' . date('YmdHis') . '_' . bin2hex(random_bytes(4));
+                $manifest_payload = [
+                    'manifest_id' => $manifest_id,
+                    'source' => $source,
+                    'supplier_id' => $supplier_id,
+                    'supplier_name' => $supplier_name,
+                    'po_number' => $po_number,
+                    'reference_type' => $source === 'supplier' ? 'purchase_order' : ($source === 'rmr' ? 'rmr' : 'production'),
+                    'reference_id' => (int)($source === 'rmr' ? $reference_rmr_id : ($reference_po_id ?: 0)),
+                    'receive_date' => $receive_date,
+                    'created_at' => $manifest_created_at,
+                    'created_by' => (int)$user_id,
+                    'branch_id' => (int)$branch_id,
+                    'transaction_ids' => $saved_transaction_ids,
+                    'attachments' => $saved_attachments,
+                    'items' => $manifest_item_rows
+                ];
+                @file_put_contents(receiveAttachmentBaseDir() . '/manifests/' . $manifest_id . '.json', json_encode($manifest_payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+            }
+
+            if ($source === 'supplier' && $reference_po_id) {
+                if ($supplier_id_column_exists) {
+                    $safe_supplier_id = $supplier_id ?: 0;
+                    $update_po_stmt = $conn->prepare("UPDATE purchase_orders SET supplier_name = ?, total_amount = ?, po_status = 'received', supplier_id = ?, updated_at = NOW() WHERE po_id = ?");
+                    $update_po_stmt->bind_param("sdii", $supplier_name, $received_total_amount, $safe_supplier_id, $reference_po_id);
+                } else {
+                    $update_po_stmt = $conn->prepare("UPDATE purchase_orders SET supplier_name = ?, total_amount = ?, po_status = 'received', updated_at = NOW() WHERE po_id = ?");
+                    $update_po_stmt->bind_param("sdi", $supplier_name, $received_total_amount, $reference_po_id);
+                }
+                if (!$update_po_stmt->execute()) {
+                    throw new Exception('Failed to update purchase order after receipt.');
+                }
+                $update_po_stmt->close();
+            }
+
+            if ($source === 'rmr' && $reference_rmr_id > 0 && dbTableExists($conn, 'rmr_requests')) {
+                $rmr_columns_after_receive = dbTableColumns($conn, 'rmr_requests');
+                $rmr_status_col_after_receive = firstExistingColumn($rmr_columns_after_receive, ['rmr_status', 'status', 'request_status', 'process_status']);
+                $rmr_id_col_after_receive = firstExistingColumn($rmr_columns_after_receive, ['rmr_id', 'request_id', 'return_id', 'id']);
+                $rmr_received_date_col = firstExistingColumn($rmr_columns_after_receive, ['received_date', 'receive_date', 'date_received']);
+                $rmr_received_by_col = firstExistingColumn($rmr_columns_after_receive, ['received_by', 'receive_by', 'receiver_id']);
+
+                if ($rmr_status_col_after_receive && $rmr_id_col_after_receive) {
+                    $rmr_update_sets = [sqlIdentifier($rmr_status_col_after_receive) . " = 'resolved'", "updated_at = NOW()"];
+                    $rmr_update_types = '';
+                    $rmr_update_values = [];
+
+                    // After Receive Inventory, reflect the actual receive date and receiver in Bad Orders.
+                    if ($rmr_received_date_col) {
+                        $rmr_update_sets[] = sqlIdentifier($rmr_received_date_col) . " = ?";
+                        $rmr_update_types .= 's';
+                        $rmr_update_values[] = $receive_date;
+                    }
+                    if ($rmr_received_by_col) {
+                        $rmr_update_sets[] = sqlIdentifier($rmr_received_by_col) . " = ?";
+                        $rmr_update_types .= 'i';
+                        $rmr_update_values[] = $user_id;
+                    }
+
+                    $rmr_update_types .= 'i';
+                    $rmr_update_values[] = $reference_rmr_id;
+
+                    $update_rmr_after_receive = $conn->prepare(
+                        "UPDATE rmr_requests SET " . implode(', ', $rmr_update_sets) . " WHERE " . sqlIdentifier($rmr_id_col_after_receive) . " = ?"
+                    );
+                    if ($update_rmr_after_receive) {
+                        $update_rmr_after_receive->bind_param($rmr_update_types, ...$rmr_update_values);
+                        if (!$update_rmr_after_receive->execute()) {
+                            throw new Exception('Failed to update RMR receive status after inventory receive.');
+                        }
+                        $update_rmr_after_receive->close();
+                    }
+                }
+            }
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
             $conn->commit();
             echo json_encode([
                 'success' => true,
+<<<<<<< HEAD
                 'message' => 'Inventory received from Branch Admin successfully. Branch Admin stock was deducted and Rolling stock was recorded.',
                 'transfer_id' => $transfer_id,
                 'transfer_number' => $transfer_number,
                 'attachments_saved' => 0,
                 'manifest_id' => $manifest_id
+=======
+                'message' => 'Received inventory saved successfully.',
+                'po_id' => $reference_po_id,
+                'po_number' => $po_number,
+                'supplier_name' => $supplier_name,
+                'attachments_saved' => count($saved_attachments),
+                'manifest_id' => $manifest_id ?? null
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             ]);
             exit;
         }
 
+<<<<<<< HEAD
         elseif ($_POST['action'] === 'delete_receive_history') {
             $transaction_id = isset($_POST['transaction_id']) ? (int)$_POST['transaction_id'] : 0;
             $item_id = isset($_POST['item_id']) ? (int)$_POST['item_id'] : 0;
@@ -1264,6 +1802,277 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
 
         elseif ($_POST['action'] === 'get_receive_history_details') {
+=======
+
+        elseif ($_POST['action'] === 'delete_receive_history') {
+    $transaction_id = isset($_POST['transaction_id']) ? (int)$_POST['transaction_id'] : 0;
+    $item_id = isset($_POST['item_id']) ? (int)$_POST['item_id'] : 0;
+    $reference_type = isset($_POST['reference_type']) ? trim((string)$_POST['reference_type']) : '';
+    $reference_id = isset($_POST['reference_id']) ? (int)$_POST['reference_id'] : 0;
+    $created_at = isset($_POST['created_at']) ? trim((string)$_POST['created_at']) : '';
+
+    $candidateRows = [];
+    $manifest = findReceiveManifestForDelete($transaction_id, [
+        'reference_type' => $reference_type,
+        'reference_id' => $reference_id,
+        'item_id' => $item_id,
+        'created_at' => $created_at
+    ]);
+
+    if ($transaction_id > 0) {
+        $lookup_query = "
+            SELECT it.transaction_id, it.branch_id, it.item_id, it.quantity_changed, it.reference_type, it.reference_id, it.created_at
+            FROM inventory_transactions it
+            WHERE it.transaction_id = ? AND it.transaction_type = 'in'
+        ";
+        if (!$view_all_branches) {
+            $lookup_query .= " AND it.branch_id = ?";
+        }
+        $lookup_stmt = $conn->prepare($lookup_query);
+        if ($lookup_stmt) {
+            if (!$view_all_branches) {
+                $lookup_stmt->bind_param('ii', $transaction_id, $branch_id);
+            } else {
+                $lookup_stmt->bind_param('i', $transaction_id);
+            }
+            $lookup_stmt->execute();
+            $lookup_result = $lookup_stmt->get_result();
+            while ($row = $lookup_result ? $lookup_result->fetch_assoc() : null) {
+                $candidateRows[] = $row;
+            }
+            $lookup_stmt->close();
+        }
+    }
+
+    if (empty($candidateRows)) {
+        $fallback_query = "
+            SELECT it.transaction_id, it.branch_id, it.item_id, it.quantity_changed, it.reference_type, it.reference_id, it.created_at
+            FROM inventory_transactions it
+            WHERE it.transaction_type = 'in'
+        ";
+        $fallback_types = '';
+        $fallback_params = [];
+        if ($item_id > 0) {
+            $fallback_query .= " AND it.item_id = ?";
+            $fallback_types .= 'i';
+            $fallback_params[] = $item_id;
+        }
+        if ($reference_type !== '') {
+            $fallback_query .= " AND it.reference_type = ?";
+            $fallback_types .= 's';
+            $fallback_params[] = $reference_type;
+        }
+        if ($reference_id > 0 || $reference_type === 'production') {
+            $fallback_query .= " AND COALESCE(it.reference_id, 0) = ?";
+            $fallback_types .= 'i';
+            $fallback_params[] = $reference_id;
+        }
+        if ($created_at !== '') {
+            $fallback_query .= " AND ABS(TIMESTAMPDIFF(SECOND, it.created_at, ?)) <= 600";
+            $fallback_types .= 's';
+            $fallback_params[] = $created_at;
+        }
+        if (!$view_all_branches) {
+            $fallback_query .= " AND it.branch_id = ?";
+            $fallback_types .= 'i';
+            $fallback_params[] = $branch_id;
+        }
+        $fallback_query .= " ORDER BY ABS(TIMESTAMPDIFF(SECOND, it.created_at, ?)) ASC, it.created_at DESC";
+        $fallback_types .= 's';
+        $fallback_params[] = ($created_at !== '' ? $created_at : date('Y-m-d H:i:s'));
+
+        $fallback_stmt = $conn->prepare($fallback_query);
+        if ($fallback_stmt) {
+            if ($fallback_types !== '') {
+                $fallback_stmt->bind_param($fallback_types, ...$fallback_params);
+            }
+            $fallback_stmt->execute();
+            $fallback_result = $fallback_stmt->get_result();
+            while ($row = $fallback_result ? $fallback_result->fetch_assoc() : null) {
+                $candidateRows[] = $row;
+            }
+            $fallback_stmt->close();
+        }
+    }
+
+    if (empty($candidateRows) && is_array($manifest) && !empty($manifest['items'])) {
+        foreach (($manifest['items'] ?? []) as $manifestItem) {
+            if ($item_id > 0 && (int)($manifestItem['item_id'] ?? 0) !== $item_id) {
+                continue;
+            }
+            $mfItemId = (int)($manifestItem['item_id'] ?? 0);
+            if ($mfItemId <= 0) continue;
+
+            $mfQuery = "
+                SELECT it.transaction_id, it.branch_id, it.item_id, it.quantity_changed, it.reference_type, it.reference_id, it.created_at
+                FROM inventory_transactions it
+                WHERE it.transaction_type = 'in'
+                  AND it.item_id = ?
+                  AND it.reference_type = ?
+                  AND COALESCE(it.reference_id, 0) = ?
+            ";
+            $mfTypes = 'isi';
+            $mfParams = [$mfItemId, (string)($manifest['reference_type'] ?? $reference_type), (int)($manifest['reference_id'] ?? $reference_id)];
+            if (!$view_all_branches) {
+                $mfQuery .= " AND it.branch_id = ?";
+                $mfTypes .= 'i';
+                $mfParams[] = $branch_id;
+            }
+            if (!empty($manifest['created_at'])) {
+                $mfQuery .= " AND ABS(TIMESTAMPDIFF(SECOND, it.created_at, ?)) <= 600";
+                $mfTypes .= 's';
+                $mfParams[] = (string)$manifest['created_at'];
+            }
+            $mfQuery .= " ORDER BY it.created_at DESC LIMIT 1";
+            $mfStmt = $conn->prepare($mfQuery);
+            if ($mfStmt) {
+                $mfStmt->bind_param($mfTypes, ...$mfParams);
+                $mfStmt->execute();
+                $mfRes = $mfStmt->get_result();
+                if ($mfRow = ($mfRes ? $mfRes->fetch_assoc() : null)) {
+                    $candidateRows[] = $mfRow;
+                }
+                $mfStmt->close();
+            }
+        }
+    }
+
+    if (empty($candidateRows)) {
+        throw new Exception('Receive history record not found.');
+    }
+
+    $deletedCount = 0;
+    $processedSignatures = [];
+
+    foreach ($candidateRows as $tx) {
+        if (!$tx) continue;
+
+        $sig = implode('|', [
+            (int)($tx['branch_id'] ?? 0),
+            (int)($tx['item_id'] ?? 0),
+            (string)($tx['reference_type'] ?? ''),
+            (int)($tx['reference_id'] ?? 0),
+            (string)($tx['created_at'] ?? '')
+        ]);
+        if (isset($processedSignatures[$sig])) {
+            continue;
+        }
+        $processedSignatures[$sig] = true;
+
+        $itemId = (int)$tx['item_id'];
+        $qty = (float)$tx['quantity_changed'];
+        $refType = (string)$tx['reference_type'];
+        $refId = (int)$tx['reference_id'];
+        $txBranch = (int)$tx['branch_id'];
+        $txCreatedAt = (string)$tx['created_at'];
+        $txId = (int)$tx['transaction_id'];
+
+        $inv_stmt = $conn->prepare("SELECT inventory_id, quantity_on_hand FROM inventory WHERE branch_id = ? AND item_id = ? LIMIT 1");
+        if ($inv_stmt) {
+            $inv_stmt->bind_param('ii', $txBranch, $itemId);
+            $inv_stmt->execute();
+            $inv_result = $inv_stmt->get_result();
+            if ($inv_row = $inv_result->fetch_assoc()) {
+                $newQty = max(0, (float)$inv_row['quantity_on_hand'] - $qty);
+                $upd_inv = $conn->prepare("UPDATE inventory SET quantity_on_hand = ?, last_updated_by = ?, updated_at = NOW() WHERE inventory_id = ?");
+                if ($upd_inv) {
+                    $upd_inv->bind_param('dii', $newQty, $user_id, $inv_row['inventory_id']);
+                    if (!$upd_inv->execute()) {
+                        throw new Exception('Failed to reverse current inventory stock.');
+                    }
+                    $upd_inv->close();
+                }
+            }
+            $inv_stmt->close();
+        }
+
+        $upd_item = $conn->prepare("UPDATE items SET stock = GREATEST(0, COALESCE(stock,0) - ?), stock_in_default_uom = GREATEST(0, COALESCE(stock_in_default_uom,0) - ?), updated_at = NOW() WHERE item_id = ?");
+        if ($upd_item) {
+            $upd_item->bind_param('ddi', $qty, $qty, $itemId);
+            if (!$upd_item->execute()) {
+                throw new Exception('Failed to reverse item stock.');
+            }
+            $upd_item->close();
+        }
+
+        if ($txId > 0) {
+            $del_stmt = $conn->prepare("DELETE FROM inventory_transactions WHERE transaction_id = ? LIMIT 1");
+            if ($del_stmt) {
+                $del_stmt->bind_param('i', $txId);
+                if (!$del_stmt->execute()) {
+                    throw new Exception('Failed to delete receive history record.');
+                }
+                $deletedCount += $del_stmt->affected_rows;
+                $del_stmt->close();
+            }
+        } else {
+            $del_query = "
+                DELETE FROM inventory_transactions
+                WHERE transaction_type = 'in'
+                  AND branch_id = ?
+                  AND item_id = ?
+                  AND reference_type = ?
+                  AND COALESCE(reference_id, 0) = ?
+                  AND created_at = ?
+                LIMIT 1
+            ";
+            $del_stmt = $conn->prepare($del_query);
+            if ($del_stmt) {
+                $del_stmt->bind_param('iisds', $txBranch, $itemId, $refType, $refId, $txCreatedAt);
+            }
+            if ($del_stmt) {
+                # fix types and execute separately below
+                $del_stmt->close();
+            }
+            $del_stmt = $conn->prepare("
+                DELETE FROM inventory_transactions
+                WHERE transaction_type = 'in'
+                  AND branch_id = ?
+                  AND item_id = ?
+                  AND reference_type = ?
+                  AND COALESCE(reference_id, 0) = ?
+                  AND created_at = ?
+                LIMIT 1
+            ");
+            if ($del_stmt) {
+                $del_stmt->bind_param('iisis', $txBranch, $itemId, $refType, $refId, $txCreatedAt);
+                if (!$del_stmt->execute()) {
+                    throw new Exception('Failed to delete receive history record.');
+                }
+                $deletedCount += $del_stmt->affected_rows;
+                $del_stmt->close();
+            }
+        }
+
+        if ($refType === 'purchase_order' && $refId > 0) {
+            $po_stmt = $conn->prepare("UPDATE purchase_orders SET updated_at = NOW(), po_status = CASE WHEN po_status = 'received' THEN 'approved' ELSE po_status END WHERE po_id = ?");
+            if ($po_stmt) {
+                $po_stmt->bind_param('i', $refId);
+                $po_stmt->execute();
+                $po_stmt->close();
+            }
+        }
+    }
+
+    if ($deletedCount === 0) {
+        throw new Exception('Receive history record not found.');
+    }
+
+    if ($manifest) {
+        deleteReceiveAttachmentFiles($manifest);
+    }
+
+    $conn->commit();
+
+    echo json_encode([
+        'success' => true,
+        'message' => 'Receive record deleted and stock reversed successfully.'
+    ]);
+    exit;
+}
+
+elseif ($_POST['action'] === 'get_receive_history_details') {
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             $transaction_id = isset($_POST['transaction_id']) ? (int)$_POST['transaction_id'] : 0;
             $item_id = isset($_POST['item_id']) ? (int)$_POST['item_id'] : 0;
             $reference_type = isset($_POST['reference_type']) ? trim($_POST['reference_type']) : '';
@@ -1512,6 +2321,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $total_amount = (float)$_POST['total_amount'];
             $po_status = $_POST['po_status'];
             
+<<<<<<< HEAD
+=======
+            // Verify PO belongs to user's branch
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             if ($po_branch_column_exists && !$view_all_branches) {
                 $check_query = "SELECT po_id FROM purchase_orders WHERE po_id = ? AND branch_id = ?";
                 $check_stmt = $conn->prepare($check_query);
@@ -1523,6 +2336,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
             }
             
+<<<<<<< HEAD
+=======
+            // Get current PO status before update
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             $status_query = "SELECT po_status FROM purchase_orders WHERE po_id = ?";
             $status_stmt = $conn->prepare($status_query);
             $status_stmt->bind_param("i", $po_id);
@@ -1531,6 +2348,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $current_po = $status_result->fetch_assoc();
             $old_status = $current_po['po_status'];
             
+<<<<<<< HEAD
+=======
+            // Build update data
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             $fields = [
                 'supplier_name' => $supplier_name,
                 'order_date' => $order_date,
@@ -1543,6 +2364,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $fields['supplier_id'] = $supplier_id;
             }
             
+<<<<<<< HEAD
+=======
+            // Build query
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             $set_parts = [];
             $types = '';
             $values = [];
@@ -1565,6 +2390,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $update_stmt->bind_param($types, ...$values);
             if (!$update_stmt->execute()) throw new Exception('Failed to update purchase order: ' . $update_stmt->error);
             
+<<<<<<< HEAD
+=======
+            // If status changed to 'received', update inventory
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             if ($po_status === 'received' && $old_status !== 'received') {
                 $items_query = "SELECT poi.item_id, poi.quantity_ordered, i.item_name 
                                FROM purchase_order_items poi
@@ -1579,6 +2408,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $item_id = $item['item_id'];
                     $quantity = $item['quantity_ordered'];
                     
+<<<<<<< HEAD
+=======
+                    // Check if inventory record exists
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     $inv_query = "SELECT inventory_id, quantity_on_hand FROM inventory WHERE branch_id = ? AND item_id = ?";
                     $inv_stmt = $conn->prepare($inv_query);
                     $inv_stmt->bind_param("ii", $branch_id, $item_id);
@@ -1599,6 +2432,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         if (!$insert_inv_stmt->execute()) throw new Exception('Failed to create inventory record for item: ' . $item['item_name']);
                     }
                     
+<<<<<<< HEAD
+=======
+                    // Record inventory transaction
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     $trans_query = "INSERT INTO inventory_transactions (branch_id, item_id, transaction_type, quantity_changed, reference_type, reference_id, created_by, created_at) VALUES (?, ?, 'in', ?, 'purchase_order', ?, ?, NOW())";
                     $trans_stmt = $conn->prepare($trans_query);
                     $trans_stmt->bind_param("iiiii", $branch_id, $item_id, $quantity, $po_id, $user_id);
@@ -1680,6 +2517,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $po = $result->fetch_assoc();
             
             if ($po) {
+<<<<<<< HEAD
+=======
+                // Get PO items including discount fields
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 $items_query = "
                     SELECT 
                         poi.*,
@@ -1719,6 +2560,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $discount_type = isset($_POST['discount_type']) ? $_POST['discount_type'] : null;
             $discount_value = isset($_POST['discount_value']) ? (float)$_POST['discount_value'] : 0;
             
+<<<<<<< HEAD
+=======
+            // Verify PO belongs to user's branch
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             if ($po_branch_column_exists && !$view_all_branches) {
                 $check_query = "SELECT po_id FROM purchase_orders WHERE po_id = ? AND branch_id = ?";
                 $check_stmt = $conn->prepare($check_query);
@@ -1728,6 +2573,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 if ($check_result->num_rows === 0) throw new Exception('Purchase order not found or access denied');
             }
             
+<<<<<<< HEAD
+=======
+            // Check if PO is received
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             $status_query = "SELECT po_status FROM purchase_orders WHERE po_id = ?";
             $status_stmt = $conn->prepare($status_query);
             $status_stmt->bind_param("i", $po_id);
@@ -1736,6 +2585,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $po_data = $status_result->fetch_assoc();
             if ($po_data['po_status'] === 'received') throw new Exception('Cannot add items to a received purchase order');
             
+<<<<<<< HEAD
+=======
+            // Build insert
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             $item_fields = ['po_id', 'item_id', 'quantity_ordered', 'unit_price'];
             $item_placeholders = ['?', '?', '?', '?'];
             $item_types = 'iiid';
@@ -1759,6 +2612,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $insert_stmt->bind_param($item_types, ...$item_values);
             if (!$insert_stmt->execute()) throw new Exception('Failed to add item: ' . $insert_stmt->error);
             
+<<<<<<< HEAD
+=======
+            // Update PO total amount (sum of discounted subtotals)
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             $update_total_query = "UPDATE purchase_orders 
                                   SET total_amount = (
                                       SELECT IFNULL(SUM(
@@ -1808,6 +2665,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $delete_stmt->bind_param("i", $po_item_id);
             if (!$delete_stmt->execute()) throw new Exception('Failed to delete item: ' . $delete_stmt->error);
             
+<<<<<<< HEAD
+=======
+            // Update PO total amount
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             $update_total_query = "UPDATE purchase_orders 
                                   SET total_amount = (
                                       SELECT IFNULL(SUM(
@@ -1890,7 +2751,12 @@ $filter_suppliers_query .= " ORDER BY supplier_name";
 $filter_suppliers_result = $conn->query($filter_suppliers_query);
 $filter_suppliers = $filter_suppliers_result ? $filter_suppliers_result->fetch_all(MYSQLI_ASSOC) : [];
 
+<<<<<<< HEAD
 // ========== RECEIVE HISTORY - FIXED: SHOW ONLY CURRENT USER'S OWN RECORDS ==========
+=======
+
+// RECEIVE HISTORY DATA (uses existing inventory transactions save flow)
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 $receive_history_query = "
     SELECT 
         it.transaction_id,
@@ -1918,10 +2784,19 @@ $receive_history_query = "
     LEFT JOIN customers rdc ON rdc.customer_id = rd.customer_id
     LEFT JOIN users u ON it.created_by = u.user_id
     WHERE it.transaction_type = 'in'
+<<<<<<< HEAD
       AND it.reference_type IN ('purchase_order', 'production', 'rmr', 'rolling_receive_in')
       AND it.created_by = " . (int)$user_id . "
     ORDER BY it.created_at DESC, it.transaction_id DESC
 ";
+=======
+      AND it.reference_type IN ('purchase_order', 'production', 'rmr')
+";
+if (!$view_all_branches) {
+    $receive_history_query .= " AND it.branch_id = " . (int)$branch_id;
+}
+$receive_history_query .= " ORDER BY it.created_at DESC, it.transaction_id DESC";
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 $receive_history_result = $conn->query($receive_history_query);
 $receive_history_list = $receive_history_result ? $receive_history_result->fetch_all(MYSQLI_ASSOC) : [];
 
@@ -1985,7 +2860,11 @@ function formatDateForInput($dateStr) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<<<<<<< HEAD
     <title>Receive Inventory - Rolling Account</title>
+=======
+    <title>Purchase Orders - Branch Admin</title>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
     <link rel="shortcut icon" href="../Pictures/favicon.ico" />
@@ -2004,10 +2883,18 @@ function formatDateForInput($dateStr) {
     <!-- SweetAlert2 -->
     <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<<<<<<< HEAD
     <!-- Session Checker -->
     <script src="../js/session-checker.js"></script>
     
     <style>
+=======
+        <!-- Session Checker -->
+    <script src="../js/session-checker.js"></script>
+    
+    <style>
+                /* Branch badge styling */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .branch-badge {
             background-color: #e7f1ff;
             color: #0d6efd;
@@ -2018,6 +2905,10 @@ function formatDateForInput($dateStr) {
             margin-left: 5px;
         }
         
+<<<<<<< HEAD
+=======
+        /* Alert for missing columns */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .alert-info {
             background-color: #d1ecf1;
             border-color: #bee5eb;
@@ -2031,11 +2922,19 @@ function formatDateForInput($dateStr) {
             color: #c7254e;
         }
         
+<<<<<<< HEAD
+=======
+        /* Main layout */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .main-content {
             padding: 20px 30px;
             transition: margin-left 0.3s ease;
         }
         
+<<<<<<< HEAD
+=======
+        /* ADD BUTTON WRAPPER - OUTSIDE FILTER */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .action-button-wrapper {
             margin-bottom: 1.25rem;
             text-align: right;
@@ -2107,11 +3006,19 @@ function formatDateForInput($dateStr) {
             }
         }
         
+<<<<<<< HEAD
+=======
+        /* Table wrapper */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .table-wrapper {
             margin: 0 0 30px 0;
             width: 100%;
         }
         
+<<<<<<< HEAD
+=======
+        /* Table container */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .table-container {
             background-color: white;
             border-radius: 8px;
@@ -2120,6 +3027,10 @@ function formatDateForInput($dateStr) {
             width: 100%;
         }
         
+<<<<<<< HEAD
+=======
+        /* Table styling */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .po-table {
             margin-bottom: 0;
             width: 100%;
@@ -2127,6 +3038,10 @@ function formatDateForInput($dateStr) {
             table-layout: fixed;
         }
         
+<<<<<<< HEAD
+=======
+        /* Column width definitions */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .col-po { width: 11%; }
         .col-supplier { width: 13%; }
         .col-date { width: 10%; }
@@ -2140,6 +3055,10 @@ function formatDateForInput($dateStr) {
         .col-expected { width: 12%; }
         .col-actions { width: 12%; }
         
+<<<<<<< HEAD
+=======
+        /* Table header styling */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .po-table thead th {
             background-color: #f8f9fa;
             font-weight: 600;
@@ -2154,6 +3073,10 @@ function formatDateForInput($dateStr) {
             text-align: left;
         }
         
+<<<<<<< HEAD
+=======
+        /* Table cell styling */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .po-table tbody td {
             padding: 14px 12px;
             vertical-align: middle;
@@ -2164,6 +3087,10 @@ function formatDateForInput($dateStr) {
             text-overflow: ellipsis;
         }
         
+<<<<<<< HEAD
+=======
+        /* Column-specific alignments */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .col-items,
         .col-qty {
             text-align: center !important;
@@ -2191,10 +3118,18 @@ function formatDateForInput($dateStr) {
             text-align: center !important;
         }
         
+<<<<<<< HEAD
+=======
+        /* Hover effect */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .po-table tbody tr:hover {
             background-color: #f8f9fa;
         }
         
+<<<<<<< HEAD
+=======
+        /* Status badge styling */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .status-badge {
             display: inline-block;
             padding: 5px 12px;
@@ -2231,6 +3166,10 @@ function formatDateForInput($dateStr) {
             color: #58151c;
         }
         
+<<<<<<< HEAD
+=======
+        /* Action buttons styling */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .action-buttons {
             display: flex;
             gap: 6px;
@@ -2259,6 +3198,10 @@ function formatDateForInput($dateStr) {
         .btn-edit { color: #ffc107; }
         .btn-delete { color: #dc3545; }
         
+<<<<<<< HEAD
+=======
+        /* Select2 customization */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .select2-container--default .select2-selection--single {
             height: 38px;
             border: 1px solid #ced4da;
@@ -2274,6 +3217,10 @@ function formatDateForInput($dateStr) {
             height: 36px;
         }
         
+<<<<<<< HEAD
+=======
+        /* PO Details styling */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .po-details-card {
             background-color: #f8f9fa;
             border-radius: 8px;
@@ -2293,6 +3240,10 @@ function formatDateForInput($dateStr) {
             color: #212529;
         }
         
+<<<<<<< HEAD
+=======
+        /* Items table styling */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .items-table {
             font-size: 13px;
         }
@@ -2302,6 +3253,10 @@ function formatDateForInput($dateStr) {
             font-weight: 600;
         }
         
+<<<<<<< HEAD
+=======
+        /* New PO items section */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .po-items-section {
             margin-top: 20px;
             border: 1px solid #dee2e6;
@@ -2393,6 +3348,10 @@ function formatDateForInput($dateStr) {
             font-weight: 600;
         }
         
+<<<<<<< HEAD
+=======
+        /* Discount container styles */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .po-item-row .discount-container {
             flex: 1.5;
             display: flex;
@@ -2432,6 +3391,10 @@ function formatDateForInput($dateStr) {
             flex: 0 0 40px;
         }
         
+<<<<<<< HEAD
+=======
+        /* Item count badge */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .item-count-badge {
             display: inline-block;
             background-color: #0d6efd;
@@ -2443,6 +3406,10 @@ function formatDateForInput($dateStr) {
             margin-left: 10px;
         }
         
+<<<<<<< HEAD
+=======
+        /* Discount section styling */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .discount-section {
             margin-top: 15px;
             padding: 15px;
@@ -2517,6 +3484,10 @@ function formatDateForInput($dateStr) {
             margin-top: 8px;
         }
         
+<<<<<<< HEAD
+=======
+        /* Text alignment utilities */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .text-center {
             text-align: center;
         }
@@ -2525,6 +3496,10 @@ function formatDateForInput($dateStr) {
             text-align: right;
         }
         
+<<<<<<< HEAD
+=======
+        /* Responsive adjustments */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         @media (max-width: 1600px) {
             .col-po { width: 11%; }
             .col-supplier { width: 13%; }
@@ -2543,6 +3518,10 @@ function formatDateForInput($dateStr) {
             .table-container { overflow-x: auto; }
         }
         
+<<<<<<< HEAD
+=======
+        /* ===== PURCHASE ORDERS TABLE MOBILE STYLES - SIMPLIFIED ===== */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         @media (max-width: 768px) {
             #poTable {
                 display: block !important;
@@ -2630,6 +3609,10 @@ function formatDateForInput($dateStr) {
             }
         }
 
+<<<<<<< HEAD
+=======
+        /* RECEIVE INVENTORY STYLES */
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .receive-inventory-section {
             width: 100%;
         }
@@ -2880,6 +3863,7 @@ function formatDateForInput($dateStr) {
                 width: 100%;
             }
         }
+<<<<<<< HEAD
 
         .mobile-nav {
             position: fixed;
@@ -3037,11 +4021,14 @@ function formatDateForInput($dateStr) {
         .rolling-hidden-field {
             display: none !important;
         }
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     </style>
 </head>
 <body>
     <!-- MAIN APPLICATION -->
     <div id="appPage">
+<<<<<<< HEAD
         <!-- Sidebar -->
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
@@ -3121,6 +4108,75 @@ function formatDateForInput($dateStr) {
         <!-- Main Content -->
         <div class="main-content" id="mainContent">
             <!-- RECEIVE INVENTORY SECTION -->
+=======
+         <!-- Sidebar -->
+<div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+        <h3>
+            <button class="desktop-toggle-btn" id="desktopToggleBtn">
+                <i class="bi bi-list" id="toggleIcon"></i>
+            </button>
+            <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
+            <span class="nav-text">Rolling Account</span>
+        </h3>
+    </div>
+    
+    <div class="sidebar-content">
+        <div class="sidebar-menu">
+            <ul class="nav flex-column">
+                <li class="nav-item">
+                    <a class="nav-link" href="current_inventory.php">
+                        <i class="bi bi-box-seam"></i>
+                        <span class="nav-text">Current Inventory</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="customer_orderproduct.php">
+                        <i class="bi bi-person-plus"></i>
+                        <span class="nav-text">Orders</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="collections.php">
+                        <i class="bi bi-cash-stack"></i>
+                        <span class="nav-text">Collections</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="sales_order.php">
+                        <i class="bi bi-cart"></i>
+                        <span class="nav-text">Sales Orders</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link active" href="purchase_order.php">
+                        <i class="bi bi-truck"></i>
+                        <span class="nav-text">Purchase Orders</span>
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </div>
+    
+    <div class="sidebar-footer">
+        <div class="user-profile-sidebar">
+            <div class="user-avatar-sidebar"><?php echo $user_initials; ?></div>
+            <div class="user-details-sidebar">
+                <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
+                <span class="user-role-sidebar"><?php echo ucfirst($user_role); ?></span>
+            </div>
+        </div>
+        <button class="logout-btn-sidebar" onclick="logout()">
+            <i class="bi bi-box-arrow-right"></i>
+            <span class="logout-text">Logout</span>
+        </button>
+    </div>
+</div>
+        
+        <!-- Main Content -->
+        <div class="main-content" id="mainContent">
+            <!-- PURCHASE ORDERS CONTENT -->
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             <div id="dashboardContent" class="page-content active">
 
                 <!-- Alerts for missing columns -->
@@ -3188,13 +4244,21 @@ function formatDateForInput($dateStr) {
                     </div>
                 <?php endif; ?>
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 <!-- RECEIVE INVENTORY SECTION -->
                 <div class="receive-inventory-section mb-5">
                     <div class="receive-inventory-card">
                         <div class="receive-inventory-header d-flex justify-content-between align-items-start flex-wrap gap-3">
                             <div>
                                 <h4><i class="bi bi-inbox-fill"></i> Receive Inventory</h4>
+<<<<<<< HEAD
                                 <p class="text-muted mb-0">Receive transferred items from your Branch Admin</p>
+=======
+                                <p class="text-muted mb-0">Add received items from supplier or production</p>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                             </div>
                             <div class="action-button-wrapper mb-0">
                                 <button class="btn-primary" onclick="showNewPOModal()">
@@ -3228,7 +4292,11 @@ function formatDateForInput($dateStr) {
                             <div class="tab-pane fade show active" id="supplierContent" role="tabpanel" aria-labelledby="supplierTab">
                                 <form id="supplierReceiveForm" class="receive-form">
                                     <div class="form-section">
+<<<<<<< HEAD
                                         <h6 class="form-section-title">Branch Admin Receive Information</h6>
+=======
+                                        <h6 class="form-section-title">Supplier Information</h6>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                         <div class="row g-3">
                                             <div class="col-md-6">
                                                 <label for="supplierDropdown" class="form-label">Supplier *</label>
@@ -3488,14 +4556,23 @@ function formatDateForInput($dateStr) {
                             </button>
                         </div>
                     </div>
+<<<<<<< HEAD
                 </div>
 
                 <!-- RECEIVE HISTORY SECTION - NOW SHOWS ONLY CURRENT USER'S OWN RECORDS -->
+=======
+
+
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 <div class="receive-table-section mb-5">
                     <div class="receive-inventory-card">
                         <div class="receive-inventory-header">
                             <h4><i class="bi bi-clock-history"></i> Receive History</h4>
+<<<<<<< HEAD
                             <p class="text-muted mb-0">Your receive history records only</p>
+=======
+                            <p class="text-muted mb-0">Click any row to view full receive details</p>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         </div>
                         <div class="table-container-receive">
                             <table class="table receive-items-table" id="receiveHistoryTable">
@@ -3519,7 +4596,11 @@ function formatDateForInput($dateStr) {
                                         <?php endforeach; ?>
                                     <?php else: ?>
                                         <tr class="text-center text-muted">
+<<<<<<< HEAD
                                             <td colspan="4">No receive history found for your account yet</td>
+=======
+                                            <td colspan="4">No receive history found yet</td>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                         </tr>
                                     <?php endif; ?>
                                 </tbody>
@@ -3527,11 +4608,18 @@ function formatDateForInput($dateStr) {
                         </div>
                     </div>
                 </div>
+<<<<<<< HEAD
+=======
+
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             </div>
         </div>
     </div>
 
+<<<<<<< HEAD
     <!-- MODALS (same as before) -->
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     <div class="modal fade" id="receiveHistoryModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-xl modal-dialog-scrollable">
             <div class="modal-content">
@@ -3609,11 +4697,19 @@ function formatDateForInput($dateStr) {
                             </div>
                         </div>
                         
+<<<<<<< HEAD
+=======
+                        <!-- Supplier Info Display (optional) -->
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         <div id="supplierInfo" class="alert alert-info mt-3" style="display: none;">
                             <i class="bi bi-info-circle me-2"></i>
                             <span id="supplierInfoText"></span>
                         </div>
                         
+<<<<<<< HEAD
+=======
+                        <!-- Items Section -->
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         <div class="po-items-section mt-4">
                             <div class="d-flex justify-content-between align-items-center mb-3">
                                 <h5 class="mb-0">
@@ -3629,6 +4725,10 @@ function formatDateForInput($dateStr) {
                                 <!-- Item rows will be added here dynamically -->
                             </div>
                             
+<<<<<<< HEAD
+=======
+                            <!-- Order Discount Section (Overall) -->
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                             <div class="discount-section">
                                 <div class="discount-header">
                                     <h6 class="mb-0"><i class="bi bi-tag me-2"></i>Apply Order Discount</h6>
@@ -3650,6 +4750,10 @@ function formatDateForInput($dateStr) {
                                     </div>
                                 </div>
                                 
+<<<<<<< HEAD
+=======
+                                <!-- Discount Summary -->
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                 <div class="discount-summary" id="discountSummary" style="display: none;">
                                     <div class="discount-row">
                                         <span class="discount-label">Subtotal (after item discounts):</span>
@@ -3692,6 +4796,10 @@ function formatDateForInput($dateStr) {
                             </div>
                         </div>
                         
+<<<<<<< HEAD
+=======
+                        <!-- Warning if no items available for this branch -->
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         <?php if (empty($items_list)): ?>
                             <div class="alert alert-warning mt-3">
                                 <i class="bi bi-exclamation-triangle me-2"></i>
@@ -3709,7 +4817,11 @@ function formatDateForInput($dateStr) {
         </div>
     </div>
 
+<<<<<<< HEAD
     <!-- VIEW PO MODAL -->
+=======
+         <!-- VIEW PO MODAL - SAME AS PICK LIST ITEMS STYLE -->
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     <div class="modal fade" id="viewPOModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
@@ -3738,8 +4850,12 @@ function formatDateForInput($dateStr) {
             </div>
         </div>
     </div>
+<<<<<<< HEAD
     
     <!-- EDIT PO MODAL -->
+=======
+       <!-- EDIT PO MODAL - SAME AS PICK LIST ITEMS STYLE -->
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     <div class="modal fade" id="editPOModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
         <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
             <div class="modal-content">
@@ -3824,7 +4940,11 @@ function formatDateForInput($dateStr) {
         </div>
     </div>
 
+<<<<<<< HEAD
     <!-- ADD ITEM MODAL -->
+=======
+    <!-- ADD ITEM MODAL (with discount) -->
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     <div class="modal fade" id="addItemModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog">
             <div class="modal-content">
@@ -3872,6 +4992,10 @@ function formatDateForInput($dateStr) {
                             <input type="number" class="form-control" id="itemUnitPrice" min="0" step="0.01" required>
                         </div>
                         
+<<<<<<< HEAD
+=======
+                        <!-- Item Discount -->
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         <div class="mb-3">
                             <label class="form-label">Item Discount (optional)</label>
                             <div class="row g-2">
@@ -3947,6 +5071,7 @@ function formatDateForInput($dateStr) {
     <!-- Mobile Bottom Navigation -->
     <div class="mobile-nav" id="mobileNav">
         <ul class="nav">
+<<<<<<< HEAD
             <li class="nav-item">
                 <a class="nav-link" href="current_inventory.php">
                     <i class="bi bi-box-seam"></i>
@@ -4027,12 +5152,32 @@ function formatDateForInput($dateStr) {
     </div>
 
     <!-- jQuery and Select2 JS -->
+=======
+            <li class="nav-item dropdown-more" id="inventoryDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'inventoryDropdownMenu')"><i class="bi bi-box-seam"></i><span>Inventory</span></a><div class="more-dropdown" id="inventoryDropdownMenu"><a href="current_inventory.php" class="dropdown-item"><i class="bi bi-bar-chart-line"></i><span>Current Inventory</span></a><a href="bad_orders.php" class="dropdown-item"><i class="bi bi-recycle"></i><span>Bad Orders</span></a></div></li>
+            <li class="nav-item dropdown-more" id="salesDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'salesDropdownMenu')"><i class="bi bi-cart"></i><span>Sales</span></a><div class="more-dropdown" id="salesDropdownMenu"><a href="sales_order.php" class="dropdown-item"><i class="bi bi-cart"></i><span>Sales Orders</span></a><a href="pick_list_items.php" class="dropdown-item"><i class="bi bi-list-check"></i><span>Pick Lists</span></a></div></li>
+            <li class="nav-item dropdown-more" id="purchaseDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'purchaseDropdownMenu')"><i class="bi bi-truck"></i><span>Purchase</span></a><div class="more-dropdown" id="purchaseDropdownMenu" style="right: 0 !important; left: auto !important;"><a href="purchase_order.php" class="dropdown-item"><i class="bi bi-box"></i><span>Purchase Orders</span></a><a href="supplier.php" class="dropdown-item"><i class="bi bi-building"></i><span>Suppliers</span></a></div></li>
+            <li class="nav-item"><a class="nav-link" href="trip_tickets.php"><i class="bi bi-ticket-perforated"></i><span>Trips</span></a></li>
+            <li class="nav-item dropdown-more" id="moreDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'moreDropdownMenu')"><i class="bi bi-three-dots-vertical"></i><span>More</span></a><div class="more-dropdown" id="moreDropdownMenu"><a href="drivers.php" class="dropdown-item"><i class="bi bi-people"></i><span>Users</span></a><a href="approve_credit_requests.php" class="dropdown-item"><i class="bi bi-pencil-square"></i><span>Approve Requests</span></a><div class="dropdown-divider"></div><a href="#" class="dropdown-item logout-item" onclick="showProfileModal(); return false;"><i class="bi bi-box-arrow-right"></i><span>Logout</span></a></div></li>
+        </ul>
+    </div>
+
+     <!-- Mobile Profile Modal -->
+        <div class="modal fade" id="profileModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title"><i class="bi bi-person-circle me-2"></i>User Profile</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body text-center"><div class="user-avatar-large mb-3"><?php echo $user_initials; ?></div><h4 class="mb-1"><?php echo htmlspecialchars($user_name); ?></h4><p class="text-muted mb-3"><span class="badge bg-success"><?php echo ucfirst($user_role); ?></span></p><?php if (!$view_all_branches && $branch_id > 0): ?><div class="branch-info mb-3"><i class="bi bi-building me-1"></i><span><?php echo htmlspecialchars($branch_name); ?></span></div><?php endif; ?><div class="user-id text-muted small mb-4"></div><button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()"><i class="bi bi-box-arrow-right me-2"></i>Logout</button></div></div></div></div>
+
+
+
+     <!-- jQuery and Select2 JS -->
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+<<<<<<< HEAD
     
     <script>
+=======
+  <script>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     // ========== GLOBAL VARIABLES ==========
     let currentPOId = null;
     let currentItemId = null;
@@ -4049,13 +5194,24 @@ function formatDateForInput($dateStr) {
     const discountTypeColumnExists = <?php echo $discount_type_column_exists ? 'true' : 'false'; ?>;
     const discountValueColumnExists = <?php echo $discount_value_column_exists ? 'true' : 'false'; ?>;
     
+<<<<<<< HEAD
+=======
+    // Order discount variables
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     let subtotalAfterItemDiscounts = 0;
     let orderDiscountType = 'percentage';
     let orderDiscountValue = 0;
     let orderGrandTotal = 0;
     
+<<<<<<< HEAD
     let globalScrollTimeout;
     
+=======
+    // Single scroll timeout variable
+    let globalScrollTimeout;
+    
+    // Debug
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     console.log('Current Branch ID:', branchId);
     console.log('Items loaded for this branch:', itemsList.length);
     
@@ -4103,6 +5259,10 @@ function formatDateForInput($dateStr) {
         }
     }
 
+<<<<<<< HEAD
+=======
+    // ========== SHOW LOADING ==========
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     function showLoading() {
         Swal.fire({
             title: 'Processing...',
@@ -4114,6 +5274,10 @@ function formatDateForInput($dateStr) {
         });
     }
 
+<<<<<<< HEAD
+=======
+    // ========== SUPPLIER SELECT FUNCTIONS ==========
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     function initializeSupplierSelect() {
         if ($('#supplierName').length) {
             $('#supplierName').select2({
@@ -4197,6 +5361,10 @@ function formatDateForInput($dateStr) {
         return supplier.text.split(' (')[0] || supplier.text;
     }
 
+<<<<<<< HEAD
+=======
+    // ========== ITEM MANAGEMENT FUNCTIONS ==========
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     function buildUnitOptionsHtml(itemObj) {
         const availableUoms = Array.isArray(itemObj?.available_uoms) ? itemObj.available_uoms : [];
         const seen = new Set();
@@ -4376,9 +5544,17 @@ function formatDateForInput($dateStr) {
         const quantity = parseFloat(row.querySelector('.item-quantity').value) || 0;
         const unitPrice = parseFloat(row.querySelector('.item-price').value) || 0;
         
+<<<<<<< HEAD
         const discountType = row.querySelector('.discount-type-select').value;
         let discountValue = parseFloat(row.querySelector('.discount-value-input').value) || 0;
         
+=======
+        // Get discount
+        const discountType = row.querySelector('.discount-type-select').value;
+        let discountValue = parseFloat(row.querySelector('.discount-value-input').value) || 0;
+        
+        // Calculate discounted subtotal
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         let discountedUnitPrice = unitPrice;
         if (discountType === 'percentage') {
             discountedUnitPrice = unitPrice * (1 - discountValue / 100);
@@ -4443,9 +5619,16 @@ function formatDateForInput($dateStr) {
         document.getElementById('totalItemsDisplay').textContent = validItems;
         document.getElementById('totalQuantityDisplay').textContent = totalQty;
         
+<<<<<<< HEAD
         applyDiscount();
     }
     
+=======
+        applyDiscount(); // apply order discount to this subtotal
+    }
+    
+    // Order discount functions
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     function applyDiscount() {
         orderDiscountType = document.getElementById('discountType').value;
         orderDiscountValue = parseFloat(document.getElementById('discountValue').value) || 0;
@@ -4509,6 +5692,10 @@ function formatDateForInput($dateStr) {
         return items;
     }
 
+<<<<<<< HEAD
+=======
+    // ========== PURCHASE ORDER FUNCTIONS ==========
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     document.addEventListener('DOMContentLoaded', function() {
         console.log("Purchase Orders - with Per-Item Discounts");
         initializeSidebar();
@@ -4552,6 +5739,10 @@ function formatDateForInput($dateStr) {
         document.getElementById('discountValue')?.addEventListener('input', applyDiscount);
         document.getElementById('discountType')?.addEventListener('change', applyDiscount);
         
+<<<<<<< HEAD
+=======
+        // Mobile menu toggle
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         document.getElementById('mobileMenuBtn').addEventListener('click', function() {
             const sidebar = document.getElementById('sidebar');
             const isMobile = window.innerWidth <= 992;
@@ -4618,10 +5809,21 @@ function formatDateForInput($dateStr) {
                 document.querySelectorAll('.nav-text').forEach(text => text.style.display = 'inline-block');
             }
             
+<<<<<<< HEAD
             setTimeout(setupMobileTapToView, 100);
         });
         
         setActiveMobileNav();
+=======
+            // Re-run tap to view on resize
+            setTimeout(setupMobileTapToView, 100);
+        });
+        
+        // Call setActiveMobileNav
+        setActiveMobileNav();
+        
+        // Initialize mobile tap to view
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         setTimeout(setupMobileTapToView, 500);
     });
 
@@ -4705,6 +5907,10 @@ function formatDateForInput($dateStr) {
             if (tableBody) tableBody.style.display = 'table-row-group';
         }
         
+<<<<<<< HEAD
+=======
+        // Re-run tap to view after filtering
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         setTimeout(setupMobileTapToView, 100);
     }
 
@@ -4824,7 +6030,11 @@ function formatDateForInput($dateStr) {
         });
     }
 
+<<<<<<< HEAD
     function viewPO(id) {
+=======
+       function viewPO(id) {
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         showLoading();
         
         const formData = new FormData();
@@ -4845,6 +6055,10 @@ function formatDateForInput($dateStr) {
                 currentPOData = po;
                 currentPOId = id;
                 
+<<<<<<< HEAD
+=======
+                // Format dates safely
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 let orderDate = 'N/A';
                 let expectedDate = 'N/A';
                 let createdDate = 'N/A';
@@ -4888,9 +6102,17 @@ function formatDateForInput($dateStr) {
                     } catch(e) { updatedDate = po.updated_at; }
                 }
                 
+<<<<<<< HEAD
                 const statusClass = getStatusClass(po.po_status);
                 const statusText = getStatusText(po.po_status);
                 
+=======
+                // Get status class and text
+                const statusClass = getStatusClass(po.po_status);
+                const statusText = getStatusText(po.po_status);
+                
+                // Build HTML for Purchase Order Information
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 let infoHtml = `
                     <div class="col-md-6">
                         <div class="po-details-card">
@@ -4960,6 +6182,10 @@ function formatDateForInput($dateStr) {
                     </div>
                 `;
                 
+<<<<<<< HEAD
+=======
+                // Build items table with discount display
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 let itemsHtml = '';
                 if (items.length > 0) {
                     itemsHtml = `
@@ -5011,15 +6237,25 @@ function formatDateForInput($dateStr) {
                                 <td>${escapeHtml(item.item_code || 'N/A')}</td>
                                 <td>${escapeHtml(item.item_name || 'N/A')}</td>
                                 <td class="text-center">${item.quantity_ordered}</td>
+<<<<<<< HEAD
                                 <td class="text-end">₱${Number(item.unit_price).toFixed(2)}</td>
                                 <td class="text-center">${discountDisplay}</td>
                                 <td class="text-end">₱${Number(subtotal).toFixed(2)}</td>
+=======
+                                <td class="text-end">₱${Number(item.unit_price).toFixed(2)}</span></td>
+                                <td class="text-center">${discountDisplay}</td>
+                                <td class="text-end">₱${Number(subtotal).toFixed(2)}</span></td>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                 ${po.po_status !== 'received' && po.po_status !== 'cancelled' ? 
                                     `<td class="text-center">
                                         <button class="btn btn-sm btn-outline-danger" onclick="deleteItem(${item.po_item_id}, ${po.po_id}, '${escapeHtml(item.item_name)}')">
                                             <i class="bi bi-trash"></i>
                                         </button>
+<<<<<<< HEAD
                                      </td>` : ''}
+=======
+                                     </span>` : ''}
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                             </tr>
                         `;
                     });
@@ -5083,6 +6319,10 @@ function formatDateForInput($dateStr) {
         });
     }
     
+<<<<<<< HEAD
+=======
+    // Helper function to escape HTML
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     function escapeHtml(text) {
         if (!text) return '';
         const div = document.createElement('div');
@@ -5518,6 +6758,7 @@ function formatDateForInput($dateStr) {
         return texts[status] || status;
     }
 
+<<<<<<< HEAD
     function cleanupModalBackdrops() {
         document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.remove());
         document.body.classList.remove('modal-open');
@@ -5560,6 +6801,52 @@ function formatDateForInput($dateStr) {
 
     function logout() { confirmLogout(); }
     
+=======
+    
+ function cleanupModalBackdrops() {
+    document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.remove());
+    document.body.classList.remove('modal-open');
+    document.body.style.removeProperty('padding-right');
+    document.body.style.removeProperty('overflow');
+    if (document.body.hasAttribute('style')) {
+        const style = document.body.getAttribute('style');
+        if (style && (style.includes('padding-right') || style.includes('overflow'))) {
+            document.body.removeAttribute('style');
+        }
+    }
+}
+
+   function showProfileModal() { 
+    cleanupModalBackdrops();
+    new bootstrap.Modal(document.getElementById('profileModal')).show(); 
+}
+
+function confirmLogout() {
+            // Close the modal first
+            const modal = bootstrap.Modal.getInstance(document.getElementById('profileModal'));
+            if (modal) {
+                modal.hide();
+            }
+            
+            // Show confirmation dialog
+            Swal.fire({
+                title: 'Are you sure?',
+                text: 'You will be logged out of the system',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#07d826',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, logout'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    localStorage.removeItem('sidebarCollapsed');
+                    window.location.href = '../logout.php';
+                }
+            });
+        }
+
+function logout() { confirmLogout(); }
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     document.addEventListener('keydown', function(e) {
         if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
             e.preventDefault();
@@ -5573,6 +6860,10 @@ function formatDateForInput($dateStr) {
         }
     });
 
+<<<<<<< HEAD
+=======
+    // ================= DROPDOWN FUNCTIONS =================
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     window.toggleDropdown = function(event, dropdownId) {
         event.preventDefault();
         event.stopPropagation();
@@ -5586,7 +6877,12 @@ function formatDateForInput($dateStr) {
             dropdown.classList.remove('show');
             btn.classList.remove('active');
         } else {
+<<<<<<< HEAD
             const dropdowns = ['moreDropdownMenu'];
+=======
+            // Close all other dropdowns
+            const dropdowns = ['inventoryDropdownMenu', 'salesDropdownMenu', 'purchaseDropdownMenu', 'moreDropdownMenu'];
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             dropdowns.forEach(id => {
                 const d = document.getElementById(id);
                 if (d && d !== dropdown) {
@@ -5598,6 +6894,10 @@ function formatDateForInput($dateStr) {
             dropdown.classList.add('show');
             btn.classList.add('active');
             
+<<<<<<< HEAD
+=======
+            // Close when clicking outside
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             setTimeout(() => {
                 document.addEventListener('click', function closeHandler(e) {
                     if (!dropdown.contains(e.target) && !btn.contains(e.target)) {
@@ -5611,7 +6911,11 @@ function formatDateForInput($dateStr) {
     };
 
     function closeAllDropdowns() {
+<<<<<<< HEAD
         const dropdowns = ['moreDropdownMenu'];
+=======
+        const dropdowns = ['inventoryDropdownMenu', 'salesDropdownMenu', 'purchaseDropdownMenu', 'moreDropdownMenu'];
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         dropdowns.forEach(id => {
             const dropdown = document.getElementById(id);
             if (dropdown) dropdown.classList.remove('show');
@@ -5630,6 +6934,10 @@ function formatDateForInput($dateStr) {
         }, 150);
     });
 
+<<<<<<< HEAD
+=======
+    // ================= PURCHASE DROPDOWN POSITION FIX =================
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     function fixPurchaseDropdownPosition() {
         const purchaseDropdown = document.querySelector('#purchaseDropdown .more-dropdown');
         if (purchaseDropdown) {
@@ -5655,6 +6963,7 @@ function formatDateForInput($dateStr) {
         }).observe(purchaseMenu, { attributes: true });
     }
 
+<<<<<<< HEAD
     function setActiveMobileNav() {
         const currentPage = window.location.pathname.split('/').pop();
         document.querySelectorAll('.mobile-nav .nav-link, .mobile-nav .dropdown-item').forEach(el => {
@@ -5678,6 +6987,60 @@ function formatDateForInput($dateStr) {
         }
     }
     
+=======
+    // ========== MOBILE NAV ACTIVE STATE ==========
+    function setActiveMobileNav() {
+        const currentPage = window.location.pathname.split('/').pop();
+        
+        // Remove all active classes from ALL navigation elements
+        document.querySelectorAll('.mobile-nav .nav-link, .more-btn, .dropdown-item, .has-active').forEach(el => {
+            el.classList.remove('active', 'has-active');
+        });
+        
+        // ========== MAIN NAVIGATION (non-dropdown items) ==========
+        // Only set active for standalone nav items like Trips
+        const mainNavLinks = document.querySelectorAll('.mobile-nav .nav-link:not(.more-btn)');
+        mainNavLinks.forEach(link => {
+            const href = link.getAttribute('href');
+            if (href === currentPage) {
+                link.classList.add('active');
+            }
+        });
+        
+        // ========== DROPDOWN ITEMS ==========
+        // This is where the actual active state should be (the dropdown item itself)
+        document.querySelectorAll('.more-dropdown .dropdown-item').forEach(item => {
+            const href = item.getAttribute('href');
+            if (href === currentPage) {
+                // Add active class to the dropdown item (the text inside the dropdown)
+                item.classList.add('active');
+                
+                // Mark the parent more-btn as has-active (for visual indicator only)
+                const parentDropdown = item.closest('.dropdown-more');
+                if (parentDropdown) {
+                    const parentBtn = parentDropdown.querySelector('.more-btn');
+                    if (parentBtn) {
+                        parentBtn.classList.add('has-active');
+                    }
+                }
+            }
+        });
+        
+        // ========== SPECIAL HANDLING FOR TRIP TICKETS ==========
+        // Trip Tickets is a standalone nav item
+        if (currentPage === 'trip_tickets.php') {
+            const tripLink = document.querySelector('#mobileNav .nav-link[href="trip_tickets.php"]');
+            if (tripLink) tripLink.classList.add('active');
+        }
+        
+        // ========== DEBUG LOG ==========
+        console.log('Current page:', currentPage);
+        const activeDropdownItem = document.querySelector('.more-dropdown .dropdown-item.active');
+        console.log('Active dropdown item:', activeDropdownItem ? activeDropdownItem.querySelector('span')?.innerText : 'NONE');
+    }
+    
+    // Filter toggle functionality
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     document.addEventListener('DOMContentLoaded', function() {
         const filterToggleBtn = document.getElementById('filterToggleBtn');
         const filterContent = document.getElementById('filterContent');
@@ -5696,12 +7059,25 @@ function formatDateForInput($dateStr) {
         }
     });
 
+<<<<<<< HEAD
     function applyFilters() {
         filterTable();
         setTimeout(setupMobileTapToView, 100);
     }
     
     document.addEventListener('hidden.bs.modal', function() {
+=======
+    // Apply filters function (combines all filters)
+    function applyFilters() {
+        filterTable(); // Calls the existing filterTable function
+        // Re-run tap to view after filters are applied
+        setTimeout(setupMobileTapToView, 100);
+    }
+    
+    // ===== SIMPLE MODAL SHIFT FIX =====
+    document.addEventListener('hidden.bs.modal', function() {
+        // Reset body styles - simple lang
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         document.body.style.overflow = '';
         document.body.style.paddingRight = '';
         document.body.style.position = '';
@@ -5709,6 +7085,10 @@ function formatDateForInput($dateStr) {
         document.body.style.height = '';
         document.body.style.top = '';
         
+<<<<<<< HEAD
+=======
+        // Reset main content
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         const mainContent = document.querySelector('.main-content');
         if (mainContent) {
             mainContent.style.transform = '';
@@ -5716,26 +7096,51 @@ function formatDateForInput($dateStr) {
             mainContent.style.width = '';
         }
         
+<<<<<<< HEAD
+=======
+        // Remove any leftover backdrop
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         const backdrops = document.querySelectorAll('.modal-backdrop');
         backdrops.forEach(backdrop => backdrop.remove());
     });
     
+<<<<<<< HEAD
     function setupMobileTapToView() {
+=======
+    // ===== SIMPLE TAP TO VIEW ON MOBILE CARDS =====
+    function setupMobileTapToView() {
+        // Only run on mobile screens (768px and below)
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         const isMobile = window.innerWidth <= 768;
         const poRows = document.querySelectorAll('#poTable tbody tr.po-row');
         
         if (isMobile) {
             poRows.forEach(row => {
+<<<<<<< HEAD
                 if (!row.hasAttribute('data-mobile-listener')) {
                     row.setAttribute('data-mobile-listener', 'true');
                     row.addEventListener('click', handleMobileRowClick);
                     row.style.cursor = 'pointer';
                 }
+=======
+                // Only add if not already has the event
+                if (!row.hasAttribute('data-mobile-listener')) {
+                    row.setAttribute('data-mobile-listener', 'true');
+                    row.addEventListener('click', handleMobileRowClick);
+                    // Add cursor style for better UX
+                    row.style.cursor = 'pointer';
+                }
+                // Only show if row is not hidden by filter
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 if (row.style.display !== 'none') {
                     row.style.display = '';
                 }
             });
         } else {
+<<<<<<< HEAD
+=======
+            // Desktop: Remove mobile listeners
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             poRows.forEach(row => {
                 if (row.hasAttribute('data-mobile-listener')) {
                     row.removeEventListener('click', handleMobileRowClick);
@@ -5747,21 +7152,41 @@ function formatDateForInput($dateStr) {
     }
 
     function handleMobileRowClick(event) {
+<<<<<<< HEAD
+=======
+        // Prevent if the click was on an action button
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         if (event.target.closest('.btn-action') || event.target.closest('.action-btn')) {
             return;
         }
         
+<<<<<<< HEAD
         const poId = this.getAttribute('data-id');
         
         if (poId) {
+=======
+        // Get the PO ID from the row's data attribute
+        const poId = this.getAttribute('data-id');
+        
+        if (poId) {
+            // Call the existing viewPO function
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             viewPO(parseInt(poId));
         }
     }
 
+<<<<<<< HEAD
+=======
+    // Initialize on page load
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     document.addEventListener('DOMContentLoaded', function() {
         setTimeout(setupMobileTapToView, 100);
     });
 
+<<<<<<< HEAD
+=======
+    // Re-run when window resizes (for orientation change)
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     let resizeTimeout;
     window.addEventListener('resize', function() {
         clearTimeout(resizeTimeout);
@@ -5770,6 +7195,10 @@ function formatDateForInput($dateStr) {
         }, 250);
     });
 
+<<<<<<< HEAD
+=======
+    // Also run when table content changes (for dynamic content like filters)
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     const observer = new MutationObserver(function(mutations) {
         mutations.forEach(function(mutation) {
             if (mutation.type === 'childList' || mutation.type === 'subtree') {
@@ -5778,15 +7207,24 @@ function formatDateForInput($dateStr) {
         });
     });
 
+<<<<<<< HEAD
+=======
+    // Observe the table body for changes
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     const tableBody = document.querySelector('#poTable tbody');
     if (tableBody) {
         observer.observe(tableBody, { childList: true, subtree: true });
     }
 
+<<<<<<< HEAD
+=======
+    // Also observe the table container for filter changes
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     const tableContainer = document.querySelector('#poTable');
     if (tableContainer) {
         observer.observe(tableContainer, { childList: true, subtree: true, attributes: true });
     }
+<<<<<<< HEAD
 
     function refreshMobileDisplay() {
         if (window.innerWidth <= 768) {
@@ -5863,6 +7301,73 @@ function formatDateForInput($dateStr) {
             target.classList.remove('show');
             if (arrow) arrow.style.transform = 'translateY(-50%) rotate(0deg)';
         } else {
+=======
+    // ===== FORCE REFRESH MOBILE DISPLAY AFTER FILTER =====
+function refreshMobileDisplay() {
+    if (window.innerWidth <= 768) {
+        const rows = document.querySelectorAll('#poTable tbody tr.po-row');
+        rows.forEach(row => {
+            // Force reflow para ma-apply ang CSS
+            if (row.style.display !== 'none') {
+                row.style.display = '';
+                // Force browser to recalculate
+                void row.offsetHeight;
+            }
+        });
+    }
+}
+
+// Override the filter function to refresh display
+const originalFilterTable = window.filterTable;
+window.filterTable = function() {
+    if (typeof originalFilterTable === 'function') {
+        originalFilterTable();
+    }
+    setTimeout(refreshMobileDisplay, 50);
+};
+
+// Also call refresh after any filter change
+document.addEventListener('DOMContentLoaded', function() {
+    const statusFilter = document.getElementById('filterStatus');
+    const supplierFilter = document.getElementById('filterSupplier');
+    const monthFilter = document.getElementById('filterMonth');
+    const branchFilter = document.getElementById('filterBranch');
+    const searchInput = document.getElementById('searchInput');
+    
+    const refreshHandler = function() {
+        setTimeout(refreshMobileDisplay, 100);
+    };
+    
+    if (statusFilter) statusFilter.addEventListener('change', refreshHandler);
+    if (supplierFilter) supplierFilter.addEventListener('change', refreshHandler);
+    if (monthFilter) monthFilter.addEventListener('change', refreshHandler);
+    if (branchFilter) branchFilter.addEventListener('change', refreshHandler);
+    if (searchInput) searchInput.addEventListener('keyup', refreshHandler);
+    
+    refreshMobileDisplay();
+});
+// ========== SIDEBAR DROPDOWN HANDLING ==========
+
+// Toggle sidebar dropdown function - properly handles collapsed state
+function toggleSidebarDropdown(event, targetId) {
+    event.preventDefault();
+    event.stopPropagation();
+    
+    const target = document.getElementById(targetId);
+    const btn = event.currentTarget;
+    const arrow = btn.querySelector('.dropdown-arrow');
+    const sidebar = document.getElementById('sidebar');
+    
+    // If sidebar is collapsed, expand it first then open dropdown
+    if (sidebar.classList.contains('collapsed')) {
+        // Expand the sidebar first
+        sidebar.classList.remove('collapsed');
+        localStorage.setItem('sidebarCollapsed', 'false');
+        
+        // Small delay to let CSS transition complete, then open dropdown
+        setTimeout(() => {
+            // Close all other dropdowns first
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             document.querySelectorAll('.sidebar .collapse.show').forEach(collapse => {
                 if (collapse.id !== targetId) {
                     collapse.classList.remove('show');
@@ -5874,6 +7379,7 @@ function formatDateForInput($dateStr) {
                 }
             });
             
+<<<<<<< HEAD
             target.classList.add('show');
             if (arrow) arrow.style.transform = 'translateY(-50%) rotate(180deg)';
         }
@@ -6938,3 +8444,1151 @@ function formatDateForInput($dateStr) {
     </script>
 </body>
 </html>
+=======
+            // Open the clicked dropdown
+            target.classList.add('show');
+            if (arrow) arrow.style.transform = 'translateY(-50%) rotate(180deg)';
+        }, 50);
+        return;
+    }
+    
+    // Normal behavior when sidebar is already expanded
+    if (target.classList.contains('show')) {
+        target.classList.remove('show');
+        if (arrow) arrow.style.transform = 'translateY(-50%) rotate(0deg)';
+    } else {
+        // Close all other open dropdowns
+        document.querySelectorAll('.sidebar .collapse.show').forEach(collapse => {
+            if (collapse.id !== targetId) {
+                collapse.classList.remove('show');
+                const otherBtn = document.querySelector(`[onclick*="${collapse.id}"]`);
+                if (otherBtn) {
+                    const otherArrow = otherBtn.querySelector('.dropdown-arrow');
+                    if (otherArrow) otherArrow.style.transform = 'translateY(-50%) rotate(0deg)';
+                }
+            }
+        });
+        
+        target.classList.add('show');
+        if (arrow) arrow.style.transform = 'translateY(-50%) rotate(180deg)';
+    }
+}
+
+// Set active sidebar item based on current page
+function setActiveSidebarItem() {
+    const currentPage = window.location.pathname.split('/').pop();
+    
+    // Remove active class from all nav links
+    document.querySelectorAll('.sidebar .nav-link').forEach(link => {
+        link.classList.remove('active');
+    });
+    
+    // Find and activate the matching link
+    document.querySelectorAll('.sidebar .nav-link').forEach(link => {
+        const href = link.getAttribute('href');
+        if (href === currentPage) {
+            link.classList.add('active');
+            
+            // If this link is inside a dropdown, expand the dropdown
+            const collapseDiv = link.closest('.collapse');
+            if (collapseDiv) {
+                collapseDiv.classList.add('show');
+                const parentBtn = document.querySelector(`[onclick*="${collapseDiv.id}"]`);
+                if (parentBtn) {
+                    const arrow = parentBtn.querySelector('.dropdown-arrow');
+                    if (arrow) arrow.style.transform = 'translateY(-50%) rotate(180deg)';
+                }
+            }
+        }
+    });
+}
+
+// Update active state for dropdown parent when sidebar is collapsed
+function updateDropdownParentActiveState() {
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    
+    if (sidebar.classList.contains('collapsed')) {
+        // Find all dropdown-nav items that have an active child link
+        document.querySelectorAll('.dropdown-nav').forEach(dropdownNav => {
+            const hasActiveChild = dropdownNav.querySelector('.nav-link.active');
+            const parentLink = dropdownNav.querySelector(':scope > .nav-link');
+            
+            if (hasActiveChild && parentLink) {
+                parentLink.classList.add('active');
+            } else if (parentLink) {
+                parentLink.classList.remove('active');
+            }
+        });
+    }
+}
+
+// Function to expand all dropdown containers that contain active links
+function expandActiveDropdownContainers() {
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    
+    // Find all dropdown-nav containers
+    const dropdownNavs = document.querySelectorAll('.sidebar .dropdown-nav');
+    
+    dropdownNavs.forEach(dropdownNav => {
+        // Check if this dropdown contains any active link
+        const activeLink = dropdownNav.querySelector('.nav-link.active');
+        
+        if (activeLink) {
+            // Find the collapse element inside this dropdown
+            const collapseDiv = dropdownNav.querySelector('.collapse');
+            
+            if (collapseDiv && !collapseDiv.classList.contains('show')) {
+                // Open the dropdown
+                collapseDiv.classList.add('show');
+                
+                // Rotate the arrow of the parent link
+                const parentLink = dropdownNav.querySelector(':scope > .nav-link');
+                if (parentLink) {
+                    const arrow = parentLink.querySelector('.dropdown-arrow');
+                    if (arrow) {
+                        arrow.style.transform = 'translateY(-50%) rotate(180deg)';
+                    }
+                    // Also add active class to parent if sidebar is collapsed
+                    if (sidebar.classList.contains('collapsed')) {
+                        parentLink.classList.add('active');
+                    }
+                }
+            }
+        }
+    });
+}
+
+// Toggle sidebar function (updated with proper behavior)
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const desktopToggleBtn = document.getElementById('desktopToggleBtn');
+    
+    if (window.innerWidth <= 992) {
+        // Mobile behavior
+        sidebar.classList.toggle('active');
+        let overlay = document.querySelector('.sidebar-overlay');
+        if (!overlay) { 
+            overlay = document.createElement('div'); 
+            overlay.className = 'sidebar-overlay'; 
+            document.body.appendChild(overlay); 
+            overlay.addEventListener('click', function() { 
+                sidebar.classList.remove('active'); 
+                overlay.classList.remove('active'); 
+                setTimeout(function() { overlay.remove(); }, 300); 
+            }); 
+        }
+        setTimeout(function() { overlay.classList.add('active'); }, 10);
+    } else {
+        // Desktop behavior - toggle collapse
+        const wasCollapsed = sidebar.classList.contains('collapsed');
+        sidebar.classList.toggle('collapsed');
+        localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+        
+        // If expanding from collapsed state
+        if (wasCollapsed && !sidebar.classList.contains('collapsed')) {
+            // Remove any inline styles that might have been set by hover
+            sidebar.style.width = '';
+            
+            // AFTER expanding, find any active child link and open its parent dropdown
+            setTimeout(function() {
+                expandActiveDropdownContainers();
+            }, 150);
+        }
+    }
+}
+
+// Initialize sidebar on DOM load
+document.addEventListener('DOMContentLoaded', function() {
+    // Restore sidebar state from localStorage
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar && window.innerWidth > 992) {
+        const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+        if (isCollapsed) {
+            sidebar.classList.add('collapsed');
+        } else {
+            sidebar.classList.remove('collapsed');
+        }
+    }
+    
+    // Set active sidebar item
+    setActiveSidebarItem();
+    
+    // Update parent active states
+    updateDropdownParentActiveState();
+    
+    // Prevent dropdown from closing when clicking inside it
+    document.querySelectorAll('.sidebar .collapse').forEach(collapse => {
+        collapse.addEventListener('click', function(e) {
+            e.stopPropagation();
+        });
+    });
+    
+    // Handle desktop toggle button
+    const desktopToggleBtn = document.getElementById('desktopToggleBtn');
+    if (desktopToggleBtn) {
+        desktopToggleBtn.addEventListener('click', function() {
+            setTimeout(() => {
+                if (sidebar.classList.contains('collapsed')) {
+                    // Close all dropdowns when collapsing
+                    document.querySelectorAll('.sidebar .collapse.show').forEach(collapse => {
+                        collapse.classList.remove('show');
+                        const parentBtn = document.querySelector(`[onclick*="${collapse.id}"]`);
+                        if (parentBtn) {
+                            const arrow = parentBtn.querySelector('.dropdown-arrow');
+                            if (arrow) arrow.style.transform = 'translateY(-50%) rotate(0deg)';
+                        }
+                    });
+                }
+            }, 50);
+        });
+    }
+    
+    // Handle mobile menu button
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+    if (mobileMenuBtn) {
+        mobileMenuBtn.addEventListener('click', toggleSidebar);
+    }
+    
+    // Close sidebar when clicking outside on mobile
+    document.addEventListener('click', function(e) {
+        if (window.innerWidth <= 992 && sidebar && sidebar.classList.contains('active') && 
+            !sidebar.contains(e.target) && mobileMenuBtn && !mobileMenuBtn.contains(e.target)) {
+            sidebar.classList.remove('active');
+            const overlay = document.querySelector('.sidebar-overlay');
+            if (overlay) overlay.remove();
+        }
+    });
+
+    // ========== RECEIVE INVENTORY FUNCTIONS ==========
+
+    let receiveItems = [];
+
+    function getSupplierName() {
+        const supplierDropdown = document.getElementById('supplierDropdown');
+        if (!supplierDropdown) return '';
+        const opt = supplierDropdown.options[supplierDropdown.selectedIndex];
+        return opt ? ((opt.getAttribute('data-name') || opt.text || '').trim()) : '';
+    }
+
+    function getActiveReceiveMode() {
+        const activeTab = document.querySelector('.receive-tabs .nav-link.active');
+        if (activeTab && activeTab.id === 'productionTab') return 'production';
+        if (activeTab && activeTab.id === 'rmrTab') return 'rmr';
+        return 'supplier';
+    }
+
+    function getReceiveFieldSet(mode = null) {
+        const activeMode = mode || getActiveReceiveMode();
+        if (activeMode === 'rmr') {
+            return {
+                selector: null,
+                qty: null,
+                newItemNameWrapper: null,
+                newItemName: null,
+                itemCode: null,
+                itemDescription: null,
+                itemCategory: null,
+                itemUomSelectWrapper: null,
+                itemUoM: null,
+                newItemUomWrapper: null,
+                newItemUom: null,
+                itemPrice: null,
+                selectedItemPreview: document.getElementById('rmrRequestPreview')
+            };
+        }
+        if (activeMode === 'production') {
+            return {
+                selector: document.getElementById('productionItemSelector'),
+                qty: document.getElementById('productionItemQty'),
+                newItemNameWrapper: document.getElementById('productionNewItemNameWrapper'),
+                newItemName: document.getElementById('productionNewItemName'),
+                itemCode: document.getElementById('productionItemCode'),
+                itemDescription: document.getElementById('productionItemDescription'),
+                itemCategory: document.getElementById('productionItemCategory'),
+                itemUomSelectWrapper: document.getElementById('productionItemUomSelectWrapper'),
+                itemUoM: document.getElementById('productionItemUoM'),
+                newItemUomWrapper: document.getElementById('productionNewItemUomWrapper'),
+                newItemUom: document.getElementById('productionNewItemUom'),
+                itemPrice: document.getElementById('productionItemPrice'),
+                selectedItemPreview: document.getElementById('productionSelectedItemPreview')
+            };
+        }
+        return {
+            selector: document.getElementById('itemSelector'),
+            qty: document.getElementById('itemQty'),
+            newItemNameWrapper: document.getElementById('newItemNameWrapper'),
+            newItemName: document.getElementById('newItemName'),
+            itemCode: document.getElementById('itemCode'),
+            itemDescription: document.getElementById('itemDescription'),
+            itemCategory: document.getElementById('itemCategory'),
+            itemUomSelectWrapper: document.getElementById('itemUomSelectWrapper'),
+            itemUoM: document.getElementById('itemUoM'),
+            newItemUomWrapper: document.getElementById('newItemUomWrapper'),
+            newItemUom: document.getElementById('newItemUom'),
+            itemPrice: document.getElementById('itemPrice'),
+            selectedItemPreview: document.getElementById('selectedItemPreview')
+        };
+    }
+
+    function getSelectedReceiveItem(mode = null) {
+        const fields = getReceiveFieldSet(mode);
+        const selectedValue = fields.selector ? fields.selector.value : '';
+        if (!selectedValue || selectedValue === '__new__') return null;
+        return itemsList.find(item => String(item.item_id) === String(selectedValue)) || null;
+    }
+
+    function fillReceivePODropdown() {
+        const supplierDropdown = document.getElementById('supplierDropdown');
+        const selectedOption = supplierDropdown ? supplierDropdown.options[supplierDropdown.selectedIndex] : null;
+        const supplierName = selectedOption ? (selectedOption.getAttribute('data-name') || selectedOption.text.trim()) : '';
+        const supplierId = selectedOption ? String(selectedOption.value || '').trim() : '';
+        const poDropdown = document.getElementById('poNumberDropdown');
+        poDropdown.innerHTML = '<option value="">-- Select PO --</option>';
+        if (!Array.isArray(purchaseOrdersList) || purchaseOrdersList.length === 0) return;
+        if (!supplierName && !supplierId) return;
+
+        const filteredPOs = purchaseOrdersList.filter(po => {
+            const poStatus = String(po.po_status || '').toLowerCase();
+            if (poStatus === 'received' || poStatus === 'cancelled') return false;
+
+            const poSupplierId = String(po.supplier_id || '').trim();
+            const poSupplierName = String(po.supplier_name || '').trim().toLowerCase();
+
+            if (supplierId && poSupplierId && supplierId === poSupplierId) return true;
+            if (supplierName && poSupplierName === supplierName.trim().toLowerCase()) return true;
+            return false;
+        });
+
+        filteredPOs.forEach(po => {
+            const option = document.createElement('option');
+            option.value = po.po_id;
+            option.textContent = po.po_number;
+            option.dataset.poId = po.po_id;
+            option.dataset.poNumber = po.po_number;
+            poDropdown.appendChild(option);
+        });
+    }
+
+    function populateUomForSelectedItem(item, mode = null) {
+        const fields = getReceiveFieldSet(mode);
+        const selectWrap = fields.itemUomSelectWrapper;
+        const inputWrap = fields.newItemUomWrapper;
+        const select = fields.itemUoM;
+        const newInput = fields.newItemUom;
+        if (!selectWrap || !inputWrap || !select || !newInput) return;
+
+        select.innerHTML = '<option value="">-- Select UoM --</option>';
+        newInput.value = '';
+
+        if (item) {
+            const seen = new Set();
+            const itemUoms = Array.isArray(item.available_uoms) ? item.available_uoms : [];
+            itemUoms.forEach((uomValue) => {
+                const norm = String(uomValue || '').trim();
+                if (!norm || seen.has(norm.toLowerCase())) return;
+                seen.add(norm.toLowerCase());
+                const opt = document.createElement('option');
+                opt.value = norm;
+                opt.textContent = norm;
+                if (item.uom_prices && Object.prototype.hasOwnProperty.call(item.uom_prices, norm.toLowerCase())) {
+                    opt.dataset.price = item.uom_prices[norm.toLowerCase()];
+                }
+                select.appendChild(opt);
+            });
+
+            const defaultUom = String(item.unit_type || '').trim();
+            if (defaultUom) {
+                select.value = defaultUom;
+            }
+            if (!select.value && select.options.length > 1) {
+                select.selectedIndex = 1;
+            }
+            if (select.selectedOptions.length > 0 && select.selectedOptions[0].dataset.price) {
+                if (fields.itemPrice) fields.itemPrice.value = Number(select.selectedOptions[0].dataset.price).toFixed(2);
+            }
+
+            selectWrap.style.display = '';
+            inputWrap.style.display = 'none';
+        } else {
+            selectWrap.style.display = 'none';
+            inputWrap.style.display = '';
+        }
+    }
+
+    function syncReceiveItemCount() {
+        const totalQty = receiveItems.reduce((sum, item) => sum + (parseFloat(item.qty) || 0), 0);
+        const supplierTotal = document.getElementById('supplierTotalItems');
+        const productionTotal = document.getElementById('productionTotalItems');
+        if (supplierTotal) supplierTotal.value = totalQty > 0 ? totalQty : '';
+        if (productionTotal) productionTotal.value = totalQty > 0 ? totalQty : '';
+    }
+
+    function renderReceiveTable() {
+        const tbody = document.getElementById('receiveItemsTableBody');
+        if (!tbody) return;
+        if (receiveItems.length === 0) {
+            tbody.innerHTML = '<tr class="text-center text-muted"><td colspan="8">No items added yet</td></tr>';
+            syncReceiveItemCount();
+            return;
+        }
+
+        tbody.innerHTML = receiveItems.map(item => `
+            <tr data-item-id="${item.id}">
+                <td>${escapeHtml(String(item.name || ''))}</td>
+                <td>${escapeHtml(String(item.code || ''))}</td>
+                <td>${escapeHtml(String(item.description || ''))}</td>
+                <td>${escapeHtml(String(item.category || ''))}</td>
+                <td><input type="number" class="form-control form-control-sm qty-input" data-item-id="${item.id}" value="${item.qty}" min="0" step="0.01"></td>
+                <td>${escapeHtml(String(item.uom || ''))}</td>
+                <td><input type="number" class="form-control form-control-sm price-input" data-item-id="${item.id}" value="${Number(item.price || 0).toFixed(2)}" min="0" step="0.01"></td>
+                <td class="total-price" data-total-id="${item.id}">₱${Number(item.total || 0).toFixed(2)}</td>
+                <td><button type="button" class="btn btn-sm btn-danger remove-item-btn" data-item-id="${item.id}"><i class="bi bi-trash"></i></button></td>
+            </tr>
+        `).join('');
+        syncReceiveItemCount();
+    }
+
+    function resetReceiveItemEntry(mode = null) {
+        const fields = getReceiveFieldSet(mode);
+        if (fields.selector) fields.selector.value = '';
+        if (fields.newItemName) fields.newItemName.value = '';
+        if (fields.itemCode) fields.itemCode.value = '';
+        if (fields.itemDescription) fields.itemDescription.value = '';
+        if (fields.itemCategory) fields.itemCategory.value = '';
+        if (fields.qty) fields.qty.value = '';
+        if (fields.itemPrice) fields.itemPrice.value = '';
+        if (fields.newItemUom) fields.newItemUom.value = '';
+        if (fields.selectedItemPreview) {
+            fields.selectedItemPreview.style.display = 'none';
+            fields.selectedItemPreview.innerHTML = '';
+        }
+        handleReceiveItemSelection(mode);
+    }
+
+    function handleReceiveItemSelection(mode = null) {
+        const fields = getReceiveFieldSet(mode);
+        const selectedValue = fields.selector ? fields.selector.value : '';
+        const selectedItem = getSelectedReceiveItem(mode);
+
+        if (fields.selectedItemPreview) {
+            fields.selectedItemPreview.style.display = 'none';
+            fields.selectedItemPreview.innerHTML = '';
+        }
+        if (fields.itemCode) fields.itemCode.value = '';
+        if (fields.itemDescription) fields.itemDescription.value = '';
+        if (fields.itemCategory) fields.itemCategory.value = '';
+        if (fields.itemPrice) fields.itemPrice.value = '';
+
+        if (selectedValue === '__new__') {
+            if (fields.newItemNameWrapper) fields.newItemNameWrapper.style.display = 'block';
+            if (fields.itemCode) fields.itemCode.readOnly = false;
+            if (fields.itemDescription) fields.itemDescription.readOnly = false;
+            if (fields.itemCategory) fields.itemCategory.readOnly = false;
+            if (fields.itemPrice) fields.itemPrice.readOnly = false;
+            populateUomForSelectedItem(null, mode);
+            return;
+        }
+
+        if (fields.newItemNameWrapper) fields.newItemNameWrapper.style.display = 'none';
+        if (fields.newItemName) fields.newItemName.value = '';
+
+        if (selectedItem) {
+            if (fields.itemCode) fields.itemCode.value = selectedItem.item_code || '';
+            if (fields.itemDescription) fields.itemDescription.value = selectedItem.description || selectedItem.item_name || '';
+            if (fields.itemCategory) fields.itemCategory.value = selectedItem.category || '';
+            if (fields.itemPrice) fields.itemPrice.value = Number(selectedItem.price_piece || 0).toFixed(2);
+            if (fields.itemCode) fields.itemCode.readOnly = true;
+            if (fields.itemDescription) fields.itemDescription.readOnly = true;
+            if (fields.itemCategory) fields.itemCategory.readOnly = true;
+            if (fields.itemPrice) fields.itemPrice.readOnly = false;
+            populateUomForSelectedItem(selectedItem, mode);
+            if (fields.selectedItemPreview) {
+                fields.selectedItemPreview.innerHTML = `
+                    <strong>Selected Item:</strong> ${escapeHtml(String(selectedItem.item_name || ''))}<br>
+                    <small>
+                        <strong>Code:</strong> ${escapeHtml(String(selectedItem.item_code || 'N/A'))} &nbsp;|&nbsp;
+                        <strong>Description:</strong> ${escapeHtml(String(selectedItem.description || selectedItem.item_name || 'N/A'))} &nbsp;|&nbsp;
+                        <strong>Category:</strong> ${escapeHtml(String(selectedItem.category || 'N/A'))}
+                    </small>`;
+                fields.selectedItemPreview.style.display = 'block';
+            }
+        } else {
+            if (fields.itemCode) fields.itemCode.readOnly = false;
+            if (fields.itemDescription) fields.itemDescription.readOnly = false;
+            if (fields.itemCategory) fields.itemCategory.readOnly = false;
+            if (fields.itemPrice) fields.itemPrice.readOnly = false;
+            populateUomForSelectedItem(null, mode);
+        }
+    }
+
+    function addItemToTable(mode = null) {
+        const fields = getReceiveFieldSet(mode);
+        const selectorValue = fields.selector ? fields.selector.value : '';
+        const selectedItem = getSelectedReceiveItem(mode);
+        const isNewItem = selectorValue === '__new__';
+        const itemName = isNewItem ? ((fields.newItemName ? fields.newItemName.value : '') || '').trim() : (selectedItem?.item_name || '');
+        const itemCode = ((fields.itemCode ? fields.itemCode.value : '') || '').trim();
+        const itemDescription = ((fields.itemDescription ? fields.itemDescription.value : '') || '').trim();
+        const itemCategory = ((fields.itemCategory ? fields.itemCategory.value : '') || '').trim();
+        const qty = parseFloat(fields.qty ? fields.qty.value : 0) || 0;
+        const uom = isNewItem ? (((fields.newItemUom || {}).value || '').trim()) : ((((fields.itemUoM || {}).value || '').trim()));
+        const price = parseFloat(fields.itemPrice ? fields.itemPrice.value : 0) || 0;
+
+        if (!selectorValue) {
+            alert('Please select an item first.');
+            return;
+        }
+        if (isNewItem && !itemName) {
+            alert('Please enter the new item name.');
+            return;
+        }
+        if (!itemName || !itemCode || !itemDescription || !itemCategory || !uom) {
+            alert('Please complete the item details.');
+            return;
+        }
+        if (qty <= 0) {
+            alert('Quantity must be greater than 0.');
+            return;
+        }
+
+        receiveItems.push({
+            id: Date.now() + Math.floor(Math.random() * 1000),
+            item_id: selectedItem ? selectedItem.item_id : null,
+            is_new: isNewItem,
+            name: itemName,
+            code: itemCode,
+            description: itemDescription,
+            category: itemCategory,
+            qty: qty,
+            uom: uom,
+            price: price,
+            total: qty * price
+        });
+
+        renderReceiveTable();
+        resetReceiveItemEntry(mode);
+        if (fields.selector) fields.selector.focus();
+    }
+
+    function updateItemQty(itemId, newQty) {
+        const item = receiveItems.find(i => String(i.id) === String(itemId));
+        if (!item) return;
+        item.qty = parseFloat(newQty) || 0;
+        item.total = (parseFloat(item.qty) || 0) * (parseFloat(item.price) || 0);
+        renderReceiveTable();
+    }
+
+    function updateItemPrice(itemId, newPrice) {
+        const item = receiveItems.find(i => String(i.id) === String(itemId));
+        if (!item) return;
+        item.price = parseFloat(newPrice) || 0;
+        item.total = (parseFloat(item.qty) || 0) * (parseFloat(item.price) || 0);
+        renderReceiveTable();
+    }
+
+    function removeItem(itemId) {
+        receiveItems = receiveItems.filter(i => String(i.id) !== String(itemId));
+        renderReceiveTable();
+    }
+
+    document.getElementById('supplierDropdown').addEventListener('change', fillReceivePODropdown);
+    fillReceivePODropdown();
+    document.getElementById('itemSelector').addEventListener('change', function() { handleReceiveItemSelection('supplier'); });
+    document.getElementById('productionItemSelector').addEventListener('change', function() { handleReceiveItemSelection('production'); });
+    document.getElementById('itemUoM').addEventListener('change', function() {
+        const selectedItem = getSelectedReceiveItem('supplier');
+        const selectedUom = String(this.value || '').trim().toLowerCase();
+        if (selectedItem && selectedItem.uom_prices && Object.prototype.hasOwnProperty.call(selectedItem.uom_prices, selectedUom)) {
+            document.getElementById('itemPrice').value = Number(selectedItem.uom_prices[selectedUom] || 0).toFixed(2);
+        }
+    });
+    document.getElementById('productionItemUoM').addEventListener('change', function() {
+        const selectedItem = getSelectedReceiveItem('production');
+        const selectedUom = String(this.value || '').trim().toLowerCase();
+        if (selectedItem && selectedItem.uom_prices && Object.prototype.hasOwnProperty.call(selectedItem.uom_prices, selectedUom)) {
+            document.getElementById('productionItemPrice').value = Number(selectedItem.uom_prices[selectedUom] || 0).toFixed(2);
+        }
+    });
+    document.getElementById('addReceiveItemBtn').addEventListener('click', function() { addItemToTable('supplier'); });
+    document.getElementById('addProductionReceiveItemBtn').addEventListener('click', function() { addItemToTable('production'); });
+
+    document.getElementById('poNumberDropdown').addEventListener('change', function() {
+        const poId = this.value;
+        if (!poId) {
+            receiveItems = [];
+            renderReceiveTable();
+            resetReceiveItemEntry('supplier');
+        resetReceiveItemEntry('production');
+        const rmrPreview = document.getElementById('rmrRequestPreview');
+        if (rmrPreview) {
+            rmrPreview.style.display = 'none';
+            rmrPreview.innerHTML = '';
+        }
+            return;
+        }
+
+        const selected = purchaseOrdersList.find(po => String(po.po_id) === String(poId));
+        if (!selected) return;
+
+        if (selected.supplier_id) {
+            document.getElementById('supplierDropdown').value = String(selected.supplier_id);
+        }
+        if (selected.order_date) {
+            document.getElementById('supplierReceiveDate').value = String(selected.order_date).split(' ')[0];
+        }
+        const supplierItemNameField = document.getElementById('supplierItemName');
+        if (supplierItemNameField) {
+            supplierItemNameField.value = selected.supplier_name || '';
+        }
+
+        const payload = new URLSearchParams();
+        payload.append('action', 'get_po');
+        payload.append('po_id', poId);
+
+        fetch(window.location.href, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+            body: payload.toString()
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (!data.success) throw new Error(data.message || 'Unable to load PO details.');
+
+            if (data.po && data.po.supplier_id) {
+                document.getElementById('supplierDropdown').value = String(data.po.supplier_id);
+            }
+            if (data.po && data.po.order_date) {
+                document.getElementById('supplierReceiveDate').value = String(data.po.order_date).split(' ')[0];
+            }
+
+            receiveItems = (data.items || []).map((item, idx) => ({
+                id: Date.now() + idx,
+                item_id: item.item_id || null,
+                is_new: false,
+                name: item.item_name || '',
+                code: item.item_code || '',
+                description: item.description || item.item_name || '',
+                category: item.category || '',
+                qty: parseFloat(item.quantity_ordered || 0),
+                uom: item.unit_type || '',
+                price: parseFloat(item.unit_price || 0),
+                total: (parseFloat(item.quantity_ordered || 0) * parseFloat(item.unit_price || 0))
+            }));
+
+            renderReceiveTable();
+            resetReceiveItemEntry('supplier');
+        resetReceiveItemEntry('production');
+        })
+        .catch(error => {
+            if (typeof Swal !== 'undefined') Swal.fire('Error', error.message || 'Unable to load PO details.', 'error');
+            else alert(error.message || 'Unable to load PO details.');
+        });
+    });
+
+    document.getElementById('withPOCheckbox').addEventListener('change', function() {
+        const poField = document.getElementById('poNumberDropdown').parentElement;
+        if (this.checked) {
+            poField.style.display = 'block';
+            document.getElementById('poNumberDropdown').required = true;
+        } else {
+            poField.style.display = 'none';
+            document.getElementById('poNumberDropdown').required = false;
+            document.getElementById('poNumberDropdown').value = '';
+        }
+    });
+
+    document.getElementById('receiveItemsTableBody').addEventListener('input', function(e) {
+        if (e.target.classList.contains('qty-input')) {
+            updateItemQty(e.target.dataset.itemId, e.target.value);
+        }
+        if (e.target.classList.contains('price-input')) {
+            updateItemPrice(e.target.dataset.itemId, e.target.value);
+        }
+    });
+
+
+    document.getElementById('receiveItemsTableBody').addEventListener('click', function(e) {
+        const btn = e.target.closest('.remove-item-btn');
+        if (btn) {
+            removeItem(btn.dataset.itemId);
+        }
+    });
+
+    function formatReceiveHistoryValue(value, fallback = 'N/A') {
+        const normalized = (value === null || value === undefined) ? '' : String(value).trim();
+        return normalized !== '' ? escapeHtml(normalized) : fallback;
+    }
+
+    function renderReceiveAttachments(attachments, fallbackText) {
+        if (!Array.isArray(attachments) || attachments.length === 0) {
+            return `<span>${escapeHtml(fallbackText || 'No saved attachment found for this receive record.')}</span>`;
+        }
+        return `
+            <div class="d-flex flex-column gap-3">
+                ${attachments.map(file => {
+                    const fileName = escapeHtml(file.original_name || file.stored_name || 'Attachment');
+                    const fileUrl = escapeHtml(file.url || '#');
+                    const lower = String(file.original_name || file.stored_name || '').toLowerCase();
+                    const isImage = ['.jpg','.jpeg','.png','.webp','.gif'].some(ext => lower.endsWith(ext));
+                    return `
+                        <div class="border rounded p-2 bg-light">
+                            <div class="fw-semibold mb-2">${fileName}</div>
+                            ${isImage ? `<div class="mb-2"><img src="${fileUrl}" alt="${fileName}" style="max-width:100%; max-height:320px; border-radius:8px; border:1px solid #dee2e6;"></div>` : ''}
+                            <div><a href="${fileUrl}" target="_blank" rel="noopener noreferrer">Open Attachment</a></div>
+                        </div>
+                    `;
+                }).join('')}
+            </div>
+        `;
+    }
+
+    let activeReceiveHistoryDeletePayload = null;
+
+    function openReceiveHistoryDetails(transactionId, rowData = {}) {
+        const modalBody = document.getElementById('receiveHistoryModalBody');
+        const deleteBtn = document.getElementById('deleteReceiveHistoryBtn');
+        activeReceiveHistoryDeletePayload = {
+            transaction_id: transactionId || '',
+            item_id: rowData.itemId || '',
+            reference_type: rowData.referenceType || '',
+            reference_id: rowData.referenceId || '',
+            created_at: rowData.createdAt || ''
+        };
+        if (deleteBtn) {
+            deleteBtn.style.display = 'none';
+            deleteBtn.disabled = false;
+            deleteBtn.innerHTML = '<i class="bi bi-trash me-1"></i> Delete Receive';
+        }
+        if (modalBody) {
+            modalBody.innerHTML = '<div class="text-center text-muted py-4">Loading details...</div>';
+        }
+
+        const payload = new URLSearchParams();
+        payload.append('action', 'get_receive_history_details');
+        if (transactionId) payload.append('transaction_id', transactionId);
+        if (rowData.itemId) payload.append('item_id', rowData.itemId);
+        if (rowData.referenceType) payload.append('reference_type', rowData.referenceType);
+        if (rowData.referenceId) payload.append('reference_id', rowData.referenceId);
+        if (rowData.createdAt) payload.append('created_at', rowData.createdAt);
+
+        fetch(window.location.href, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+            body: payload.toString()
+        })
+        .then(response => response.text())
+        .then(text => {
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                throw new Error(text || 'Failed to parse receive history response.');
+            }
+            if (!data.success) throw new Error(data.message || 'Unable to load receive history details.');
+
+            const detail = data.detail || {};
+            const poItems = Array.isArray(data.po_items) ? data.po_items : [];
+            const refType = String(detail.reference_type || '').toLowerCase();
+            const sourceLabel = refType === 'production' ? 'Production' : (refType === 'rmr' ? 'Returned Merchandise' : 'Supplier');
+            const unitPrice = Number(detail.unit_price || 0);
+            const qty = Number(detail.quantity_changed || 0);
+            const totalAmount = qty * unitPrice;
+
+            let itemsHtml = '';
+            if (poItems.length > 0) {
+                itemsHtml = `
+                    <div class="table-responsive mt-3">
+                        <table class="table table-bordered align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Item Name</th>
+                                    <th>Item Code</th>
+                                    <th>Description</th>
+                                    <th>Qty</th>
+                                    <th>UoM</th>
+                                    <th>Unit Price</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${poItems.map(item => `
+                                    <tr>
+                                        <td>${formatReceiveHistoryValue(item.item_name)}</td>
+                                        <td>${formatReceiveHistoryValue(item.item_code)}</td>
+                                        <td>${formatReceiveHistoryValue(item.item_description)}</td>
+                                        <td>${formatReceiveHistoryValue(item.quantity_ordered)}</td>
+                                        <td>${formatReceiveHistoryValue(item.unit_type)}</td>
+                                        <td>₱${Number(item.unit_price || 0).toFixed(2)}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>`;
+            } else {
+                itemsHtml = `
+                    <div class="table-responsive mt-3">
+                        <table class="table table-bordered align-middle">
+                            <thead class="table-light">
+                                <tr>
+                                    <th>Item Name</th>
+                                    <th>Item Code</th>
+                                    <th>Description</th>
+                                    <th>Qty</th>
+                                    <th>UoM</th>
+                                    <th>Unit Price</th>
+                                    <th>Total Price</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>${formatReceiveHistoryValue(detail.item_name)}</td>
+                                    <td>${formatReceiveHistoryValue(detail.item_code)}</td>
+                                    <td>${formatReceiveHistoryValue(detail.item_description)}</td>
+                                    <td>${qty.toFixed(2).replace(/\.00$/, '')}</td>
+                                    <td>${formatReceiveHistoryValue(detail.unit_type)}</td>
+                                    <td>₱${unitPrice.toFixed(2)}</td>
+                                    <td>₱${totalAmount.toFixed(2)}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>`;
+            }
+
+            const html = `
+                <div class="row g-3">
+                    <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Source</div><div class="fw-semibold">${sourceLabel}</div></div></div>
+                    <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Received By</div><div class="fw-semibold">${formatReceiveHistoryValue(detail.received_by_name)}</div></div></div>
+                    <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Date Received</div><div class="fw-semibold">${formatReceiveHistoryValue(detail.created_at)}</div></div></div>
+                    <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Branch</div><div class="fw-semibold">${formatReceiveHistoryValue(detail.branch_name)}</div></div></div>
+                    <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Supplier</div><div class="fw-semibold">${sourceLabel === 'Supplier' ? formatReceiveHistoryValue(detail.supplier_name) : 'N/A'}</div></div></div>
+                    <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">PO Number</div><div class="fw-semibold">${sourceLabel === 'Supplier' ? formatReceiveHistoryValue(detail.po_number) : 'N/A'}</div></div></div>
+                    <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">RMR Number</div><div class="fw-semibold">${sourceLabel === 'Returned Merchandise' ? formatReceiveHistoryValue(detail.rmr_number) : 'N/A'}</div></div></div>
+                    <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Customer</div><div class="fw-semibold">${sourceLabel === 'Returned Merchandise' ? formatReceiveHistoryValue(detail.rmr_customer_name) : 'N/A'}</div></div></div>
+                    <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">PO Status</div><div class="fw-semibold">${sourceLabel === 'Supplier' ? formatReceiveHistoryValue(detail.po_status) : 'N/A'}</div></div></div>
+                    <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Reference</div><div class="fw-semibold">${formatReceiveHistoryValue(detail.reference_type)} #${formatReceiveHistoryValue(detail.reference_id, '0')}</div></div></div>
+                    <div class="col-12"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Attachment</div><div class="fw-semibold">${renderReceiveAttachments(data.attachments || [], data.attachment_note || 'No saved attachment found for this receive record.')}</div></div></div>
+                    <div class="col-12"><div class="border rounded p-3 h-100"><div class="text-muted small mb-2">What was done</div><div class="fw-semibold">Stock was received and posted to current inventory. An inventory transaction record was saved for this item.</div></div></div>
+                    <div class="col-12"><div class="border rounded p-3"> <div class="text-muted small mb-2">Received Item Details</div>${itemsHtml}</div></div>
+                </div>`;
+
+            activeReceiveHistoryDeletePayload = {
+                transaction_id: detail.transaction_id || transactionId || '',
+                item_id: detail.item_id || rowData.itemId || '',
+                reference_type: detail.reference_type || rowData.referenceType || '',
+                reference_id: detail.reference_id || rowData.referenceId || '',
+                created_at: detail.created_at || rowData.createdAt || ''
+            };
+
+            if (modalBody) modalBody.innerHTML = html;
+            if (deleteBtn) {
+                deleteBtn.style.display = 'inline-block';
+            }
+            new bootstrap.Modal(document.getElementById('receiveHistoryModal')).show();
+        })
+        .catch(error => {
+            if (typeof Swal !== 'undefined') {
+                Swal.fire('Error', error.message || 'Unable to load receive history details.', 'error');
+            } else {
+                alert(error.message || 'Unable to load receive history details.');
+            }
+        });
+    }
+
+
+
+    function previewSelectedRmrRequest() {
+        const dropdown = document.getElementById('rmrRequestDropdown');
+        const preview = document.getElementById('rmrRequestPreview');
+        if (!dropdown || !preview) return;
+        const opt = dropdown.options[dropdown.selectedIndex];
+        if (!opt || !opt.value) {
+            preview.style.display = 'none';
+            preview.innerHTML = '';
+            return;
+        }
+        preview.innerHTML = `
+            <strong>Selected RMR:</strong> ${escapeHtml(opt.textContent.trim())}<br>
+            <small>
+                <strong>Customer:</strong> ${escapeHtml(opt.dataset.customer || 'N/A')} &nbsp;|&nbsp;
+                <strong>Status:</strong> ${escapeHtml(opt.dataset.status || 'N/A')} &nbsp;|&nbsp;
+                <strong>Reason:</strong> ${escapeHtml(opt.dataset.reason || 'N/A')}
+            </small>`;
+        preview.style.display = 'block';
+    }
+
+    function addSelectedRmrItemToTable() {
+        const dropdown = document.getElementById('rmrRequestDropdown');
+        if (!dropdown || !dropdown.value) {
+            alert('Please select an RMR request first.');
+            return;
+        }
+        const opt = dropdown.options[dropdown.selectedIndex];
+        const itemId = parseInt(opt.dataset.itemId || '0', 10);
+        const qty = parseFloat(opt.dataset.qty || '0');
+        const price = parseFloat(opt.dataset.price || '0');
+        if (!itemId || qty <= 0) {
+            alert('Selected RMR request has invalid item or quantity.');
+            return;
+        }
+        receiveItems = [{
+            id: itemId,
+            item_id: itemId,
+            name: opt.dataset.itemName || opt.textContent.trim(),
+            code: opt.dataset.itemCode || '',
+            description: opt.dataset.itemDescription || opt.dataset.itemName || '',
+            qty: qty,
+            uom: opt.dataset.uom || '',
+            price: price,
+            total: qty * price,
+            source: 'rmr',
+            rmr_id: dropdown.value
+        }];
+        renderReceiveTable();
+    }
+
+    const rmrRequestDropdown = document.getElementById('rmrRequestDropdown');
+    if (rmrRequestDropdown) {
+        rmrRequestDropdown.addEventListener('change', function() {
+            receiveItems = [];
+            renderReceiveTable();
+            previewSelectedRmrRequest();
+        });
+    }
+    const addRmrReceiveItemBtn = document.getElementById('addRmrReceiveItemBtn');
+    if (addRmrReceiveItemBtn) {
+        addRmrReceiveItemBtn.addEventListener('click', addSelectedRmrItemToTable);
+    }
+
+    const receiveHistoryTable = document.getElementById('receiveHistoryTable');
+    if (receiveHistoryTable) {
+        receiveHistoryTable.addEventListener('click', function(e) {
+            const row = e.target.closest('.receive-history-row');
+            if (!row) return;
+            openReceiveHistoryDetails(row.dataset.transactionId || '', {
+                itemId: row.dataset.itemId || '',
+                referenceType: row.dataset.referenceType || '',
+                referenceId: row.dataset.referenceId || '',
+                createdAt: row.dataset.createdAt || ''
+            });
+        });
+    }
+
+    document.getElementById('supplierReceiveDate').valueAsDate = new Date();
+    document.getElementById('productionReceiveDate').valueAsDate = new Date();
+    const initialRmrReceiveDate = document.getElementById('rmrReceiveDate');
+    if (initialRmrReceiveDate) initialRmrReceiveDate.valueAsDate = new Date();
+    renderReceiveTable();
+    handleReceiveItemSelection('supplier');
+    handleReceiveItemSelection('production');
+
+
+    const deleteReceiveHistoryBtn = document.getElementById('deleteReceiveHistoryBtn');
+    if (deleteReceiveHistoryBtn) {
+        deleteReceiveHistoryBtn.addEventListener('click', function() {
+            if (!activeReceiveHistoryDeletePayload) return;
+            const proceed = () => {
+                deleteReceiveHistoryBtn.disabled = true;
+                deleteReceiveHistoryBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Deleting...';
+                const payload = new URLSearchParams();
+                payload.append('action', 'delete_receive_history');
+                Object.entries(activeReceiveHistoryDeletePayload).forEach(([key, value]) => {
+                    if (value !== null && value !== undefined) payload.append(key, value);
+                });
+
+                fetch(window.location.href, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+                    body: payload.toString()
+                })
+                .then(res => res.text())
+                .then(text => {
+                    let data;
+                    try { data = JSON.parse(text); } catch (e) { throw new Error(text || 'Failed to parse delete response.'); }
+                    if (!data.success) throw new Error(data.message || 'Failed to delete receive record.');
+                    if (typeof Swal !== 'undefined') {
+                        return Swal.fire('Deleted', data.message || 'Receive record deleted successfully.', 'success');
+                    }
+                    alert(data.message || 'Receive record deleted successfully.');
+                })
+                .then(() => window.location.reload())
+                .catch(err => {
+                    deleteReceiveHistoryBtn.disabled = false;
+                    deleteReceiveHistoryBtn.innerHTML = '<i class="bi bi-trash me-1"></i> Delete Receive';
+                    if (typeof Swal !== 'undefined') {
+                        Swal.fire('Error', err.message || 'Failed to delete receive record.', 'error');
+                    } else {
+                        alert(err.message || 'Failed to delete receive record.');
+                    }
+                });
+            };
+
+            if (typeof Swal !== 'undefined') {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Delete this receive record?',
+                    text: 'This will remove the receive record and deduct the received stock.',
+                    showCancelButton: true,
+                    confirmButtonText: 'Yes, delete it'
+                }).then(result => {
+                    if (result.isConfirmed) proceed();
+                });
+            } else if (confirm('Delete this receive record and deduct the received stock?')) {
+                proceed();
+            }
+        });
+    }
+
+    function clearReceiveForm() {
+        document.getElementById('supplierReceiveForm').reset();
+        document.getElementById('productionReceiveForm').reset();
+        const rmrReceiveForm = document.getElementById('rmrReceiveForm');
+        if (rmrReceiveForm) rmrReceiveForm.reset();
+        document.getElementById('supplierReceiveDate').valueAsDate = new Date();
+        document.getElementById('productionReceiveDate').valueAsDate = new Date();
+        const rmrReceiveDate = document.getElementById('rmrReceiveDate');
+        if (rmrReceiveDate) rmrReceiveDate.valueAsDate = new Date();
+        document.getElementById('poNumberDropdown').innerHTML = '<option value="">-- Select PO --</option>';
+        const supplierAttachmentInput = document.getElementById('supplierAttachments');
+        const productionAttachmentInput = document.getElementById('productionAttachments');
+        if (supplierAttachmentInput) supplierAttachmentInput.value = '';
+        if (productionAttachmentInput) productionAttachmentInput.value = '';
+        receiveItems = [];
+        renderReceiveTable();
+        resetReceiveItemEntry('supplier');
+        resetReceiveItemEntry('production');
+    }
+
+    function submitReceiveInventory() {
+        const activeTab = document.querySelector('.receive-tabs .nav-link.active').id;
+        let formData = {};
+        if (activeTab === 'supplierTab') {
+            formData = {
+                source: 'supplier',
+                supplier: document.getElementById('supplierDropdown').value,
+                supplierName: getSupplierName(),
+                poNumber: document.getElementById('poNumberDropdown').value,
+                withPO: document.getElementById('withPOCheckbox').checked,
+                receiveDate: document.getElementById('supplierReceiveDate').value,
+                totalItems: receiveItems.length
+            };
+        } else if (activeTab === 'rmrTab') {
+            formData = {
+                source: 'rmr',
+                rmr_id: document.getElementById('rmrRequestDropdown').value,
+                receiveDate: document.getElementById('rmrReceiveDate').value,
+                totalItems: receiveItems.length
+            };
+        } else {
+            formData = {
+                source: 'production',
+                receiveDate: document.getElementById('productionReceiveDate').value,
+                totalItems: document.getElementById('productionTotalItems').value
+            };
+        }
+
+        if (activeTab === 'supplierTab') {
+            if (!formData.supplier) {
+                alert('Please select a supplier.');
+                return;
+            }
+            if (formData.withPO && !formData.poNumber) {
+                alert('Please select a PO number or uncheck "With PO?".');
+                return;
+            }
+        }
+        if (activeTab === 'rmrTab' && !formData.rmr_id) {
+            alert('Please select a confirmed or processed RMR request.');
+            return;
+        }
+        if (!formData.receiveDate) {
+            alert('Please select a receive date.');
+            return;
+        }
+        if (receiveItems.length === 0) {
+            alert('Please add at least one item to receive.');
+            return;
+        }
+
+        const payload = new FormData();
+        payload.append('action', 'receive_inventory');
+        payload.append('source', formData.source);
+        payload.append('supplier_id', formData.supplier || '');
+        payload.append('supplier', formData.supplierName || '');
+        payload.append('poNumber', formData.poNumber || '');
+        payload.append('withPO', formData.withPO ? '1' : '0');
+        payload.append('rmr_id', formData.rmr_id || '');
+        payload.append('receiveDate', formData.receiveDate || '');
+        payload.append('items', JSON.stringify(receiveItems));
+
+        const attachmentInput = activeTab === 'supplierTab'
+            ? document.getElementById('supplierAttachments')
+            : (activeTab === 'productionTab' ? document.getElementById('productionAttachments') : null);
+        if (attachmentInput && attachmentInput.files && attachmentInput.files.length > 0) {
+            Array.from(attachmentInput.files).forEach(file => {
+                payload.append(activeTab === 'supplierTab' ? 'supplierAttachments[]' : 'productionAttachments[]', file);
+            });
+        }
+
+        const submitBtn = document.getElementById('submitReceiveBtn');
+        const originalSubmitHtml = submitBtn ? submitBtn.innerHTML : '';
+        if (submitBtn) {
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Saving...';
+        }
+
+        fetch(window.location.href, {
+            method: 'POST',
+            body: payload
+        })
+        .then(response => response.text())
+        .then(text => {
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                throw new Error(text || 'Failed to parse server response.');
+            }
+            if (!data.success) throw new Error(data.message || 'Failed to save received inventory.');
+            if (typeof Swal !== 'undefined') {
+                return Swal.fire({
+                    icon: 'success',
+                    title: 'Inventory Received',
+                    text: (data.message || 'Received inventory saved successfully.') + ((data.attachments_saved || 0) > 0 ? ` Attachments saved: ${data.attachments_saved}.` : ''),
+                    timer: 2500,
+                    timerProgressBar: true
+                });
+            }
+            alert(data.message || 'Received inventory saved successfully.');
+            return Promise.resolve();
+        })
+        .then(() => {
+            clearReceiveForm();
+            window.location.reload();
+        })
+        .catch(error => {
+            if (typeof Swal !== 'undefined') {
+                Swal.fire('Error', error.message || 'Unable to save received inventory.', 'error');
+            } else {
+                alert(error.message || 'Unable to save received inventory.');
+            }
+        });
+    }
+
+    window.clearReceiveForm = clearReceiveForm;
+    window.submitReceiveInventory = submitReceiveInventory;
+
+    // Helper function to escape HTML
+    function escapeHtml(unsafe) {
+        return unsafe
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+});
+</script>
+</body>
+</html>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928

@@ -399,12 +399,15 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             GROUP_CONCAT(CONCAT(i.item_name, ' (', soi.quantity_ordered, ' pcs)') SEPARATOR ', ') as items
         FROM deliveries d
         INNER JOIN sales_orders so ON d.so_id = so.so_id
+<<<<<<< HEAD
         LEFT JOIN (
             SELECT so_id, MAX(NULLIF(si_number, '')) AS si_number
             FROM invoices
             WHERE NULLIF(si_number, '') IS NOT NULL
             GROUP BY so_id
         ) inv_si ON inv_si.so_id = so.so_id
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         INNER JOIN customers c ON d.customer_id = c.customer_id
         LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
         LEFT JOIN items i ON soi.item_id = i.item_id
@@ -1617,6 +1620,7 @@ if (empty($user_initials)) {
             border-top: 1px solid #dee2e6;
         }
         @media print {
+<<<<<<< HEAD
     @page {
     size: 80mm auto;
     margin: 3mm;
@@ -1733,6 +1737,44 @@ td{
         display: none !important;
     }
 }
+=======
+            body * {
+                visibility: hidden;
+            }
+            #thermalReceipt, #thermalReceipt * {
+                visibility: visible;
+            }
+            #thermalReceipt {
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                background: white;
+                margin: 0;
+                padding: 0;
+                z-index: 9999;
+            }
+            .thermal-receipt {
+                width: 72mm;
+                margin: 0 auto;
+                padding: 2mm;
+                background: white;
+                font-family: 'Courier New', monospace;
+                font-size: 11px;
+                line-height: 1.3;
+                box-sizing: border-box;
+                border: none;
+                box-shadow: none;
+            }
+            @page {
+                margin: 0;
+            }
+        }
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .tracking-indicator {
             display: inline-block;
             width: 12px;
@@ -1966,6 +2008,7 @@ td{
         .mobile-nav .nav-link.logout-btn:hover i {
             color: #dc3545;
         }
+<<<<<<< HEAD
         
         /* CLICKABLE ROW STYLES */
         .clickable-row {
@@ -2026,6 +2069,8 @@ td{
             }
         }
         
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         @media (max-width: 768px) {
             .custom-table thead {
                 display: none;
@@ -2536,6 +2581,7 @@ td{
         .gap-2 {
             gap: 0.5rem !important;
         }
+<<<<<<< HEAD
         
         /* Toggle Switch Styles for Collect Payment */
         .toggle-switch {
@@ -2621,6 +2667,8 @@ td{
         .btn-divert:active {
             transform: translateY(0);
         }
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     </style>
 </head>
 <body>
@@ -2817,7 +2865,11 @@ td{
                 <div class="table-container">
                     <table class="table custom-table compact-table">
                         <thead class="table-light">
+<<<<<<< HEAD
                             <tr>
+=======
+                                <tr>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                     <th>Order ID</th>
                                     <th>Customer Name</th>
                                     <th>Address</th>
@@ -2849,9 +2901,18 @@ td{
                                     <?php endif; ?>
                                 </td>
                                 <td>
+<<<<<<< HEAD
                                     <span class="customer-name-text"><?php echo htmlspecialchars($order['customer_name']); ?></span>
                                     <!-- Action buttons for MOBILE only (hidden on desktop) -->
                                     <div class="action-buttons d-flex d-md-none" onclick="event.stopPropagation()">
+=======
+                                    <?php echo htmlspecialchars($order['customer_name']); ?>
+                                    <!-- Action buttons for MOBILE only (hidden on desktop) -->
+                                    <div class="action-buttons d-flex d-md-none" style="display: inline-flex !important; margin-left: 8px;">
+                                        <button class="btn-action btn-view" title="View Details" onclick="viewDeliveryDetails(<?php echo $order['delivery_id']; ?>)">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                         
                                         
                                         <?php if ($has_coordinates): ?>
@@ -2947,10 +3008,20 @@ td{
                                     <span class="badge <?php echo $status_badge; ?>">
                                         <?php echo $status_text; ?>
                                     </span>
+<<<<<<< HEAD
                                  </td>
                                 <td class="text-center align-middle desktop-actions">
                                     <!-- Desktop action buttons (hidden on mobile) -->
                                     <div class="action-buttons d-none d-md-inline-flex" onclick="event.stopPropagation()">
+=======
+                                </td>
+                                <td class="text-center align-middle">
+                                    <!-- Desktop action buttons (hidden on mobile) -->
+                                    <div class="action-buttons d-none d-md-inline-flex" style="justify-content: center; gap: 8px;">
+                                        <button class="btn-action btn-view" title="View Details" onclick="viewDeliveryDetails(<?php echo $order['delivery_id']; ?>)">
+                                            <i class="bi bi-eye"></i>
+                                        </button>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                         
                                         <?php if ($has_coordinates): ?>
                                             <button class="btn-action btn-map" title="Navigate to Customer" onclick="openLiveNavigation(
@@ -3477,6 +3548,7 @@ td{
     </div>
 </div>
 
+<<<<<<< HEAD
 <!-- ========== DIVERT MODAL ========== -->
 <div class="modal fade" id="divertModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-scrollable">
@@ -3484,9 +3556,21 @@ td{
             <div class="modal-header" style="background: linear-gradient(135deg, #ffc107, #e0a800); color: #856404;">
                 <h5 class="modal-title">
                     <i class="bi bi-share-fill me-2"></i>Divert Partial Delivery to Another Driver
+=======
+<!-- PICKUP TASKS MODAL - Driver's first login modal -->
+<?php if ($has_pending_tasks && $show_pickup_modal): ?>
+<div class="modal fade" id="pickupTasksModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header pickup-modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-box-seam me-2"></i>
+                    Warehouse Pickup Required
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
+<<<<<<< HEAD
             <div class="modal-body">
                 <div id="divertLoading" class="text-center py-4">
                     <div class="spinner-border text-primary"></div>
@@ -3563,6 +3647,46 @@ td{
         </div>
     </div>
 </div>
+=======
+            <div class="modal-body" style="background: #f8f9fa;">
+                <div class="alert alert-warning mb-3">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    <strong>Attention:</strong> Please claim the items below from the warehouse before starting your deliveries.
+                </div>
+                
+                <div id="pickupTasksContainer">
+                    <?php foreach ($pending_pickup_tasks as $task): ?>
+                    <div class="pickup-task-card" id="task_<?php echo $task['delivery_id']; ?>">
+                        <div class="pickup-task-header">
+                            <span class="pickup-order-number"><?php echo htmlspecialchars($task['so_number']); ?></span>
+                            <span class="pickup-badge">Ready for Pickup</span>
+                        </div>
+                        <div class="pickup-customer-name">
+                            <i class="bi bi-person"></i> <?php echo htmlspecialchars($task['customer_name']); ?>
+                        </div>
+                        <div class="pickup-address">
+                            <i class="bi bi-geo-alt"></i> <?php echo htmlspecialchars($task['address']); ?>
+                        </div>
+                        <div class="pickup-items">
+                            <i class="bi bi-box"></i> <strong>Items:</strong><br>
+                            <?php echo htmlspecialchars($task['items']); ?>
+                        </div>
+                        <button class="btn-claim" onclick="claimWarehousePickup(<?php echo $task['delivery_id']; ?>, this)">
+                            <i class="bi bi-check2-circle"></i> Claim Items from Warehouse
+                        </button>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="bi bi-x-circle"></i> Close
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 <?php endif; ?>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -3624,6 +3748,7 @@ td{
         // Cache ng huling posisyon para sa mabilis na initial load
         let lastKnownPosition = null;
         
+<<<<<<< HEAD
 
         // Keep user on the same page after successful actions.
         // This replaces full page reloads so SweetAlert stays on the current screen.
@@ -3658,6 +3783,8 @@ td{
             window.history.replaceState({}, '', window.location.pathname + window.location.search);
         }
 
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         // ================= WAREHOUSE PICKUP FUNCTIONS =================
         function claimWarehousePickup(deliveryId, button) {
             Swal.fire({
@@ -3687,11 +3814,15 @@ td{
                         method: 'POST',
                         body: formData
                     })
+<<<<<<< HEAD
                     .then(async response => {
                         const text = await response.text();
                         try { return JSON.parse(text); }
                         catch (e) { throw new Error(text.substring(0, 300) || 'Invalid server response'); }
                     })
+=======
+                    .then(response => response.json())
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     .then(data => {
                         if (data.success) {
                             // Remove the task card with animation
@@ -3717,8 +3848,13 @@ td{
                                             if (modal) {
                                                 modal.hide();
                                             }
+<<<<<<< HEAD
                                             // Keep the user on this page instead of full reload.
                                             keepCurrentPageAfterSuccess({ modalIds: ['pickupTasksModal'] });
+=======
+                                            // Reload page to update delivery list
+                                            location.reload();
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                         });
                                     } else {
                                         Swal.fire({
@@ -3756,6 +3892,7 @@ td{
                 }
             });
         }
+<<<<<<< HEAD
 
         // ================= DIVERT FUNCTIONALITY =================
         let currentDivertDeliveryId = null;
@@ -3959,6 +4096,8 @@ td{
                 return m;
             });
         }
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
         // ================= MOBILE NAVIGATION FUNCTIONS =================
         function initMobileNav() {
@@ -5552,10 +5691,13 @@ td{
                 hour12: true
             });
 
+<<<<<<< HEAD
             const cleanSINumber = (siNumber || '').toString().trim();
             const formattedSINumber = cleanSINumber ? (cleanSINumber.toUpperCase().startsWith('SI:') ? cleanSINumber : 'SI:' + cleanSINumber) : '';
             const siReceiptLine = formattedSINumber ? `<div class="info-line"><span class="info-label"></span><span class="info-value"> ${formattedSINumber}</span></div>` : '';
 
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             // Use delivery date for receipt header
             const receiptNumber = 'DR' + date.getFullYear() +
                                  String(date.getMonth() + 1).padStart(2, '0') +
@@ -5568,7 +5710,7 @@ td{
             let total = 0;
 
             if (items.length === 0) {
-                itemsHtml = '<tr><td colspan="4" style="text-align: center; padding: 8px;">No items</td></tr>';
+                itemsHtml = '<tr><td colspan="4" style="text-align: center; padding: 8px;">No items</td> </tr>';
             } else {
                 items.forEach(item => {
                     const parts = item.split(' x ');
@@ -5582,6 +5724,7 @@ td{
                             total += subtotal;
 
                             itemsHtml += `
+<<<<<<< HEAD
 <tr>
     <td colspan="4" class="item-name">
         ${itemName}
@@ -5606,6 +5749,15 @@ td{
 
 </tr>
 `;
+=======
+                                 <tr>
+                                    <td class="item-name">${itemName}</td>
+                                    <td class="text-center">${qty}</td>
+                                    <td class="text-right">₱${price.toFixed(2)}</td>
+                                    <td class="text-right">₱${subtotal.toFixed(2)}</td>
+                                 </tr>
+                            `;
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         }
                     }
                 });
@@ -5621,8 +5773,12 @@ td{
                     </div>
                     
                     <div class="receipt-info">
+<<<<<<< HEAD
                         <div class="info-line"><span class="info-value">${soNumber || '-'}</span></div>
                         ${siReceiptLine}
+=======
+                        <div class="info-line"><span class="info-label">Order:</span><span class="info-value">${soNumber}</span></div>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         <div class="info-line"><span class="info-label">Received:</span><span class="info-value">${signedBy}</span></div>
                     </div>
                     
@@ -5633,7 +5789,11 @@ td{
                                 <th class="text-center">Qty</th>
                                 <th class="text-right">Price</th>
                                 <th class="text-right">Total</th>
+<<<<<<< HEAD
                               </tr>
+=======
+                             </tr>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         </thead>
                         <tbody>
                             ${itemsHtml}
@@ -5662,6 +5822,7 @@ td{
         }
 
         function printThermalReceipt() {
+<<<<<<< HEAD
     if (!currentThermalReceipt || currentThermalReceipt.trim() === '') {
         alert('Walang receipt content na ipi-print.');
         return;
@@ -5857,6 +6018,21 @@ window.onload = function () {
 `);
     printWindow.document.close();
 }
+=======
+            const thermalDiv = document.getElementById('thermalReceipt');
+            thermalDiv.style.display = 'block';
+            thermalDiv.innerHTML = currentThermalReceipt;
+
+            setTimeout(() => {
+                window.print();
+
+                setTimeout(() => {
+                    thermalDiv.style.display = 'none';
+                    thermalDiv.innerHTML = '';
+                }, 100);
+            }, 100);
+        }
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
         function showLocation(lat, lng, customerName, address) {
             currentLat = parseFloat(lat);

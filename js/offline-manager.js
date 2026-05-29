@@ -28,13 +28,17 @@ class OfflineManager {
         // Check connection status regularly
         setInterval(() => this.checkConnection(), 5000);
         
+<<<<<<< HEAD
         // Track page navigation to cache pages
         this.setupPageTracking();
         
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         console.log('[OfflineManager] Initialized');
     }
 
     /**
+<<<<<<< HEAD
      * Setup page navigation tracking to cache all visited pages
      */
     setupPageTracking() {
@@ -72,6 +76,8 @@ class OfflineManager {
     }
 
     /**
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
      * Open IndexedDB
      */
     openDatabase() {

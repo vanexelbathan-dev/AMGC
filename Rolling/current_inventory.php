@@ -8,7 +8,11 @@ require_once '../config/session_handler.php';
 
 // Protect page - only Rolling Account role can access
 requireLogin();
+<<<<<<< HEAD
 requireRole(['rolling']);
+=======
+requireRole(['rolling_account']);
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
 // Check database connection
 if (!$conn) {
@@ -55,6 +59,7 @@ if (empty($user_initials)) {
  * Get default UOM info for an item (using per-item default_unit_type_id)
  */
 function getItemDefaultUOMInfo($conn, $item_id) {
+<<<<<<< HEAD
     // Compatible version: do not use items.default_unit_type_id.
     // The registered/default UoM is resolved from item_unit_pricing + unit_types.
     $query = "
@@ -94,6 +99,53 @@ function getItemDefaultUOMInfo($conn, $item_id) {
             return ['unit_type_name' => $name, 'multiplier' => 1, 'unit_type_id' => 0];
         }
         $fallback->close();
+=======
+    $query = "
+        SELECT ut.unit_type_name, COALESCE(ut.quantity_smallest_pack, 1) as multiplier, ut.unit_type_id
+        FROM items i
+        JOIN unit_types ut ON i.default_unit_type_id = ut.unit_type_id
+        WHERE i.item_id = ? AND ut.status = 'active'
+        LIMIT 1
+    ";
+    $stmt = $conn->prepare($query);
+    if (!$stmt) {
+        return ['unit_type_name' => 'Piece', 'multiplier' => 1, 'unit_type_id' => 0];
+    }
+    $stmt->bind_param('i', $item_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result ? $result->fetch_assoc() : null;
+    $stmt->close();
+    
+    if ($row) {
+        return [
+            'unit_type_name' => $row['unit_type_name'],
+            'multiplier' => (int)($row['multiplier'] ?? 1),
+            'unit_type_id' => (int)$row['unit_type_id']
+        ];
+    }
+    // Fallback: use the first active unit type for this item
+    $fallback_query = "
+        SELECT ut.unit_type_name, ut.quantity_smallest_pack as multiplier, ut.unit_type_id
+        FROM item_unit_pricing iup
+        JOIN unit_types ut ON iup.unit_type_id = ut.unit_type_id
+        WHERE iup.item_id = ? AND ut.status = 'active'
+        LIMIT 1
+    ";
+    $stmt2 = $conn->prepare($fallback_query);
+    if ($stmt2) {
+        $stmt2->bind_param('i', $item_id);
+        $stmt2->execute();
+        $result2 = $stmt2->get_result();
+        $row2 = $result2->fetch_assoc();
+        if ($row2) {
+            return [
+                'unit_type_name' => $row2['unit_type_name'],
+                'multiplier' => (int)($row2['multiplier'] ?? 1),
+                'unit_type_id' => (int)$row2['unit_type_id']
+            ];
+        }
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     }
     return ['unit_type_name' => 'Piece', 'multiplier' => 1, 'unit_type_id' => 0];
 }
@@ -140,7 +192,15 @@ if ($check_created_by && $check_created_by->num_rows > 0) {
 }
 
 // Add default_unit_type_id column if not exists
+<<<<<<< HEAD
 // default_unit_type_id is not required in this Rolling current inventory file.
+=======
+$check_default_unit = $conn->query("SHOW COLUMNS FROM items LIKE 'default_unit_type_id'");
+if (!$check_default_unit || $check_default_unit->num_rows == 0) {
+    $add_default_unit = "ALTER TABLE items ADD COLUMN default_unit_type_id INT(11) DEFAULT NULL AFTER unit_type";
+    $conn->query($add_default_unit);
+}
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
 // Check if branch_id column exists in suppliers table
 $suppliers_branch_column_exists = false;
@@ -161,6 +221,7 @@ if ($suppliers_branch_column_exists && !$view_all_branches && $branch_id > 0) {
     $suppliers_branch_condition = "AND branch_id = " . intval($branch_id);
 }
 
+<<<<<<< HEAD
 
 // RECEIVED-ONLY FILTER FOR ROLLING CURRENT INVENTORY
 // Rolling can only see item/UoM rows that THIS logged-in Rolling account personally received
@@ -220,12 +281,17 @@ $received_items_join = "
     ) rit_filter ON rit_filter.item_id = i.item_id
 ";
 
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 // Fetch all available price levels from database (filtered by branch)
 $priceLevels = [];
 $priceLevelQuery = "SELECT DISTINCT iup.price_level 
                    FROM item_unit_pricing iup
                    JOIN items i ON iup.item_id = i.item_id
+<<<<<<< HEAD
                    $received_items_join
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                    WHERE i.status = 'active'";
 if ($items_branch_column_exists && !$view_all_branches && $branch_id > 0) {
     $priceLevelQuery .= " AND i.branch_id = " . intval($branch_id);
@@ -357,12 +423,15 @@ if (!$check_beginning_inventory_column || $check_beginning_inventory_column->num
 }
 $conn->query("UPDATE item_unit_inventory SET beginning_inventory = current_inventory WHERE beginning_inventory IS NULL OR beginning_inventory = 0");
 
+<<<<<<< HEAD
 // Rolling inventory is tracked separately per Rolling account.
 // This page must show only the stock that the logged-in Rolling account personally received.
 // Rolling inventory uses existing item_unit_inventory with branch_id separation.
 
 
 
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 $create_item_images = "CREATE TABLE IF NOT EXISTS `item_images` (
     `image_id` int(11) NOT NULL AUTO_INCREMENT,
     `item_id` int(11) NOT NULL,
@@ -439,6 +508,7 @@ function saveItemUnitPricingHistory($conn, $item_id, $unit_type_id, $price_level
     $history_stmt->close();
 }
 function syncItemPriceSummaryFromPricing($conn, $item_id) {
+<<<<<<< HEAD
     $price_query = "
         SELECT COALESCE(iup.unit_price, i.unit_price, 0) AS unit_price
         FROM items i
@@ -448,6 +518,17 @@ function syncItemPriceSummaryFromPricing($conn, $item_id) {
         LEFT JOIN unit_types ut ON ut.unit_type_id = iup.unit_type_id
         WHERE i.item_id = ?
         ORDER BY ut.is_default_uom DESC, COALESCE(ut.quantity_smallest_pack, 1) ASC, iup.pricing_id ASC
+=======
+    $price_query = "SELECT 
+            i.default_unit_type_id,
+            COALESCE(iup.unit_price, 0) as unit_price
+        FROM items i
+        LEFT JOIN item_unit_pricing iup 
+            ON iup.item_id = i.item_id 
+            AND iup.unit_type_id = i.default_unit_type_id
+            AND iup.price_level = 'Standard'
+        WHERE i.item_id = ?
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         LIMIT 1";
     $price_stmt = $conn->prepare($price_query);
     if (!$price_stmt) {
@@ -585,6 +666,7 @@ function upsertItemUnitInventory($conn, $item_id, $unit_type_id, $current_invent
 }
 
 function syncItemSummaryFromDefaultInventory($conn, $item_id) {
+<<<<<<< HEAD
     $summary_query = "
         SELECT
             COALESCE(ut.unit_type_name, i.unit_type, 'Piece') AS unit_type_name,
@@ -596,6 +678,17 @@ function syncItemSummaryFromDefaultInventory($conn, $item_id) {
         LEFT JOIN item_unit_inventory inv ON inv.item_id = i.item_id AND inv.unit_type_id = iup.unit_type_id
         WHERE i.item_id = ?
         ORDER BY ut.is_default_uom DESC, COALESCE(ut.quantity_smallest_pack, 1) ASC, iup.pricing_id ASC
+=======
+    $summary_query = "SELECT 
+            i.default_unit_type_id,
+            ut.unit_type_name,
+            inv.current_inventory,
+            inv.unit_cost
+        FROM items i
+        LEFT JOIN unit_types ut ON i.default_unit_type_id = ut.unit_type_id
+        LEFT JOIN item_unit_inventory inv ON inv.item_id = i.item_id AND inv.unit_type_id = i.default_unit_type_id
+        WHERE i.item_id = ?
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         LIMIT 1";
     $summary_stmt = $conn->prepare($summary_query);
     if (!$summary_stmt) {
@@ -605,7 +698,10 @@ function syncItemSummaryFromDefaultInventory($conn, $item_id) {
     $summary_stmt->execute();
     $summary_result = $summary_stmt->get_result();
     $summary = $summary_result ? $summary_result->fetch_assoc() : null;
+<<<<<<< HEAD
     $summary_stmt->close();
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
     $stock_value = 0;
     $unit_type_name = 'Piece';
@@ -639,12 +735,18 @@ function syncItemSummaryFromDefaultInventory($conn, $item_id) {
     if (!$update_stmt->execute()) {
         throw new Exception('Failed to update item summary: ' . $update_stmt->error);
     }
+<<<<<<< HEAD
     $update_stmt->close();
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 }
 
 
 
+<<<<<<< HEAD
 
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 // ========== SYNC RECEIVE INVENTORY / RETURNED MERCHANDISE TO PER-UOM INVENTORY ==========
 // Current Inventory displays stocks from item_unit_inventory.
 // Receive Inventory / Returned Merchandise can record stock in inventory_transactions,
@@ -708,10 +810,14 @@ function syncReceivedInventoryTransactionsToUnitInventory($conn, $branch_id, $us
         $where .= " AND LOWER(TRIM(it.`$type_col`)) IN ('in', 'receive', 'received')";
     }
     if ($ref_type_col) {
+<<<<<<< HEAD
         // Rolling Current Inventory should only sync stock received through Receive Inventory/Purchase Order.
         // purchase_order = normal Receive Inventory / PO receive
         // rolling_receive_in = receive from Branch Admin transfer for Rolling account
         $where .= " AND LOWER(TRIM(it.`$ref_type_col`)) IN ('purchase_order', 'rolling_receive_in')";
+=======
+        $where .= " AND LOWER(TRIM(it.`$ref_type_col`)) IN ('purchase_order', 'production', 'rmr', 'return', 'return_merchandise', 'rejected_delivery')";
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     }
     if ($trans_branch_col && !$view_all_branches && $branch_id > 0) {
         $where .= " AND it.`$trans_branch_col` = " . intval($branch_id);
@@ -725,7 +831,11 @@ function syncReceivedInventoryTransactionsToUnitInventory($conn, $branch_id, $us
             " . ($ref_id_col ? "it.`$ref_id_col`" : "0") . " AS reference_id,
             " . ($trans_branch_col ? "it.`$trans_branch_col`" : "0") . " AS tx_branch_id,
             " . ($created_at_col ? "it.`$created_at_col`" : "NOW()") . " AS tx_created_at,
+<<<<<<< HEAD
             0 AS default_unit_type_id,
+=======
+            i.default_unit_type_id,
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             COALESCE(utd_sync.unit_type_name, 'Piece') AS unit_type,
             i.unit_price,
             inv.current_inventory,
@@ -733,9 +843,15 @@ function syncReceivedInventoryTransactionsToUnitInventory($conn, $branch_id, $us
             log.transaction_id AS already_synced
         FROM inventory_transactions it
         JOIN items i ON i.item_id = it.item_id
+<<<<<<< HEAD
         LEFT JOIN unit_types utd_sync ON utd_sync.unit_type_id = 0
         LEFT JOIN item_unit_inventory_receive_sync_log log ON log.transaction_id = it.transaction_id
         LEFT JOIN item_unit_inventory inv ON inv.item_id = i.item_id AND inv.unit_type_id = 0
+=======
+        LEFT JOIN unit_types utd_sync ON utd_sync.unit_type_id = i.default_unit_type_id
+        LEFT JOIN item_unit_inventory_receive_sync_log log ON log.transaction_id = it.transaction_id
+        LEFT JOIN item_unit_inventory inv ON inv.item_id = i.item_id AND inv.unit_type_id = i.default_unit_type_id
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         $where
         AND log.transaction_id IS NULL
         ORDER BY it.transaction_id ASC
@@ -958,7 +1074,11 @@ function importFindExistingItem($conn, $item_code, $item_name, $branch_id, $item
     $item_name = trim((string)$item_name);
 
     if ($item_code !== '') {
+<<<<<<< HEAD
         $query = "SELECT item_id, item_code, item_name, description, category, stock, reorder_level, status, unit_type, unit_price, product_image_url, 0 AS default_unit_type_id FROM items WHERE item_code = ?";
+=======
+        $query = "SELECT item_id, item_code, item_name, description, category, stock, reorder_level, status, unit_type, unit_price, product_image_url, default_unit_type_id FROM items WHERE item_code = ?";
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         $types = 's';
         $params = [$item_code];
         if ($items_branch_column_exists && !$view_all_branches && $branch_id > 0) {
@@ -976,7 +1096,11 @@ function importFindExistingItem($conn, $item_code, $item_name, $branch_id, $item
     }
 
     if ($item_name !== '') {
+<<<<<<< HEAD
         $query = "SELECT item_id, item_code, item_name, description, category, stock, reorder_level, status, unit_type, unit_price, product_image_url, 0 AS default_unit_type_id FROM items WHERE LOWER(TRIM(item_name)) = LOWER(TRIM(?))";
+=======
+        $query = "SELECT item_id, item_code, item_name, description, category, stock, reorder_level, status, unit_type, unit_price, product_image_url, default_unit_type_id FROM items WHERE LOWER(TRIM(item_name)) = LOWER(TRIM(?))";
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         $types = 's';
         $params = [$item_name];
         if ($items_branch_column_exists && !$view_all_branches && $branch_id > 0) {
@@ -1177,12 +1301,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     error_reporting(E_ALL);
     
     try {
+<<<<<<< HEAD
         $action = $_POST['action'] ?? '';
         $readonly_actions = ['add_item', 'import_items', 'update_item', 'delete_item_image', 'batch_update_price_level', 'get_batch_price_level_items', 'toggle_status'];
         if (in_array($action, $readonly_actions, true)) {
             throw new Exception('Rolling Current Inventory is receive-only. This action is not allowed.');
         }
 
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         $conn->begin_transaction();
         
         // ADD ITEM
@@ -1432,8 +1559,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     COALESCE(ut.barcode, '') AS barcode,
                     COALESCE(ut.quantity_smallest_pack, iup.unit_quantity, 1) AS qty_smallest_pack,
                     CASE
+<<<<<<< HEAD
                         WHEN ut.is_default_uom = 1 THEN 'yes'
                         WHEN COALESCE(ut.unit_type_name, i.unit_type, 'Piece') = COALESCE(i.unit_type, 'Piece') THEN 'yes'
+=======
+                        WHEN i.default_unit_type_id IS NOT NULL AND i.default_unit_type_id = iup.unit_type_id THEN 'yes'
+                        WHEN i.default_unit_type_id IS NULL AND COALESCE(ut.unit_type_name, i.unit_type, 'Piece') = COALESCE(i.unit_type, 'Piece') THEN 'yes'
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         ELSE 'no'
                     END AS default_uom,
                     COALESCE(ut.status, 'active') AS unit_status,
@@ -1445,11 +1577,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     COALESCE(inv.as_of_date, '') AS as_of_date,
                     COALESCE(inv.unit_cost, i.unit_price, 0) AS unit_cost
                 FROM items i
+<<<<<<< HEAD
                 $received_items_join
                 LEFT JOIN item_unit_pricing iup ON iup.item_id = i.item_id
                 LEFT JOIN unit_types ut ON ut.unit_type_id = iup.unit_type_id
                 LEFT JOIN item_unit_inventory inv ON inv.item_id = i.item_id AND inv.unit_type_id = iup.unit_type_id
                 LEFT JOIN item_unit_inventory inv_default ON inv_default.item_id = i.item_id AND inv_default.unit_type_id = 0
+=======
+                LEFT JOIN item_unit_pricing iup ON iup.item_id = i.item_id
+                LEFT JOIN unit_types ut ON ut.unit_type_id = iup.unit_type_id
+                LEFT JOIN item_unit_inventory inv ON inv.item_id = i.item_id AND inv.unit_type_id = iup.unit_type_id
+                LEFT JOIN item_unit_inventory inv_default ON inv_default.item_id = i.item_id AND inv_default.unit_type_id = i.default_unit_type_id
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 WHERE i.status <> 'deleted'
                 $items_branch_condition
                 ORDER BY
@@ -1457,7 +1596,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     i.item_name ASC,
                     i.item_code ASC,
                     CASE
+<<<<<<< HEAD
                         WHEN ut.is_default_uom = 1 THEN 0
+=======
+                        WHEN i.default_unit_type_id IS NOT NULL AND i.default_unit_type_id = iup.unit_type_id THEN 0
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         ELSE 1
                     END ASC,
                     COALESCE(ut.unit_type_name, i.unit_type, 'Piece') ASC,
@@ -2074,7 +2217,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         elseif ($_POST['action'] === 'get_item') {
             $item_id = (int)($_POST['item_id'] ?? 0);
             if ($item_id <= 0) throw new Exception('Invalid item ID');
+<<<<<<< HEAD
             $item_query = "SELECT i.*, ut.unit_type_name as default_uom_name, ut.quantity_smallest_pack as default_multiplier, CONCAT(u.first_name, ' ', u.last_name) as created_by_name FROM items i LEFT JOIN item_unit_pricing iup_def ON iup_def.item_id = i.item_id LEFT JOIN unit_types ut ON iup_def.unit_type_id = ut.unit_type_id LEFT JOIN users u ON i.created_by = u.user_id WHERE i.item_id = ?";
+=======
+            $item_query = "SELECT i.*, ut.unit_type_name as default_uom_name, ut.quantity_smallest_pack as default_multiplier, CONCAT(u.first_name, ' ', u.last_name) as created_by_name FROM items i LEFT JOIN unit_types ut ON i.default_unit_type_id = ut.unit_type_id LEFT JOIN users u ON i.created_by = u.user_id WHERE i.item_id = ?";
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             if ($items_branch_column_exists && !$view_all_branches && $branch_id > 0) {
                 $item_query .= " AND i.branch_id = ?";
             }
@@ -2092,6 +2239,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
             $item = $item_result->fetch_assoc();
 
+<<<<<<< HEAD
             // Query only the Unit Type(s) personally received by this Rolling account.
             // Do NOT use item_unit_inventory.current_inventory here because that can contain Branch Admin totals.
             $unit_types_query = "
@@ -2150,6 +2298,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $unit_types_stmt = $conn->prepare($unit_types_query);
             if (!$unit_types_stmt) throw new Exception('Database prepare error');
             $unit_types_stmt->bind_param("iiiii", $branch_id, $user_id, $item_id, $branch_id, $user_id);
+=======
+            // Query unit types from BOTH item_unit_pricing AND item_unit_inventory
+            // This ensures we show all unit types that have received inventory, not just pricing entries
+            $unit_types_query = "
+            SELECT DISTINCT 
+                ut.unit_type_id, 
+                ut.unit_type_name, 
+                ut.barcode, 
+                ut.quantity_smallest_pack, 
+                ut.is_default_uom, 
+                ut.status as unit_status, 
+                COALESCE(iup.unit_quantity, 1) as unit_quantity, 
+                COALESCE(inv.current_inventory, 0) as current_inventory, 
+                COALESCE(inv.beginning_inventory, inv.current_inventory, 0) as beginning_inventory, 
+                inv.as_of_date, 
+                COALESCE(inv.unit_cost, 0) as unit_cost,
+                COALESCE(NULLIF(inv.unit_cost, 0), NULLIF(iup.unit_price, 0), 0) as average_cost,
+                (COALESCE(inv.current_inventory, 0) * COALESCE(NULLIF(inv.unit_cost, 0), NULLIF(iup.unit_price, 0), 0)) as total_cost,
+                i.reorder_level
+            FROM unit_types ut
+            LEFT JOIN item_unit_pricing iup ON iup.unit_type_id = ut.unit_type_id AND iup.item_id = ?
+            LEFT JOIN item_unit_inventory inv ON inv.item_id = ? AND inv.unit_type_id = ut.unit_type_id
+            LEFT JOIN items i ON i.item_id = ?
+            WHERE 
+                (iup.item_id = ? OR inv.item_id = ?)
+                AND ut.status = 'active'
+            ORDER BY ut.is_default_uom DESC, ut.unit_type_name ASC
+            ";
+            $unit_types_stmt = $conn->prepare($unit_types_query);
+            if (!$unit_types_stmt) throw new Exception('Database prepare error');
+            $unit_types_stmt->bind_param("iiiii", $item_id, $item_id, $item_id, $item_id, $item_id);
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             $unit_types_stmt->execute();
             $unit_types_result = $unit_types_stmt->get_result();
             $unit_types = $unit_types_result->fetch_all(MYSQLI_ASSOC);
@@ -2323,7 +2503,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $inventory_transactions_query = "SELECT " . implode(", ", $inventory_select_parts) . "
                         FROM inventory_transactions it
                         LEFT JOIN items i ON i.item_id = it.item_id
+<<<<<<< HEAD
                         LEFT JOIN unit_types ut_tx ON ut_tx.unit_type_id = 0
+=======
+                        LEFT JOIN unit_types ut_tx ON ut_tx.unit_type_id = i.default_unit_type_id
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         LEFT JOIN purchase_orders po
                             ON " . ($reference_type_col ? "it.$reference_type_col = 'purchase_order'" : "1=0") . "
                             AND " . ($reference_id_col ? "it.$reference_id_col = po.po_id" : "1=0") . "
@@ -2401,7 +2585,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         FROM sales_order_items soi
                         INNER JOIN sales_orders so ON soi.so_id = so.so_id
                         LEFT JOIN items i ON i.item_id = soi.item_id
+<<<<<<< HEAD
                         LEFT JOIN unit_types ut_sales ON ut_sales.unit_type_id = 0
+=======
+                        LEFT JOIN unit_types ut_sales ON ut_sales.unit_type_id = i.default_unit_type_id
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         LEFT JOIN users u ON " . ($sales_created_by_col ? "so.$sales_created_by_col = u.user_id" : "1=0") . "
                         WHERE soi.item_id = ?" . (($sales_branch_col && !$view_all_branches && $branch_id > 0) ? " AND so.$sales_branch_col = ?" : "") . ($sales_status_col ? " AND so.$sales_status_col IN ('pending','confirmed','processing','ready','delivered','completed')" : "");
 
@@ -2555,7 +2743,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $po_result = $po_stmt->get_result();
             $purchase_orders = $po_result->fetch_all(MYSQLI_ASSOC);
             foreach ($purchase_orders as &$po) {
+<<<<<<< HEAD
                 $items_query = "SELECT poi.*, i.item_name, i.item_code, COALESCE(ut_po.unit_type_name, '') AS unit_type FROM purchase_order_items poi JOIN items i ON poi.item_id = i.item_id LEFT JOIN item_unit_pricing iup_po ON iup_po.item_id = i.item_id LEFT JOIN unit_types ut_po ON ut_po.unit_type_id = iup_po.unit_type_id WHERE poi.po_id = ?";
+=======
+                $items_query = "SELECT poi.*, i.item_name, i.item_code, COALESCE(ut_po.unit_type_name, '') AS unit_type FROM purchase_order_items poi JOIN items i ON poi.item_id = i.item_id LEFT JOIN unit_types ut_po ON ut_po.unit_type_id = i.default_unit_type_id WHERE poi.po_id = ?";
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 $items_stmt = $conn->prepare($items_query);
                 if (!$items_stmt) throw new Exception('Database prepare error');
                 $items_stmt->bind_param("i", $po['po_id']);
@@ -2570,6 +2762,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         // GET LOW STOCK ITEMS
         elseif ($_POST['action'] === 'get_low_stock_items') {
             $low_stock_query = "
+<<<<<<< HEAD
                 SELECT
                     i.item_id,
                     i.item_code,
@@ -2602,10 +2795,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 WHERE COALESCE(rx.received_quantity, 0) <= i.reorder_level
                 AND i.status = 'active'
             ";
+=======
+                SELECT 
+                    i.item_id,
+                    i.item_code,
+                    i.item_name,
+                    COALESCE(inv.current_inventory, 0) as stock,
+                    i.reorder_level,
+                    COALESCE(ut.unit_type_name, '') as unit_type,
+                    i.unit_price,
+                    i.category
+                FROM items i
+                LEFT JOIN unit_types ut ON i.default_unit_type_id = ut.unit_type_id
+                LEFT JOIN item_unit_inventory inv ON inv.item_id = i.item_id AND inv.unit_type_id = i.default_unit_type_id
+                WHERE COALESCE(inv.current_inventory, 0) <= i.reorder_level
+                AND i.status = 'active'
+            ";
+            
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             if ($items_branch_column_exists && !$view_all_branches && $branch_id > 0) {
                 $low_stock_query .= " AND i.branch_id = ?";
                 $low_stock_stmt = $conn->prepare($low_stock_query);
                 if (!$low_stock_stmt) throw new Exception('Database prepare error');
+<<<<<<< HEAD
                 $low_stock_stmt->bind_param("iii", $branch_id, $user_id, $branch_id);
             } else {
                 $low_stock_stmt = $conn->prepare($low_stock_query);
@@ -2613,6 +2825,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $low_stock_stmt->bind_param("ii", $branch_id, $user_id);
             }
                         $low_stock_stmt->execute();
+=======
+                $low_stock_stmt->bind_param("i", $branch_id);
+            } else {
+                $low_stock_stmt = $conn->prepare($low_stock_query);
+                if (!$low_stock_stmt) throw new Exception('Database prepare error');
+            }
+            
+            $low_stock_stmt->execute();
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             $low_stock_result = $low_stock_stmt->get_result();
             $low_stock_items = $low_stock_result->fetch_all(MYSQLI_ASSOC);
             echo json_encode(['success' => true, 'items' => $low_stock_items]);
@@ -2924,6 +3145,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 
+<<<<<<< HEAD
 // Rolling stock is already updated during Receive Inventory using item_unit_inventory.branch_id.
 // Do not auto-sync here, to avoid double-adding received quantities.
 // syncReceivedInventoryTransactionsToUnitInventory($conn, (int)$branch_id, (int)$user_id, $items_branch_column_exists, (bool)$view_all_branches);
@@ -2962,10 +3184,21 @@ $conn->query("CREATE TABLE IF NOT EXISTS `rolling_inventory_transfer_items` (
 
 $items_query = "
     SELECT
+=======
+// Sync stocks received from Receive Inventory / Returned Merchandise before displaying Current Inventory.
+syncReceivedInventoryTransactionsToUnitInventory($conn, (int)$branch_id, (int)$user_id, $items_branch_column_exists, (bool)$view_all_branches);
+
+// FETCH ALL ITEMS FROM items TABLE
+// Only show inventory from item_unit_inventory table (which is synced from inventory_transactions)
+// This ensures accurate stock count from received inventory
+$items_query = "
+    SELECT 
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         i.item_id,
         i.item_code,
         i.item_name,
         i.description,
+<<<<<<< HEAD
         COALESCE(i.category, 'Uncategorized') AS category,
         rx.unit_type_id,
         COALESCE(rx.unit_type_name, ut.unit_type_name, i.unit_type, 'Piece') AS unit_type,
@@ -2977,6 +3210,12 @@ $items_query = "
         ) AS received_stock_breakdown,
         COALESCE(iup.unit_price, rx.unit_price, i.unit_price, 0) AS unit_price,
         COALESCE(NULLIF(TRIM(i.product_image_url), ''), img.primary_image, '') AS product_image_url,
+=======
+        i.category,
+        COALESCE(inv.current_inventory, 0) as quantity_on_hand,
+        COALESCE(ut.unit_type_name, '') as unit_type,
+        i.unit_price,
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         i.price_case,
         i.price_inner_pack,
         i.price_box,
@@ -2986,6 +3225,7 @@ $items_query = "
         i.branch_id,
         i.created_at,
         i.updated_at,
+<<<<<<< HEAD
         0 AS default_unit_type_id
     FROM (
         SELECT
@@ -3036,6 +3276,15 @@ $items_query = "
        AND COALESCE(iup.price_level, 'Standard') = 'Standard'
     WHERE i.status = 'active'
     ORDER BY COALESCE(i.category, 'Uncategorized'), i.item_name ASC, COALESCE(rx.unit_type_name, ut.unit_type_name, i.unit_type, 'Piece') ASC
+=======
+        i.default_unit_type_id
+    FROM items i
+    LEFT JOIN unit_types ut ON i.default_unit_type_id = ut.unit_type_id
+    LEFT JOIN item_unit_inventory inv ON inv.item_id = i.item_id AND inv.unit_type_id = i.default_unit_type_id
+    WHERE 1=1
+    $items_branch_condition
+    ORDER BY i.category, i.item_name ASC
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 ";
 
 $items_result = $conn->query($items_query);
@@ -3052,9 +3301,17 @@ if (!$items_result) {
         $default_multiplier = $default_info['multiplier'];
         $item['default_uom_multiplier'] = $default_multiplier;
         $item['default_uom_name'] = $default_info['unit_type_name'];
+<<<<<<< HEAD
         $item['stock_display'] = !empty($item['received_stock_breakdown'])
             ? htmlspecialchars($item['received_stock_breakdown'])
             : number_format($quantity_on_hand, (floor($quantity_on_hand) == $quantity_on_hand ? 0 : 2)) . ' ' . htmlspecialchars($default_unit_type);
+=======
+        $item['stock_display'] = number_format($quantity_on_hand, 2);
+        if (floor($quantity_on_hand) == $quantity_on_hand) {
+            $item['stock_display'] = number_format($quantity_on_hand, 0);
+        }
+        $item['stock_display'] .= ' ' . htmlspecialchars($default_unit_type);
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         error_log("[Stock Display] Item {$item_id}: Default UOM = {$default_unit_type}, Multiplier = {$default_multiplier}, Current Stock = {$quantity_on_hand}");
     }
     unset($item);
@@ -3096,9 +3353,64 @@ foreach ($items as $item) {
     $items_by_category[$category][] = $item;
 }
 
+<<<<<<< HEAD
 $supplier_items = [];
 $items_by_supplier = [];
 $supplier_items_result = false;
+=======
+$supplier_items_query = "
+    SELECT DISTINCT
+        s.supplier_id,
+        s.supplier_name,
+        i.item_id,
+        i.item_code,
+        i.item_name,
+        i.category,
+        COALESCE(inv.current_inventory, 0) as quantity_on_hand,
+        COALESCE(ut.unit_type_name, '') as unit_type,
+        i.reorder_level,
+        i.status,
+        i.branch_id
+    FROM suppliers s
+    JOIN purchase_orders po ON s.supplier_id = po.supplier_id
+    JOIN purchase_order_items poi ON po.po_id = poi.po_id
+    JOIN items i ON poi.item_id = i.item_id
+    LEFT JOIN unit_types ut ON i.default_unit_type_id = ut.unit_type_id
+    LEFT JOIN item_unit_inventory inv ON inv.item_id = i.item_id AND inv.unit_type_id = i.default_unit_type_id
+    WHERE s.status = 'active' AND i.status = 'active'
+";
+if ($items_branch_column_exists && !$view_all_branches && $branch_id > 0) {
+    $supplier_items_query .= " AND i.branch_id = " . intval($branch_id);
+}
+$supplier_items_query .= " GROUP BY i.item_id, s.supplier_id ORDER BY s.supplier_name, i.item_name";
+$supplier_items_result = $conn->query($supplier_items_query);
+if (!$supplier_items_result) {
+    error_log("Supplier Items Query Error: " . $conn->error);
+    $supplier_items = [];
+    $items_by_supplier = [];
+} else {
+    $supplier_items = $supplier_items_result->fetch_all(MYSQLI_ASSOC);
+    foreach ($supplier_items as &$item) {
+        $item_id = $item['item_id'];
+        $default_unit_type = $item['unit_type'];
+        $quantity_on_hand = $item['quantity_on_hand'];
+        $default_info = getItemDefaultUOMInfo($conn, $item_id);
+        $default_multiplier = $default_info['multiplier'];
+        $item['default_uom_multiplier'] = $default_multiplier;
+        $item['default_uom_name'] = $default_info['unit_type_name'];
+        $item['stock_display'] = number_format($quantity_on_hand) . ' ' . htmlspecialchars($default_unit_type);
+    }
+    unset($item);
+    $items_by_supplier = [];
+    foreach ($supplier_items as $item) {
+        $supplier = $item['supplier_name'] ?? 'Unknown Supplier';
+        if (!isset($items_by_supplier[$supplier])) {
+            $items_by_supplier[$supplier] = [];
+        }
+        $items_by_supplier[$supplier][] = $item;
+    }
+}
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
 $next_number = 1;
 if (!empty($items)) {
@@ -3129,6 +3441,7 @@ $total_items_count = count($items);
 $avg_per_item = $total_items_count > 0 ? round($avg_daily_offtake / $total_items_count, 1) : 0;
 $statNeedsAttention = $low_stock_count + $out_of_stock;
 
+<<<<<<< HEAD
 // Rolling dashboard stats are based ONLY on the items displayed in this page.
 // Because $items is already filtered to received items for this logged-in Rolling account,
 // every stat card below follows the same received-only scope.
@@ -3192,6 +3505,8 @@ function renderProductThumbnail($image_path, $item_name = '') {
     return '<img src="' . $safe_src . '" alt="' . $alt . '" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;" onerror="this.onerror=null; this.style.display=\'none\'; const icon=this.parentNode.querySelector(\'i\'); if(icon){icon.style.display=\'inline-block\';}"><i class="bi bi-image text-muted" style="display:none;"></i>';
 }
 
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 function getStockStatus($stock, $reorder_level) {
     if ($stock <= 0) return ['label' => 'Out of Stock', 'class' => 'bg-danger text-white'];
     if ($stock <= $reorder_level) return ['label' => 'Low Stock', 'class' => 'bg-warning text-dark'];
@@ -3220,10 +3535,157 @@ function getItemImagesHtml($item_id) {
     return $images_html;
 }
 
+<<<<<<< HEAD
 // ================= SYSTEM-WIDE TASK TABLE MODAL DISABLED FOR ROLLING =================
 // Rolling Current Inventory is read-only and should not show global task/reminder modals.
 $system_tasks = [];
 $show_system_task_modal = false;
+=======
+// ================= SYSTEM-WIDE TASK TABLE MODAL =================
+$system_tasks = [];
+$show_system_task_modal = false;
+
+if (!function_exists('amgcTaskTableExists')) {
+    function amgcTaskTableExists($conn, $table) {
+        $table = $conn->real_escape_string($table);
+        $res = $conn->query("SHOW TABLES LIKE '$table'");
+        return ($res && $res->num_rows > 0);
+    }
+}
+
+if (!function_exists('amgcTaskColumnExists')) {
+    function amgcTaskColumnExists($conn, $table, $column) {
+        $table = $conn->real_escape_string($table);
+        $column = $conn->real_escape_string($column);
+        $res = $conn->query("SHOW COLUMNS FROM `$table` LIKE '$column'");
+        return ($res && $res->num_rows > 0);
+    }
+}
+
+if (!function_exists('amgcAddSystemTask')) {
+    function amgcAddSystemTask(&$system_tasks, $type, $reference, $description, $page, $param, $id, $status = 'Pending') {
+        if (empty($id)) return;
+        $system_tasks[] = [
+            'type' => $type,
+            'reference' => $reference,
+            'description' => $description,
+            'page' => $page,
+            'param' => $param,
+            'id' => (int)$id,
+            'status' => $status
+        ];
+    }
+}
+
+try {
+    if (amgcTaskTableExists($conn, 'sales_orders') && amgcTaskColumnExists($conn, 'sales_orders', 'so_id')) {
+        $so_number_select = amgcTaskColumnExists($conn, 'sales_orders', 'so_number') ? 'so.so_number' : "CONCAT('SO #', so.so_id)";
+        $so_status_col = amgcTaskColumnExists($conn, 'sales_orders', 'order_status') ? 'so.order_status' : "'pending'";
+        $so_branch_filter = '';
+        if (!$view_all_branches && $branch_id > 0 && amgcTaskColumnExists($conn, 'sales_orders', 'branch_id')) {
+            $so_branch_filter = ' AND so.branch_id = ' . intval($branch_id);
+        }
+        $customer_join = '';
+        $customer_select = "'' AS customer_name";
+        if (amgcTaskTableExists($conn, 'customers') && amgcTaskColumnExists($conn, 'sales_orders', 'customer_id') && amgcTaskColumnExists($conn, 'customers', 'customer_id')) {
+            $customer_join = ' LEFT JOIN customers c ON so.customer_id = c.customer_id ';
+            $customer_select = amgcTaskColumnExists($conn, 'customers', 'customer_name') ? "COALESCE(c.customer_name, 'Customer') AS customer_name" : "'Customer' AS customer_name";
+        }
+        $q = "SELECT so.so_id, $so_number_select AS reference_no, $customer_select, $so_status_col AS task_status FROM sales_orders so $customer_join WHERE LOWER(TRIM($so_status_col)) IN ('pending', 'for approval', 'processing') $so_branch_filter ORDER BY so.so_id DESC LIMIT 5";
+        $r = $conn->query($q);
+        if ($r) {
+            while ($row = $r->fetch_assoc()) {
+                amgcAddSystemTask($system_tasks, 'Sales Order', $row['reference_no'] ?? ('SO #' . $row['so_id']), ($row['customer_name'] ?? 'Customer') . ' needs sales order action.', 'sales_order.php', 'open_so', $row['so_id'], ucfirst($row['task_status'] ?? 'Pending'));
+            }
+        }
+    }
+
+    if (amgcTaskTableExists($conn, 'sales_orders') && amgcTaskColumnExists($conn, 'sales_orders', 'so_id') && amgcTaskColumnExists($conn, 'sales_orders', 'order_status')) {
+        $so_number_select = amgcTaskColumnExists($conn, 'sales_orders', 'so_number') ? 'so.so_number' : "CONCAT('SO #', so.so_id)";
+        $payment_condition = '1=1';
+        if (amgcTaskColumnExists($conn, 'sales_orders', 'payment_status')) {
+            $payment_condition = "(so.payment_status IS NULL OR LOWER(TRIM(so.payment_status)) NOT IN ('paid', 'fully paid'))";
+        } elseif (amgcTaskColumnExists($conn, 'sales_orders', 'paid_status')) {
+            $payment_condition = "(so.paid_status IS NULL OR LOWER(TRIM(so.paid_status)) NOT IN ('paid', 'fully paid'))";
+        }
+        $so_branch_filter = '';
+        if (!$view_all_branches && $branch_id > 0 && amgcTaskColumnExists($conn, 'sales_orders', 'branch_id')) {
+            $so_branch_filter = ' AND so.branch_id = ' . intval($branch_id);
+        }
+        $customer_join = '';
+        $customer_select = "'' AS customer_name";
+        if (amgcTaskTableExists($conn, 'customers') && amgcTaskColumnExists($conn, 'sales_orders', 'customer_id') && amgcTaskColumnExists($conn, 'customers', 'customer_id')) {
+            $customer_join = ' LEFT JOIN customers c ON so.customer_id = c.customer_id ';
+            $customer_select = amgcTaskColumnExists($conn, 'customers', 'customer_name') ? "COALESCE(c.customer_name, 'Customer') AS customer_name" : "'Customer' AS customer_name";
+        }
+        $q = "SELECT so.so_id, $so_number_select AS reference_no, $customer_select FROM sales_orders so $customer_join WHERE LOWER(TRIM(so.order_status)) = 'delivered' AND $payment_condition $so_branch_filter ORDER BY so.so_id DESC LIMIT 5";
+        $r = $conn->query($q);
+        if ($r) {
+            while ($row = $r->fetch_assoc()) {
+                amgcAddSystemTask($system_tasks, 'Collection / Remit', $row['reference_no'] ?? ('SO #' . $row['so_id']), ($row['customer_name'] ?? 'Customer') . ' has delivered order that needs collection/remit.', 'collections.php', 'open_collection', $row['so_id'], 'Unpaid');
+            }
+        }
+    }
+
+    if (amgcTaskTableExists($conn, 'return_merchandise_requests') && amgcTaskColumnExists($conn, 'return_merchandise_requests', 'rmr_id')) {
+        $rmr_status_col = amgcTaskColumnExists($conn, 'return_merchandise_requests', 'status') ? 'status' : "'pending'";
+        $rmr_no_col = amgcTaskColumnExists($conn, 'return_merchandise_requests', 'rmr_number') ? 'rmr_number' : "CONCAT('RMR #', rmr_id)";
+        $rmr_branch_filter = '';
+        if (!$view_all_branches && $branch_id > 0 && amgcTaskColumnExists($conn, 'return_merchandise_requests', 'branch_id')) {
+            $rmr_branch_filter = ' AND branch_id = ' . intval($branch_id);
+        }
+        $q = "SELECT rmr_id, $rmr_no_col AS reference_no, $rmr_status_col AS task_status FROM return_merchandise_requests WHERE LOWER(TRIM($rmr_status_col)) IN ('pending', 'for approval', 'requested') $rmr_branch_filter ORDER BY rmr_id DESC LIMIT 5";
+        $r = $conn->query($q);
+        if ($r) {
+            while ($row = $r->fetch_assoc()) {
+                amgcAddSystemTask($system_tasks, 'Bad Order / RMR', $row['reference_no'] ?? ('RMR #' . $row['rmr_id']), 'Returned merchandise request needs review.', 'bad_orders.php', 'open_rmr', $row['rmr_id'], ucfirst($row['task_status'] ?? 'Pending'));
+            }
+        }
+    } elseif (amgcTaskTableExists($conn, 'bad_orders') && amgcTaskColumnExists($conn, 'bad_orders', 'bad_order_id')) {
+        $bo_status_col = amgcTaskColumnExists($conn, 'bad_orders', 'status') ? 'status' : "'pending'";
+        $bo_no_col = amgcTaskColumnExists($conn, 'bad_orders', 'bad_order_number') ? 'bad_order_number' : "CONCAT('Bad Order #', bad_order_id)";
+        $bo_branch_filter = '';
+        if (!$view_all_branches && $branch_id > 0 && amgcTaskColumnExists($conn, 'bad_orders', 'branch_id')) {
+            $bo_branch_filter = ' AND branch_id = ' . intval($branch_id);
+        }
+        $q = "SELECT bad_order_id, $bo_no_col AS reference_no, $bo_status_col AS task_status FROM bad_orders WHERE LOWER(TRIM($bo_status_col)) IN ('pending', 'for approval', 'requested') $bo_branch_filter ORDER BY bad_order_id DESC LIMIT 5";
+        $r = $conn->query($q);
+        if ($r) {
+            while ($row = $r->fetch_assoc()) {
+                amgcAddSystemTask($system_tasks, 'Bad Order', $row['reference_no'] ?? ('Bad Order #' . $row['bad_order_id']), 'Bad order needs review.', 'bad_orders.php', 'open_bad_order', $row['bad_order_id'], ucfirst($row['task_status'] ?? 'Pending'));
+            }
+        }
+    }
+
+    if (amgcTaskTableExists($conn, 'purchase_orders') && amgcTaskColumnExists($conn, 'purchase_orders', 'po_id')) {
+        $po_status_col = amgcTaskColumnExists($conn, 'purchase_orders', 'status') ? 'po.status' : "'pending'";
+        $po_no_col = amgcTaskColumnExists($conn, 'purchase_orders', 'po_number') ? 'po.po_number' : "CONCAT('PO #', po.po_id)";
+        $po_branch_filter = '';
+        if (!$view_all_branches && $branch_id > 0 && amgcTaskColumnExists($conn, 'purchase_orders', 'branch_id')) {
+            $po_branch_filter = ' AND po.branch_id = ' . intval($branch_id);
+        }
+        $supplier_join = '';
+        $supplier_select = "'' AS supplier_name";
+        if (amgcTaskTableExists($conn, 'suppliers') && amgcTaskColumnExists($conn, 'purchase_orders', 'supplier_id') && amgcTaskColumnExists($conn, 'suppliers', 'supplier_id')) {
+            $supplier_join = ' LEFT JOIN suppliers s ON po.supplier_id = s.supplier_id ';
+            $supplier_select = amgcTaskColumnExists($conn, 'suppliers', 'supplier_name') ? "COALESCE(s.supplier_name, 'Supplier') AS supplier_name" : "'Supplier' AS supplier_name";
+        }
+        $q = "SELECT po.po_id, $po_no_col AS reference_no, $supplier_select, $po_status_col AS task_status FROM purchase_orders po $supplier_join WHERE LOWER(TRIM($po_status_col)) IN ('pending', 'approved', 'partial', 'for receiving') $po_branch_filter ORDER BY po.po_id DESC LIMIT 5";
+        $r = $conn->query($q);
+        if ($r) {
+            while ($row = $r->fetch_assoc()) {
+                amgcAddSystemTask($system_tasks, 'Purchase Order', $row['reference_no'] ?? ('PO #' . $row['po_id']), ($row['supplier_name'] ?? 'Supplier') . ' purchase order needs receiving/action.', 'purchase_order.php', 'open_po', $row['po_id'], ucfirst($row['task_status'] ?? 'Pending'));
+            }
+        }
+    }
+
+    $show_system_task_modal = !empty($system_tasks);
+} catch (Throwable $e) {
+    error_log('System task table modal error: ' . $e->getMessage());
+    $system_tasks = [];
+    $show_system_task_modal = false;
+}
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 // ================= END SYSTEM-WIDE TASK TABLE MODAL =================
 
 ?>
@@ -3232,7 +3694,11 @@ $show_system_task_modal = false;
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+<<<<<<< HEAD
     <title>Current Inventory - Rolling Account</title>
+=======
+    <title>Current Inventory - Branch Admin</title>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
     <link rel="stylesheet" href="../css/current_inventory.css">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -3249,12 +3715,25 @@ $show_system_task_modal = false;
     <style>
         /* Mobile responsive adjustments */
         @media (max-width: 768px) {
+<<<<<<< HEAD
+=======
+            .stat-card { padding: 12px; min-height: 85px; margin-bottom: 8px; }
+            .stat-icon { font-size: 2rem; margin-right: 12px; }
+            .stat-value { font-size: 1.5rem; }
+            .stat-label { font-size: 0.8rem; }
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             .col-md-3, .col-md-4, .col-md-6 { width: 50%; padding-left: 8px; padding-right: 8px; }
             .row.g-3 { margin-left: -8px; margin-right: -8px; }
             .category-tabs { flex-wrap: nowrap; overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 10px; }
             .category-tab { white-space: nowrap; }
         }
         
+<<<<<<< HEAD
+=======
+        .stat-card.clickable { cursor: pointer; transition: transform 0.2s, box-shadow 0.2s; }
+        .stat-card.clickable:hover { transform: translateY(-2px); box-shadow: 0 4px 12px rgba(0,0,0,0.15); }
+        
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .item-thumbnail {
             width: 50px; height: 50px; object-fit: cover; border-radius: 8px;
             border: 1px solid #dee2e6; background-color: #f8f9fa;
@@ -3465,6 +3944,7 @@ $show_system_task_modal = false;
             }
         }
         
+<<<<<<< HEAD
         /* Additional CSS to support the new stat card structure */
 
 /* Remove old conflicting styles if any */
@@ -3814,6 +4294,283 @@ $show_system_task_modal = false;
     overflow: hidden !important;
     text-overflow: ellipsis !important;
 }
+=======
+         /* ===== SUPER RESPONSIVE STAT CARDS - HORIZONTAL SCROLL ON MOBILE ===== */
+
+        /* Base styles - mobile first approach */
+        .stat-card {
+            border: none;
+            border-radius: 12px;
+            color: white;
+            padding: 0.8rem;
+            margin: 0;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+            height: 100%;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+            cursor: pointer;
+        }
+
+        .stat-card.clickable:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+        }
+
+        /* Stat Card Colors */
+        .stat-card.inventory { 
+            background: linear-gradient(135deg, #047857, #059669) !important;
+        }
+        .stat-card.stock { 
+            background: linear-gradient(135deg, #047857, #059669) !important;
+        }
+        .stat-card.delivery { 
+            background: linear-gradient(135deg, #047857, #059669) !important;
+        }
+        .stat-card.pending { 
+            background: linear-gradient(135deg, #047857, #059669) !important;
+        }
+        .stat-card.total { 
+            background: linear-gradient(135deg, #047857, #059669) !important;
+        }
+        .stat-card.offtake-card { 
+            background: linear-gradient(135deg, #047857, #059669) !important;
+        }
+        .stat-card.sales { 
+            background: linear-gradient(135deg, #047857, #059669) !important;
+        }
+
+        /* Fluid typography */
+        .stat-card i {
+            font-size: clamp(1.2rem, 5vw, 2rem);
+            margin-bottom: 0.25rem;
+        }
+
+        .stat-value {
+            font-size: clamp(0.9rem, 4vw, 1.6rem);
+            font-weight: 700;
+            line-height: 1.2;
+            margin: 0.1rem 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
+        }
+
+        .stat-label {
+            font-size: clamp(0.6rem, 2.8vw, 0.8rem);
+            font-weight: 500;
+            opacity: 0.95;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 100%;
+        }
+
+        .stat-card small {
+            font-size: clamp(0.45rem, 2vw, 0.65rem);
+            opacity: 0.85;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-top: 0.25rem;
+        }
+
+        .stat-card small i {
+            font-size: clamp(0.45rem, 2vw, 0.65rem);
+            margin-right: 3px;
+        }
+
+        /* ===== FOR STAT-CARD-ROW - HORIZONTAL SCROLL ON MOBILE ===== */
+        .row.stat-card-row {
+            display: flex;
+            flex-wrap: nowrap;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+            margin-right: -6px;
+            margin-left: -6px;
+            margin-bottom: 1.5rem;
+            padding-bottom: 4px;
+            scrollbar-width: thin;
+        }
+
+        .row.stat-card-row::-webkit-scrollbar {
+            height: 4px;
+        }
+
+        .row.stat-card-row::-webkit-scrollbar-track {
+            background: #e2e8f0;
+            border-radius: 10px;
+        }
+
+        .row.stat-card-row::-webkit-scrollbar-thumb {
+            background: var(--primary-green);
+            border-radius: 10px;
+        }
+
+        .row.stat-card-row > .col,
+        .row.stat-card-row > [class*="col-"] {
+            flex: 0 0 auto;
+            padding-right: 6px;
+            padding-left: 6px;
+            margin-bottom: 0;
+        }
+
+        @media (max-width: 991px) {
+            .row.stat-card-row {
+                flex-wrap: nowrap;
+                overflow-x: auto;
+                margin-right: -8px;
+                margin-left: -8px;
+                padding-bottom: 8px;
+            }
+            
+            .row.stat-card-row > .col,
+            .row.stat-card-row > [class*="col-"] {
+                flex: 0 0 calc(25% - 12px);
+                min-width: 120px;
+                max-width: 160px;
+                padding-right: 6px;
+                padding-left: 6px;
+            }
+            
+            .stat-card {
+                padding: 0.6rem;
+            }
+            
+            .stat-card i {
+                font-size: 1.2rem;
+                margin-bottom: 0.2rem;
+            }
+            
+            .stat-value {
+                font-size: 1rem;
+            }
+            
+            .stat-label {
+                font-size: 0.6rem;
+            }
+            
+            .stat-card small {
+                font-size: 0.45rem;
+                display: none;
+            }
+        }
+
+        @media (min-width: 992px) {
+            .row.stat-card-row {
+                flex-wrap: wrap;
+                overflow-x: visible;
+                margin-right: -8px;
+                margin-left: -8px;
+            }
+            
+            .row.stat-card-row > .col,
+            .row.stat-card-row > [class*="col-"] {
+                flex: 0 0 25%;
+                max-width: 25%;
+                padding-right: 8px;
+                padding-left: 8px;
+                margin-bottom: 16px;
+            }
+            
+            .stat-card {
+                align-items: flex-start !important;
+                text-align: left !important;
+                padding: 1rem;
+                min-height: 100px;
+                max-height: 130px;
+            }
+            
+            .stat-card i {
+                align-self: flex-start;
+                margin-bottom: 0.15rem;
+                font-size: 1.6rem;
+            }
+            
+            .stat-value {
+                align-self: flex-start;
+                margin: 0.05rem 0;
+                font-size: 1.4rem;
+                line-height: 1.1;
+            }
+            
+            .stat-label {
+                align-self: flex-start;
+                font-size: 0.75rem;
+                margin-top: 0.1rem;
+            }
+            
+            .stat-card small {
+                align-self: flex-start;
+                font-size: 0.65rem;
+                margin-top: 0.2rem;
+                display: block;
+            }
+        }
+
+        @media (max-width: 399px) {
+            .row.stat-card-row > .col,
+            .row.stat-card-row > [class*="col-"] {
+                flex: 0 0 calc(25% - 8px);
+                min-width: 90px;
+                padding-right: 4px;
+                padding-left: 4px;
+            }
+            
+            .stat-card {
+                padding: 0.4rem;
+            }
+            
+            .stat-card i { 
+                font-size: 0.9rem; 
+                margin-bottom: 0.1rem;
+            }
+            
+            .stat-value { 
+                font-size: 0.7rem; 
+            }
+            
+            .stat-label { 
+                font-size: 0.45rem; 
+            }
+        }
+
+        @media (max-height: 500px) and (orientation: landscape) {
+            .row.stat-card-row > .col,
+            .row.stat-card-row > [class*="col-"] {
+                flex: 0 0 calc(25% - 8px);
+                min-width: 100px;
+            }
+            
+            .stat-card {
+                padding: 0.3rem;
+                min-height: 55px;
+                max-height: 70px;
+            }
+            
+            .stat-card i {
+                font-size: 0.9rem;
+                margin-bottom: 0.05rem;
+            }
+            
+            .stat-value {
+                font-size: 0.7rem;
+            }
+            
+            .stat-label {
+                font-size: 0.45rem;
+            }
+            
+            .stat-card small {
+                display: none;
+            }
+        }
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
 
         /* ========== MOBILE CARD VIEW STYLES ========== */
@@ -4982,6 +5739,7 @@ $show_system_task_modal = false;
         .detail-dropdown-body {
             margin-top: 10px;
         }
+<<<<<<< HEAD
 
         /* Rolling read-only inventory table: center all visible columns */
         .custom-table.compact-table th,
@@ -5094,6 +5852,8 @@ $show_system_task_modal = false;
             .category-tab { white-space: nowrap !important; padding: 8px 12px !important; font-size: .82rem !important; }
             .more-dropdown { right: 0 !important; width: 205px !important; min-width: 205px !important; }
         }
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 </style>
 
 <style>
@@ -5176,6 +5936,7 @@ $show_system_task_modal = false;
                 <li class="nav-item">
                     <a class="nav-link" href="purchase_order.php">
                         <i class="bi bi-truck"></i>
+<<<<<<< HEAD
                         <span class="nav-text">Receive Inventory</span>
                     </a>
                 </li>
@@ -5193,6 +5954,11 @@ $show_system_task_modal = false;
                             <span class="nav-text">Reports</span>
                         </a>
                     </li>
+=======
+                        <span class="nav-text">Purchase Orders</span>
+                    </a>
+                </li>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             </ul>
         </div>
     </div>
@@ -5222,6 +5988,7 @@ $show_system_task_modal = false;
                         <p id="dashboardSubtitle">Real-time inventory from database</p>
                     </div>
                 </div>
+<<<<<<< HEAD
                 <!-- Rolling Inventory Stats: received-only and read-only -->
                 <div class="row stat-card-row g-1 g-sm-2">
                     <div class="col">
@@ -5230,20 +5997,44 @@ $show_system_task_modal = false;
                             <div class="stat-content">
                                 <div class="stat-value"><?= $statInventoryValue ?></div>
                                 <div class="stat-label">Inventory Value</div>
+=======
+                <!-- Additional Stats with Modals -->
+                <div class="row stat-card-row g-1 g-sm-2">
+                    <!-- Stat 1: Total Inventory Value -->
+                    <div class="col">
+                        <div class="stat-card total clickable" onclick="showInventoryValueDetails()">
+                            <i class="bi bi-coin"></i>
+                            <div class="stat-content">
+                                <div class="stat-value"><?= $statInventoryValue ?></div>
+                                <div class="stat-label">Total Inventory Value</div>
+                                <small><i class="bi bi-box-seam"></i> <?= number_format($total_stock) ?> units</small>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                             </div>
                         </div>
                     </div>
                     
+<<<<<<< HEAD
                     <div class="col">
                         <div class="stat-card offtake-card">
                             <i class="bi bi-box-seam"></i>
                             <div class="stat-content">
                                 <div class="stat-value"><?= number_format($statReceivedItems) ?></div>
                                 <div class="stat-label">Received Items</div>
+=======
+                    <!-- Stat 2: Average Daily Offtake (CLICKABLE with modal) -->
+                    <div class="col">
+                        <div class="stat-card offtake-card clickable" onclick="showOfftakeModal()">
+                            <i class="bi bi-graph-up-arrow"></i>
+                            <div class="stat-content">
+                                <div class="stat-value"><?= number_format($avg_daily_offtake, 1) ?></div>
+                                <div class="stat-label">Avg Daily Offtake</div>
+                                <small><i class="bi bi-calendar"></i> Last 30 days</small>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                             </div>
                         </div>
                     </div>
                     
+<<<<<<< HEAD
                     <div class="col">
                         <div class="stat-card sales">
                             <i class="bi bi-boxes"></i>
@@ -5251,12 +6042,28 @@ $show_system_task_modal = false;
                                 <div class="stat-value"><?= number_format($statReceivedStock) ?></div>
                                 <div class="stat-label">Received Stock</div>
                                 <small><?= number_format($statReceivedUomCount) ?> active UoM rows</small>
+=======
+                    <!-- Stat 3: Suppliers (CLICKABLE with modal) -->
+                    <div class="col">
+                        <div class="stat-card sales clickable" onclick="showSupplierSelector()">
+                            <i class="bi bi-building"></i>
+                            <div class="stat-content">
+                                <div class="stat-value"><?= $suppliers_count ?></div>
+                                <div class="stat-label">Suppliers</div>
+                                <small><i class="bi bi-building"></i> Active suppliers</small>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                             </div>
                         </div>
                     </div>
                     
+<<<<<<< HEAD
                     <div class="col">
                         <div class="stat-card pending">
+=======
+                    <!-- Stat 4: Needs Attention (CLICKABLE with modal) -->
+                    <div class="col">
+                        <div class="stat-card pending clickable" onclick="showLowStockModal()">
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                             <i class="bi bi-exclamation-triangle"></i>
                             <div class="stat-content">
                                 <div class="stat-value"><?= $statNeedsAttention ?></div>
@@ -5266,6 +6073,10 @@ $show_system_task_modal = false;
                         </div>
                     </div>
                 </div>
+<<<<<<< HEAD
+=======
+                
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
            <!-- STOCK ALERT TOAST - USING BOOTSTRAP ICONS (NO EXTERNAL CDN NEEDED) -->
 <div class="position-fixed top-0 end-0 p-3" style="z-index: 9999; pointer-events: none;">
@@ -5334,6 +6145,7 @@ $show_system_task_modal = false;
                 </div>
 
                 
+<<<<<<< HEAD
                 <!-- Rolling Current Inventory is receive-only.
                      Add Item, Update Price Level, By Category/By Supplier toggle, and import controls are hidden. -->
 
@@ -5341,11 +6153,28 @@ $show_system_task_modal = false;
                     /* Rolling inventory is read-only: hide status toggles and edit/delete actions. */
                     .col-status, .col-actions { display: none !important; }
                 </style>
+=======
+                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                    <div class="view-toggle">
+                        <button class="view-btn active" id="viewCategoryBtn" onclick="toggleView('category')"><i class="bi bi-grid"></i> By Category</button>
+                        <button class="view-btn" id="viewSupplierBtn" onclick="toggleView('supplier')"><i class="bi bi-building"></i> By Supplier</button>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2">
+                        <input type="file" id="importItemsFile" accept=".xlsx,.xls,.csv" style="display:none;" onchange="handleImportItemsFile(event)">
+                        <button class="btn btn-outline-warning" type="button" onclick="showBatchPriceLevelModal()"><i class="bi bi-cash-coin"></i> Update Price Level</button>
+                        <button class="btn btn-primary" onclick="showAddItemModal()"><i class="bi bi-plus-circle"></i> Add Item</button>
+                    </div>
+                </div>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
                 <!-- CATEGORY VIEW -->
                 <div id="categoryView">
                     <?php if (empty($items)): ?>
+<<<<<<< HEAD
                         <div class="empty-state text-center py-5"><i class="bi bi-inbox fs-1 d-block text-muted mb-2"></i><p class="text-muted">No received inventory items found</p></div>
+=======
+                        <div class="empty-state text-center py-5"><i class="bi bi-inbox fs-1 d-block text-muted mb-2"></i><p class="text-muted">No items found</p><button class="btn btn-primary mt-2" onclick="showAddItemModal()"><i class="bi bi-plus-circle"></i> Add Item</button></div>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     <?php else: ?>
                         <div class="category-tabs">
                             <div class="category-tab active" onclick="switchCategoryTab('cat-tab-all', this)" data-tab="cat-tab-all"><i class="bi bi-grid"></i> All Categories<span class="tab-badge"><?= $total_items ?></span></div>
@@ -5355,14 +6184,26 @@ $show_system_task_modal = false;
                         </div>
                         
                         <div id="cat-tab-all" class="tab-content active">
+<<<<<<< HEAD
                             <div class="table-container"><table class="table custom-table compact-table"><thead><th class="col-image">Image</th><th>Item Name</th><th>Category</th><?php if ($items_branch_column_exists && $view_all_branches): ?><th>Branch</th><?php endif; ?><th>Stock</th></thead><tbody>
                             <?php foreach ($items as $item): $stock_status = getStockStatus($item['quantity_on_hand'], $item['reorder_level']); ?>
                             <tr class="inventory-row" data-id="<?= $item['item_id'] ?>" data-code="<?= htmlspecialchars($item['item_code']) ?>" data-name="<?= htmlspecialchars($item['item_name']) ?>" data-category="<?= htmlspecialchars($item['category'] ?? '') ?>" data-status="<?= $item['status'] ?>" data-stock="<?= $item['quantity_on_hand'] ?>" data-reorder="<?= $item['reorder_level'] ?>" data-price="<?= $item['unit_price'] ?>" data-unit="<?= $item['unit_type'] ?>" data-description="<?= htmlspecialchars($item['description'] ?? '') ?>" data-branch="<?= $item['branch_id'] ?? '' ?>">
                                 <td class="col-image"><div class="item-thumbnail" data-item-id="<?= $item['item_id'] ?>"><?php if (!empty($item['product_image_url'])): ?><img src="<?= htmlspecialchars(normalizeProductImageSrc($item['product_image_url'])) ?>" alt="<?= htmlspecialchars($item['item_name']) ?>" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;" onerror="this.style.display='none';"><?php endif; ?><i class="bi bi-image text-muted" style="<?= !empty($item['product_image_url']) ? 'display:none;' : '' ?>"></i></div></td>
+=======
+                            <div class="table-container"><table class="table custom-table compact-table"><thead><th class="col-image">Image</th><th>Item Name</th><th>Category</th><?php if ($items_branch_column_exists && $view_all_branches): ?><th>Branch</th><?php endif; ?><th>Stock</th><th class="col-status">Active</th><th class="col-actions">Actions</th> </thead><tbody>
+                            <?php foreach ($items as $item): $stock_status = getStockStatus($item['quantity_on_hand'], $item['reorder_level']); ?>
+                            <tr class="inventory-row" data-id="<?= $item['item_id'] ?>" data-code="<?= htmlspecialchars($item['item_code']) ?>" data-name="<?= htmlspecialchars($item['item_name']) ?>" data-category="<?= htmlspecialchars($item['category'] ?? '') ?>" data-status="<?= $item['status'] ?>" data-stock="<?= $item['quantity_on_hand'] ?>" data-reorder="<?= $item['reorder_level'] ?>" data-price="<?= $item['unit_price'] ?>" data-unit="<?= $item['unit_type'] ?>" data-description="<?= htmlspecialchars($item['description'] ?? '') ?>" data-branch="<?= $item['branch_id'] ?? '' ?>">
+                                <td class="col-image"><div class="item-thumbnail" data-item-id="<?= $item['item_id'] ?>"><?php if (!empty($item['product_image_url'])): ?><img src="../uploads/products/<?= htmlspecialchars($item['product_image_url']) ?>" alt="<?= htmlspecialchars($item['item_name']) ?>" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;" onerror="this.style.display='none';"><?php endif; ?><i class="bi bi-image text-muted" style="<?= !empty($item['product_image_url']) ? 'display:none;' : '' ?>"></i></div></td>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                 <td><strong><?= htmlspecialchars($item['item_name']) ?></strong></td>
                                 <td><?= htmlspecialchars($item['category'] ?? 'Uncategorized') ?></td>
                                 <?php if ($items_branch_column_exists && $view_all_branches): ?><td><span class="badge bg-info">Branch <?= $item['branch_id'] ?? 'N/A' ?></span></td><?php endif; ?>
                                 <td><span class="<?= $item['quantity_on_hand'] <= $item['reorder_level'] ? 'text-danger fw-bold' : '' ?>"><?= $item['stock_display'] ?></span><span class="badge <?= $stock_status['class'] ?> ms-1"><?= $stock_status['label'] ?></span></td>
+<<<<<<< HEAD
+=======
+                                <td class="col-status"><div class="status-toggle"><label class="toggle-switch"><input type="checkbox" class="status-checkbox" data-id="<?= $item['item_id'] ?>" <?= $item['status'] === 'active' ? 'checked' : '' ?> onchange="toggleItemStatus(<?= $item['item_id'] ?>, this)"><span class="toggle-slider"></span></label></div></td>
+                                <td class="col-actions"><div class="action-buttons"><button class="btn-action btn-edit" onclick="event.stopPropagation(); editItem(<?= $item['item_id'] ?>)" title="Edit"><i class="bi bi-pencil"></i></button><button class="btn-action btn-delete" onclick="event.stopPropagation(); deleteItem(<?= $item['item_id'] ?>)" title="Delete"><i class="bi bi-trash"></i></button></div></td>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                             </tr>
                             <?php endforeach; ?>
                             </tbody></table></div>
@@ -5370,14 +6211,26 @@ $show_system_task_modal = false;
                         
                         <?php foreach ($items_by_category as $category => $category_items): $tab_id = 'cat-tab-' . preg_replace('/[^a-z0-9]/i', '-', strtolower($category)); ?>
                         <div id="<?= $tab_id ?>" class="tab-content" data-category="<?= htmlspecialchars($category) ?>">
+<<<<<<< HEAD
                             <div class="table-container"><table class="table custom-table compact-table"><thead><th class="col-image">Image</th><th>Item Name</th><th>Category</th><?php if ($items_branch_column_exists && $view_all_branches): ?><th>Branch</th><?php endif; ?><th>Stock</th></thead><tbody>
                             <?php foreach ($category_items as $item): $stock_status = getStockStatus($item['quantity_on_hand'], $item['reorder_level']); ?>
                             <tr class="inventory-row" data-id="<?= $item['item_id'] ?>" data-code="<?= htmlspecialchars($item['item_code']) ?>" data-name="<?= htmlspecialchars($item['item_name']) ?>" data-category="<?= htmlspecialchars($item['category'] ?? '') ?>" data-status="<?= $item['status'] ?>" data-stock="<?= $item['quantity_on_hand'] ?>" data-reorder="<?= $item['reorder_level'] ?>" data-price="<?= $item['unit_price'] ?>" data-unit="<?= $item['unit_type'] ?>" data-description="<?= htmlspecialchars($item['description'] ?? '') ?>" data-branch="<?= $item['branch_id'] ?? '' ?>">
                                 <td class="col-image"><div class="item-thumbnail" data-item-id="<?= $item['item_id'] ?>"><?php if (!empty($item['product_image_url'])): ?><img src="<?= htmlspecialchars(normalizeProductImageSrc($item['product_image_url'])) ?>" alt="<?= htmlspecialchars($item['item_name']) ?>" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;" onerror="this.style.display='none';"><?php endif; ?><i class="bi bi-image text-muted" style="<?= !empty($item['product_image_url']) ? 'display:none;' : '' ?>"></i></div></td>
+=======
+                            <div class="table-container"><table class="table custom-table compact-table"><thead><th class="col-image">Image</th><th>Item Name</th><th>Category</th><?php if ($items_branch_column_exists && $view_all_branches): ?><th>Branch</th><?php endif; ?><th>Stock</th><th class="col-status">Active</th><th class="col-actions">Actions</th> </thead><tbody>
+                            <?php foreach ($category_items as $item): $stock_status = getStockStatus($item['quantity_on_hand'], $item['reorder_level']); ?>
+                            <tr class="inventory-row" data-id="<?= $item['item_id'] ?>" data-code="<?= htmlspecialchars($item['item_code']) ?>" data-name="<?= htmlspecialchars($item['item_name']) ?>" data-category="<?= htmlspecialchars($item['category'] ?? '') ?>" data-status="<?= $item['status'] ?>" data-stock="<?= $item['quantity_on_hand'] ?>" data-reorder="<?= $item['reorder_level'] ?>" data-price="<?= $item['unit_price'] ?>" data-unit="<?= $item['unit_type'] ?>" data-description="<?= htmlspecialchars($item['description'] ?? '') ?>" data-branch="<?= $item['branch_id'] ?? '' ?>">
+                                <td class="col-image"><div class="item-thumbnail" data-item-id="<?= $item['item_id'] ?>"><?php if (!empty($item['product_image_url'])): ?><img src="../uploads/products/<?= htmlspecialchars($item['product_image_url']) ?>" alt="<?= htmlspecialchars($item['item_name']) ?>" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;" onerror="this.style.display='none';"><?php endif; ?><i class="bi bi-image text-muted" style="<?= !empty($item['product_image_url']) ? 'display:none;' : '' ?>"></i></div></td>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                 <td><strong><?= htmlspecialchars($item['item_name']) ?></strong></td>
                                 <td><?= htmlspecialchars($item['category'] ?? 'Uncategorized') ?></td>
                                 <?php if ($items_branch_column_exists && $view_all_branches): ?><td><span class="badge bg-info">Branch <?= $item['branch_id'] ?? 'N/A' ?></span></td><?php endif; ?>
                                 <td><span class="<?= $item['quantity_on_hand'] <= $item['reorder_level'] ? 'text-danger fw-bold' : '' ?>"><?= $item['stock_display'] ?></span><span class="badge <?= $stock_status['class'] ?> ms-1"><?= $stock_status['label'] ?></span></td>
+<<<<<<< HEAD
+=======
+                                <td class="col-status"><div class="status-toggle"><label class="toggle-switch"><input type="checkbox" class="status-checkbox" data-id="<?= $item['item_id'] ?>" <?= $item['status'] === 'active' ? 'checked' : '' ?> onchange="toggleItemStatus(<?= $item['item_id'] ?>, this)"><span class="toggle-slider"></span></label></div></td>
+                                <td class="col-actions"><div class="action-buttons"><button class="btn-action btn-edit" onclick="event.stopPropagation(); editItem(<?= $item['item_id'] ?>)" title="Edit"><i class="bi bi-pencil"></i></button><button class="btn-action btn-delete" onclick="event.stopPropagation(); deleteItem(<?= $item['item_id'] ?>)" title="Delete"><i class="bi bi-trash"></i></button></div></td>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                             </tr>
                             <?php endforeach; ?>
                             </tbody></table></div>
@@ -5400,14 +6253,26 @@ $show_system_task_modal = false;
                         </div>
                         
                         <div id="sup-tab-all" class="tab-content active">
+<<<<<<< HEAD
                             <div class="table-container"><table class="table custom-table compact-table"><thead><th class="col-image">Image</th><th>Item Name</th><th>Category</th><?php if ($items_branch_column_exists && $view_all_branches): ?><th>Branch</th><?php endif; ?><th>Stock</th></thead><tbody>
                             <?php foreach ($supplier_items as $item): $stock_status = getStockStatus($item['quantity_on_hand'], $item['reorder_level']); ?>
                             <tr class="inventory-row" data-id="<?= $item['item_id'] ?>" data-code="<?= htmlspecialchars($item['item_code']) ?>" data-name="<?= htmlspecialchars($item['item_name']) ?>" data-category="<?= htmlspecialchars($item['category'] ?? '') ?>" data-status="<?= $item['status'] ?>" data-stock="<?= $item['quantity_on_hand'] ?>" data-reorder="<?= $item['reorder_level'] ?>" data-price="0" data-unit="<?= $item['unit_type'] ?>" data-branch="<?= $item['branch_id'] ?? '' ?>">
                                 <td class="col-image"><div class="item-thumbnail" data-item-id="<?= $item['item_id'] ?>"><?php if (!empty($item['product_image_url'])): ?><img src="<?= htmlspecialchars(normalizeProductImageSrc($item['product_image_url'])) ?>" alt="<?= htmlspecialchars($item['item_name']) ?>" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;" onerror="this.style.display='none';"><?php endif; ?><i class="bi bi-image text-muted" style="<?= !empty($item['product_image_url']) ? 'display:none;' : '' ?>"></i></div></td>
+=======
+                            <div class="table-container"><table class="table custom-table compact-table"><thead><th class="col-image">Image</th><th>Item Name</th><th>Category</th><?php if ($items_branch_column_exists && $view_all_branches): ?><th>Branch</th><?php endif; ?><th>Stock</th><th class="col-status">Active</th><th class="col-actions">Actions</th> </thead><tbody>
+                            <?php foreach ($supplier_items as $item): $stock_status = getStockStatus($item['quantity_on_hand'], $item['reorder_level']); ?>
+                            <tr class="inventory-row" data-id="<?= $item['item_id'] ?>" data-code="<?= htmlspecialchars($item['item_code']) ?>" data-name="<?= htmlspecialchars($item['item_name']) ?>" data-category="<?= htmlspecialchars($item['category'] ?? '') ?>" data-status="<?= $item['status'] ?>" data-stock="<?= $item['quantity_on_hand'] ?>" data-reorder="<?= $item['reorder_level'] ?>" data-price="0" data-unit="<?= $item['unit_type'] ?>" data-branch="<?= $item['branch_id'] ?? '' ?>">
+                                <td class="col-image"><div class="item-thumbnail" data-item-id="<?= $item['item_id'] ?>"><?php if (!empty($item['product_image_url'])): ?><img src="../uploads/products/<?= htmlspecialchars($item['product_image_url']) ?>" alt="<?= htmlspecialchars($item['item_name']) ?>" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;" onerror="this.style.display='none';"><?php endif; ?><i class="bi bi-image text-muted" style="<?= !empty($item['product_image_url']) ? 'display:none;' : '' ?>"></i></div></td>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                 <td><strong><?= htmlspecialchars($item['item_name']) ?></strong></td>
                                 <td><?= htmlspecialchars($item['category'] ?? 'Uncategorized') ?></td>
                                 <?php if ($items_branch_column_exists && $view_all_branches): ?><td><span class="badge bg-info">Branch <?= $item['branch_id'] ?? 'N/A' ?></span></td><?php endif; ?>
                                 <td><span class="<?= $item['quantity_on_hand'] <= $item['reorder_level'] ? 'text-danger fw-bold' : '' ?>"><?= $item['stock_display'] ?></span><span class="badge <?= $stock_status['class'] ?> ms-1"><?= $stock_status['label'] ?></span></td>
+<<<<<<< HEAD
+=======
+                                <td class="col-status"><div class="status-toggle"><label class="toggle-switch"><input type="checkbox" class="status-checkbox" data-id="<?= $item['item_id'] ?>" <?= $item['status'] === 'active' ? 'checked' : '' ?> onchange="toggleItemStatus(<?= $item['item_id'] ?>, this)"><span class="toggle-slider"></span></label></div></td>
+                                <td class="col-actions"><div class="action-buttons"><button class="btn-action btn-view" onclick="event.stopPropagation(); viewItem(<?= $item['item_id'] ?>)" title="View"><i class="bi bi-eye"></i></button><button class="btn-action btn-edit" onclick="event.stopPropagation(); editItem(<?= $item['item_id'] ?>)" title="Edit"><i class="bi bi-pencil"></i></button><button class="btn-action btn-delete" onclick="event.stopPropagation(); deleteItem(<?= $item['item_id'] ?>)" title="Delete"><i class="bi bi-trash"></i></button></div></td>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                             </tr>
                             <?php endforeach; ?>
                             </tbody></table></div>
@@ -5415,14 +6280,26 @@ $show_system_task_modal = false;
                         
                         <?php foreach ($items_by_supplier as $supplier => $supplier_items_group): $tab_id = 'sup-tab-' . preg_replace('/[^a-z0-9]/i', '-', strtolower($supplier)); ?>
                         <div id="<?= $tab_id ?>" class="tab-content" data-supplier="<?= htmlspecialchars($supplier) ?>">
+<<<<<<< HEAD
                             <div class="table-container"><table class="table custom-table compact-table"><thead><th class="col-image">Image</th><th>Item Name</th><th>Category</th><?php if ($items_branch_column_exists && $view_all_branches): ?><th>Branch</th><?php endif; ?><th>Stock</th></thead><tbody>
                             <?php foreach ($supplier_items_group as $item): $stock_status = getStockStatus($item['quantity_on_hand'], $item['reorder_level']); ?>
                             <tr class="inventory-row" data-id="<?= $item['item_id'] ?>" data-code="<?= htmlspecialchars($item['item_code']) ?>" data-name="<?= htmlspecialchars($item['item_name']) ?>" data-category="<?= htmlspecialchars($item['category'] ?? '') ?>" data-status="<?= $item['status'] ?>" data-stock="<?= $item['quantity_on_hand'] ?>" data-reorder="<?= $item['reorder_level'] ?>" data-price="0" data-unit="<?= $item['unit_type'] ?>" data-branch="<?= $item['branch_id'] ?? '' ?>">
                                 <td class="col-image"><div class="item-thumbnail" data-item-id="<?= $item['item_id'] ?>"><?= renderProductThumbnail($item['product_image_url'] ?? '', $item['item_name'] ?? '') ?></div></td>
+=======
+                            <div class="table-container"><table class="table custom-table compact-table"><thead><th class="col-image">Image</th><th>Item Name</th><th>Category</th><?php if ($items_branch_column_exists && $view_all_branches): ?><th>Branch</th><?php endif; ?><th>Stock</th><th class="col-status">Active</th><th class="col-actions">Actions</th> </thead><tbody>
+                            <?php foreach ($supplier_items_group as $item): $stock_status = getStockStatus($item['quantity_on_hand'], $item['reorder_level']); ?>
+                            <tr class="inventory-row" data-id="<?= $item['item_id'] ?>" data-code="<?= htmlspecialchars($item['item_code']) ?>" data-name="<?= htmlspecialchars($item['item_name']) ?>" data-category="<?= htmlspecialchars($item['category'] ?? '') ?>" data-status="<?= $item['status'] ?>" data-stock="<?= $item['quantity_on_hand'] ?>" data-reorder="<?= $item['reorder_level'] ?>" data-price="0" data-unit="<?= $item['unit_type'] ?>" data-branch="<?= $item['branch_id'] ?? '' ?>">
+                                <td class="col-image"><div class="item-thumbnail" data-item-id="<?= $item['item_id'] ?>"><i class="bi bi-image text-muted"></i></div></td>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                 <td><strong><?= htmlspecialchars($item['item_name']) ?></strong></td>
                                 <td><?= htmlspecialchars($item['category'] ?? 'Uncategorized') ?></td>
                                 <?php if ($items_branch_column_exists && $view_all_branches): ?><td><span class="badge bg-info">Branch <?= $item['branch_id'] ?? 'N/A' ?></span></td><?php endif; ?>
                                 <td><span class="<?= $item['quantity_on_hand'] <= $item['reorder_level'] ? 'text-danger fw-bold' : '' ?>"><?= $item['stock_display'] ?></span><span class="badge <?= $stock_status['class'] ?> ms-1"><?= $stock_status['label'] ?></span></td>
+<<<<<<< HEAD
+=======
+                                <td class="col-status"><div class="status-toggle"><label class="toggle-switch"><input type="checkbox" class="status-checkbox" data-id="<?= $item['item_id'] ?>" <?= $item['status'] === 'active' ? 'checked' : '' ?> onchange="toggleItemStatus(<?= $item['item_id'] ?>, this)"><span class="toggle-slider"></span></label></div></td>
+                                <td class="col-actions"><div class="action-buttons"><button class="btn-action btn-view" onclick="event.stopPropagation(); viewItem(<?= $item['item_id'] ?>)" title="View"><i class="bi bi-eye"></i></button><button class="btn-action btn-edit" onclick="event.stopPropagation(); editItem(<?= $item['item_id'] ?>)" title="Edit"><i class="bi bi-pencil"></i></button><button class="btn-action btn-delete" onclick="event.stopPropagation(); deleteItem(<?= $item['item_id'] ?>)" title="Delete"><i class="bi bi-trash"></i></button></div></td>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                             </tr>
                             <?php endforeach; ?>
                             </tbody></table></div>
@@ -5439,6 +6316,7 @@ $show_system_task_modal = false;
     <!-- Mobile Bottom Navigation -->
     <div class="mobile-nav" id="mobileNav">
         <ul class="nav">
+<<<<<<< HEAD
             <li class="nav-item">
                 <a class="nav-link active" href="current_inventory.php">
                     <i class="bi bi-box-seam"></i>
@@ -5488,6 +6366,14 @@ $show_system_task_modal = false;
                     </a>
                 </div>
             </li>
+=======
+            <li class="nav-item"><a class="nav-link" href="current_inventory.php"><i class="bi bi-box-seam"></i><span>Inventory</span></a></li>
+            <li class="nav-item"><a class="nav-link" href="customer_orderproduct.php"><i class="bi bi-person-plus"></i><span>Orders</span></a></li>
+            <li class="nav-item"><a class="nav-link" href="collections.php"><i class="bi bi-cash-stack"></i><span>Collections</span></a></li>
+            <li class="nav-item"><a class="nav-link" href="sales_order.php"><i class="bi bi-cart"></i><span>Sales</span></a></li>
+            <li class="nav-item"><a class="nav-link" href="purchase_order.php"><i class="bi bi-truck"></i><span>Purchase</span></a></li>
+            <li class="nav-item dropdown-more" id="moreDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'moreDropdownMenu')"><i class="bi bi-three-dots-vertical"></i><span>More</span></a><div class="more-dropdown" id="moreDropdownMenu"><div class="dropdown-divider"></div><a href="#" class="dropdown-item logout-item" onclick="showProfileModal(); return false;"><i class="bi bi-box-arrow-right"></i><span>Logout</span></a></div></li>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         </ul>
     </div>
 
@@ -5797,8 +6683,13 @@ $show_system_task_modal = false;
                 </div>
             </div>
             <div class="modal-footer">
+<<<<<<< HEAD
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
                     <i class="bi bi-x-circle me-1"></i> Close
+=======
+                <button type="button" class="btn btn-warning" onclick="editFromView()">
+                    <i class="bi bi-pencil me-1"></i> Edit Item
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 </button>
             </div>
         </div>
@@ -6153,6 +7044,7 @@ function escapeHtml(str) {
         .replace(/'/g, '&#39;');
 }
 
+<<<<<<< HEAD
 function showCleanNoImage(imgElement) {
     if (!imgElement || !imgElement.parentNode) return;
     const fallback = document.createElement('div');
@@ -6161,6 +7053,8 @@ function showCleanNoImage(imgElement) {
     imgElement.replaceWith(fallback);
 }
 
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 // ========== FIX MODAL BACKDROP ISSUE ==========
 function cleanupModalBackdrops() {
     document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.remove());
@@ -7738,6 +8632,7 @@ function viewItem(id) {
 
                 const formatMoney = (value) => `₱${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                 const formatNumber = (value) => Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+<<<<<<< HEAD
                 const normalizeImageSrc = (rawPath) => {
                     let imagePath = String(rawPath || '').trim();
                     if (!imagePath) return '';
@@ -7748,6 +8643,8 @@ function viewItem(id) {
                     return '../uploads/products/' + imagePath.split('/').pop();
                 };
                 const imageOnError = 'showCleanNoImage(this)';
+=======
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 
                 let stockClass = '';
                 if (stock <= 0) stockClass = 'out-of-stock';
@@ -7769,6 +8666,7 @@ function viewItem(id) {
                 let imagesHtml = '';
                 let mainImageHtml = '';
                 
+<<<<<<< HEAD
                 const imageSources = [];
                 if (Array.isArray(images) && images.length > 0) {
                     images.forEach(img => {
@@ -7791,6 +8689,16 @@ function viewItem(id) {
                     imageSources.forEach((img, idx) => {
                         const activeClass = (img.is_primary || idx === 0) ? 'active' : '';
                         imagesHtml += `<img src="${escapeHtml(img.src)}" alt="Thumbnail" class="item-image-thumb ${activeClass}" onerror="this.style.display='none'" onclick="document.getElementById('mainViewImage').src = this.src; document.querySelectorAll('.item-image-thumb').forEach(t => t.classList.remove('active')); this.classList.add('active');">`;
+=======
+                if (images.length > 0) {
+                    const primaryImage = images.find(img => img.is_primary) || images[0];
+                    mainImageHtml = `<img src="../uploads/products/${escapeHtml(primaryImage.image_path)}" alt="${escapeHtml(item.item_name)}" class="main-image" id="mainViewImage">`;
+                    
+                    imagesHtml = `<div class="item-images-carousel">`;
+                    images.forEach((img, idx) => {
+                        const activeClass = (img.is_primary || idx === 0) ? 'active' : '';
+                        imagesHtml += `<img src="../uploads/products/${escapeHtml(img.image_path)}" alt="Thumbnail" class="item-image-thumb ${activeClass}" onclick="document.getElementById('mainViewImage').src = this.src; document.querySelectorAll('.item-image-thumb').forEach(t => t.classList.remove('active')); this.classList.add('active');">`;
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     });
                     imagesHtml += `</div>`;
                 } else {
@@ -9549,7 +10457,51 @@ window.availablePriceLevels = <?php echo json_encode(array_values($priceLevels))
 </script>
 
 
+<<<<<<< HEAD
 <!-- Rolling task alert modal removed. -->
+=======
+<?php if (!empty($show_system_task_modal) && !empty($system_tasks)): ?>
+<div class="modal fade system-task-table-modal" id="systemTaskTableModal" tabindex="-1" aria-labelledby="systemTaskTableModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="systemTaskTableModalLabel"><i class="bi bi-list-task me-2"></i> Pending System Tasks</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="system-task-alert"><i class="bi bi-exclamation-triangle-fill me-1"></i> These records need action. Click any row to open the correct page and automatically open the selected record.</div>
+                <div class="system-task-table-wrap">
+                    <table class="table table-hover align-middle system-task-table">
+                        <thead><tr><th style="width:20%">Task</th><th style="width:20%">Reference</th><th>Description</th><th style="width:15%">Status</th></tr></thead>
+                        <tbody>
+                            <?php foreach ($system_tasks as $task): ?>
+                            <tr onclick="openSystemTaskRecord('<?php echo htmlspecialchars($task['page'], ENT_QUOTES); ?>','<?php echo htmlspecialchars($task['param'], ENT_QUOTES); ?>','<?php echo (int)$task['id']; ?>')">
+                                <td data-label="Task"><span class="system-task-type"><?php echo htmlspecialchars($task['type']); ?></span></td>
+                                <td data-label="Reference"><span class="system-task-ref"><?php echo htmlspecialchars($task['reference']); ?></span></td>
+                                <td data-label="Description"><div class="system-task-desc"><?php echo htmlspecialchars($task['description']); ?></div></td>
+                                <td data-label="Status"><span class="system-task-status"><?php echo htmlspecialchars($task['status']); ?></span></td>
+                            </tr>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<?php endif; ?>
+<script>
+function openSystemTaskRecord(page,param,id){
+    if(!page||!param||!id) return;
+    const sep = page.indexOf('?') === -1 ? '?' : '&';
+    window.location.href = page + sep
+        + encodeURIComponent(param) + '=' + encodeURIComponent(id)
+        + '&auto_open=1&open_record_id=' + encodeURIComponent(id)
+        + '&open_param=' + encodeURIComponent(param);
+}
+document.addEventListener('DOMContentLoaded',function(){<?php if (!empty($show_system_task_modal) && !empty($system_tasks)): ?>const el=document.getElementById('systemTaskTableModal');if(el&&typeof bootstrap!=='undefined'){new bootstrap.Modal(el).show()}<?php endif; ?>});
+</script>
+>>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
 </body>
 </html>
