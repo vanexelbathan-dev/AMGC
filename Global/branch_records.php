@@ -179,15 +179,13 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
     try {
         switch ($source) {
             case 'sales_orders':
-                // Get main Sales Order details
+                // Get main Sales Order details - FIXED: removed confirmed_by
                 $sql = "SELECT so.*, b.branch_name, c.customer_name, c.address, c.phone_number,
-                        CONCAT(u.first_name, ' ', u.last_name) as created_by_name,
-                        CONCAT(u2.first_name, ' ', u2.last_name) as confirmed_by_name
+                        CONCAT(u.first_name, ' ', u.last_name) as created_by_name
                         FROM sales_orders so
                         LEFT JOIN branches b ON so.branch_id = b.branch_id
                         LEFT JOIN customers c ON so.customer_id = c.customer_id
                         LEFT JOIN users u ON so.created_by = u.user_id
-                        LEFT JOIN users u2 ON so.confirmed_by = u2.user_id
                         WHERE so.so_id = ?";
                 $stmt = $conn->prepare($sql);
                 if (!$stmt) {
@@ -278,7 +276,7 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         }
                     }
                     
-                    // Get related Invoices with paid_at and paid_by (FIXED QUERY)
+                    // Get related Invoices with paid_at and paid_by
                     $invoices = [];
                     $inv_sql = "SELECT i.*,
                                 CONCAT(u.first_name, ' ', u.last_name) as paid_by_name
@@ -297,7 +295,7 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                                 'invoice_id' => $inv['invoice_id'],
                                 'invoice_number' => $inv['invoice_number'],
                                 'amount' => $inv['total_amount'],
-                                'status' => $inv['status'], // Dapat 'paid' na ito kung paid na sa DB
+                                'status' => $inv['status'],
                                 'created_at' => $inv['created_at'],
                                 'due_date' => $inv['due_date'] ?? null,
                                 'paid_at' => $inv['paid_at'],
@@ -366,7 +364,7 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         }
                     }
                     
-                    // Build complete transaction history (correct order)
+                    // ========== BUILD HISTORY WITH LOGICAL ORDER ==========
                     $history = [];
                     
                     // 1. Order Created
@@ -377,27 +375,18 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         'details' => 'Sales order created'
                     ];
                     
-                    // 2. Order Confirmed (if confirmed)
-                    if (!empty($row['confirmed_at'])) {
-                        $history[] = [
-                            'timestamp' => $row['confirmed_at'],
-                            'action' => 'Order Confirmed',
-                            'user' => $row['confirmed_by_name'] ?? 'System',
-                            'details' => 'Sales order confirmed for processing'
-                        ];
-                    }
-                    
-                    // 3. Pick List Events
+                    // 2. Pick List Created
                     foreach ($pick_lists as $pick) {
-                        // Pick List Created
                         $history[] = [
                             'timestamp' => $pick['created_at'],
                             'action' => 'Pick List Created',
                             'user' => $pick['picked_by_name'] !== 'N/A' ? $pick['picked_by_name'] : 'System',
                             'details' => 'Pick List #' . $pick['pick_list_number'] . ' created'
                         ];
-                        
-                        // Items Picked
+                    }
+                    
+                    // 3. Items Picked
+                    foreach ($pick_lists as $pick) {
                         if (!empty($pick['picked_at'])) {
                             $history[] = [
                                 'timestamp' => $pick['picked_at'],
@@ -406,8 +395,10 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                                 'details' => 'Items picked from warehouse'
                             ];
                         }
-                        
-                        // Items Verified
+                    }
+                    
+                    // 4. Items Verified
+                    foreach ($pick_lists as $pick) {
                         if (!empty($pick['verified_at'])) {
                             $history[] = [
                                 'timestamp' => $pick['verified_at'],
@@ -418,7 +409,7 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         }
                     }
                     
-                    // 4. Invoice Generated
+                    // 5. Invoice Generated
                     foreach ($invoices as $inv) {
                         $history[] = [
                             'timestamp' => $inv['created_at'],
@@ -426,8 +417,34 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                             'user' => 'System',
                             'details' => 'Invoice #' . $inv['invoice_number'] . ' generated for P' . number_format($inv['amount'], 2)
                         ];
-                        
-                        // Invoice Paid - lalabas lang ito kung may paid_at
+                    }
+                    
+                    // 6. Trip Assigned
+                    foreach ($trip_tickets as $trip) {
+                        if (!empty($trip['assigned_at'])) {
+                            $history[] = [
+                                'timestamp' => $trip['assigned_at'],
+                                'action' => 'Trip Assigned',
+                                'user' => $trip['assigned_by_name'] ?? 'System',
+                                'details' => 'Trip #' . $trip['trip_number'] . ' assigned to driver ' . $trip['driver_name']
+                            ];
+                        }
+                    }
+                    
+                    // 7. Trip Started (Departure)
+                    foreach ($trip_tickets as $trip) {
+                        if (!empty($trip['departure_time'])) {
+                            $history[] = [
+                                'timestamp' => $trip['departure_time'],
+                                'action' => 'Trip Started',
+                                'user' => $trip['driver_name'],
+                                'details' => 'Driver departed for delivery'
+                            ];
+                        }
+                    }
+                    
+                    // 8. Invoice Paid
+                    foreach ($invoices as $inv) {
                         if (!empty($inv['paid_at'])) {
                             $history[] = [
                                 'timestamp' => $inv['paid_at'],
@@ -438,29 +455,18 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         }
                     }
                     
-                    // 5. Trip Events
+                    // 9. Order Delivered
+                    if ($delivery && !empty($delivery['delivered_at'])) {
+                        $history[] = [
+                            'timestamp' => $delivery['delivered_at'],
+                            'action' => 'Order Delivered',
+                            'user' => $delivery['received_by'],
+                            'details' => 'Order delivered - signed by ' . $delivery['received_by']
+                        ];
+                    }
+                    
+                    // 10. Trip Completed (Arrival)
                     foreach ($trip_tickets as $trip) {
-                        // Trip Assigned
-                        if (!empty($trip['assigned_at'])) {
-                            $history[] = [
-                                'timestamp' => $trip['assigned_at'],
-                                'action' => 'Trip Assigned',
-                                'user' => $trip['assigned_by_name'] ?? 'System',
-                                'details' => 'Trip #' . $trip['trip_number'] . ' assigned to driver ' . $trip['driver_name']
-                            ];
-                        }
-                        
-                        // Trip Started (departure)
-                        if (!empty($trip['departure_time'])) {
-                            $history[] = [
-                                'timestamp' => $trip['departure_time'],
-                                'action' => 'Trip Started',
-                                'user' => $trip['driver_name'],
-                                'details' => 'Driver departed for delivery'
-                            ];
-                        }
-                        
-                        // Trip Completed (arrival)
                         if (!empty($trip['arrival_time'])) {
                             $history[] = [
                                 'timestamp' => $trip['arrival_time'],
@@ -471,28 +477,39 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         }
                     }
                     
-                    // 6. Delivery Events
-                    if ($delivery) {
-                        if (!empty($delivery['delivered_at'])) {
-                            $history[] = [
-                                'timestamp' => $delivery['delivered_at'],
-                                'action' => 'Order Delivered',
-                                'user' => $delivery['received_by'],
-                                'details' => 'Order delivered - signed by ' . $delivery['received_by']
-                            ];
-                        }
-                        if ($delivery['status'] === 'rejected') {
-                            $history[] = [
-                                'timestamp' => $delivery['delivered_at'] ?? date('Y-m-d H:i:s'),
-                                'action' => 'Delivery Rejected',
-                                'user' => $delivery['received_by'],
-                                'details' => 'Delivery was rejected'
-                            ];
-                        }
+                    // 11. Delivery Rejected (if applicable)
+                    if ($delivery && $delivery['status'] === 'rejected') {
+                        $history[] = [
+                            'timestamp' => $delivery['delivered_at'] ?? date('Y-m-d H:i:s'),
+                            'action' => 'Delivery Rejected',
+                            'user' => $delivery['received_by'],
+                            'details' => 'Delivery was rejected'
+                        ];
                     }
                     
-                    // Sort history by timestamp (ascending)
-                    usort($history, function($a, $b) {
+                    // ========== SORT BY LOGICAL ORDER + TIMESTAMP ==========
+                    // Define the desired sequence
+                    $orderMap = [
+                        'Order Created' => 1,
+                        'Pick List Created' => 2,
+                        'Items Picked' => 3,
+                        'Items Verified' => 4,
+                        'Invoice Generated' => 5,
+                        'Trip Assigned' => 6,
+                        'Trip Started' => 7,
+                        'Invoice Paid' => 8,
+                        'Order Delivered' => 9,
+                        'Trip Completed' => 10,
+                        'Delivery Rejected' => 11,
+                    ];
+                    
+                    usort($history, function($a, $b) use ($orderMap) {
+                        $seqA = $orderMap[$a['action']] ?? 999;
+                        $seqB = $orderMap[$b['action']] ?? 999;
+                        if ($seqA != $seqB) {
+                            return $seqA - $seqB;
+                        }
+                        // If same event type, sort by timestamp
                         return strtotime($a['timestamp'] ?? '0') - strtotime($b['timestamp'] ?? '0');
                     });
                     
@@ -581,6 +598,7 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         ];
                     }
 
+                    // Sort by timestamp (for purchase orders, just timestamp)
                     usort($history, function($a, $b) {
                         return strtotime($a['timestamp'] ?? '0') - strtotime($b['timestamp'] ?? '0');
                     });
@@ -1151,6 +1169,12 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                             <span class="nav-text">All Items</span>
                         </a>
                     </li>
+                    <li class="nav-item">
+    					<a class="nav-link" href="location_verification.php">
+        					<i class="bi bi-geo-alt-fill"></i>
+        					<span class="nav-text">Location Verification</span>
+    					</a>
+					</li>
                     <li class="nav-item">
                         <a class="nav-link" href="drivers.php">
                             <i class="bi bi-people"></i>
@@ -1798,7 +1822,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
             // helpers
             function pill(status) {
                 if (!status) return '';
-                // I-remove ang extra spaces at gawing lowercase
                 const s = status.toString().trim().toLowerCase();
                 
                 let c = 'gray';
@@ -1806,7 +1829,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 else if (['pending','draft','planned','open','processing','in_transit'].includes(s)) c = 'yellow';
                 else if (['cancelled','rejected'].includes(s)) c = 'red';
                 
-                // Ibalik ang original status para sa display (hindi lowercase)
                 return `<span class="s-pill ${c}">${escapeHtml(status)}</span>`;
             }
             function peso(v) { const n = parseFloat(v||0); return 'P' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
@@ -1884,28 +1906,20 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 });
             }
 
-            // Invoices - Dito ididisplay ang invoice status (paid/pending)
+            // Invoices
             if (invCount > 0) {
-                // I-print sa console ang lahat ng invoice data
-                console.log("=== INVOICE DEBUG ===");
-                console.log(record.invoices);
-                
                 leftHtml += `
                     <div class="m-section-title"><i class="bi bi-receipt"></i> Invoices (${invCount})</div>
                     <div class="m-card"><div class="m-card-body" style="padding:0"><div style="overflow-x:auto">
                         <table class="m-tbl">
                             <thead><tr><th>Invoice #</th><th style="text-align:right">Amount</th><th>Status</th><th>Created</th><th>Due Date</th></tr></thead>
-                            <tbody>${record.invoices.map(inv=>{
-                                // I-print ang bawat invoice status
-                                console.log("Invoice status from PHP:", inv.status);
-                                return `<tr>
-                                    <td style="font-weight:600">${escapeHtml(inv.invoice_number)}</td>
-                                    <td style="text-align:right">${peso(inv.amount)}</td>
-                                    <td>${pill(inv.status)}</td>
-                                    <td>${formatDateTime(inv.created_at)}</td>
-                                    <td>${inv.due_date?formatDateTime(inv.due_date):'N/A'}</td>
-                                </tr>`;
-                            }).join('')}</tbody>
+                            <tbody>${record.invoices.map(inv=>`<tr>
+                                <td style="font-weight:600">${escapeHtml(inv.invoice_number)}</td>
+                                <td style="text-align:right">${peso(inv.amount)}</td>
+                                <td>${pill(inv.status)}</td>
+                                <td>${formatDateTime(inv.created_at)}</td>
+                                <td>${inv.due_date?formatDateTime(inv.due_date):'N/A'}</td>
+                            </tr>`).join('')}</tbody>
                         </table>
                     </div></div></div>`;
             }
@@ -1948,13 +1962,14 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                     let dot = 'gray';
                     const a = ev.action;
                     if (a.includes('Created'))  dot = 'blue';
-                    else if (a.includes('Confirmed')||a.includes('Approved')) dot = 'cyan';
-                    else if (a.includes('Pick')||a.includes('Picked')) dot = 'cyan';
-                    else if (a.includes('Invoice')||a.includes('Payment')) dot = 'green';
+                    else if (a.includes('Pick'))  dot = 'cyan';
+                    else if (a.includes('Verified'))  dot = 'cyan';
+                    else if (a.includes('Invoice')||a.includes('Paid')) dot = 'green';
                     else if (a.includes('Trip')||a.includes('Assigned')) dot = 'yellow';
+                    else if (a.includes('Started')) dot = 'yellow';
                     else if (a.includes('Delivered')) dot = 'green';
                     else if (a.includes('Rejected')) dot = 'red';
-                    else if (a.includes('Submitted')) dot = 'blue';
+                    else if (a.includes('Completed')) dot = 'green';
                     return `<li class="tl-item">
                         <div class="tl-dot ${dot}"></div>
                         <div class="tl-action">${escapeHtml(ev.action)}</div>
@@ -1969,7 +1984,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 rightHtml += `<div class="m-empty"><i class="bi bi-clock"></i><p>No history recorded yet.</p></div>`;
             }
 
-            /* ---- Assemble ---- */
             el.innerHTML = `
                 <div class="m-summary">
                     <div class="m-summary-item"><div class="m-summary-lbl">${escapeHtml(record.type)}</div><div class="m-summary-val" style="font-weight:700">${escapeHtml(record.record_number)}</div></div>

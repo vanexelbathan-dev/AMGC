@@ -9,6 +9,34 @@ $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'branch_admin';
 $branch_id = $_SESSION['branch_id'] ?? 0;
 $view_all_branches = $_SESSION['view_all_branches'] ?? false;
 
+// Get user initials for avatar
+$user_initials = '';
+if (!empty($user_name)) {
+    $name_parts = explode(' ', $user_name);
+    foreach ($name_parts as $part) {
+        if (!empty($part)) {
+            $user_initials .= strtoupper(substr($part, 0, 1));
+        }
+    }
+}
+if (empty($user_initials)) {
+    $user_initials = 'BA';
+}
+
+// Get user's branch name for display
+$branch_name = 'All Branches';
+if (!$view_all_branches && $branch_id > 0) {
+    $branch_query = "SELECT branch_name FROM branches WHERE branch_id = ?";
+    $branch_stmt = $conn->prepare($branch_query);
+    $branch_stmt->bind_param("i", $branch_id);
+    $branch_stmt->execute();
+    $branch_result = $branch_stmt->get_result();
+    if ($branch_row = $branch_result->fetch_assoc()) {
+        $branch_name = $branch_row['branch_name'];
+    }
+    $branch_stmt->close();
+}
+
 // Check if branch_id column exists in rmr_requests table
 $rmr_branch_column_exists = false;
 $check_rmr_column = $conn->query("SHOW COLUMNS FROM rmr_requests LIKE 'branch_id'");
@@ -774,13 +802,13 @@ function formatDate($dateTimeStr) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bad Orders - Branch Admin</title>
+    <link rel="stylesheet" href="../css/current_inventory.css">
+    <link rel="stylesheet" href="../css/bad_orders.css">
     <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
     <link rel="shortcut icon" href="../Pictures/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="../Pictures/apple-touch-icon.png" />
     <link rel="manifest" href="../Pictures/site.webmanifest" />
-    <link rel="stylesheet" href="../css/current_inventory.css">
-    <link rel="stylesheet" href="../css/bad_orders.css">
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
@@ -1390,90 +1418,163 @@ function formatDate($dateTimeStr) {
 
     <!-- MAIN APPLICATION -->
     <div id="appPage">
-        <!-- Sidebar -->
-        <div class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <h3>
-                    <button class="desktop-toggle-btn" id="desktopToggleBtn">
-                        <i class="bi bi-list"></i>
-                    </button>    
-                    <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
-                    <span class="nav-text">Branch Admin</span>
-                </h3>
-            </div>
-            
-            <div class="sidebar-menu">
-                <ul class="nav flex-column">
-                    <li class="nav-item">
-                        <a class="nav-link" href="current_inventory.php">
-                            <i class="bi bi-bar-chart-line"></i>
-                            <span class="nav-text">Current Inventory</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="sales_order.php">
-                            <i class="bi bi-bag"></i>
-                            <span class="nav-text">Sales Orders</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="pick_list_items.php">
-                            <i class="bi bi-list-check"></i>
-                            <span class="nav-text">Pick List Items</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link active" href="bad_orders.php">
-                            <i class="bi bi-recycle"></i>
-                            <span class="nav-text">Bad Orders</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="supplier.php" data-title="Suppliers">
-                            <i class="bi bi-bar-chart-line"></i>
-                            <span class="nav-text">Suppliers</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="purchase_order.php">
-                            <i class="bi bi-box"></i>
-                            <span class="nav-text">Purchase Orders</span>
-                        </a>
-                    </li>
-                     <li class="nav-item">
-                        <a class="nav-link" href="drivers.php">
-                            <i class="bi bi-truck"></i>
-                            <span class="nav-text">Users</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="trip_tickets.php">
-                            <i class="bi bi-ticket-perforated"></i>
-                            <span class="nav-text">Trip Tickets</span>
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="approve_credit_requests.php">
-                            <i class="bi bi-pencil-square"></i>
-                            <span class="nav-text">Approve Requests</span>
-                        </a>
-                    </li>
-                    <hr class="sidebar-divider">
-                </ul>
-            </div>
-            <div class="sidebar-footer">
-                <div class="user-profile-sidebar">
-                    <div class="user-avatar-sidebar"><?php echo substr($user_name, 0, 2); ?></div>
-                    <div class="user-details-sidebar">
-                        <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-                    </div>
-                </div>
-                <button class="logout-btn-sidebar" onclick="logout()">
-                    <i class="bi bi-box-arrow-right"></i>
-                    <span class="logout-text">Logout</span>
-                </button>
+       <!-- Sidebar -->
+<div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+        <h3>
+            <button class="desktop-toggle-btn" id="desktopToggleBtn">
+                <i class="bi bi-list" id="toggleIcon"></i>
+            </button>
+            <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
+            <span class="nav-text">Branch Admin</span>
+        </h3>
+    </div>
+    
+    <div class="sidebar-content">
+        <div class="sidebar-menu">
+            <ul class="nav flex-column">
+                <!-- Warehouse Dropdown - walang dropdown-toggle class -->
+<li class="nav-item dropdown-nav">
+    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'warehouseMenu')">
+        <i class="bi bi-shop"></i>
+        <span class="nav-text">Warehouse</span>
+        <i class="bi bi-chevron-down dropdown-arrow"></i>
+    </a>
+    <div class="collapse" id="warehouseMenu">
+        <ul class="nav flex-column ps-4">
+            <li class="nav-item">
+                <a class="nav-link active" href="current_inventory.php">
+                        <i class="bi bi-bar-chart-line"></i>
+                        <span class="nav-text">Current Inventory</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="bad_orders.php">
+                    <i class="bi bi-recycle"></i>
+                    <span class="nav-text">Bad Orders</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="pick_list_items.php">
+                    <i class="bi bi-list-check"></i>
+                    <span class="nav-text">Pick List Items</span>
+                </a>
+            </li>
+        </ul>
+    </div>
+</li>
+
+                
+                <!-- Supplier Dropdown - walang dropdown-toggle class -->
+<li class="nav-item dropdown-nav">
+    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'supplierMenu')">
+        <i class="bi bi-building"></i>
+        <span class="nav-text">Supplier</span>
+        <i class="bi bi-chevron-down dropdown-arrow"></i>
+    </a>
+    <div class="collapse" id="supplierMenu">
+        <ul class="nav flex-column ps-4">
+            <li class="nav-item">
+                <a class="nav-link" href="purchase_order.php">
+                    <i class="bi bi-box"></i>
+                    <span class="nav-text">Purchase Order</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="supplier.php">
+                    <i class="bi bi-people"></i>
+                    <span class="nav-text">Supplier List</span>
+                </a>
+            </li>
+        </ul>
+    </div>
+</li>
+
+<!-- Customer Dropdown - walang dropdown-toggle class -->
+<li class="nav-item dropdown-nav">
+    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'customerMenu')">
+        <i class="bi bi-people"></i>
+        <span class="nav-text">Customer</span>
+        <i class="bi bi-chevron-down dropdown-arrow"></i>
+    </a>
+    <div class="collapse" id="customerMenu">
+        <ul class="nav flex-column ps-4">
+            <li class="nav-item">
+                <a class="nav-link" href="sales_order.php">
+                    <i class="bi bi-cart"></i>
+                    <span class="nav-text">Sales Order</span>
+                </a>
+            </li>
+            <li class="nav-item"><a class="nav-link" href="collections.php">
+                <i class="bi bi-cash-stack"></i>
+                    <span class="nav-text">Collections</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="customer_list.php">
+                    <i class="bi bi-person-badge"></i>
+                    <span class="nav-text">Customer List</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" href="approve_credit_requests.php">
+                    <i class="bi bi-pencil-square"></i>
+                    <span class="nav-text">Approved Credit Request</span>
+                </a>
+            </li>
+        </ul>
+    </div>
+</li>
+
+<!-- Delivery Dropdown - walang dropdown-toggle class -->
+<li class="nav-item dropdown-nav">
+    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'deliveryMenu')">
+        <i class="bi bi-truck"></i>
+        <span class="nav-text">Delivery</span>
+        <i class="bi bi-chevron-down dropdown-arrow"></i>
+    </a>
+    <div class="collapse" id="deliveryMenu">
+        <ul class="nav flex-column ps-4">
+            <li class="nav-item">
+                <a class="nav-link" href="trip_tickets.php">
+                    <i class="bi bi-ticket-perforated"></i>
+                    <span class="nav-text">Trip Tickets</span>
+                </a>
+            </li>
+        </ul>
+    </div>
+</li>
+                <li class="nav-item">
+    <a class="nav-link" href="banking.php">
+        <i class="bi bi-bank2"></i>
+        <span class="nav-text">Banking</span>
+    </a>
+</li>
+                <!-- Users -->
+                <li class="nav-item">
+                    <a class="nav-link" href="drivers.php">
+                        <i class="bi bi-people-fill"></i>
+                        <span class="nav-text">Users</span>
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </div>
+    
+    <div class="sidebar-footer">
+        <div class="user-profile-sidebar">
+            <div class="user-avatar-sidebar"><?php echo $user_initials; ?></div>
+            <div class="user-details-sidebar">
+                <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
+                <span class="user-role-sidebar"><?php echo ucfirst($user_role); ?></span>
             </div>
         </div>
+        <button class="logout-btn-sidebar" onclick="logout()">
+            <i class="bi bi-box-arrow-right"></i>
+            <span class="logout-text">Logout</span>
+        </button>
+    </div>
+</div>
 
         <!-- Main Content -->
         <div class="main-content" id="mainContent">
@@ -1485,7 +1586,7 @@ function formatDate($dateTimeStr) {
                         <i class="bi bi-list"></i>
                     </button>
                     <div class="page-title">
-                        <h2><i class="bi bi-recycle me-2"></i>Bad Orders</h2>
+                        <h2>Bad Orders</h2>
                         <p id="dashboardSubtitle">
                             Manage Returned Merchandise Requests (RMR) from rejected deliveries
                         </p>
@@ -1509,143 +1610,180 @@ function formatDate($dateTimeStr) {
                     </div>
                 <?php endif; ?>
 
-                <!-- Stats Section -->
-                <div class="row g-3 mb-4">
-                    <div class="col-md-3 col-6">
-                        <div class="stat-card total">
-                            <i class="bi bi-box-seam stat-icon"></i>
-                            <div class="stat-value"><?= $statTotalRMR ?></div>
-                            <div class="stat-label">Total RMR</div>
-                            <?php if ($rmr_branch_column_exists && !$view_all_branches): ?>
-                                <small class="d-block text-white-50">Your Branch</small>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                    <div class="col-md-3 col-6">
-                        <div class="stat-card pending">
-                            <i class="bi bi-clock-history stat-icon"></i>
-                            <div class="stat-value"><?= $statPendingRMR ?></div>
-                            <div class="stat-label">Pending</div>
-                        </div>
-                    </div>
-                    <div class="col-md-3 col-6">
-                        <div class="stat-card processing">
-                            <i class="bi bi-gear stat-icon"></i>
-                            <div class="stat-value"><?= $statProcessingRMR ?></div>
-                            <div class="stat-label">Processing</div>
-                        </div>
-                    </div>
-                    <div class="col-md-3 col-6">
-                        <div class="stat-card approved">
-                            <i class="bi bi-check-circle stat-icon"></i>
-                            <div class="stat-value"><?= $statApprovedRMR ?></div>
-                            <div class="stat-label">Approved</div>
-                        </div>
-                    </div>
-                </div>
+               <!-- Stats Section with Horizontal Scroll on Mobile -->
+<div class="row stat-card-row g-1 g-sm-2 mb-4">
+    <!-- Stat 1: Total RMR -->
+    <div class="col">
+        <div class="stat-card total">
+            <i class="bi bi-box-seam stat-icon"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?= $statTotalRMR ?></div>
+                <div class="stat-label">Total RMR</div>
+                <?php if ($rmr_branch_column_exists && !$view_all_branches): ?>
+                <?php endif; ?>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Stat 2: Pending RMR -->
+    <div class="col">
+        <div class="stat-card pending">
+            <i class="bi bi-clock-history stat-icon"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?= $statPendingRMR ?></div>
+                <div class="stat-label">Pending</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Stat 3: Processing RMR -->
+    <div class="col">
+        <div class="stat-card processing">
+            <i class="bi bi-gear stat-icon"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?= $statProcessingRMR ?></div>
+                <div class="stat-label">Processing</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Stat 4: Approved RMR -->
+    <div class="col">
+        <div class="stat-card approved">
+            <i class="bi bi-check-circle stat-icon"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?= $statApprovedRMR ?></div>
+                <div class="stat-label">Approved</div>
+            </div>
+        </div>
+    </div>
+</div>
 
-                <!-- FILTER SECTION -->
-                <div class="filter-section">
-                    <div class="filter-controls">
-                        <div class="filter-dropdowns">
-                            <!-- Date Filter Dropdown -->
-                            <div class="filter-dropdown">
-                                <span class="filter-label">Date</span>
-                                <select class="form-select" id="dateFilter" onchange="applyFilters()">
-                                    <option value="all">All Dates</option>
-                                    <option value="today">Today</option>
-                                    <option value="yesterday">Yesterday</option>
-                                    <option value="this_week">This Week</option>
-                                    <option value="last_week">Last Week</option>
-                                    <option value="this_month">This Month</option>
-                                    <option value="last_month">Last Month</option>
-                                    <option value="this_quarter">This Quarter</option>
-                                    <option value="last_quarter">Last Quarter</option>
-                                    <option value="this_year">This Year</option>
-                                    <option value="last_year">Last Year</option>
-                                </select>
-                            </div>
-                            
-                            <!-- Status Filter Dropdown -->
-                            <div class="filter-dropdown">
-                                <span class="filter-label">Status</span>
-                                <select class="form-select" id="statusFilter" onchange="applyFilters()">
-                                    <option value="all">All Status</option>
-                                    <option value="pending">Pending</option>
-                                    <option value="processing">Processing</option>
-                                    <option value="approved">Approved</option>
-                                    <option value="rejected">Rejected</option>
-                                    <option value="resolved">Resolved</option>
-                                </select>
-                            </div>
-                            
-                            <!-- Reason Filter Dropdown -->
-                            <div class="filter-dropdown">
-                                <span class="filter-label">Reason</span>
-                                <select class="form-select" id="reasonFilter" onchange="applyFilters()">
-                                    <option value="all">All Reasons</option>
-                                    <option value="damaged">Damaged</option>
-                                    <option value="expired">Expired</option>
-                                    <option value="wrong-item">Wrong Item</option>
-                                    <option value="quality">Quality Issue</option>
-                                    <option value="overstock">Overstock</option>
-                                    <option value="other">Other</option>
-                                </select>
-                            </div>
-                            
-                            <?php if ($rmr_branch_column_exists && $view_all_branches): ?>
-                            <!-- Branch Filter Dropdown -->
-                            <div class="filter-dropdown">
-                                <span class="filter-label">Branch</span>
-                                <select class="form-select" id="branchFilter" onchange="applyFilters()">
-                                    <option value="all">All Branches</option>
-                                    <?php
-                                    $branches = array_unique(array_column($rmr_requests, 'branch_id'));
-                                    foreach ($branches as $bid):
-                                        if (!empty($bid)):
-                                    ?>
-                                    <option value="<?= $bid ?>">Branch <?= $bid ?></option>
-                                    <?php 
-                                        endif;
-                                    endforeach; 
-                                    ?>
-                                </select>
-                            </div>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                    
-                    <div class="filter-actions">
-                        <button class="btn btn-outline-primary" onclick="printRMRReport()">
-                            <i class="bi bi-printer me-1"></i> Print
-                        </button>
-                        <button class="btn btn-outline-success" onclick="exportRMRToExcel()">
-                            <i class="bi bi-file-earmark-excel me-1"></i> Export to Excel
-                        </button>
-                    </div>
+               <!-- FILTER SECTION - COLLAPSIBLE DESIGN -->
+<div class="form-card mb-4">
+    <div class="filter-header">
+        <h5>
+            <i class="bi bi-funnel"></i> Filter RMR Requests
+            <span class="filter-count-badge" id="filterCountBadge">0</span>
+        </h5>
+        <button class="filter-toggle-btn" type="button" id="filterToggleBtn" aria-expanded="false">
+            <i class="bi bi-chevron-down" id="filterIcon"></i>
+        </button>
+    </div>
+    
+    <div class="filter-content collapsed" id="filterContent">
+        <div class="row g-3">
+            <!-- Date Filter -->
+            <div class="col-12 col-md-3">
+                <label class="form-label">
+                    <i class="bi bi-calendar3"></i> Date
+                </label>
+                <select class="form-select" id="dateFilter" onchange="applyFilters()">
+                    <option value="all">All Dates</option>
+                    <option value="today">Today</option>
+                    <option value="yesterday">Yesterday</option>
+                    <option value="this_week">This Week</option>
+                    <option value="last_week">Last Week</option>
+                    <option value="this_month">This Month</option>
+                    <option value="last_month">Last Month</option>
+                    <option value="this_quarter">This Quarter</option>
+                    <option value="last_quarter">Last Quarter</option>
+                    <option value="this_year">This Year</option>
+                    <option value="last_year">Last Year</option>
+                </select>
+            </div>
+            
+            <!-- Status Filter -->
+            <div class="col-12 col-md-3">
+                <label class="form-label">
+                    <i class="bi bi-flag"></i> Status
+                </label>
+                <select class="form-select" id="statusFilter" onchange="applyFilters()">
+                    <option value="all">All Status</option>
+                    <option value="pending">Pending</option>
+                    <option value="processing">Processing</option>
+                    <option value="approved">Approved</option>
+                    <option value="rejected">Rejected</option>
+                    <option value="resolved">Resolved</option>
+                </select>
+            </div>
+            
+            <!-- Reason Filter -->
+            <div class="col-12 col-md-3">
+                <label class="form-label">
+                    <i class="bi bi-tag"></i> Reason
+                </label>
+                <select class="form-select" id="reasonFilter" onchange="applyFilters()">
+                    <option value="all">All Reasons</option>
+                    <option value="damaged">Damaged</option>
+                    <option value="expired">Expired</option>
+                    <option value="wrong-item">Wrong Item</option>
+                    <option value="quality">Quality Issue</option>
+                    <option value="overstock">Overstock</option>
+                    <option value="other">Other</option>
+                </select>
+            </div>
+            
+            <?php if ($rmr_branch_column_exists && $view_all_branches): ?>
+            <!-- Branch Filter -->
+            <div class="col-12 col-md-3">
+                <label class="form-label">
+                    <i class="bi bi-building"></i> Branch
+                </label>
+                <select class="form-select" id="branchFilter" onchange="applyFilters()">
+                    <option value="all">All Branches</option>
+                    <?php
+                    $branches = array_unique(array_column($rmr_requests, 'branch_id'));
+                    foreach ($branches as $bid):
+                        if (!empty($bid)):
+                    ?>
+                    <option value="<?= $bid ?>">Branch <?= $bid ?></option>
+                    <?php 
+                        endif;
+                    endforeach; 
+                    ?>
+                </select>
+            </div>
+            <?php endif; ?>
+            
+            <!-- Action Buttons -->
+            <div class="col-12">
+                <div class="d-flex justify-content-end gap-2 mt-2">
+                    <button class="btn btn-outline-primary btn-sm" onclick="printRMRReport()">
+                        <i class="bi bi-printer me-1"></i> Print
+                    </button>
+                    <button class="btn btn-outline-success btn-sm" onclick="exportRMRToExcel()">
+                        <i class="bi bi-file-earmark-excel me-1"></i> Export to Excel
+                    </button>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
 
-                <!-- RMR Tabs -->
-                <ul class="nav nav-tabs mb-3" id="rmrTabs" role="tablist">
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link active" id="rmr-list-tab" data-bs-toggle="tab" data-bs-target="#rmr-list" type="button" role="tab">
-                            <i class="bi bi-list-ul me-1"></i> RMR List
-                        </button>
-                    </li>
-                    <li class="nav-item" role="presentation">
-                        <button class="nav-link" id="rejected-deliveries-tab" data-bs-toggle="tab" data-bs-target="#rejected-deliveries" type="button" role="tab">
-                            <i class="bi bi-exclamation-triangle me-1"></i> Rejected Deliveries 
-                            <?php if (count($rejected_deliveries) > 0): ?>
-                                <span class="badge bg-danger"><?= count($rejected_deliveries) ?></span>
-                            <?php endif; ?>
-                        </button>
-                    </li>
-                </ul>
+<!-- Filter Summary (shows when filters are active) -->
+<div id="filterSummary" class="filter-summary" style="display: none;">
+    <i class="bi bi-funnel-fill"></i>
+    <span id="filterSummaryText">Active filters applied</span>
+    <button class="clear-filters" onclick="clearAllFilters()">
+        <i class="bi bi-x-circle"></i> Clear All
+    </button>
+</div>
+               <div class="category-tabs">
+    <div class="category-tab active" data-tab="rmr-list">
+        <i class="bi bi-list-ul me-1"></i> RMR List
+        <span class="tab-badge" id="rmrCountBadge"><?= count($rmr_requests) ?></span>
+    </div>
+    <div class="category-tab" data-tab="rejected-deliveries">
+        <i class="bi bi-exclamation-triangle me-1"></i> Rejected Deliveries
+        <span class="tab-badge" id="rejectedCountBadge"><?= count($rejected_deliveries) ?></span>
+    </div>
+</div>
 
                 <!-- Tab Content -->
-                <div class="tab-content" id="rmrTabsContent">
+                <div class="tab-content-wrapper" id="rmrTabsContent">
                     <!-- RMR List Tab -->
-                    <div class="tab-pane fade show active" id="rmr-list" role="tabpanel">
+                     <div class="tab-pane active" id="rmr-list-content">
                         <div class="table-container">
                             <table class="table custom-table compact-table" id="rmrTable">
                                 <thead>
@@ -1743,110 +1881,107 @@ function formatDate($dateTimeStr) {
                         </div>
                     </div>
 
-                    <!-- Rejected Deliveries Tab -->
-                    <div class="tab-pane fade" id="rejected-deliveries" role="tabpanel">
-                        <div class="table-container">
-                            <table class="table custom-table compact-table" id="rejectedTable">
-                                <thead>
-                                    <tr>
-                                        <th>DELIVERY ID</th>
-                                        <th>ORDER #</th>
-                                        <th>CUSTOMER</th>
-                                        <th>TRIP #</th>
-                                        <th>DELIVERY DATE</th>
-                                        <th>PHOTO</th>
-                                        <th>STATUS</th>
-                                        <th>ACTIONS</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php if (empty($rejected_deliveries)): ?>
-                                    <tr>
-                                        <td colspan="8" class="empty-state-table">
-                                            <i class="bi bi-check-circle"></i>
-                                            <h5>No Rejected Deliveries Found</h5>
-                                            <p class="text-muted">
-                                                All rejected deliveries have been processed.
-                                                <?php if ($delivery_branch_column_exists && !$view_all_branches): ?>
-                                                    <br>No rejected deliveries found for your branch.
-                                                <?php endif; ?>
-                                            </p>
-                                            <?php if (isset($_GET['debug'])): ?>
-                                            <p class="text-danger">Debug: Check query and database connection</p>
-                                            <?php endif; ?>
-                                        </td>
-                                    </tr>
-                                    <?php else: ?>
-                                        <?php foreach ($rejected_deliveries as $delivery): ?>
-                                        <tr>
-                                            <td><span class="badge bg-light text-dark">#<?= $delivery['delivery_id'] ?></span></td>
-                                            <td data-so-id="<?= $delivery['so_id'] ?? 0 ?>"><strong><?= htmlspecialchars($delivery['so_number'] ?? 'N/A') ?></strong></td>
-                                            <td data-customer-id="<?= $delivery['customer_id'] ?? 0 ?>"><?= htmlspecialchars($delivery['customer_name'] ?? 'Unknown') ?></td>
-                                            <td><?= htmlspecialchars($delivery['trip_number'] ?? 'N/A') ?></td>
-                                            <td><?= $delivery['delivery_date'] ? date('Y-m-d H:i', strtotime($delivery['delivery_date'])) : 'N/A' ?></td>
-                                            <td>
-                                                <?php if (!empty($delivery['rejection_photo'])): ?>
-                                                    <img src="../uploads/rejections/<?= basename($delivery['rejection_photo']); ?>" 
-                                                         class="photo-thumbnail" 
-                                                         onclick="openPhotoModal('<?= basename($delivery['rejection_photo']); ?>')"
-                                                         alt="Rejection photo"
-                                                         title="Click to view full size">
-                                                <?php else: ?>
-                                                    <div class="photo-placeholder">
-                                                        <i class="bi bi-image"></i>
-                                                    </div>
-                                                <?php endif; ?>
-                                            </td>
-                                            <td>
-                                                <span class="badge bg-danger">Rejected</span>
-                                            </td>
-                                            <td>
-                                                <div class="action-buttons">
-                                                    <?php if ($delivery['has_rmr'] > 0): ?>
-                                                        <span class="badge bg-info">RMR Created</span>
-                                                    <?php else: ?>
-                                                        <button class="btn-action btn-view" onclick='viewRejectedDelivery(<?= $delivery['delivery_id'] ?>, "<?= addslashes($delivery['rejection_photo'] ?? '') ?>", "<?= addslashes(trim(preg_replace('/\s+/', ' ', $delivery['rejection_reason'] ?? 'No rejection reason provided'))) ?>", <?= json_encode($delivery['remarks'] ?? 'No remarks provided') ?>)' title="View Details">
-                                                            <i class="bi bi-eye"></i>
-                                                        </button>
-                                                        <button class="btn-action btn-create" onclick="showCreateRMRModal(<?= $delivery['delivery_id'] ?>, <?= $delivery['so_id'] ?? 0 ?>, <?= $delivery['customer_id'] ?? 0 ?>)" title="Create RMR">
-                                                            <i class="bi bi-plus-circle"></i>
-                                                        </button>
-                                                    <?php endif; ?>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                        <?php endforeach; ?>
-                                    <?php endif; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
+                   <!-- Rejected Deliveries Tab -->
+<div class="tab-pane" id="rejected-deliveries-content" style="display: none;">
+    <div class="table-container">
+        <table class="table custom-table compact-table" id="rejectedTable">
+            <thead>
+                 <tr>
+                    <th>DELIVERY ID</th>
+                    <th>ORDER #</th>
+                    <th>CUSTOMER</th>
+                    <th>TRIP #</th>
+                    <th>DELIVERY DATE</th>
+                    <th>PHOTO</th>
+                    <th>STATUS</th>
+                    <th>ACTIONS</th>
+                 </tr>
+            </thead>
+            <tbody>
+                <?php if (empty($rejected_deliveries)): ?>
+                <tr>
+                    <td colspan="8" class="empty-state-table">
+                        <i class="bi bi-check-circle"></i>
+                        <h5>No Rejected Deliveries Found</h5>
+                        <p class="text-muted">
+                            All rejected deliveries have been processed.
+                            <?php if ($delivery_branch_column_exists && !$view_all_branches): ?>
+                                <br>No rejected deliveries found for your branch.
+                            <?php endif; ?>
+                        </p>
+                        <?php if (isset($_GET['debug'])): ?>
+                        <p class="text-danger">Debug: Check query and database connection</p>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+                <?php else: ?>
+                    <?php foreach ($rejected_deliveries as $delivery): ?>
+                    <tr>
+                        <td><span class="badge bg-light text-dark">#<?= $delivery['delivery_id'] ?></span></td>
+                        <td data-so-id="<?= $delivery['so_id'] ?? 0 ?>"><strong><?= htmlspecialchars($delivery['so_number'] ?? 'N/A') ?></strong></td>
+                        <td data-customer-id="<?= $delivery['customer_id'] ?? 0 ?>"><?= htmlspecialchars($delivery['customer_name'] ?? 'Unknown') ?></td>
+                        <td><?= htmlspecialchars($delivery['trip_number'] ?? 'N/A') ?></td>
+                        <td><?= $delivery['delivery_date'] ? date('Y-m-d H:i', strtotime($delivery['delivery_date'])) : 'N/A' ?></td>
+                        <td>
+                            <?php if (!empty($delivery['rejection_photo'])): ?>
+                                <img src="../uploads/rejections/<?= basename($delivery['rejection_photo']); ?>" 
+                                     class="photo-thumbnail" 
+                                     onclick="openPhotoModal('<?= basename($delivery['rejection_photo']); ?>')"
+                                     alt="Rejection photo"
+                                     title="Click to view full size">
+                            <?php else: ?>
+                                <div class="photo-placeholder">
+                                    <i class="bi bi-image"></i>
+                                </div>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <span class="badge bg-danger">Rejected</span>
+                        </td>
+                        <td>
+                            <div class="action-buttons">
+                                <?php if ($delivery['has_rmr'] > 0): ?>
+                                    <span class="badge bg-info">RMR Created</span>
+                                <?php else: ?>
+                                    <button class="btn-action btn-view" onclick='viewRejectedDelivery(<?= $delivery['delivery_id'] ?>, "<?= addslashes($delivery['rejection_photo'] ?? '') ?>", "<?= addslashes(trim(preg_replace('/\s+/', ' ', $delivery['rejection_reason'] ?? 'No rejection reason provided'))) ?>", <?= json_encode($delivery['remarks'] ?? 'No remarks provided') ?>)' title="View Details">
+                                        <i class="bi bi-eye"></i>
+                                    </button>
+                                    <button class="btn-action btn-create" onclick="showCreateRMRModal(<?= $delivery['delivery_id'] ?>, <?= $delivery['so_id'] ?? 0 ?>, <?= $delivery['customer_id'] ?? 0 ?>)" title="Create RMR">
+                                        <i class="bi bi-plus-circle"></i>
+                                    </button>
+                                <?php endif; ?>
+                            </div>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+    <!-- View Rejected Delivery Modal - Modern Style like Current Inventory -->
+<div class="modal fade" id="viewRejectedDeliveryModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-exclamation-triangle me-2"></i>Rejected Delivery Details
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="rejectedDeliveryDetails">
+                <!-- Details will be loaded here -->
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="createRMRFromView()" id="createRMRFromViewBtn">
+                    <i class="bi bi-plus-circle me-1"></i> Create RMR
+                </button>
             </div>
         </div>
     </div>
-
-    <!-- View Rejected Delivery Modal (Centered) -->
-    <div class="modal fade" id="viewRejectedDeliveryModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg modal-dialog-centered">
-            <div class="modal-content">
-                <div class="modal-header bg-warning text-dark">
-                    <h5 class="modal-title"><i class="bi bi-eye me-2"></i>Rejected Delivery Details</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body" id="rejectedDeliveryDetails">
-                    <!-- Details will be loaded here -->
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                    <button type="button" class="btn btn-primary" onclick="createRMRFromView()" id="createRMRFromViewBtn">
-                        <i class="bi bi-plus-circle"></i> Create RMR
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-
+</div>
     <!-- Photo View Modal (Bigger but not too wide) -->
     <div class="modal fade" id="photoViewModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered" style="max-width: 600px;">
@@ -1953,49 +2088,49 @@ function formatDate($dateTimeStr) {
         </div>
     </div>
 
-    <!-- Create RMR from Rejected Delivery Modal -->
-    <div class="modal fade" id="createRMRModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-lg">
-            <div class="modal-content">
-                <div class="modal-header bg-danger text-white">
-                    <h5 class="modal-title"><i class="bi bi-plus-circle me-2"></i>Create RMR from Rejected Delivery</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <form id="createRMRForm">
-                        <input type="hidden" id="rmrDeliveryId" name="delivery_id">
-                        <input type="hidden" id="rmrSoId" name="so_id">
-                        <input type="hidden" id="rmrCustomerId" name="customer_id">
-                        <input type="hidden" name="branch_id" value="<?= $branch_id ?>">
-                        
-                        <?php if ($rmr_branch_column_exists && !$view_all_branches): ?>
-                            <div class="alert alert-info mb-3">
-                                <i class="bi bi-info-circle me-2"></i>
-                                Creating RMR for Branch <?= $branch_id ?>
-                            </div>
-                        <?php endif; ?>
-                        
-                        <div class="row">
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Select Item *</label>
-                                <select class="form-select" id="rmrItemId" name="item_id" required>
-                                    <option value="">-- Select Item --</option>
-                                    <?php foreach ($items_list as $item): ?>
-                                    <option value="<?= $item['item_id'] ?>" 
-                                            data-price="<?= $item['unit_price'] ?>"
-                                            data-code="<?= htmlspecialchars($item['item_code']) ?>">
-                                        <?= htmlspecialchars($item['item_code'] . ' - ' . $item['item_name']) ?>
-                                    </option>
-                                    <?php endforeach; ?>
-                                </select>
-                            </div>
-                            <div class="col-md-6 mb-3">
-                                <label class="form-label">Return Quantity *</label>
-                                <input type="number" class="form-control" id="rmrQuantity" name="return_quantity" min="1" required>
-                            </div>
+   <!-- Create RMR from Rejected Delivery Modal - Modern Style like Current Inventory -->
+<div class="modal fade" id="createRMRModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-plus-circle me-2"></i>Create RMR from Rejected Delivery
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="createRMRForm">
+                    <input type="hidden" id="rmrDeliveryId" name="delivery_id">
+                    <input type="hidden" id="rmrSoId" name="so_id">
+                    <input type="hidden" id="rmrCustomerId" name="customer_id">
+                    <input type="hidden" name="branch_id" value="<?= $branch_id ?>">
+                    
+                    <?php if ($rmr_branch_column_exists && !$view_all_branches): ?>
+                        <div class="alert alert-info mb-3">
+                            <i class="bi bi-info-circle me-2"></i>
+                            Creating RMR for Branch <?= $branch_id ?>
                         </div>
-                        
-                        <div class="mb-3">
+                    <?php endif; ?>
+                    
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label">Select Item *</label>
+                            <select class="form-select" id="rmrItemId" name="item_id" required>
+                                <option value="">-- Select Item --</option>
+                                <?php foreach ($items_list as $item): ?>
+                                <option value="<?= $item['item_id'] ?>" 
+                                        data-price="<?= $item['unit_price'] ?>"
+                                        data-code="<?= htmlspecialchars($item['item_code']) ?>">
+                                    <?= htmlspecialchars($item['item_code'] . ' - ' . $item['item_name']) ?>
+                                </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Return Quantity *</label>
+                            <input type="number" class="form-control" id="rmrQuantity" name="return_quantity" min="1" required>
+                        </div>
+                        <div class="col-12">
                             <label class="form-label">Return Reason *</label>
                             <select class="form-select" id="rmrReason" name="return_reason" required>
                                 <option value="">-- Select Reason --</option>
@@ -2007,25 +2142,25 @@ function formatDate($dateTimeStr) {
                                 <option value="other">Other</option>
                             </select>
                         </div>
-                        
-                        <div class="mb-3">
+                        <div class="col-12">
                             <label class="form-label">Reason Details</label>
                             <textarea class="form-control" id="rmrReasonDetails" name="reason_details" rows="3" placeholder="Provide additional details about the return..."></textarea>
                         </div>
-                        
-                        <div class="alert alert-warning">
-                            <i class="bi bi-exclamation-triangle me-2"></i>
-                            This will create a Returned Merchandise Request (RMR) for this rejected delivery.
-                        </div>
-                    </form>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="button" class="btn btn-danger" onclick="confirmCreateRMR()">Create RMR</button>
-                </div>
+                    </div>
+                    
+                    <div class="alert alert-warning mt-3">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        This will create a Returned Merchandise Request (RMR) for this rejected delivery.
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="confirmCreateRMR()">Create RMR</button>
             </div>
         </div>
     </div>
+</div>
 
     <!-- Approve/Reject Modal -->
     <div class="modal fade" id="approvalModal" tabindex="-1" aria-hidden="true">
@@ -2102,13 +2237,28 @@ function formatDate($dateTimeStr) {
         </div>
     </div>
 
+        <!-- Mobile Bottom Navigation -->
+    <div class="mobile-nav" id="mobileNav">
+        <ul class="nav">
+            <li class="nav-item dropdown-more" id="inventoryDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'inventoryDropdownMenu')"><i class="bi bi-box-seam"></i><span>Inventory</span></a><div class="more-dropdown" id="inventoryDropdownMenu"><a href="current_inventory.php" class="dropdown-item"><i class="bi bi-bar-chart-line"></i><span>Current Inventory</span></a><a href="bad_orders.php" class="dropdown-item"><i class="bi bi-recycle"></i><span>Bad Orders</span></a></div></li>
+            <li class="nav-item dropdown-more" id="salesDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'salesDropdownMenu')"><i class="bi bi-cart"></i><span>Sales</span></a><div class="more-dropdown" id="salesDropdownMenu"><a href="sales_order.php" class="dropdown-item"><i class="bi bi-cart"></i><span>Sales Orders</span></a><a href="pick_list_items.php" class="dropdown-item"><i class="bi bi-list-check"></i><span>Pick Lists</span></a></div></li>
+            <li class="nav-item dropdown-more" id="purchaseDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'purchaseDropdownMenu')"><i class="bi bi-truck"></i><span>Purchase</span></a><div class="more-dropdown" id="purchaseDropdownMenu" style="right: 0 !important; left: auto !important;"><a href="purchase_order.php" class="dropdown-item"><i class="bi bi-box"></i><span>Purchase Orders</span></a><a href="supplier.php" class="dropdown-item"><i class="bi bi-building"></i><span>Suppliers</span></a></div></li>
+            <li class="nav-item"><a class="nav-link" href="trip_tickets.php"><i class="bi bi-ticket-perforated"></i><span>Trips</span></a></li>
+            <li class="nav-item dropdown-more" id="moreDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'moreDropdownMenu')"><i class="bi bi-three-dots-vertical"></i><span>More</span></a><div class="more-dropdown" id="moreDropdownMenu"><a href="drivers.php" class="dropdown-item"><i class="bi bi-people"></i><span>Users</span></a><a href="approve_credit_requests.php" class="dropdown-item"><i class="bi bi-pencil-square"></i><span>Approve Requests</span></a><div class="dropdown-divider"></div><a href="#" class="dropdown-item logout-item" onclick="showProfileModal(); return false;"><i class="bi bi-box-arrow-right"></i><span>Logout</span></a></div></li>
+        </ul>
+    </div>
+
+     <!-- Mobile Profile Modal -->
+        <div class="modal fade" id="profileModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title"><i class="bi bi-person-circle me-2"></i>User Profile</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body text-center"><div class="user-avatar-large mb-3"><?php echo $user_initials; ?></div><h4 class="mb-1"><?php echo htmlspecialchars($user_name); ?></h4><p class="text-muted mb-3"><span class="badge bg-success"><?php echo ucfirst($user_role); ?></span></p><?php if (!$view_all_branches && $branch_id > 0): ?><div class="branch-info mb-3"><i class="bi bi-building me-1"></i><span><?php echo htmlspecialchars($branch_name); ?></span></div><?php endif; ?><div class="user-id text-muted small mb-4"></div><button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()"><i class="bi bi-box-arrow-right me-2"></i>Logout</button></div></div></div></div>
+
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     
-    <script>
+   <script>
     // ========== GLOBAL VARIABLES ==========
     let selectedRMR = null;
     let currentAction = null;
+    let activeFilters = { date: 'all', status: 'all', reason: 'all', branch: 'all' };
     const branchId = <?php echo $branch_id; ?>;
     const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
     const rmrBranchColumnExists = <?php echo $rmr_branch_column_exists ? 'true' : 'false'; ?>;
@@ -2169,12 +2319,18 @@ function formatDate($dateTimeStr) {
         document.getElementById('loadingOverlay').style.display = 'none';
     }
 
-    // ========== FILTER FUNCTIONS ==========
+    // ========== FILTER FUNCTIONS - FIXED ==========
     function applyFilters() {
-        const dateFilter = document.getElementById('dateFilter').value;
-        const statusFilter = document.getElementById('statusFilter').value;
-        const reasonFilter = document.getElementById('reasonFilter').value;
+        const dateFilter = document.getElementById('dateFilter')?.value || 'all';
+        const statusFilter = document.getElementById('statusFilter')?.value || 'all';
+        const reasonFilter = document.getElementById('reasonFilter')?.value || 'all';
         const branchFilter = document.getElementById('branchFilter')?.value || 'all';
+        
+        // Update active filters
+        activeFilters = { date: dateFilter, status: statusFilter, reason: reasonFilter, branch: branchFilter };
+        
+        updateFilterCountBadge();
+        updateFilterSummary();
         
         const rows = document.querySelectorAll('.rmr-row');
         let visibleCount = 0;
@@ -2197,90 +2353,225 @@ function formatDate($dateTimeStr) {
             // Branch filter
             if (showRow && rmrBranchColumnExists && viewAllBranches && branchFilter !== 'all') {
                 const rowBranch = row.dataset.branch;
-                if (rowBranch !== branchFilter) showRow = false;
+                if (String(rowBranch) !== branchFilter) showRow = false;
             }
             
             // Date filter
             if (showRow && dateFilter !== 'all') {
-                const rowDate = new Date(row.dataset.receivedDate);
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                
-                // Simplified date filtering for demo
-                // Add full date filtering logic here if needed
+                const rowDate = row.dataset.receivedDate;
+                if (rowDate) {
+                    const date = new Date(rowDate);
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    
+                    switch(dateFilter) {
+                        case 'today':
+                            if (date.toDateString() !== today.toDateString()) showRow = false;
+                            break;
+                        case 'yesterday':
+                            const yesterday = new Date(today);
+                            yesterday.setDate(yesterday.getDate() - 1);
+                            if (date.toDateString() !== yesterday.toDateString()) showRow = false;
+                            break;
+                        case 'this_week':
+                            const startOfWeek = new Date(today);
+                            startOfWeek.setDate(today.getDate() - today.getDay());
+                            const endOfWeek = new Date(today);
+                            endOfWeek.setDate(today.getDate() + (6 - today.getDay()));
+                            if (date < startOfWeek || date > endOfWeek) showRow = false;
+                            break;
+                        case 'this_month':
+                            if (date.getMonth() !== today.getMonth() || date.getFullYear() !== today.getFullYear()) showRow = false;
+                            break;
+                        case 'last_month':
+                            const lastMonth = new Date(today);
+                            lastMonth.setMonth(lastMonth.getMonth() - 1);
+                            if (date.getMonth() !== lastMonth.getMonth() || date.getFullYear() !== lastMonth.getFullYear()) showRow = false;
+                            break;
+                    }
+                }
             }
             
             row.style.display = showRow ? '' : 'none';
             if (showRow) visibleCount++;
         });
+        
+        // Show/hide "no results" message
+        const tableBody = document.getElementById('rmrTableBody');
+        const noResultsRow = document.getElementById('noResultsRow');
+        
+        if (visibleCount === 0) {
+            if (!noResultsRow && tableBody) {
+                const tr = document.createElement('tr');
+                tr.id = 'noResultsRow';
+                const colspan = rmrBranchColumnExists && viewAllBranches ? 9 : 8;
+                tr.innerHTML = `<td colspan="${colspan}" class="text-center py-4 text-muted">
+                    <i class="bi bi-inbox fs-1"></i><br>No RMR requests match the selected filters
+                 </td>`;
+                tableBody.appendChild(tr);
+            } else if (noResultsRow) {
+                noResultsRow.style.display = '';
+            }
+        } else {
+            if (noResultsRow) {
+                noResultsRow.style.display = 'none';
+            }
+        }
     }
 
-    // ========== RMR FUNCTIONS ==========
-    document.addEventListener('DOMContentLoaded', function() {
-        console.log("Bad Orders - Live Database Mode");
-        console.log("Branch ID:", branchId);
-        console.log("View All Branches:", viewAllBranches);
-        console.log("Rejected Deliveries Found:", <?= count($rejected_deliveries) ?>);
+    function initFilterToggle() {
+        const filterToggleBtn = document.getElementById('filterToggleBtn');
+        const filterContent = document.getElementById('filterContent');
         
-        initializeSidebar();
-        
-        document.getElementById('mobileMenuBtn').addEventListener('click', function() {
-            const sidebar = document.getElementById('sidebar');
-            const isMobile = window.innerWidth <= 992;
-            if (isMobile) {
-                sidebar.classList.toggle('active');
-                if (!document.querySelector('.sidebar-overlay')) {
-                    const overlay = document.createElement('div');
-                    overlay.className = 'sidebar-overlay';
-                    document.body.appendChild(overlay);
-                    overlay.addEventListener('click', closeMobileSidebar);
-                    setTimeout(() => overlay.classList.add('active'), 10);
-                }
-            } else {
-                toggleSidebar();
-            }
-        });
-        
-        const desktopToggleBtn = document.getElementById('desktopToggleBtn');
-        if (desktopToggleBtn) {
-            desktopToggleBtn.addEventListener('click', function(e) {
+        if (filterToggleBtn && filterContent) {
+            // Start collapsed on page load
+            filterContent.classList.add('collapsed');
+            filterToggleBtn.setAttribute('aria-expanded', 'false');
+            
+            filterToggleBtn.addEventListener('click', function(e) {
+                e.preventDefault();
                 e.stopPropagation();
-                toggleSidebar();
+                const expanded = this.getAttribute('aria-expanded') === 'true';
+                this.setAttribute('aria-expanded', !expanded);
+                
+                if (filterContent.classList.contains('collapsed')) {
+                    filterContent.classList.remove('collapsed');
+                } else {
+                    filterContent.classList.add('collapsed');
+                }
             });
         }
-        
-        document.querySelectorAll('.sidebar .nav-link').forEach(link => {
-            link.addEventListener('click', function() {
-                if (window.innerWidth <= 992) closeMobileSidebar();
-            });
-        });
+    }
 
-        document.addEventListener('click', function(event) {
-            const sidebar = document.getElementById('sidebar');
-            const mobileBtn = document.getElementById('mobileMenuBtn');
-            const overlay = document.querySelector('.sidebar-overlay');
-            const isMobile = window.innerWidth <= 992;
+    function updateFilterCountBadge() {
+        const filterBadge = document.getElementById('filterCountBadge');
+        if (filterBadge) {
+            const activeCount = Object.values(activeFilters).filter(v => v !== 'all' && v !== '' && v !== null).length;
+            filterBadge.textContent = activeCount;
             
-            if (isMobile && sidebar.classList.contains('active') && 
-                !sidebar.contains(event.target) && 
-                !mobileBtn.contains(event.target) &&
-                !overlay?.contains(event.target)) {
-                closeMobileSidebar();
+            if (activeCount > 0) {
+                filterBadge.style.background = '#dc3545';
+                filterBadge.style.transform = 'scale(1.05)';
+                setTimeout(() => {
+                    filterBadge.style.transform = '';
+                }, 200);
+            } else {
+                filterBadge.style.background = '#44d34e';
             }
-        });
-    });
+        }
+    }
 
-    // Show Create RMR Modal
+    function updateFilterSummary() {
+        const filterSummary = document.getElementById('filterSummary');
+        const filterSummaryText = document.getElementById('filterSummaryText');
+        
+        if (filterSummary && filterSummaryText) {
+            const activeCount = Object.values(activeFilters).filter(v => v !== 'all' && v !== '' && v !== null).length;
+            
+            if (activeCount > 0) {
+                let summaryParts = [];
+                
+                if (activeFilters.date && activeFilters.date !== 'all') {
+                    const dateSelect = document.getElementById('dateFilter');
+                    const dateText = dateSelect?.options[dateSelect.selectedIndex]?.text || activeFilters.date;
+                    summaryParts.push(`📅 ${dateText}`);
+                }
+                if (activeFilters.status && activeFilters.status !== 'all') {
+                    const statusSelect = document.getElementById('statusFilter');
+                    const statusText = statusSelect?.options[statusSelect.selectedIndex]?.text || activeFilters.status;
+                    summaryParts.push(`📊 ${statusText}`);
+                }
+                if (activeFilters.reason && activeFilters.reason !== 'all') {
+                    const reasonSelect = document.getElementById('reasonFilter');
+                    const reasonText = reasonSelect?.options[reasonSelect.selectedIndex]?.text || activeFilters.reason;
+                    summaryParts.push(`🏷️ ${reasonText}`);
+                }
+                if (activeFilters.branch && activeFilters.branch !== 'all') {
+                    const branchSelect = document.getElementById('branchFilter');
+                    if (branchSelect) {
+                        const branchText = branchSelect.options[branchSelect.selectedIndex]?.text || activeFilters.branch;
+                        summaryParts.push(`🏢 ${branchText}`);
+                    }
+                }
+                
+                filterSummaryText.textContent = summaryParts.join(' • ');
+                filterSummary.style.display = 'flex';
+            } else {
+                filterSummary.style.display = 'none';
+            }
+        }
+    }
+
+    function clearAllFilters() {
+        const dateFilter = document.getElementById('dateFilter');
+        const statusFilter = document.getElementById('statusFilter');
+        const reasonFilter = document.getElementById('reasonFilter');
+        const branchFilter = document.getElementById('branchFilter');
+        
+        if (dateFilter) dateFilter.value = 'all';
+        if (statusFilter) statusFilter.value = 'all';
+        if (reasonFilter) reasonFilter.value = 'all';
+        if (branchFilter) branchFilter.value = 'all';
+        
+        activeFilters = { date: 'all', status: 'all', reason: 'all', branch: 'all' };
+        
+        updateFilterCountBadge();
+        updateFilterSummary();
+        applyFilters();
+    }
+
+    // ========== TAP TO VIEW FUNCTIONALITY ==========
+    function initTapToView() {
+        const rmrRows = document.querySelectorAll('#rmr-list-content .table-container tbody tr.rmr-row');
+        rmrRows.forEach(row => {
+            row.removeEventListener('click', handleRMRRowClick);
+            row.addEventListener('click', handleRMRRowClick);
+        });
+        
+        const rejectedRows = document.querySelectorAll('#rejected-deliveries-content .table-container tbody tr');
+        rejectedRows.forEach(row => {
+            row.removeEventListener('click', handleRejectedRowClick);
+            row.addEventListener('click', handleRejectedRowClick);
+        });
+    }
+
+    function handleRMRRowClick(event) {
+        if (event.target.closest('.btn-action')) {
+            return;
+        }
+        const row = event.currentTarget;
+        const rmrId = row.getAttribute('data-id');
+        if (rmrId) {
+            viewRMR(rmrId);
+        }
+    }
+
+    function handleRejectedRowClick(event) {
+        if (event.target.closest('.btn-action') || event.target.closest('.photo-thumbnail')) {
+            return;
+        }
+        const row = event.currentTarget;
+        const deliveryId = row.querySelector('td:first-child .badge')?.innerText.replace('#', '') || '';
+        const soId = row.querySelector('td:nth-child(2)')?.getAttribute('data-so-id') || '0';
+        const customerId = row.querySelector('td:nth-child(3)')?.getAttribute('data-customer-id') || '0';
+        const photoPath = row.querySelector('.photo-thumbnail')?.getAttribute('src')?.split('/').pop() || '';
+        const rejectionReason = row.querySelector('td:nth-child(7) .badge')?.innerText || 'No rejection reason provided';
+        const remarks = row.querySelector('td:nth-child(2)')?.getAttribute('data-remarks') || 'No remarks provided';
+        
+        if (deliveryId) {
+            viewRejectedDelivery(parseInt(deliveryId), photoPath, rejectionReason, remarks);
+        }
+    }
+
+    // ========== MAIN RMR FUNCTIONS ==========
     function showCreateRMRModal(deliveryId, soId, customerId) {
         document.getElementById('rmrDeliveryId').value = deliveryId;
         document.getElementById('rmrSoId').value = soId;
         document.getElementById('rmrCustomerId').value = customerId;
         document.getElementById('createRMRForm').reset();
-        
         new bootstrap.Modal(document.getElementById('createRMRModal')).show();
     }
 
-    // Confirm Create RMR
     function confirmCreateRMR() {
         const itemId = document.getElementById('rmrItemId').value;
         const quantity = document.getElementById('rmrQuantity').value;
@@ -2290,19 +2581,16 @@ function formatDate($dateTimeStr) {
             Swal.fire('Warning', 'Please select an item', 'warning');
             return;
         }
-        
         if (!quantity || quantity <= 0) {
             Swal.fire('Warning', 'Please enter a valid quantity', 'warning');
             return;
         }
-        
         if (!reason) {
             Swal.fire('Warning', 'Please select a return reason', 'warning');
             return;
         }
         
         showLoading();
-        
         const formData = new FormData(document.getElementById('createRMRForm'));
         formData.append('action', 'create_rmr_from_delivery');
         
@@ -2313,18 +2601,12 @@ function formatDate($dateTimeStr) {
         .then(response => response.json())
         .then(data => {
             hideLoading();
-            
             if (data.success) {
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Success!',
-                    text: data.message,
-                    timer: 2000,
-                    showConfirmButton: false
-                }).then(() => {
-                    bootstrap.Modal.getInstance(document.getElementById('createRMRModal')).hide();
-                    location.reload();
-                });
+                Swal.fire({ icon: 'success', title: 'Success!', text: data.message, timer: 2000, showConfirmButton: false })
+                    .then(() => {
+                        bootstrap.Modal.getInstance(document.getElementById('createRMRModal')).hide();
+                        location.reload();
+                    });
             } else {
                 Swal.fire('Error', data.message, 'error');
             }
@@ -2335,13 +2617,11 @@ function formatDate($dateTimeStr) {
         });
     }
 
-    // Process RMR
     function processRMR(id) {
         selectedRMR = id;
         new bootstrap.Modal(document.getElementById('processRMRModal')).show();
     }
 
-    // Confirm Process RMR
     function confirmProcessRMR() {
         const inspectorName = document.getElementById('inspectorName').value;
         const inspectionType = document.getElementById('inspectionType').value;
@@ -2352,7 +2632,6 @@ function formatDate($dateTimeStr) {
         }
         
         showLoading();
-        
         const formData = new FormData();
         formData.append('action', 'process_rmr');
         formData.append('rmr_id', selectedRMR);
@@ -2366,18 +2645,12 @@ function formatDate($dateTimeStr) {
         .then(response => response.json())
         .then(data => {
             hideLoading();
-            
             if (data.success) {
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Success!',
-                    text: data.message,
-                    timer: 2000,
-                    showConfirmButton: false
-                }).then(() => {
-                    bootstrap.Modal.getInstance(document.getElementById('processRMRModal')).hide();
-                    location.reload();
-                });
+                Swal.fire({ icon: 'success', title: 'Success!', text: data.message, timer: 2000, showConfirmButton: false })
+                    .then(() => {
+                        bootstrap.Modal.getInstance(document.getElementById('processRMRModal')).hide();
+                        location.reload();
+                    });
             } else {
                 Swal.fire('Error', data.message, 'error');
             }
@@ -2388,7 +2661,6 @@ function formatDate($dateTimeStr) {
         });
     }
 
-    // Show Approval/Rejection Modal
     function showApprovalModal(id, action) {
         selectedRMR = id;
         currentAction = action;
@@ -2410,7 +2682,6 @@ function formatDate($dateTimeStr) {
             approveBtn.style.display = 'inline-block';
             rejectBtn.style.display = 'none';
             
-            // Clear and set default amount
             const row = document.querySelector(`.rmr-row[data-id="${id}"]`);
             if (row) {
                 const amountCell = row.querySelector('.col-amount');
@@ -2432,7 +2703,6 @@ function formatDate($dateTimeStr) {
         new bootstrap.Modal(document.getElementById('approvalModal')).show();
     }
 
-    // Confirm Approval/Rejection
     function confirmApproval(action) {
         if (action === 'approve') {
             const dispositionType = document.getElementById('dispositionType').value;
@@ -2445,7 +2715,6 @@ function formatDate($dateTimeStr) {
             }
             
             showLoading();
-            
             const formData = new FormData();
             formData.append('action', 'approve_rmr');
             formData.append('rmr_id', selectedRMR);
@@ -2453,277 +2722,206 @@ function formatDate($dateTimeStr) {
             formData.append('approved_amount', approvedAmount);
             formData.append('approval_notes', approvalNotes);
             
-            fetch('bad_orders.php', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                hideLoading();
-                
-                if (data.success) {
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Approved!',
-                        text: data.message,
-                        timer: 2000,
-                        showConfirmButton: false
-                    }).then(() => {
-                        bootstrap.Modal.getInstance(document.getElementById('approvalModal')).hide();
-                        location.reload();
-                    });
-                } else {
-                    Swal.fire('Error', data.message, 'error');
-                }
-            })
-            .catch(error => {
-                hideLoading();
-                Swal.fire('Error', 'An error occurred while approving RMR', 'error');
-            });
+            fetch('bad_orders.php', { method: 'POST', body: formData })
+                .then(response => response.json())
+                .then(data => {
+                    hideLoading();
+                    if (data.success) {
+                        Swal.fire({ icon: 'success', title: 'Approved!', text: data.message, timer: 2000, showConfirmButton: false })
+                            .then(() => {
+                                bootstrap.Modal.getInstance(document.getElementById('approvalModal')).hide();
+                                location.reload();
+                            });
+                    } else {
+                        Swal.fire('Error', data.message, 'error');
+                    }
+                })
+                .catch(error => {
+                    hideLoading();
+                    Swal.fire('Error', 'An error occurred while approving RMR', 'error');
+                });
         } else {
             const rejectionReason = document.getElementById('rejectionReason').value;
-            
             if (!rejectionReason) {
                 Swal.fire('Warning', 'Please enter a rejection reason', 'warning');
                 return;
             }
             
             showLoading();
-            
             const formData = new FormData();
             formData.append('action', 'reject_rmr');
             formData.append('rmr_id', selectedRMR);
             formData.append('rejection_reason', rejectionReason);
             
-            fetch('bad_orders.php', {
-                method: 'POST',
-                body: formData
-            })
+            fetch('bad_orders.php', { method: 'POST', body: formData })
+                .then(response => response.json())
+                .then(data => {
+                    hideLoading();
+                    if (data.success) {
+                        Swal.fire({ icon: 'success', title: 'Rejected!', text: data.message, timer: 2000, showConfirmButton: false })
+                            .then(() => {
+                                bootstrap.Modal.getInstance(document.getElementById('approvalModal')).hide();
+                                location.reload();
+                            });
+                    } else {
+                        Swal.fire('Error', data.message, 'error');
+                    }
+                })
+                .catch(error => {
+                    hideLoading();
+                    Swal.fire('Error', 'An error occurred while rejecting RMR', 'error');
+                });
+        }
+    }
+
+    function viewRMR(id) {
+        showLoading();
+        const formData = new FormData();
+        formData.append('action', 'view_rmr');
+        formData.append('rmr_id', id);
+        
+        fetch('bad_orders.php', { method: 'POST', body: formData })
             .then(response => response.json())
             .then(data => {
                 hideLoading();
-                
                 if (data.success) {
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Rejected!',
-                        text: data.message,
-                        timer: 2000,
-                        showConfirmButton: false
-                    }).then(() => {
-                        bootstrap.Modal.getInstance(document.getElementById('approvalModal')).hide();
-                        location.reload();
-                    });
+                    const rmr = data.rmr;
+                    const approval = data.approval;
+                    const totalAmount = rmr.return_quantity * rmr.unit_price;
+                    
+                    let branchHtml = '';
+                    if (rmr.branch_name) {
+                        branchHtml = `<tr><td class="detail-label">Branch:</td><td><span class="badge bg-info">${rmr.branch_name}</span></td></tr>`;
+                    }
+                    
+                    let deliveryHtml = '';
+                    if (rmr.delivery_id) {
+                        deliveryHtml = `<tr><td class="detail-label">Source Delivery:</td><td>#${rmr.delivery_id}</td></tr>`;
+                    }
+                    
+                    let approvalHtml = '';
+                    if (approval) {
+                        approvalHtml = `
+                            <div class="alert alert-success mt-3">
+                                <h6><i class="bi bi-check-circle me-2"></i>Approval Details</h6>
+                                <p><strong>Approved Amount:</strong> ₱${Number(approval.approved_amount).toFixed(2)}</p>
+                                <p><strong>Approved By:</strong> User ID: ${approval.approved_by}</p>
+                                <p><strong>Approved At:</strong> ${new Date(approval.approved_at).toLocaleString()}</p>
+                                ${approval.approval_notes ? `<p><strong>Notes:</strong> ${approval.approval_notes}</p>` : ''}
+                            </div>
+                        `;
+                    }
+                    
+                    const content = document.getElementById('rmrDetailsContent');
+                    content.innerHTML = `
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="rmr-details-card">
+                                    <h6 class="fw-bold mb-3">RMR Information</h6>
+                                    <table class="table table-sm table-borderless">
+                                        <tr><td width="40%" class="detail-label">RMR Number:</td><td class="detail-value">${rmr.rmr_number}</td></tr>
+                                        ${branchHtml}
+                                        ${deliveryHtml}
+                                        <tr><td class="detail-label">Status:</td><td><span class="status-badge ${getStatusClass(rmr.rmr_status)}">${getStatusText(rmr.rmr_status)}</span></td></tr>
+                                        <tr><td class="detail-label">Received Date:</td><td>${new Date(rmr.received_date).toLocaleString()}</td></tr>
+                                        <tr><td class="detail-label">Received By:</td><td>${rmr.received_by_name || 'N/A'}</td></tr>
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="rmr-details-card">
+                                    <h6 class="fw-bold mb-3">Customer & Item Details</h6>
+                                    <table class="table table-sm table-borderless">
+                                        <tr><td width="40%" class="detail-label">Customer:</td><td>${rmr.customer_name}</td></tr>
+                                        <tr><td class="detail-label">Item Code:</td><td>${rmr.item_code}</td></tr>
+                                        <tr><td class="detail-label">Item Name:</td><td>${rmr.item_name}</td></tr>
+                                        <tr><td class="detail-label">Unit Type:</td><td>${rmr.unit_type}</td></tr>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row mt-2">
+                            <div class="col-md-6">
+                                <div class="rmr-details-card">
+                                    <h6 class="fw-bold mb-3">Return Details</h6>
+                                    <table class="table table-sm table-borderless">
+                                        <tr><td width="40%" class="detail-label">Return Quantity:</td><td>${rmr.return_quantity} ${rmr.unit_type}</td></tr>
+                                        <tr><td class="detail-label">Unit Price:</td><td>₱${Number(rmr.unit_price).toFixed(2)}</td></tr>
+                                        <tr><td class="detail-label">Total Amount:</td><td class="fw-bold">₱${Number(totalAmount).toFixed(2)}</td></tr>
+                                        <tr><td class="detail-label">Return Reason:</td><td><span class="return-reason ${getReasonClass(rmr.return_reason)}">${getReasonText(rmr.return_reason)}</span></td></tr>
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="rmr-details-card">
+                                    <h6 class="fw-bold mb-3">Inspection Details</h6>
+                                    <table class="table table-sm table-borderless">
+                                        <tr><td width="40%" class="detail-label">Inspector:</td><td>${rmr.inspector_name || 'N/A'}</td></tr>
+                                        <tr><td class="detail-label">Inspection Type:</td><td>${rmr.inspection_type ? rmr.inspection_type.charAt(0).toUpperCase() + rmr.inspection_type.slice(1) : 'N/A'}</td></tr>
+                                        <tr><td class="detail-label">Disposition:</td><td>${rmr.disposition_type ? getDispositionText(rmr.disposition_type) : 'N/A'}</td></tr>
+                                        <tr><td class="detail-label">Reason Details:</td><td>${rmr.reason_details || 'N/A'}</td></tr>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        ${approvalHtml}
+                    `;
+                    
+                    selectedRMR = id;
+                    const editBtn = document.getElementById('editFromViewBtn');
+                    editBtn.style.display = (rmr.rmr_status === 'pending' || rmr.rmr_status === 'processing') ? 'inline-block' : 'none';
+                    
+                    new bootstrap.Modal(document.getElementById('viewRMRModal')).show();
                 } else {
                     Swal.fire('Error', data.message, 'error');
                 }
             })
             .catch(error => {
                 hideLoading();
-                Swal.fire('Error', 'An error occurred while rejecting RMR', 'error');
+                Swal.fire('Error', 'An error occurred while fetching RMR details', 'error');
             });
-        }
     }
 
-    // View RMR Details
-    function viewRMR(id) {
-        showLoading();
-        
-        const formData = new FormData();
-        formData.append('action', 'view_rmr');
-        formData.append('rmr_id', id);
-        
-        fetch('bad_orders.php', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            hideLoading();
-            
-            if (data.success) {
-                const rmr = data.rmr;
-                const approval = data.approval;
-                
-                const totalAmount = rmr.return_quantity * rmr.unit_price;
-                
-                let branchHtml = '';
-                if (rmr.branch_name) {
-                    branchHtml = `
-                        <tr>
-                            <td class="detail-label">Branch:</td>
-                            <td><span class="badge bg-info">${rmr.branch_name}</span></td>
-                        </tr>
-                    `;
-                }
-                
-                let deliveryHtml = '';
-                if (rmr.delivery_id) {
-                    deliveryHtml = `
-                        <tr>
-                            <td class="detail-label">Source Delivery:</td>
-                            <td>#${rmr.delivery_id} ${rmr.source_delivery_status ? '(' + rmr.source_delivery_status + ')' : ''}</td>
-                        </tr>
-                    `;
-                }
-                
-                let approvalHtml = '';
-                if (approval) {
-                    approvalHtml = `
-                        <div class="alert alert-success mt-3">
-                            <h6><i class="bi bi-check-circle me-2"></i>Approval Details</h6>
-                            <p><strong>Approved Amount:</strong> ₱${Number(approval.approved_amount).toFixed(2)}</p>
-                            <p><strong>Approved By:</strong> User ID: ${approval.approved_by}</p>
-                            <p><strong>Approved At:</strong> ${new Date(approval.approved_at).toLocaleString()}</p>
-                            ${approval.approval_notes ? `<p><strong>Notes:</strong> ${approval.approval_notes}</p>` : ''}
-                        </div>
-                    `;
-                }
-                
-                const content = document.getElementById('rmrDetailsContent');
-                content.innerHTML = `
-                    <div class="row">
-                        <div class="col-md-6">
-                            <div class="rmr-details-card">
-                                <h6 class="fw-bold mb-3">RMR Information</h6>
-                                <table class="table table-sm table-borderless">
-                                    <tr>
-                                        <td width="40%" class="detail-label">RMR Number:</td>
-                                        <td class="detail-value">${rmr.rmr_number}</td>
-                                    </tr>
-                                    ${branchHtml}
-                                    ${deliveryHtml}
-                                    <tr>
-                                        <td class="detail-label">Status:</td>
-                                        <td><span class="status-badge ${getStatusClass(rmr.rmr_status)}">${getStatusText(rmr.rmr_status)}</span></td>
-                                    </tr>
-                                    <tr>
-                                        <td class="detail-label">Received Date:</td>
-                                        <td>${new Date(rmr.received_date).toLocaleString()}</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="detail-label">Received By:</td>
-                                        <td>${rmr.received_by_name || 'N/A'}</td>
-                                    </tr>
-                                </table>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="rmr-details-card">
-                                <h6 class="fw-bold mb-3">Customer & Item Details</h6>
-                                <table class="table table-sm table-borderless">
-                                    <tr>
-                                        <td width="40%" class="detail-label">Customer:</td>
-                                        <td>${rmr.customer_name}</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="detail-label">Item Code:</td>
-                                        <td>${rmr.item_code}</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="detail-label">Item Name:</td>
-                                        <td>${rmr.item_name}</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="detail-label">Unit Type:</td>
-                                        <td>${rmr.unit_type}</td>
-                                    </tr>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="row mt-2">
-                        <div class="col-md-6">
-                            <div class="rmr-details-card">
-                                <h6 class="fw-bold mb-3">Return Details</h6>
-                                <table class="table table-sm table-borderless">
-                                    <tr>
-                                        <td width="40%" class="detail-label">Return Quantity:</td>
-                                        <td>${rmr.return_quantity} ${rmr.unit_type}</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="detail-label">Unit Price:</td>
-                                        <td>₱${Number(rmr.unit_price).toFixed(2)}</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="detail-label">Total Amount:</td>
-                                        <td class="fw-bold">₱${Number(totalAmount).toFixed(2)}</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="detail-label">Return Reason:</td>
-                                        <td><span class="return-reason ${getReasonClass(rmr.return_reason)}">${getReasonText(rmr.return_reason)}</span></td>
-                                    </tr>
-                                </table>
-                            </div>
-                        </div>
-                        <div class="col-md-6">
-                            <div class="rmr-details-card">
-                                <h6 class="fw-bold mb-3">Inspection Details</h6>
-                                <table class="table table-sm table-borderless">
-                                    <tr>
-                                        <td width="40%" class="detail-label">Inspector:</td>
-                                        <td>${rmr.inspector_name || 'N/A'}</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="detail-label">Inspection Type:</td>
-                                        <td>${rmr.inspection_type ? rmr.inspection_type.charAt(0).toUpperCase() + rmr.inspection_type.slice(1) : 'N/A'}</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="detail-label">Disposition:</td>
-                                        <td>${rmr.disposition_type ? getDispositionText(rmr.disposition_type) : 'N/A'}</td>
-                                    </tr>
-                                    <tr>
-                                        <td class="detail-label">Reason Details:</td>
-                                        <td>${rmr.reason_details || 'N/A'}</td>
-                                    </tr>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                    ${approvalHtml}
-                `;
-                
-                selectedRMR = id;
-                
-                // Show/hide edit button based on status
-                const editBtn = document.getElementById('editFromViewBtn');
-                if (rmr.rmr_status === 'pending' || rmr.rmr_status === 'processing') {
-                    editBtn.style.display = 'inline-block';
-                } else {
-                    editBtn.style.display = 'none';
-                }
-                
-                new bootstrap.Modal(document.getElementById('viewRMRModal')).show();
-            } else {
-                Swal.fire('Error', data.message, 'error');
-            }
-        })
-        .catch(error => {
-            hideLoading();
-            Swal.fire('Error', 'An error occurred while fetching RMR details', 'error');
-        });
-    }
-
-    // View Rejected Delivery Details with clean formatted remarks
+    // ========== VIEW REJECTED DELIVERY - SINGLE VERSION (FIXED FOR MOBILE) ==========
     function viewRejectedDelivery(deliveryId, photoPath, rejectionReason, remarks) {
-        // Find the delivery data from the table row
-        const button = event.target.closest('button');
-        const row = button.closest('tr');
-        const cells = row.querySelectorAll('td');
+        console.log("viewRejectedDelivery called with:", {deliveryId, photoPath, rejectionReason, remarks});
+        
+        // Build correct image path
+        let imageUrl = '';
+        if (photoPath && photoPath !== '') {
+            // Get just the filename if full path is passed
+            const filename = photoPath.split('/').pop();
+            imageUrl = '../uploads/rejections/' + filename;
+            console.log("Image URL:", imageUrl);
+        }
         
         const deliveryData = {
             id: deliveryId,
-            order_number: cells[1]?.innerText.trim() || 'N/A',
-            customer: cells[2]?.innerText.trim() || 'N/A',
-            trip_number: cells[3]?.innerText.trim() || 'N/A',
-            delivery_date: cells[4]?.innerText.trim() || 'N/A',
+            order_number: 'N/A',
+            customer: 'N/A',
+            trip_number: 'N/A',
+            delivery_date: 'N/A',
             remarks: remarks || 'No remarks provided',
             rejection_reason: rejectionReason || 'No rejection reason provided',
-            photo: photoPath || null,
+            photo: imageUrl,
             status: 'Rejected'
         };
         
-        // Clean remarks - remove rejection reason and photo references
+        // Try to get data from the table row if available
+        const rows = document.querySelectorAll('#rejected-deliveries-content .table-container tbody tr');
+        for (let r of rows) {
+            const idCell = r.querySelector('td:first-child .badge');
+            if (idCell && idCell.innerText.replace('#', '') == deliveryId) {
+                const cells = r.querySelectorAll('td');
+                deliveryData.order_number = cells[1]?.innerText.trim() || 'N/A';
+                deliveryData.customer = cells[2]?.innerText.trim() || 'N/A';
+                deliveryData.trip_number = cells[3]?.innerText.trim() || 'N/A';
+                deliveryData.delivery_date = cells[4]?.innerText.trim() || 'N/A';
+                break;
+            }
+        }
+        
+        // Clean remarks
         let cleanRemarks = deliveryData.remarks;
         if (deliveryData.rejection_reason && deliveryData.rejection_reason !== 'No rejection reason provided') {
             cleanRemarks = cleanRemarks.replace('REASON: ' + deliveryData.rejection_reason, '');
@@ -2732,51 +2930,42 @@ function formatDate($dateTimeStr) {
         cleanRemarks = cleanRemarks.replace(/\[PHOTO:.*?\]/g, '');
         cleanRemarks = cleanRemarks.replace(/\s+/g, ' ').trim();
         
-        // Format remarks for display - normal font, just line breaks
         let formattedRemarks = '<div class="details-remarks">';
-        
         if (cleanRemarks && cleanRemarks !== 'No remarks provided') {
-            // Split by common delimiters and format with line breaks
             const lines = cleanRemarks.split(/(?=\[)|(?=REJECTED by)|(?=DETAILS:)|(?=PROPOSED ACTION:)|(?=RETRY DATE:)/);
-            
             lines.forEach(line => {
                 line = line.trim();
                 if (line) {
-                    formattedRemarks += `<div class="remark-line">${line}</div>`;
+                    formattedRemarks += `<div class="remark-line">${escapeHtml(line)}</div>`;
                 }
             });
         } else {
-            formattedRemarks += `<div class="remark-line">${deliveryData.remarks}</div>`;
+            formattedRemarks += `<div class="remark-line">${escapeHtml(deliveryData.remarks)}</div>`;
         }
-        
         formattedRemarks += '</div>';
         
-        // Create rejection reason HTML
+        // Rejection reason HTML
         let reasonHtml = '';
         if (deliveryData.rejection_reason && deliveryData.rejection_reason !== 'No rejection reason provided') {
-            reasonHtml = `
-                <div class="p-3 bg-light rounded" style="max-height: 100px; overflow-y: auto; font-size: 13px;">
-                    ${deliveryData.rejection_reason.replace(/\n/g, '<br>')}
-                </div>
-            `;
+            reasonHtml = `<div class="p-3 bg-light rounded" style="max-height: 100px; overflow-y: auto; font-size: 13px;">${escapeHtml(deliveryData.rejection_reason).replace(/\n/g, '<br>')}</div>`;
         } else {
-            reasonHtml = `<div class="p-3 bg-light rounded">${deliveryData.rejection_reason}</div>`;
+            reasonHtml = `<div class="p-3 bg-light rounded">${escapeHtml(deliveryData.rejection_reason)}</div>`;
         }
         
-        // Create image HTML with clickable photo - bigger preview
+        // Image HTML
         let imageHtml = '';
         if (deliveryData.photo && deliveryData.photo !== '') {
             imageHtml = `
                 <div class="rejection-image-container text-center">
                     <h6 class="fw-bold mb-3"><i class="bi bi-camera"></i> Rejection Photo</h6>
                     <div class="d-flex justify-content-center">
-                        <img src="../uploads/rejections/${deliveryData.photo}" 
+                        <img src="${deliveryData.photo}" 
                              class="rejection-image img-fluid" 
                              alt="Rejection Photo" 
-                             onclick="openPhotoModal('${deliveryData.photo}')"
-                             style="max-height: 250px; cursor: pointer; border: 2px solid #dee2e6; border-radius: 8px;">
+                             onclick="event.stopPropagation(); openPhotoModal('${deliveryData.photo.split('/').pop()}')"
+                             style="max-width: 100%; max-height: 300px; cursor: pointer; border: 2px solid #dee2e6; border-radius: 8px; object-fit: contain; background: #f8f9fa;"
+                             onerror="this.onerror=null; this.src='data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'100\' height=\'100\' viewBox=\'0 0 24 24\' fill=\'none\' stroke=\'%236c757d\' stroke-width=\'2\' stroke-linecap=\'round\' stroke-linejoin=\'round\'%3E%3Crect x=\'2\' y=\'2\' width=\'20\' height=\'20\' rx=\'2.18\' ry=\'2.18\'%3E%3C/rect%3E%3Ccircle cx=\'8.5\' cy=\'8.5\' r=\'1.5\'%3E%3C/circle%3E%3Cpolyline points=\'21 15 16 10 5 21\'%3E%3C/polyline%3E%3C/svg%3E'; this.style.objectFit='contain'; this.style.padding='20px';">
                     </div>
-                    <p class="text-muted mt-2"><small><i class="bi bi-zoom-in"></i> Click image to enlarge</small></p>
                 </div>
             `;
         } else {
@@ -2788,7 +2977,7 @@ function formatDate($dateTimeStr) {
             `;
         }
         
-        // Populate modal with delivery details including photo
+        // Populate modal
         const content = document.getElementById('rejectedDeliveryDetails');
         content.innerHTML = `
             <div class="row">
@@ -2796,26 +2985,11 @@ function formatDate($dateTimeStr) {
                     <div class="rmr-details-card">
                         <h6 class="fw-bold mb-3"><i class="bi bi-truck"></i> Delivery Information</h6>
                         <table class="table table-sm table-borderless">
-                            <tr>
-                                <td width="40%" class="detail-label">Delivery ID:</td>
-                                <td class="detail-value">#${deliveryData.id}</td>
-                            </tr>
-                            <tr>
-                                <td class="detail-label">Order Number:</td>
-                                <td><strong>${deliveryData.order_number}</strong></td>
-                            </tr>
-                            <tr>
-                                <td class="detail-label">Trip Number:</td>
-                                <td>${deliveryData.trip_number}</td>
-                            </tr>
-                            <tr>
-                                <td class="detail-label">Delivery Date:</td>
-                                <td>${deliveryData.delivery_date}</td>
-                            </tr>
-                            <tr>
-                                <td class="detail-label">Status:</td>
-                                <td><span class="badge bg-danger">${deliveryData.status}</span></td>
-                            </tr>
+                            <tr><td width="40%" class="detail-label">Delivery ID:</td><td class="detail-value">#${escapeHtml(deliveryData.id)}</td></tr>
+                            <tr><td class="detail-label">Order Number:</td><td><strong>${escapeHtml(deliveryData.order_number)}</strong></td></tr>
+                            <tr><td class="detail-label">Trip Number:</td><td>${escapeHtml(deliveryData.trip_number)}</td></tr>
+                            <tr><td class="detail-label">Delivery Date:</td><td>${escapeHtml(deliveryData.delivery_date)}</td></tr>
+                            <tr><td class="detail-label">Status:</td><td><span class="badge bg-danger">${escapeHtml(deliveryData.status)}</span></td></tr>
                         </table>
                     </div>
                 </div>
@@ -2823,10 +2997,7 @@ function formatDate($dateTimeStr) {
                     <div class="rmr-details-card">
                         <h6 class="fw-bold mb-3"><i class="bi bi-person"></i> Customer Information</h6>
                         <table class="table table-sm table-borderless">
-                            <tr>
-                                <td width="40%" class="detail-label">Customer Name:</td>
-                                <td>${deliveryData.customer}</td>
-                            </tr>
+                            <tr><td width="40%" class="detail-label">Customer Name:</td><td>${escapeHtml(deliveryData.customer)}</td></tr>
                         </table>
                     </div>
                 </div>
@@ -2854,40 +3025,29 @@ function formatDate($dateTimeStr) {
             </div>
         `;
         
-        // Store delivery data for RMR creation
         const createBtn = document.getElementById('createRMRFromViewBtn');
         createBtn.setAttribute('data-delivery-id', deliveryId);
-        createBtn.setAttribute('data-so-id', cells[1]?.getAttribute('data-so-id') || '0');
-        createBtn.setAttribute('data-customer-id', cells[2]?.getAttribute('data-customer-id') || '0');
+        createBtn.setAttribute('data-so-id', deliveryData.order_number !== 'N/A' ? deliveryData.order_number : '0');
+        createBtn.setAttribute('data-customer-id', deliveryData.customer !== 'N/A' ? deliveryData.customer : '0');
         
         new bootstrap.Modal(document.getElementById('viewRejectedDeliveryModal')).show();
     }
 
-    // Open photo in centered modal - bigger size
     function openPhotoModal(photoPath) {
         const modal = new bootstrap.Modal(document.getElementById('photoViewModal'));
         const modalImg = document.getElementById('modalPhoto');
-        modalImg.src = '../uploads/rejections/' + photoPath;
+        const fullPath = '../uploads/rejections/' + photoPath;
+        modalImg.src = fullPath;
         modal.show();
     }
 
-    // Download photo function
     function downloadPhoto() {
         const img = document.getElementById('modalPhoto');
         const photoPath = img.src;
         const fileName = photoPath.split('/').pop();
         
-        // Show loading
-        Swal.fire({
-            title: 'Downloading...',
-            text: 'Please wait',
-            allowOutsideClick: false,
-            didOpen: () => {
-                Swal.showLoading();
-            }
-        });
+        Swal.fire({ title: 'Downloading...', text: 'Please wait', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
         
-        // Create a temporary link to download the image
         fetch(photoPath)
             .then(response => response.blob())
             .then(blob => {
@@ -2899,27 +3059,15 @@ function formatDate($dateTimeStr) {
                 link.click();
                 document.body.removeChild(link);
                 window.URL.revokeObjectURL(url);
-                
                 Swal.close();
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Download Complete',
-                    text: 'Photo has been downloaded successfully',
-                    timer: 1500,
-                    showConfirmButton: false
-                });
+                Swal.fire({ icon: 'success', title: 'Download Complete', text: 'Photo downloaded successfully', timer: 1500, showConfirmButton: false });
             })
             .catch(error => {
                 Swal.close();
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Download Failed',
-                    text: 'Unable to download the photo. Please try again.'
-                });
+                Swal.fire({ icon: 'error', title: 'Download Failed', text: 'Unable to download the photo' });
             });
     }
 
-    // Create RMR from View Modal
     function createRMRFromView() {
         const btn = document.getElementById('createRMRFromViewBtn');
         const deliveryId = btn.getAttribute('data-delivery-id');
@@ -2927,13 +3075,9 @@ function formatDate($dateTimeStr) {
         const customerId = btn.getAttribute('data-customer-id');
         
         bootstrap.Modal.getInstance(document.getElementById('viewRejectedDeliveryModal')).hide();
-        
-        setTimeout(() => {
-            showCreateRMRModal(deliveryId, soId, customerId);
-        }, 300);
+        setTimeout(() => showCreateRMRModal(deliveryId, soId, customerId), 300);
     }
 
-    // Edit RMR from View
     function editRMRFromView() {
         bootstrap.Modal.getInstance(document.getElementById('viewRMRModal')).hide();
         setTimeout(() => {
@@ -2941,27 +3085,54 @@ function formatDate($dateTimeStr) {
                 const row = document.querySelector(`.rmr-row[data-id="${selectedRMR}"]`);
                 if (row) {
                     const status = row.dataset.status;
-                    if (status === 'pending') {
-                        processRMR(selectedRMR);
-                    } else if (status === 'processing') {
-                        showApprovalModal(selectedRMR, 'approve');
-                    }
+                    if (status === 'pending') processRMR(selectedRMR);
+                    else if (status === 'processing') showApprovalModal(selectedRMR, 'approve');
                 }
             }
         }, 300);
     }
 
-    // ========== PRINT FUNCTION - UPDATED WITH OPTIMIZED FORMAT ==========
+    // ========== HELPER FUNCTIONS ==========
+    function escapeHtml(text) {
+        if (!text) return '';
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+
+    function getStatusClass(status) {
+        const classes = { 'pending': 'status-pending', 'processing': 'status-processing', 'approved': 'status-approved', 'rejected': 'status-rejected', 'resolved': 'status-resolved' };
+        return classes[status] || 'status-pending';
+    }
+
+    function getStatusText(status) {
+        const texts = { 'pending': 'Pending', 'processing': 'Processing', 'approved': 'Approved', 'rejected': 'Rejected', 'resolved': 'Resolved' };
+        return texts[status] || status;
+    }
+
+    function getReasonClass(reason) {
+        const classes = { 'damaged': 'reason-damaged', 'expired': 'reason-expired', 'wrong-item': 'reason-wrong-item', 'quality': 'reason-quality', 'overstock': 'reason-overstock', 'other': 'reason-other' };
+        return classes[reason] || 'reason-other';
+    }
+
+    function getReasonText(reason) {
+        const texts = { 'damaged': 'Damaged', 'expired': 'Expired', 'wrong-item': 'Wrong Item', 'quality': 'Quality Issue', 'overstock': 'Overstock', 'other': 'Other' };
+        return texts[reason] || reason;
+    }
+
+    function getDispositionText(disposition) {
+        const texts = { 'credit': 'Credit to Customer (Return to Stock)', 'refund': 'Cash Refund (Return to Stock)', 'replacement': 'Replacement (Return to Stock)', 'disposal': 'Destroy Item', 'return-to-supplier': 'Return to Supplier' };
+        return texts[disposition] || disposition;
+    }
+
+    // ========== PRINT FUNCTIONS ==========
     function printRMRReport() {
-        // Show loading indicator on button
         const printBtn = document.querySelector('.btn-outline-primary[onclick="printRMRReport()"]');
         if (printBtn) {
-            const originalText = printBtn.innerHTML;
             printBtn.innerHTML = '<i class="bi bi-printer"></i> Preparing...';
             printBtn.disabled = true;
         }
-
-        // Get current filter values
+        
         const filterData = {
             date: document.getElementById('dateFilter').value,
             status: document.getElementById('statusFilter').value,
@@ -2970,87 +3141,34 @@ function formatDate($dateTimeStr) {
         };
         
         showLoading();
-        
-        // Fetch filtered data from server
         const formData = new FormData();
         formData.append('action', 'print_rmr');
         formData.append('filter_data', JSON.stringify(filterData));
         
-        fetch('bad_orders.php', {
-            method: 'POST',
-            body: formData
-        })
-        .then(response => response.json())
-        .then(data => {
-            hideLoading();
-            
-            if (data.success) {
-                const items = data.items;
-                
-                if (items.length === 0) {
-                    Swal.fire({
-                        icon: 'warning',
-                        title: 'No Data',
-                        text: 'No RMR requests match the current filters',
-                        confirmButtonColor: '#0d6efd'
-                    });
-                    return;
+        fetch('bad_orders.php', { method: 'POST', body: formData })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                if (data.success && data.items.length > 0) {
+                    const htmlContent = generatePrintHTML(data.items, data.branch_name, data.view_all, data.rmr_branch_column_exists);
+                    const iframe = document.getElementById('printFrame');
+                    const iframeDoc = iframe.contentWindow.document;
+                    iframeDoc.open();
+                    iframeDoc.write(htmlContent);
+                    iframeDoc.close();
+                    setTimeout(() => iframe.contentWindow.print(), 250);
+                } else {
+                    Swal.fire({ icon: 'warning', title: 'No Data', text: 'No RMR requests match the current filters' });
                 }
-                
-                // Generate compact HTML
-                const htmlContent = generatePrintHTML(items, data.branch_name, data.view_all, data.rmr_branch_column_exists);
-                
-                // Use hidden iframe for printing
-                const iframe = document.getElementById('printFrame');
-                const iframeDoc = iframe.contentWindow.document;
-                
-                iframeDoc.open();
-                iframeDoc.write(htmlContent);
-                iframeDoc.close();
-                
-                // Restore button
-                setTimeout(() => {
-                    if (printBtn) {
-                        printBtn.innerHTML = '<i class="bi bi-printer"></i> Print';
-                        printBtn.disabled = false;
-                    }
-                }, 1000);
-                
-                // Trigger print dialog
-                setTimeout(() => {
-                    iframe.contentWindow.focus();
-                    iframe.contentWindow.print();
-                }, 250);
-            } else {
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error',
-                    text: 'Failed to load RMR data',
-                    confirmButtonColor: '#0d6efd'
-                });
-                if (printBtn) {
-                    printBtn.innerHTML = '<i class="bi bi-printer"></i> Print';
-                    printBtn.disabled = false;
-                }
-            }
-        })
-        .catch(error => {
-            hideLoading();
-            console.error('Error:', error);
-            Swal.fire({
-                icon: 'error',
-                title: 'Error',
-                text: 'An error occurred while preparing print',
-                confirmButtonColor: '#0d6efd'
+                if (printBtn) { printBtn.innerHTML = '<i class="bi bi-printer"></i> Print'; printBtn.disabled = false; }
+            })
+            .catch(error => {
+                hideLoading();
+                Swal.fire({ icon: 'error', title: 'Error', text: 'An error occurred while preparing print' });
+                if (printBtn) { printBtn.innerHTML = '<i class="bi bi-printer"></i> Print'; printBtn.disabled = false; }
             });
-            if (printBtn) {
-                printBtn.innerHTML = '<i class="bi bi-printer"></i> Print';
-                printBtn.disabled = false;
-            }
-        });
     }
 
-    // Compact HTML generator for RMR print
     function generatePrintHTML(items, branchName, viewAll, rmrBranchColumnExists) {
         let tableRows = '';
         let totalAmount = 0;
@@ -3076,348 +3194,570 @@ function formatDate($dateTimeStr) {
             tableRows += '</tr>';
         });
         
-        const currentDate = new Date().toLocaleDateString('en-US', { 
-            year: 'numeric', 
-            month: 'short', 
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
+        const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
         
-        const columnCount = viewAll && rmrBranchColumnExists ? 9 : 8;
-        
-        return `
-            <!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset="UTF-8">
-                <title>RMR Report</title>
-                <style>
-                    body { font-family: Arial, sans-serif; margin: 0; padding: 0; font-size: 9px; }
-                    .print-container { max-width: 100%; margin: 0; }
-                    .print-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; border-bottom: 1px solid #000; padding-bottom: 3px; }
-                    .logo-section { display: flex; align-items: center; gap: 5px; }
-                    .company-logo { width: 30px; height: auto; }
-                    .company-info h1 { font-size: 14px; margin: 0; font-weight: bold; }
-                    .company-info p { font-size: 8px; margin: 0; }
-                    .report-title h2 { font-size: 12px; margin: 0; }
-                    .report-title .date-info { font-size: 8px; }
-                    .summary-box { border: 1px solid #000; padding: 3px; margin-bottom: 5px; display: flex; }
-                    .summary-item { flex: 1; text-align: center; border-right: 1px solid #000; }
-                    .summary-item:last-child { border-right: none; }
-                    .summary-label { font-size: 8px; font-weight: bold; }
-                    .summary-value { font-size: 11px; font-weight: bold; }
-                    table { width: 100%; border-collapse: collapse; font-size: 8px; }
-                    th { border: 1px solid #000; padding: 3px; text-align: left; font-weight: bold; background: white !important; color: black !important; }
-                    td { border: 1px solid #000; padding: 3px; }
-                    .total-row { font-weight: bold; }
-                    .print-footer { margin-top: 5px; border-top: 1px solid #000; padding-top: 3px; display: flex; justify-content: space-between; font-size: 8px; }
-                </style>
-            </head>
-            <body>
-                <div class="print-container">
-                    <div class="print-header">
-                        <div class="logo-section">
-                            <img src="${logoBase64}" alt="AMGC Logo" class="company-logo">
-                            <div class="company-info">
-                                <h1>AMGC</h1>
-                                <p>RMR Report</p>
-                            </div>
-                        </div>
-                        <div class="report-title">
-                            <h2>RETURNED MERCHANDISE REQUESTS</h2>
-                            <div class="date-info">${currentDate}</div>
-                        </div>
-                    </div>
-                    
-                    <div class="summary-box">
-                        <div class="summary-item"><div class="summary-label">Total RMR</div><div class="summary-value">${items.length}</div></div>
-                        <div class="summary-item"><div class="summary-label">Total Qty</div><div class="summary-value">${totalQuantity}</div></div>
-                        <div class="summary-item"><div class="summary-label">Total Amount</div><div class="summary-value">₱${totalAmount.toFixed(2)}</div></div>
-                        <div class="summary-item"><div class="summary-label">Branch</div><div class="summary-value">${!viewAll ? branchName : 'All'}</div></div>
-                    </div>
-                    
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>RMR #</th>
-                                <th>Customer</th>
-                                <th>Item</th>
-                                ${viewAll && rmrBranchColumnExists ? '<th>Branch</th>' : ''}
-                                <th style="text-align: center;">Qty</th>
-                                <th style="text-align: right;">Amount</th>
-                                <th>Reason</th>
-                                <th>Status</th>
-                                <th>Date</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${tableRows}
-                            <tr class="total-row">
-                                <td colspan="${viewAll && rmrBranchColumnExists ? '3' : '2'}" style="text-align: right;">TOTAL</td>
-                                <td style="text-align: center;">${totalQuantity}</td>
-                                <td style="text-align: right;">₱${totalAmount.toFixed(2)}</td>
-                                <td colspan="${viewAll && rmrBranchColumnExists ? '4' : '3'}"></td>
-                            </tr>
-                        </tbody>
-                    </table>
-                    
-                    <div class="print-footer">
-                        <div>Generated: ${currentDate}</div>
-                        <div>${document.querySelector('.user-name-sidebar')?.textContent || 'Branch Admin'}</div>
-                    </div>
-                </div>
-            </body>
-            </html>
-        `;
+        return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>RMR Report</title><style>body{font-family:Arial;margin:0;padding:0;font-size:9px}.print-container{max-width:100%;margin:0}.print-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;border-bottom:1px solid #000;padding-bottom:3px}.logo-section{display:flex;align-items:center;gap:5px}.company-logo{width:30px;height:auto}.company-info h1{font-size:14px;margin:0}.company-info p{font-size:8px;margin:0}.report-title h2{font-size:12px;margin:0}.report-title .date-info{font-size:8px}.summary-box{border:1px solid #000;padding:3px;margin-bottom:5px;display:flex}.summary-item{flex:1;text-align:center;border-right:1px solid #000}.summary-item:last-child{border-right:none}.summary-label{font-size:8px;font-weight:bold}.summary-value{font-size:11px;font-weight:bold}table{width:100%;border-collapse:collapse;font-size:8px}th,td{border:1px solid #000;padding:3px}th{text-align:left;font-weight:bold;background:white!important;color:black!important}.total-row{font-weight:bold}.print-footer{margin-top:5px;border-top:1px solid #000;padding-top:3px;display:flex;justify-content:space-between;font-size:8px}</style></head><body><div class="print-container"><div class="print-header"><div class="logo-section"><img src="${logoBase64}" alt="Logo" class="company-logo"><div class="company-info"><h1>AMGC</h1><p>RMR Report</p></div></div><div class="report-title"><h2>RETURNED MERCHANDISE REQUESTS</h2><div class="date-info">${currentDate}</div></div></div><div class="summary-box"><div class="summary-item"><div class="summary-label">Total RMR</div><div class="summary-value">${items.length}</div></div><div class="summary-item"><div class="summary-label">Total Qty</div><div class="summary-value">${totalQuantity}</div></div><div class="summary-item"><div class="summary-label">Total Amount</div><div class="summary-value">₱${totalAmount.toFixed(2)}</div></div><div class="summary-item"><div class="summary-label">Branch</div><div class="summary-value">${!viewAll ? branchName : 'All'}</div></div></div><table><thead><tr><th>RMR #</th><th>Customer</th><th>Item</th>${viewAll && rmrBranchColumnExists ? '<th>Branch</th>' : ''}<th style="text-align:center;">Qty</th><th style="text-align:right;">Amount</th><th>Reason</th><th>Status</th><th>Date</th></tr></thead><tbody>${tableRows}<tr class="total-row"><td colspan="${viewAll && rmrBranchColumnExists ? '3' : '2'}" style="text-align:right;">TOTAL</td><td style="text-align:center;">${totalQuantity}</td><td style="text-align:right;">₱${totalAmount.toFixed(2)}</td><td colspan="${viewAll && rmrBranchColumnExists ? '4' : '3'}"></td></tr></tbody></table><div class="print-footer"><div>Generated: ${currentDate}</div><div>${document.querySelector('.user-name-sidebar')?.textContent || 'Branch Admin'}</div></div></div></body></html>`;
     }
 
-    // Helper functions
-    function getStatusClass(status) {
-        const classes = {
-            'pending': 'status-pending',
-            'processing': 'status-processing',
-            'approved': 'status-approved',
-            'rejected': 'status-rejected',
-            'resolved': 'status-resolved'
-        };
-        return classes[status] || 'status-pending';
-    }
-
-    function getStatusText(status) {
-        const texts = {
-            'pending': 'Pending',
-            'processing': 'Processing',
-            'approved': 'Approved',
-            'rejected': 'Rejected',
-            'resolved': 'Resolved'
-        };
-        return texts[status] || status;
-    }
-
-    function getReasonClass(reason) {
-        const classes = {
-            'damaged': 'reason-damaged',
-            'expired': 'reason-expired',
-            'wrong-item': 'reason-wrong-item',
-            'quality': 'reason-quality',
-            'overstock': 'reason-overstock',
-            'other': 'reason-other'
-        };
-        return classes[reason] || 'reason-other';
-    }
-
-    function getReasonText(reason) {
-        const texts = {
-            'damaged': 'Damaged',
-            'expired': 'Expired',
-            'wrong-item': 'Wrong Item',
-            'quality': 'Quality Issue',
-            'overstock': 'Overstock',
-            'other': 'Other'
-        };
-        return texts[reason] || reason;
-    }
-
-    function getDispositionText(disposition) {
-        const texts = {
-            'credit': 'Credit to Customer (Return to Stock)',
-            'refund': 'Cash Refund (Return to Stock)',
-            'replacement': 'Replacement (Return to Stock)',
-            'disposal': 'Destroy Item',
-            'return-to-supplier': 'Return to Supplier'
-        };
-        return texts[disposition] || disposition;
-    }
-
-    // Print RMR Details (single RMR)
     function printRMRDetails() {
         const content = document.getElementById('rmrDetailsContent').innerHTML;
         const printWindow = window.open('', '_blank');
-        printWindow.document.write(`
-            <html>
-                <head>
-                    <title>RMR Details</title>
-                    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-                    <style>
-                        body { padding: 20px; }
-                        .status-badge { display: inline-block; padding: 5px 12px; font-size: 12px; border-radius: 20px; }
-                        .status-pending { background-color: #fff3cd; color: #856404; }
-                        .status-processing { background-color: #cce5ff; color: #004085; }
-                        .status-approved { background-color: #d4edda; color: #155724; }
-                        .status-rejected { background-color: #f8d7da; color: #721c24; }
-                        .return-reason { display: inline-block; padding: 4px 10px; font-size: 12px; border-radius: 4px; }
-                        .reason-damaged { background-color: #f8d7da; color: #721c24; }
-                        .reason-expired { background-color: #fff3cd; color: #856404; }
-                        .reason-wrong-item { background-color: #d1ecf1; color: #0c5460; }
-                        .reason-quality { background-color: #cce5ff; color: #004085; }
-                        .reason-overstock { background-color: #e2d5f2; color: #533f7c; }
-                        .reason-other { background-color: #e9ecef; color: #495057; }
-                    </style>
-                </head>
-                <body>
-                    <h2 class="mb-4">RMR Details</h2>
-                    ${content}
-                </body>
-            </html>
-        `);
+        printWindow.document.write(`<html><head><title>RMR Details</title><link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet"><style>body{padding:20px}.status-badge{display:inline-block;padding:5px 12px;font-size:12px;border-radius:20px}.status-pending{background:#fff3cd;color:#856404}.status-processing{background:#cce5ff;color:#004085}.status-approved{background:#d4edda;color:#155724}.status-rejected{background:#f8d7da;color:#721c24}.return-reason{display:inline-block;padding:4px 10px;font-size:12px;border-radius:4px}.reason-damaged{background:#f8d7da;color:#721c24}.reason-expired{background:#fff3cd;color:#856404}.reason-wrong-item{background:#d1ecf1;color:#0c5460}.reason-quality{background:#cce5ff;color:#004085}.reason-overstock{background:#e2d5f2;color:#533f7c}.reason-other{background:#e9ecef;color:#495057}</style></head><body><h2 class="mb-4">RMR Details</h2>${content}</body></html>`);
         printWindow.document.close();
         printWindow.print();
     }
 
-    // ========== EXCEL EXPORT FUNCTION ==========
+    // ========== EXCEL EXPORT ==========
     function exportRMRToExcel() {
-        const table = document.getElementById('rmrTable');
-        if (!table) {
-            Swal.fire('Warning', 'Table not found', 'warning');
-            return;
-        }
-
         const rows = document.querySelectorAll('.rmr-row:not([style*="display: none"])');
         if (rows.length === 0) {
             Swal.fire('Warning', 'No RMR requests to export', 'warning');
             return;
         }
-
-        const excelData = [];
         
-        const headers = [
-            'RMR Number',
-            'Customer',
-            'Item Name',
-            'Item Code',
-            ...(rmrBranchColumnExists && viewAllBranches ? ['Branch'] : []),
-            'Quantity',
-            'Unit',
-            'Total Amount (₱)',
-            'Return Reason',
-            'Status',
-            'Received Date'
-        ];
+        const excelData = [];
+        const headers = ['RMR Number', 'Customer', 'Item Name', 'Item Code', ...(rmrBranchColumnExists && viewAllBranches ? ['Branch'] : []), 'Quantity', 'Unit', 'Total Amount (₱)', 'Return Reason', 'Status', 'Received Date'];
         excelData.push(headers);
-
+        
         rows.forEach(row => {
             const cells = row.querySelectorAll('td');
-            let cellIndex = 0;
-            
-            const rmrNumber = cells[cellIndex++]?.innerText.trim() || '';
-            const customer = cells[cellIndex++]?.innerText.trim() || '';
-            const itemName = cells[cellIndex]?.innerText.split('\n')[0].trim() || '';
-            const itemCode = cells[cellIndex]?.querySelector('small')?.innerText.trim() || '';
-            cellIndex++;
-            
+            let idx = 0;
+            const rmrNumber = cells[idx++]?.innerText.trim() || '';
+            const customer = cells[idx++]?.innerText.trim() || '';
+            const itemName = cells[idx]?.innerText.split('\n')[0].trim() || '';
+            const itemCode = cells[idx]?.querySelector('small')?.innerText.trim() || '';
+            idx++;
             let branch = '';
-            if (rmrBranchColumnExists && viewAllBranches) {
-                branch = cells[cellIndex]?.innerText.trim() || '';
-                cellIndex++;
-            }
-            
-            const qtyCell = cells[cellIndex++]?.innerText.trim() || '';
+            if (rmrBranchColumnExists && viewAllBranches) branch = cells[idx++]?.innerText.trim() || '';
+            const qtyCell = cells[idx++]?.innerText.trim() || '';
             const qty = qtyCell.split(' ')[0] || '';
             const unit = qtyCell.split(' ')[1] || '';
-            const amount = cells[cellIndex++]?.innerText.replace('₱', '').replace(/,/g, '') || '0';
-            const reason = cells[cellIndex++]?.innerText.trim() || '';
-            const status = cells[cellIndex++]?.innerText.trim() || '';
-            const receivedDate = cells[cellIndex++]?.innerText.trim() || '';
-            
-            const rowData = [
-                rmrNumber,
-                customer,
-                itemName,
-                itemCode,
-                ...(rmrBranchColumnExists && viewAllBranches ? [branch] : []),
-                parseInt(qty) || 0,
-                unit,
-                parseFloat(amount),
-                reason,
-                status,
-                receivedDate
-            ];
-            
-            excelData.push(rowData);
+            const amount = cells[idx++]?.innerText.replace('₱', '').replace(/,/g, '') || '0';
+            const reason = cells[idx++]?.innerText.trim() || '';
+            const status = cells[idx++]?.innerText.trim() || '';
+            const receivedDate = cells[idx++]?.innerText.trim() || '';
+            excelData.push([rmrNumber, customer, itemName, itemCode, ...(rmrBranchColumnExists && viewAllBranches ? [branch] : []), parseInt(qty) || 0, unit, parseFloat(amount), reason, status, receivedDate]);
         });
-
+        
         const wb = XLSX.utils.book_new();
         const ws = XLSX.utils.aoa_to_sheet(excelData);
-
-        const colWidths = [
-            { wch: 15 }, { wch: 25 }, { wch: 30 }, { wch: 15 },
-            ...(rmrBranchColumnExists && viewAllBranches ? [{ wch: 12 }] : []),
-            { wch: 10 }, { wch: 8 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 20 }
-        ];
-        ws['!cols'] = colWidths;
-
+        ws['!cols'] = [{ wch: 15 }, { wch: 25 }, { wch: 30 }, { wch: 15 }, ...(rmrBranchColumnExists && viewAllBranches ? [{ wch: 12 }] : []), { wch: 10 }, { wch: 8 }, { wch: 15 }, { wch: 15 }, { wch: 15 }, { wch: 20 }];
         XLSX.utils.book_append_sheet(wb, ws, 'RMR Requests');
-
-        const date = new Date();
-        const dateStr = date.toISOString().slice(0,10).replace(/-/g, '');
-        let filename = `RMR_Requests_${dateStr}`;
-        if (rmrBranchColumnExists && !viewAllBranches) {
-            filename += `_Branch_${branchId}`;
-        }
-        filename += '.xlsx';
-
-        XLSX.writeFile(wb, filename);
-        
-        Swal.fire({
-            icon: 'success',
-            title: 'Export Complete',
-            text: 'Excel export completed successfully!',
-            timer: 2000,
-            showConfirmButton: false
-        });
+        XLSX.writeFile(wb, `RMR_Requests_${new Date().toISOString().slice(0,10).replace(/-/g, '')}${rmrBranchColumnExists && !viewAllBranches ? `_Branch_${branchId}` : ''}.xlsx`);
+        Swal.fire({ icon: 'success', title: 'Export Complete', text: 'Excel export completed successfully!', timer: 2000, showConfirmButton: false });
     }
 
-    // ========== COPY SQL FUNCTION ==========
     function copySQL(table) {
-        let sql = '';
-        if (table === 'rmr_requests') {
-            sql = "ALTER TABLE rmr_requests ADD COLUMN branch_id INT NULL;\nALTER TABLE rmr_requests ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+        const sql = "ALTER TABLE rmr_requests ADD COLUMN branch_id INT NULL;\nALTER TABLE rmr_requests ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+        navigator.clipboard.writeText(sql).then(() => Swal.fire({ icon: 'success', title: 'Copied!', text: 'SQL copied to clipboard', timer: 1500, showConfirmButton: false }));
+    }
+
+    function cleanupModalBackdrops() {
+    document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.remove());
+    document.body.classList.remove('modal-open');
+    document.body.style.removeProperty('padding-right');
+    document.body.style.removeProperty('overflow');
+    if (document.body.hasAttribute('style')) {
+        const style = document.body.getAttribute('style');
+        if (style && (style.includes('padding-right') || style.includes('overflow'))) {
+            document.body.removeAttribute('style');
         }
-        
-        navigator.clipboard.writeText(sql).then(() => {
+    }
+}
+
+   function showProfileModal() { 
+    cleanupModalBackdrops();
+    new bootstrap.Modal(document.getElementById('profileModal')).show(); 
+}
+
+function confirmLogout() {
+            // Close the modal first
+            const modal = bootstrap.Modal.getInstance(document.getElementById('profileModal'));
+            if (modal) {
+                modal.hide();
+            }
+            
+            // Show confirmation dialog
             Swal.fire({
-                icon: 'success',
-                title: 'Copied!',
-                text: 'SQL copied to clipboard',
-                timer: 1500,
-                showConfirmButton: false
+                title: 'Are you sure?',
+                text: 'You will be logged out of the system',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#07d826',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, logout'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    localStorage.removeItem('sidebarCollapsed');
+                    window.location.href = '../logout.php';
+                }
+            });
+        }
+
+function logout() { confirmLogout(); }
+    
+    // ========== DROPDOWN FUNCTIONS ==========
+    function toggleMoreDropdown(event) {
+        event.preventDefault();
+        event.stopPropagation();
+        const dropdown = document.getElementById('moreDropdownMenu');
+        const moreBtn = document.querySelector('.more-btn');
+        if (dropdown.classList.contains('show')) {
+            dropdown.classList.remove('show');
+            moreBtn.classList.remove('active');
+            document.removeEventListener('click', closeMoreDropdown);
+        } else {
+            document.querySelectorAll('.more-dropdown.show').forEach(d => d.classList.remove('show'));
+            document.querySelectorAll('.more-btn.active').forEach(btn => btn.classList.remove('active'));
+            dropdown.classList.add('show');
+            moreBtn.classList.add('active');
+            setTimeout(() => document.addEventListener('click', closeMoreDropdown), 100);
+        }
+    }
+
+    function closeMoreDropdown(event) {
+        const dropdown = document.getElementById('moreDropdownMenu');
+        const moreBtn = document.querySelector('.more-btn');
+        const moreContainer = document.querySelector('.dropdown-more');
+        if (moreContainer && !moreContainer.contains(event.target)) {
+            dropdown.classList.remove('show');
+            moreBtn.classList.remove('active');
+            document.removeEventListener('click', closeMoreDropdown);
+        }
+    }
+
+    function fixPurchaseDropdownPosition() {
+        const purchaseDropdown = document.querySelector('#purchaseDropdown .more-dropdown');
+        if (purchaseDropdown) {
+            purchaseDropdown.style.setProperty('right', '0', 'important');
+            purchaseDropdown.style.setProperty('left', 'auto', 'important');
+        }
+    }
+
+    if (typeof window.toggleDropdown !== 'function') {
+        window.toggleDropdown = function(event, dropdownId) {
+            event.preventDefault();
+            event.stopPropagation();
+            const dropdown = document.getElementById(dropdownId);
+            const btn = event.currentTarget;
+            if (dropdown.classList.contains('show')) {
+                dropdown.classList.remove('show');
+                btn.classList.remove('active');
+            } else {
+                ['inventoryDropdownMenu', 'salesDropdownMenu', 'purchaseDropdownMenu', 'moreDropdownMenu'].forEach(id => {
+                    const d = document.getElementById(id);
+                    if (d && d !== dropdown) d.classList.remove('show');
+                });
+                document.querySelectorAll('.more-btn').forEach(b => b.classList.remove('active'));
+                dropdown.classList.add('show');
+                btn.classList.add('active');
+                if (dropdownId === 'purchaseDropdownMenu') setTimeout(fixPurchaseDropdownPosition, 10);
+                setTimeout(() => {
+                    document.addEventListener('click', function closeHandler(e) {
+                        if (!dropdown.contains(e.target) && !btn.contains(e.target)) {
+                            dropdown.classList.remove('show');
+                            btn.classList.remove('active');
+                            document.removeEventListener('click', closeHandler);
+                        }
+                    });
+                }, 100);
+            }
+            if (dropdownId === 'purchaseDropdownMenu') setTimeout(fixPurchaseDropdownPosition, 10);
+        };
+    }
+
+    function initTabs() {
+        const tabs = document.querySelectorAll('.category-tab');
+        const panes = document.querySelectorAll('.tab-pane');
+        tabs.forEach(tab => {
+            tab.addEventListener('click', function() {
+                const targetId = this.getAttribute('data-tab');
+                tabs.forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+                panes.forEach(pane => {
+                    pane.classList.remove('active');
+                    pane.style.display = 'none';
+                });
+                const activePane = document.getElementById(targetId + '-content');
+                if (activePane) {
+                    activePane.classList.add('active');
+                    activePane.style.display = 'block';
+                    if (targetId === 'rejected-deliveries') {
+                        setTimeout(initTapToView, 100);
+                    }
+                }
             });
         });
     }
 
-    // Logout Function
-    function logout() {
-        Swal.fire({
-            title: 'Are you sure?',
-            text: 'You will be logged out of the system',
-            icon: 'question',
-            showCancelButton: true,
-            confirmButtonColor: '#07d826',
-            cancelButtonColor: '#6c757d',
-            confirmButtonText: 'Yes, logout'
-        }).then((result) => {
-            if (result.isConfirmed) {
-                localStorage.removeItem('sidebarCollapsed');
-                window.location.href = '../logout.php';
+    // ========== DOM CONTENT LOADED ==========
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log("Bad Orders - Live Database Mode");
+        initializeSidebar();
+        initTabs();
+        initTapToView();
+        initFilterToggle();
+        
+        // Add filter change listeners
+        const filterSelects = ['dateFilter', 'statusFilter', 'reasonFilter', 'branchFilter'];
+        filterSelects.forEach(filterId => {
+            const filterElement = document.getElementById(filterId);
+            if (filterElement) {
+                filterElement.addEventListener('change', function() {
+                    applyFilters();
+                });
+            }
+        });
+        
+        // Initialize filter summary and badge
+        updateFilterSummary();
+        updateFilterCountBadge();
+        
+        document.getElementById('mobileMenuBtn').addEventListener('click', function() {
+            const sidebar = document.getElementById('sidebar');
+            if (window.innerWidth <= 992) {
+                sidebar.classList.toggle('active');
+                if (!document.querySelector('.sidebar-overlay')) {
+                    const overlay = document.createElement('div');
+                    overlay.className = 'sidebar-overlay';
+                    document.body.appendChild(overlay);
+                    overlay.addEventListener('click', closeMobileSidebar);
+                    setTimeout(() => overlay.classList.add('active'), 10);
+                }
+            } else {
+                toggleSidebar();
+            }
+        });
+        
+        const desktopToggleBtn = document.getElementById('desktopToggleBtn');
+        if (desktopToggleBtn) {
+            desktopToggleBtn.addEventListener('click', function(e) { e.stopPropagation(); toggleSidebar(); });
+        }
+        
+        document.querySelectorAll('.sidebar .nav-link').forEach(link => {
+            link.addEventListener('click', function() { if (window.innerWidth <= 992) closeMobileSidebar(); });
+        });
+        
+        document.addEventListener('click', function(event) {
+            const sidebar = document.getElementById('sidebar');
+            const mobileBtn = document.getElementById('mobileMenuBtn');
+            const overlay = document.querySelector('.sidebar-overlay');
+            const isMobile = window.innerWidth <= 992;
+            if (isMobile && sidebar.classList.contains('active') && !sidebar.contains(event.target) && !mobileBtn.contains(event.target) && !overlay?.contains(event.target)) {
+                closeMobileSidebar();
+            }
+        });
+        
+        fixPurchaseDropdownPosition();
+    });
+    
+    document.addEventListener('keydown', function(e) {
+        if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) { e.preventDefault(); toggleSidebar(); }
+        else if (e.ctrlKey && e.key === 'p') { e.preventDefault(); printRMRReport(); }
+    });
+    
+    let scrollTimeout;
+    window.addEventListener('scroll', function() {
+        const dropdown = document.getElementById('moreDropdownMenu');
+        if (dropdown && dropdown.classList.contains('show')) {
+            if (scrollTimeout) clearTimeout(scrollTimeout);
+            scrollTimeout = setTimeout(() => {
+                dropdown.classList.remove('show');
+                document.querySelector('.more-btn')?.classList.remove('active');
+            }, 150);
+        }
+    });
+    
+    window.addEventListener('resize', fixPurchaseDropdownPosition);
+    
+    const purchaseMenu = document.getElementById('purchaseDropdownMenu');
+    if (purchaseMenu) {
+        new MutationObserver(function(mutations) {
+            mutations.forEach(mutation => {
+                if (mutation.type === 'attributes' && mutation.attributeName === 'class' && purchaseMenu.classList.contains('show')) {
+                    fixPurchaseDropdownPosition();
+                }
+            });
+        }).observe(purchaseMenu, { attributes: true });
+    }
+        setActiveMobileNav();
+        function setActiveMobileNav() {
+        const currentPage = window.location.pathname.split('/').pop();
+        
+        document.querySelectorAll('.mobile-nav .nav-link, .more-btn, .dropdown-item, .has-active').forEach(el => {
+            el.classList.remove('active', 'has-active');
+        });
+        
+        document.querySelectorAll('.mobile-nav .nav-link:not(.more-btn)').forEach(link => {
+            if (link.getAttribute('href') === currentPage) link.classList.add('active');
+        });
+        
+        document.querySelectorAll('.more-dropdown .dropdown-item').forEach(item => {
+            if (item.getAttribute('href') === currentPage) {
+                item.classList.add('active');
+                const parentDropdown = item.closest('.dropdown-more');
+                if (parentDropdown) {
+                    const parentBtn = parentDropdown.querySelector('.more-btn');
+                    if (parentBtn) parentBtn.classList.add('has-active');
+                }
+            }
+        });
+        
+        if (currentPage === 'trip_tickets.php') {
+            const tripLink = document.querySelector('#mobileNav .nav-link[href="trip_tickets.php"]');
+            if (tripLink) tripLink.classList.add('active');
+        }
+        
+        console.log('Current page:', currentPage);
+    }
+    // ========== SIDEBAR DROPDOWN HANDLING ==========
+
+// Toggle sidebar dropdown function - properly handles collapsed state
+function toggleSidebarDropdown(event, targetId) {
+    event.preventDefault();
+    event.stopPropagation();
+    
+    const target = document.getElementById(targetId);
+    const btn = event.currentTarget;
+    const arrow = btn.querySelector('.dropdown-arrow');
+    const sidebar = document.getElementById('sidebar');
+    
+    // If sidebar is collapsed, expand it first then open dropdown
+    if (sidebar.classList.contains('collapsed')) {
+        // Expand the sidebar first
+        sidebar.classList.remove('collapsed');
+        localStorage.setItem('sidebarCollapsed', 'false');
+        
+        // Small delay to let CSS transition complete, then open dropdown
+        setTimeout(() => {
+            // Close all other dropdowns first
+            document.querySelectorAll('.sidebar .collapse.show').forEach(collapse => {
+                if (collapse.id !== targetId) {
+                    collapse.classList.remove('show');
+                    const otherBtn = document.querySelector(`[onclick*="${collapse.id}"]`);
+                    if (otherBtn) {
+                        const otherArrow = otherBtn.querySelector('.dropdown-arrow');
+                        if (otherArrow) otherArrow.style.transform = 'translateY(-50%) rotate(0deg)';
+                    }
+                }
+            });
+            
+            // Open the clicked dropdown
+            target.classList.add('show');
+            if (arrow) arrow.style.transform = 'translateY(-50%) rotate(180deg)';
+        }, 50);
+        return;
+    }
+    
+    // Normal behavior when sidebar is already expanded
+    if (target.classList.contains('show')) {
+        target.classList.remove('show');
+        if (arrow) arrow.style.transform = 'translateY(-50%) rotate(0deg)';
+    } else {
+        // Close all other open dropdowns
+        document.querySelectorAll('.sidebar .collapse.show').forEach(collapse => {
+            if (collapse.id !== targetId) {
+                collapse.classList.remove('show');
+                const otherBtn = document.querySelector(`[onclick*="${collapse.id}"]`);
+                if (otherBtn) {
+                    const otherArrow = otherBtn.querySelector('.dropdown-arrow');
+                    if (otherArrow) otherArrow.style.transform = 'translateY(-50%) rotate(0deg)';
+                }
+            }
+        });
+        
+        target.classList.add('show');
+        if (arrow) arrow.style.transform = 'translateY(-50%) rotate(180deg)';
+    }
+}
+
+// Set active sidebar item based on current page
+function setActiveSidebarItem() {
+    const currentPage = window.location.pathname.split('/').pop();
+    
+    // Remove active class from all nav links
+    document.querySelectorAll('.sidebar .nav-link').forEach(link => {
+        link.classList.remove('active');
+    });
+    
+    // Find and activate the matching link
+    document.querySelectorAll('.sidebar .nav-link').forEach(link => {
+        const href = link.getAttribute('href');
+        if (href === currentPage) {
+            link.classList.add('active');
+            
+            // If this link is inside a dropdown, expand the dropdown
+            const collapseDiv = link.closest('.collapse');
+            if (collapseDiv) {
+                collapseDiv.classList.add('show');
+                const parentBtn = document.querySelector(`[onclick*="${collapseDiv.id}"]`);
+                if (parentBtn) {
+                    const arrow = parentBtn.querySelector('.dropdown-arrow');
+                    if (arrow) arrow.style.transform = 'translateY(-50%) rotate(180deg)';
+                }
+            }
+        }
+    });
+}
+
+// Update active state for dropdown parent when sidebar is collapsed
+function updateDropdownParentActiveState() {
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    
+    if (sidebar.classList.contains('collapsed')) {
+        // Find all dropdown-nav items that have an active child link
+        document.querySelectorAll('.dropdown-nav').forEach(dropdownNav => {
+            const hasActiveChild = dropdownNav.querySelector('.nav-link.active');
+            const parentLink = dropdownNav.querySelector(':scope > .nav-link');
+            
+            if (hasActiveChild && parentLink) {
+                parentLink.classList.add('active');
+            } else if (parentLink) {
+                parentLink.classList.remove('active');
             }
         });
     }
+}
 
-    // Keyboard shortcuts
-    document.addEventListener('keydown', function(e) {
-        if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
-            e.preventDefault();
-            toggleSidebar();
-        } else if (e.ctrlKey && e.key === 'f') {
-            e.preventDefault();
-            const searchInput = document.getElementById('globalSearch');
-            if (searchInput) searchInput.focus();
-        } else if (e.ctrlKey && e.key === 'p') {
-            e.preventDefault();
-            printRMRReport();
+// Function to expand all dropdown containers that contain active links
+function expandActiveDropdownContainers() {
+    const sidebar = document.getElementById('sidebar');
+    if (!sidebar) return;
+    
+    // Find all dropdown-nav containers
+    const dropdownNavs = document.querySelectorAll('.sidebar .dropdown-nav');
+    
+    dropdownNavs.forEach(dropdownNav => {
+        // Check if this dropdown contains any active link
+        const activeLink = dropdownNav.querySelector('.nav-link.active');
+        
+        if (activeLink) {
+            // Find the collapse element inside this dropdown
+            const collapseDiv = dropdownNav.querySelector('.collapse');
+            
+            if (collapseDiv && !collapseDiv.classList.contains('show')) {
+                // Open the dropdown
+                collapseDiv.classList.add('show');
+                
+                // Rotate the arrow of the parent link
+                const parentLink = dropdownNav.querySelector(':scope > .nav-link');
+                if (parentLink) {
+                    const arrow = parentLink.querySelector('.dropdown-arrow');
+                    if (arrow) {
+                        arrow.style.transform = 'translateY(-50%) rotate(180deg)';
+                    }
+                    // Also add active class to parent if sidebar is collapsed
+                    if (sidebar.classList.contains('collapsed')) {
+                        parentLink.classList.add('active');
+                    }
+                }
+            }
         }
     });
-    </script>
+}
+
+// Toggle sidebar function (updated with proper behavior)
+function toggleSidebar() {
+    const sidebar = document.getElementById('sidebar');
+    const desktopToggleBtn = document.getElementById('desktopToggleBtn');
+    
+    if (window.innerWidth <= 992) {
+        // Mobile behavior
+        sidebar.classList.toggle('active');
+        let overlay = document.querySelector('.sidebar-overlay');
+        if (!overlay) { 
+            overlay = document.createElement('div'); 
+            overlay.className = 'sidebar-overlay'; 
+            document.body.appendChild(overlay); 
+            overlay.addEventListener('click', function() { 
+                sidebar.classList.remove('active'); 
+                overlay.classList.remove('active'); 
+                setTimeout(function() { overlay.remove(); }, 300); 
+            }); 
+        }
+        setTimeout(function() { overlay.classList.add('active'); }, 10);
+    } else {
+        // Desktop behavior - toggle collapse
+        const wasCollapsed = sidebar.classList.contains('collapsed');
+        sidebar.classList.toggle('collapsed');
+        localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+        
+        // If expanding from collapsed state
+        if (wasCollapsed && !sidebar.classList.contains('collapsed')) {
+            // Remove any inline styles that might have been set by hover
+            sidebar.style.width = '';
+            
+            // AFTER expanding, find any active child link and open its parent dropdown
+            setTimeout(function() {
+                expandActiveDropdownContainers();
+            }, 150);
+        }
+    }
+}
+
+// Initialize sidebar on DOM load
+document.addEventListener('DOMContentLoaded', function() {
+    // Restore sidebar state from localStorage
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar && window.innerWidth > 992) {
+        const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
+        if (isCollapsed) {
+            sidebar.classList.add('collapsed');
+        } else {
+            sidebar.classList.remove('collapsed');
+        }
+    }
+    
+    // Set active sidebar item
+    setActiveSidebarItem();
+    
+    // Update parent active states
+    updateDropdownParentActiveState();
+    
+    // Prevent dropdown from closing when clicking inside it
+    document.querySelectorAll('.sidebar .collapse').forEach(collapse => {
+        collapse.addEventListener('click', function(e) {
+            e.stopPropagation();
+        });
+    });
+    
+    // Handle desktop toggle button
+    const desktopToggleBtn = document.getElementById('desktopToggleBtn');
+    if (desktopToggleBtn) {
+        desktopToggleBtn.addEventListener('click', function() {
+            setTimeout(() => {
+                if (sidebar.classList.contains('collapsed')) {
+                    // Close all dropdowns when collapsing
+                    document.querySelectorAll('.sidebar .collapse.show').forEach(collapse => {
+                        collapse.classList.remove('show');
+                        const parentBtn = document.querySelector(`[onclick*="${collapse.id}"]`);
+                        if (parentBtn) {
+                            const arrow = parentBtn.querySelector('.dropdown-arrow');
+                            if (arrow) arrow.style.transform = 'translateY(-50%) rotate(0deg)';
+                        }
+                    });
+                }
+            }, 50);
+        });
+    }
+    
+    // Handle mobile menu button
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+    if (mobileMenuBtn) {
+        mobileMenuBtn.addEventListener('click', toggleSidebar);
+    }
+    
+    // Close sidebar when clicking outside on mobile
+    document.addEventListener('click', function(e) {
+        if (window.innerWidth <= 992 && sidebar && sidebar.classList.contains('active') && 
+            !sidebar.contains(e.target) && mobileMenuBtn && !mobileMenuBtn.contains(e.target)) {
+            sidebar.classList.remove('active');
+            const overlay = document.querySelector('.sidebar-overlay');
+            if (overlay) overlay.remove();
+        }
+    });
+});
+</script>
 </body>
 </html>

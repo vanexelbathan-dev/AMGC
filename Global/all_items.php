@@ -727,6 +727,12 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                         </a>
                     </li>
                     <li class="nav-item">
+    					<a class="nav-link" href="location_verification.php">
+        					<i class="bi bi-geo-alt-fill"></i>
+        					<span class="nav-text">Location Verification</span>
+    					</a>
+					</li>
+                    <li class="nav-item">
                         <a class="nav-link" href="drivers.php">
                             <i class="bi bi-people"></i>
                             <span class="nav-text">User Management</span>
@@ -868,7 +874,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                         <table class="table custom-table compact-table" id="itemsTable">
                             <thead>
                                 <tr>
-                                    <th>ID</th>
                                     <th>Item Name</th>
                                     <th>Category</th>
                                     <th>Unit Price</th>
@@ -896,7 +901,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                                         }
                                         ?>
                                         <tr>
-                                            <td><?php echo htmlspecialchars($item['id']); ?></td>
                                             <td><strong><?php echo htmlspecialchars($item['item_name']); ?></strong></td>
                                             <td><?php echo htmlspecialchars($item['category'] ?? 'N/A'); ?></td>
                                             <td>₱<?php echo number_format($item['unit_price'] ?? 0, 2); ?></td>
@@ -1252,7 +1256,7 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 text: 'You will be logged out of the system',
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonColor: '#dc3545',
+                confirmButtonColor: '#07d826',
                 cancelButtonColor: '#6c757d',
                 confirmButtonText: 'Yes, logout'
             }).then((result) => {

@@ -231,6 +231,86 @@ if ($tables_exist['pick_lists']) {
     $stats['completed_today'] = ($result && $row = $result->fetch_assoc()) ? (int)$row['cnt'] : 0;
 }
 
+// GET PENDING TASKS FOR MODAL
+// Tasks are only shown if they are NOT yet processed (PO not yet received, Pick List not yet completed)
+$pending_tasks = [
+    'purchase_orders' => [],
+    'pending_pickup' => []
+];
+
+// Get purchase orders that need processing (submitted or approved, but not yet received)
+if ($tables_exist['purchase_orders']) {
+    $pending_po_sql = "SELECT po.po_id, po.po_number, po.order_date, po.po_status, 
+                              s.supplier_name, b.branch_name,
+                              (SELECT COUNT(*) FROM purchase_order_items WHERE po_id = po.po_id) as item_count
+                       FROM purchase_orders po
+                       LEFT JOIN suppliers s ON po.supplier_id = s.supplier_id
+                       LEFT JOIN branches b ON po.branch_id = b.branch_id
+                       WHERE po.po_status IN ('submitted', 'approved')
+                       AND po.po_status != 'received'";
+    
+    if (!empty($user_category)) {
+        $pending_po_sql .= " AND EXISTS (
+            SELECT 1 FROM purchase_order_items poi 
+            JOIN items i ON poi.item_id = i.item_id 
+            WHERE poi.po_id = po.po_id 
+            AND i.category = '" . $conn->real_escape_string($user_category) . "'
+        )";
+    }
+    
+    if (!$view_all_branches && $user_branch_id > 0 && $po_has_branch) {
+        $pending_po_sql .= " AND po.branch_id = " . intval($user_branch_id);
+    }
+    
+    $pending_po_sql .= " ORDER BY po.order_date DESC LIMIT 10";
+    $result = $conn->query($pending_po_sql);
+    
+    if ($result && $result->num_rows > 0) {
+        while ($row = $result->fetch_assoc()) {
+            $pending_tasks['purchase_orders'][] = $row;
+        }
+    }
+}
+
+// Get pending pick lists that need to be processed (confirmed orders WITHOUT a completed pick list)
+if ($tables_exist['sales_orders'] && $tables_exist['pick_lists']) {
+    $pending_pickup_sql = "SELECT so.so_id, so.so_number, so.order_date, so.total_amount,
+                                  b.branch_name, c.customer_name,
+                                  (SELECT COUNT(*) FROM sales_order_items WHERE so_id = so.so_id) as item_count,
+                                  pl.pick_list_id, pl.pick_status
+                           FROM sales_orders so
+                           LEFT JOIN branches b ON so.branch_id = b.branch_id
+                           LEFT JOIN customers c ON so.customer_id = c.customer_id
+                           LEFT JOIN pick_lists pl ON so.so_id = pl.so_id
+                           WHERE so.order_status = 'confirmed'
+                           AND (pl.pick_list_id IS NULL OR pl.pick_status != 'completed')";
+    
+    if (!empty($user_category)) {
+        $pending_pickup_sql .= " AND EXISTS (
+            SELECT 1 FROM sales_order_items soi 
+            JOIN items i ON soi.item_id = i.item_id 
+            WHERE soi.so_id = so.so_id 
+            AND i.category = '" . $conn->real_escape_string($user_category) . "'
+        )";
+    }
+    
+    if (!$view_all_branches && $user_branch_id > 0 && $so_has_branch) {
+        $pending_pickup_sql .= " AND so.branch_id = " . intval($user_branch_id);
+    }
+    
+    $pending_pickup_sql .= " ORDER BY so.order_date DESC LIMIT 10";
+    $result = $conn->query($pending_pickup_sql);
+    
+    if ($result && $result->num_rows > 0) {
+        while ($row = $result->fetch_assoc()) {
+            $pending_tasks['pending_pickup'][] = $row;
+        }
+    }
+}
+
+// Check if there are any tasks to show
+$has_tasks = (count($pending_tasks['purchase_orders']) > 0) || (count($pending_tasks['pending_pickup']) > 0);
+
 // Show a warning if any important tables are missing
 $missing_tables = array_keys(array_filter($tables_exist, fn($v) => !$v));
 ?>
@@ -295,6 +375,60 @@ $missing_tables = array_keys(array_filter($tables_exist, fn($v) => !$v));
         .status-completed { background-color: #d1e7dd; color: #0a3622; }
         .status-delivered { background-color: #d1e7dd; color: #0a3622; }
         .status-cancelled { background-color: #f8d7da; color: #721c24; }
+        
+        /* Task Modal Styles */
+        .task-modal .modal-content {
+            border-radius: 15px;
+            overflow: hidden;
+        }
+        .task-modal-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px 25px;
+            border-bottom: none;
+        }
+        .task-item {
+            border-left: 4px solid #667eea;
+            transition: all 0.3s ease;
+            margin-bottom: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 15px;
+        }
+        .task-item:hover {
+            transform: translateX(5px);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .task-item.po-task {
+            border-left-color: #ffc107;
+        }
+        .task-item.pickup-task {
+            border-left-color: #28a745;
+        }
+        .task-action-btn {
+            margin-top: 10px;
+        }
+        .task-count-badge {
+            background: #dc3545;
+            color: white;
+            border-radius: 20px;
+            padding: 2px 8px;
+            font-size: 12px;
+            margin-left: 8px;
+        }
+        .task-status-badge {
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 10px;
+        }
+        .task-status-pending {
+            background: #ffc107;
+            color: #000;
+        }
+        .task-status-inprogress {
+            background: #17a2b8;
+            color: #fff;
+        }
     </style>
 </head>
 <body>
@@ -428,7 +562,115 @@ $missing_tables = array_keys(array_filter($tables_exist, fn($v) => !$v));
                 </div>
             </div>
 
-            <!-- MODALS -->
+            <!-- TASK MODAL - Shows pending tasks on page load -->
+            <div class="modal fade" id="taskModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static">
+                <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+                    <div class="modal-content task-modal">
+                        <div class="modal-header task-modal-header">
+                            <h5 class="modal-title">
+                                <i class="bi bi-list-check me-2"></i>
+                                Your Pending Tasks
+                                <?php if ($has_tasks): ?>
+                                    <span class="task-count-badge">
+                                        <?php echo (count($pending_tasks['purchase_orders']) + count($pending_tasks['pending_pickup'])); ?>
+                                    </span>
+                                <?php endif; ?>
+                            </h5>
+                            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                        </div>
+                        <div class="modal-body">
+                            <?php if (!$has_tasks): ?>
+                                <div class="text-center py-5">
+                                    <i class="bi bi-check-circle-fill text-success" style="font-size: 64px;"></i>
+                                    <h4 class="mt-3">No Pending Tasks!</h4>
+                                    <p class="text-muted">All caught up! You have no pending tasks to complete.</p>
+                                </div>
+                            <?php else: ?>
+                                <!-- Purchase Orders Tasks -->
+                                <?php if (count($pending_tasks['purchase_orders']) > 0): ?>
+                                    <div class="mb-4">
+                                        <h6 class="fw-bold text-warning mb-3">
+                                            <i class="bi bi-receipt me-2"></i>
+                                            Purchase Orders to Process
+                                            <span class="badge bg-warning ms-2"><?php echo count($pending_tasks['purchase_orders']); ?></span>
+                                        </h6>
+                                        <?php foreach ($pending_tasks['purchase_orders'] as $po): ?>
+                                            <div class="task-item po-task" data-task-id="po_<?php echo $po['po_id']; ?>" data-task-type="po">
+                                                <div class="d-flex justify-content-between align-items-start">
+                                                    <div class="flex-grow-1">
+                                                        <div class="d-flex align-items-center mb-2">
+                                                            <strong class="me-2"><?php echo htmlspecialchars($po['po_number']); ?></strong>
+                                                        </div>
+                                                        <small class="text-muted d-block">
+                                                            <i class="bi bi-calendar"></i> <?php echo date('Y-m-d', strtotime($po['order_date'])); ?>
+                                                        </small>
+                                                        <div class="mt-1">
+                                                            <span class="badge bg-<?php echo $po['po_status'] == 'submitted' ? 'info' : 'primary'; ?>">
+                                                                <?php echo ucfirst($po['po_status']); ?>
+                                                            </span>
+                                                            <small class="text-muted ms-2">
+                                                                <i class="bi bi-box"></i> <?php echo $po['item_count']; ?> items
+                                                            </small>
+                                                        </div>
+                                                    </div>
+                                                    <button class="btn btn-sm btn-primary task-action-btn" onclick="redirectToTask('po', <?php echo $po['po_id']; ?>, '<?php echo htmlspecialchars($po['po_number']); ?>')">
+                                                        <i class="bi bi-arrow-right"></i> View & Process
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
+                                
+                                <!-- Pending Pickup Tasks -->
+                                <?php if (count($pending_tasks['pending_pickup']) > 0): ?>
+                                    <div>
+                                        <h6 class="fw-bold text-success mb-3">
+                                            <i class="bi bi-truck me-2"></i>
+                                            Orders Ready for Pickup
+                                            <span class="badge bg-success ms-2"><?php echo count($pending_tasks['pending_pickup']); ?></span>
+                                        </h6>
+                                        <?php foreach ($pending_tasks['pending_pickup'] as $order): ?>
+                                            <div class="task-item pickup-task" data-task-id="pickup_<?php echo $order['so_id']; ?>" data-task-type="pickup">
+                                                <div class="d-flex justify-content-between align-items-start">
+                                                    <div class="flex-grow-1">
+                                                        <div class="d-flex align-items-center mb-2">
+                                                            <strong class="me-2"><?php echo htmlspecialchars($order['so_number']); ?></strong>
+                                                        </div>
+                                                        <small class="text-muted d-block">
+                                                            <i class="bi bi-calendar"></i> <?php echo date('Y-m-d', strtotime($order['order_date'])); ?>
+                                                        </small>
+                                                        <div class="mt-1">
+                                                            <span class="badge bg-success">Confirmed</span>
+                                                            <small class="text-muted ms-2">
+                                                                <i class="bi bi-box"></i> <?php echo $order['item_count']; ?> items | 
+                                                            </small>
+                                                        </div>
+                                                    </div>
+                                                    <button class="btn btn-sm btn-success task-action-btn" onclick="redirectToTask('pickup', <?php echo $order['so_id']; ?>, '<?php echo htmlspecialchars($order['so_number']); ?>')">
+                                                        <i class="bi bi-arrow-right"></i> Start
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        <?php endforeach; ?>
+                                    </div>
+                                <?php endif; ?>
+                                
+                                <div class="alert alert-info mt-3 mb-0">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    <small>Tasks will automatically disappear from this list once they are fully processed (PO received or Pick List completed).</small>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                        <div class="modal-footer">
+                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                            <button type="button" class="btn btn-primary" onclick="dontShowAgain()">
+                                <i class="bi bi-check-lg"></i> Don't show again today
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
             <!-- Purchase Orders Modal -->
             <div class="modal fade" id="poModal" tabindex="-1" aria-hidden="true">
@@ -455,7 +697,7 @@ $missing_tables = array_keys(array_filter($tables_exist, fn($v) => !$v));
                                     <tbody>
                                         <?php
                                         if ($tables_exist['purchase_orders']) {
-                                            $po_detail_sql = "SELECT po.po_number, po.order_date, po.expected_delivery, po.po_status, 
+                                            $po_detail_sql = "SELECT po.po_id, po.po_number, po.order_date, po.expected_delivery, po.po_status, 
                                                                     s.supplier_name, b.branch_name,
                                                                     (SELECT COUNT(*) FROM purchase_order_items WHERE po_id = po.po_id) as item_count
                                                               FROM purchase_orders po
@@ -463,7 +705,6 @@ $missing_tables = array_keys(array_filter($tables_exist, fn($v) => !$v));
                                                               LEFT JOIN branches b ON po.branch_id = b.branch_id
                                                               WHERE po.po_status NOT IN ('cancelled')";
                                             
-                                            // Add category filter if needed
                                             if (!empty($user_category)) {
                                                 $po_detail_sql .= " AND EXISTS (
                                                     SELECT 1 FROM purchase_order_items poi 
@@ -520,7 +761,7 @@ $missing_tables = array_keys(array_filter($tables_exist, fn($v) => !$v));
                 </div>
             </div>
 
-            <!-- Pending Pickup Modal (Confirmed Orders) - FIXED -->
+            <!-- Pending Pickup Modal (Confirmed Orders) -->
             <div class="modal fade" id="pickupModal" tabindex="-1" aria-hidden="true">
                 <div class="modal-dialog modal-xl modal-dialog-scrollable">
                     <div class="modal-content">
@@ -533,17 +774,18 @@ $missing_tables = array_keys(array_filter($tables_exist, fn($v) => !$v));
                                 <table class="table table-sm table-hover">
                                     <thead>
                                         <tr>
-                                            <th>PL #</th>
+                                            <th>SO #</th>
                                             <th>Order Date</th>
-                                            <th>Item Name</th>
+                                            <th>Customer</th>
+                                            <th>Branch</th>
+                                            <th>Total Amount</th>
                                             <th>Items</th>
+                                            <th>Status</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         <?php
-                                        // Get confirmed orders directly
                                         if ($tables_exist['sales_orders']) {
-                                            // Build the query
                                             $pickup_detail_sql = "SELECT
                                                 so.so_id,
                                                 so.so_number, 
@@ -553,18 +795,14 @@ $missing_tables = array_keys(array_filter($tables_exist, fn($v) => !$v));
                                                 c.customer_name,
                                                 (SELECT COUNT(*) FROM sales_order_items WHERE so_id = so.so_id) as item_count,
                                                 pl.pick_list_id,
-                                                pl.pick_list_number,
                                                 pl.pick_status
                                               FROM sales_orders so
                                               LEFT JOIN branches b ON so.branch_id = b.branch_id
                                               LEFT JOIN customers c ON so.customer_id = c.customer_id
                                               LEFT JOIN pick_lists pl ON so.so_id = pl.so_id
-                                              WHERE so.order_status = 'confirmed'";
+                                              WHERE so.order_status = 'confirmed'
+                                              AND (pl.pick_list_id IS NULL OR pl.pick_status != 'completed')";
                                             
-                                            // Only include orders that don't have a completed pick list yet
-                                            $pickup_detail_sql .= " AND (pl.pick_list_id IS NULL OR pl.pick_status != 'completed')";
-                                            
-                                            // Add category filter if needed
                                             if (!empty($user_category)) {
                                                 $pickup_detail_sql .= " AND EXISTS (
                                                     SELECT 1 FROM sales_order_items soi 
@@ -574,99 +812,35 @@ $missing_tables = array_keys(array_filter($tables_exist, fn($v) => !$v));
                                                 )";
                                             }
                                             
-                                            // Add branch filter
-                                            if (!$view_all_branches && $user_branch_id > 0) {
-                                                if ($so_has_branch) {
-                                                    $pickup_detail_sql .= " AND so.branch_id = " . intval($user_branch_id);
-                                                }
+                                            if (!$view_all_branches && $user_branch_id > 0 && $so_has_branch) {
+                                                $pickup_detail_sql .= " AND so.branch_id = " . intval($user_branch_id);
                                             }
                                             
                                             $pickup_detail_sql .= " GROUP BY so.so_id ORDER BY so.order_date DESC";
-                                            
-                                            // Debug output as HTML comment
-                                            echo '<!-- SQL Query: ' . htmlspecialchars($pickup_detail_sql) . ' -->';
                                             
                                             $result = $conn->query($pickup_detail_sql);
                                             
                                             if ($result && $result->num_rows > 0) {
                                                 while ($row = $result->fetch_assoc()) {
-                                                    $pick_status = $row['pick_status'] ?? 'Not Started';
-                                                    $status_badge = match($pick_status) {
+                                                    $status_text = $row['pick_status'] ?? 'Not Started';
+                                                    $status_badge = match($status_text) {
                                                         'in-progress' => 'bg-info',
-                                                        'open' => 'bg-warning',
                                                         'completed' => 'bg-success',
-                                                        default => 'bg-secondary'
+                                                        default => 'bg-warning'
                                                     };
                                                     
                                                     echo '<tr>';
-                                                    echo '<td>' . htmlspecialchars($row['pick_list_number']) . '</td>';
+                                                    echo '<td>' . htmlspecialchars($row['so_number']) . '</td>';
                                                     echo '<td>' . date('Y-m-d', strtotime($row['order_date'])) . '</td>';
-                                                   echo '<td>';
-
-$item_sql = "SELECT i.item_name 
-             FROM sales_order_items soi
-             JOIN items i ON soi.item_id = i.item_id
-             WHERE soi.so_id = " . intval($row['so_id']);
-
-// Filter by category
-if (!empty($user_category)) {
-    $item_sql .= " AND i.category = '" . $conn->real_escape_string($user_category) . "'";
-}
-
-// Filter by branch (if meron sa items table)
-if (!$view_all_branches && $user_branch_id > 0) {
-    $item_sql .= " AND i.branch_id = " . intval($user_branch_id);
-}
-
-$item_result = $conn->query($item_sql);
-
-if ($item_result && $item_result->num_rows > 0) {
-    while ($item = $item_result->fetch_assoc()) {
-        echo htmlspecialchars($item['item_name']) . '<br>';
-    }
-} else {
-    echo '<span class="text-muted">No items</span>';
-}
-
-echo '</td>';
-echo '<td>';
-
-$count_sql = "SELECT COUNT(*) as total
-              FROM sales_order_items soi
-              JOIN items i ON soi.item_id = i.item_id
-              WHERE soi.so_id = " . intval($row['so_id']);
-
-// Filter by category
-if (!empty($user_category)) {
-    $count_sql .= " AND i.category = '" . $conn->real_escape_string($user_category) . "'";
-}
-
-// Filter by branch
-if (!$view_all_branches && $user_branch_id > 0) {
-    $count_sql .= " AND i.branch_id = " . intval($user_branch_id);
-}
-
-$count_result = $conn->query($count_sql);
-$count_row = $count_result->fetch_assoc();
-
-echo intval($count_row['total']);
-
-echo '</td>';
+                                                    echo '<td>' . htmlspecialchars($row['customer_name'] ?? 'N/A') . '</td>';
+                                                    echo '<td>' . htmlspecialchars($row['branch_name'] ?? 'N/A') . '</td>';
+                                                    echo '<td>₱' . number_format($row['total_amount'], 2) . '</td>';
+                                                    echo '<td>' . $row['item_count'] . '</td>';
+                                                    echo '<td><span class="badge ' . $status_badge . '">' . ucfirst($status_text) . '</span></td>';
                                                     echo '</tr>';
                                                 }
                                             } else {
-                                                $colspan = $view_all_branches ? 7 : 6;
-                                                echo '<tr><td colspan="' . $colspan . '" class="text-center">';
-                                                echo '<div class="py-4">';
-                                                echo '<i class="bi bi-inbox fs-1 d-block text-muted mb-3"></i>';
-                                                echo '<p class="text-muted mb-0">No pending pickups found</p>';
-                                                
-                                                // Show debug info
-                                                $check_confirmed = $conn->query("SELECT COUNT(*) as cnt FROM sales_orders WHERE order_status = 'confirmed'");
-                                                $confirmed_count = $check_confirmed->fetch_assoc()['cnt'];
-                                                echo '<small class="text-muted d-block mt-3">Debug: ' . $confirmed_count . ' confirmed orders in database</small>';
-                                                echo '</div>';
-                                                echo '</td></tr>';
+                                                echo '<tr><td colspan="7" class="text-center">No pending pickups found</td></tr>';
                                             }
                                         } else {
                                             echo '<tr><td colspan="7" class="text-center">Sales orders table not available</td></tr>';
@@ -680,7 +854,7 @@ echo '</td>';
                 </div>
             </div>
 
-            <!-- For Release Modal (Completed Pick Lists Waiting for Driver) - FIXED -->
+            <!-- For Release Modal (Completed Pick Lists Waiting for Driver) -->
             <div class="modal fade" id="releaseModal" tabindex="-1" aria-hidden="true">
                 <div class="modal-dialog modal-xl modal-dialog-scrollable">
                     <div class="modal-content">
@@ -703,7 +877,6 @@ echo '</td>';
                                     <tbody>
                                         <?php
                                         if ($tables_exist['pick_lists'] && $tables_exist['sales_orders']) {
-                                            // Build the query
                                             $release_detail_sql = "SELECT 
                                                 pl.pick_list_id,
                                                 pl.pick_list_number, 
@@ -722,11 +895,8 @@ echo '</td>';
                                               LEFT JOIN customers c ON so.customer_id = c.customer_id
                                               LEFT JOIN drivers d ON pl.driver_id = d.driver_id
                                               WHERE LOWER(TRIM(pl.pick_status)) = 'completed'
-												AND LOWER(TRIM(so.order_status)) = 'ready'";
+                                              AND LOWER(TRIM(so.order_status)) = 'ready'";
                                             
-                                            
-                                            
-                                            // Add category filter if needed
                                             if (!empty($user_category)) {
                                                 $release_detail_sql .= " AND EXISTS (
                                                     SELECT 1 FROM pick_list_items pli 
@@ -736,15 +906,11 @@ echo '</td>';
                                                 )";
                                             }
                                             
-                                            // Add branch filter
                                             if (!$view_all_branches && $user_branch_id > 0) {
                                                 $release_detail_sql .= " AND pl.branch_id = " . intval($user_branch_id);
                                             }
                                             
                                             $release_detail_sql .= " GROUP BY pl.pick_list_id ORDER BY pl.updated_at DESC";
-                                            
-                                            // Debug output
-                                            echo '<!-- Release SQL: ' . htmlspecialchars($release_detail_sql) . ' -->';
                                             
                                             $result = $conn->query($release_detail_sql);
                                             
@@ -767,21 +933,10 @@ echo '</td>';
                                                     echo '</tr>';
                                                 }
                                             } else {
-                                                $colspan = $view_all_branches ? 8 : 7;
-                                                echo '<tr><td colspan="' . $colspan . '" class="text-center">';
-                                                echo '<div class="py-4">';
-                                                echo '<i class="bi bi-inbox fs-1 d-block text-muted mb-3"></i>';
-                                                echo '<p class="text-muted mb-0">No items waiting for driver pickup</p>';
-                                                
-                                                // Show debug info
-                                                $check_completed = $conn->query("SELECT COUNT(*) as cnt FROM pick_lists WHERE pick_status = 'completed'");
-                                                $completed_count = $check_completed->fetch_assoc()['cnt'];
-                                                echo '<small class="text-muted d-block mt-3">Debug: ' . $completed_count . ' completed pick lists in database</small>';
-                                                echo '</div>';
-                                                echo '</td></tr>';
+                                                echo '<tr><td colspan="5" class="text-center">No items waiting for driver pickup</td></tr>';
                                             }
                                         } else {
-                                            echo '<tr><td colspan="8" class="text-center">Tables not available</td></tr>';
+                                            echo '<tr><td colspan="5" class="text-center">Tables not available</td></tr>';
                                         }
                                         ?>
                                     </tbody>
@@ -836,7 +991,6 @@ echo '</td>';
                                               WHERE pl.pick_status = 'completed'
                                               AND DATE(pl.updated_at) = CURDATE()";
                                             
-                                            // Add category filter if needed
                                             if (!empty($user_category)) {
                                                 $today_detail_sql .= " AND EXISTS (
                                                     SELECT 1 FROM pick_list_items pli 
@@ -846,7 +1000,6 @@ echo '</td>';
                                                 )";
                                             }
                                             
-                                            // Add branch filter
                                             if (!$view_all_branches && $user_branch_id > 0) {
                                                 $today_detail_sql .= " AND pl.branch_id = ?";
                                                 $result = safeQuery($conn, $today_detail_sql, $user_branch_id);
@@ -975,56 +1128,58 @@ echo '</td>';
                     </div>
                 </div>
 
-            <!-- Inventory Alerts -->
-            <div class="col-lg-6 mb-4">
+                <!-- Inventory Alerts -->
+                <div class="col-lg-6 mb-4">
                     <div class="card">
-                <div class="card-header">
-                    <h5 class="mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Low Stock Alerts</h5>
-                </div>
-                <div class="card-body">
-                    <?php
-                    if ($tables_exist['items']) {
-                        $low_stock_query = "SELECT i.item_name, i.stock, i.reorder_level, b.branch_name 
-                                           FROM items i
-                                           LEFT JOIN branches b ON i.branch_id = b.branch_id
-                                           WHERE i.stock <= i.reorder_level AND i.status = 'active'";
-                        
-                        if (!empty($user_category)) {
-                            $low_stock_query .= " AND i.category = '" . $conn->real_escape_string($user_category) . "'";
-                        }
-                        
-                        if (!$view_all_branches && $user_branch_id > 0 && $items_has_branch) {
-                            $low_stock_query .= " AND i.branch_id = ? LIMIT 5";
-                            $result = safeQuery($conn, $low_stock_query, $user_branch_id);
-                        } else {
-                            $low_stock_query .= " LIMIT 5";
-                            $result = $conn->query($low_stock_query);
-                        }
-                        
-                        if ($result && $result->num_rows > 0) {
-                            while($row = $result->fetch_assoc()) {
-                                $branch_info = $view_all_branches ? ' [' . $row['branch_name'] . ']' : '';
-                                echo '<div class="alert alert-warning mb-2">';
-                                echo '<i class="bi bi-exclamation-triangle me-2"></i>';
-                                echo '<strong>' . htmlspecialchars($row['item_name'] . $branch_info) . ':</strong> ';
-                                echo 'Stock level at ' . $row['stock'] . ' units (Below threshold of ' . $row['reorder_level'] . ')';
-                                echo '</div>';
+                        <div class="card-header">
+                            <h5 class="mb-0"><i class="bi bi-exclamation-triangle me-2"></i>Low Stock Alerts</h5>
+                        </div>
+                        <div class="card-body">
+                            <?php
+                            if ($tables_exist['items']) {
+                                $low_stock_query = "SELECT i.item_name, i.stock, i.reorder_level, b.branch_name 
+                                                   FROM items i
+                                                   LEFT JOIN branches b ON i.branch_id = b.branch_id
+                                                   WHERE i.stock <= i.reorder_level AND i.status = 'active'";
+                                
+                                if (!empty($user_category)) {
+                                    $low_stock_query .= " AND i.category = '" . $conn->real_escape_string($user_category) . "'";
+                                }
+                                
+                                if (!$view_all_branches && $user_branch_id > 0 && $items_has_branch) {
+                                    $low_stock_query .= " AND i.branch_id = ? LIMIT 5";
+                                    $result = safeQuery($conn, $low_stock_query, $user_branch_id);
+                                } else {
+                                    $low_stock_query .= " LIMIT 5";
+                                    $result = $conn->query($low_stock_query);
+                                }
+                                
+                                if ($result && $result->num_rows > 0) {
+                                    while($row = $result->fetch_assoc()) {
+                                        $branch_info = $view_all_branches ? ' [' . $row['branch_name'] . ']' : '';
+                                        echo '<div class="alert alert-warning mb-2">';
+                                        echo '<i class="bi bi-exclamation-triangle me-2"></i>';
+                                        echo '<strong>' . htmlspecialchars($row['item_name'] . $branch_info) . ':</strong> ';
+                                        echo 'Stock level at ' . $row['stock'] . ' units (Below threshold of ' . $row['reorder_level'] . ')';
+                                        echo '</div>';
+                                    }
+                                } else {
+                                    echo '<div class="alert alert-success mb-0">';
+                                    echo '<i class="bi bi-check-circle me-2"></i>';
+                                    echo 'All items are adequately stocked';
+                                    echo '</div>';
+                                }
+                            } else {
+                                echo '<div class="alert alert-warning mb-0">Items table not available</div>';
                             }
-                        } else {
-                            echo '<div class="alert alert-success mb-0">';
-                            echo '<i class="bi bi-check-circle me-2"></i>';
-                            echo 'All items are adequately stocked';
-                            echo '</div>';
-                        }
-                    } else {
-                        echo '<div class="alert alert-warning mb-0">Items table not available</div>';
-                    }
-                    ?>
+                            ?>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
-</div>
+    
     <!-- Mobile Bottom Navigation -->
     <div class="mobile-nav" id="mobileNav">
         <ul class="nav">
@@ -1106,6 +1261,80 @@ echo '</td>';
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
         let userCategory = <?php echo !empty($user_category) ? json_encode($user_category) : 'null'; ?>;
+        let hasTasks = <?php echo $has_tasks ? 'true' : 'false'; ?>;
+        
+        // Redirect to appropriate page and automatically open the edit modal
+        function redirectToTask(type, id, identifier) {
+            if (type === 'po') {
+                Swal.fire({
+                    title: 'Opening Purchase Order',
+                    text: `Redirecting to PO #${identifier}...`,
+                    icon: 'info',
+                    timer: 1500,
+                    showConfirmButton: false
+                }).then(() => {
+                    // Store the PO ID in sessionStorage to trigger modal on the target page
+                    sessionStorage.setItem('auto_open_po', id);
+                    window.location.href = `purchase_order.php`;
+                });
+            } else if (type === 'pickup') {
+                Swal.fire({
+                    text: `Redirecting to create pick list for order ${identifier}...`,
+                    icon: 'info',
+                    timer: 1500,
+                    showConfirmButton: false
+                }).then(() => {
+                    // Store the SO ID in sessionStorage to trigger modal on the target page
+                    sessionStorage.setItem('auto_open_so', id);
+                    window.location.href = `pick_list_items.php`;
+                });
+            }
+        }
+        
+        // Don't show again for today
+        function dontShowAgain() {
+            const TASK_MODAL_KEY = 'warehouse_task_modal_shown_' + new Date().toDateString();
+            localStorage.setItem(TASK_MODAL_KEY, 'true');
+            const modal = bootstrap.Modal.getInstance(document.getElementById('taskModal'));
+            if (modal) modal.hide();
+            Swal.fire({
+                title: 'Noted!',
+                text: 'Task list will not show again today. You can always check your pending tasks from the dashboard cards.',
+                icon: 'info',
+                timer: 2000,
+                showConfirmButton: false
+            });
+        }
+        
+        // Show task modal on page load
+        function showTaskModal() {
+            const TASK_MODAL_KEY = 'warehouse_task_modal_shown_' + new Date().toDateString();
+            const modalShownToday = localStorage.getItem(TASK_MODAL_KEY);
+            
+            if (hasTasks && !modalShownToday) {
+                const taskModal = new bootstrap.Modal(document.getElementById('taskModal'), {
+                    backdrop: 'static',
+                    keyboard: true
+                });
+                taskModal.show();
+            }
+        }
+        
+        // Check if page was just reloaded (coming back from processing)
+        function checkPageReload() {
+            const justProcessed = sessionStorage.getItem('just_processed');
+            if (justProcessed) {
+                sessionStorage.removeItem('just_processed');
+                // Refresh the page to show updated tasks
+                location.reload();
+            }
+        }
+        
+        // Check if tasks are still pending (called when returning to dashboard)
+        function checkTaskStatus() {
+            // Simple page reload to refresh task list
+            location.reload();
+        }
 
         // ================= SIDEBAR FUNCTIONS =================
         function toggleSidebar() {
@@ -1191,7 +1420,9 @@ echo '</td>';
 
         function initMobileNav() {
             const mobileNav = document.getElementById('mobileNav');
-            mobileNav.style.display = window.innerWidth <= 992 ? 'block' : 'none';
+            if (mobileNav) {
+                mobileNav.style.display = window.innerWidth <= 992 ? 'block' : 'none';
+            }
         }
 
         function showProfileModal() {
@@ -1233,11 +1464,28 @@ echo '</td>';
                 }
             });
         }
+        
+        // Add event listener for page visibility (when coming back from another page)
+        document.addEventListener('visibilitychange', function() {
+            if (!document.hidden) {
+                // Page became visible again, refresh tasks
+                setTimeout(checkTaskStatus, 500);
+            }
+        });
 
         document.addEventListener('DOMContentLoaded', function() {
             console.log("Warehouse Dashboard loaded! User Category: " + (userCategory || 'Not Assigned'));
             initializeSidebar();
             initMobileNav();
+            
+            // Show task modal if there are tasks
+            setTimeout(() => {
+                showTaskModal();
+            }, 500);
+            
+            // Check if we just came back from processing
+            checkPageReload();
+            
             document.getElementById('mobileToggleBtn')?.addEventListener('click', toggleSidebar);
             document.getElementById('desktopToggleBtn')?.addEventListener('click', toggleSidebar);
             window.addEventListener('resize', function() {
@@ -1255,7 +1503,7 @@ echo '</td>';
                 closeMobileSidebar();
             } else if (e.key === 'Escape') {
                 const profileModal = document.getElementById('profileModal');
-                if (profileModal.classList.contains('show')) {
+                if (profileModal && profileModal.classList.contains('show')) {
                     bootstrap.Modal.getInstance(profileModal).hide();
                 }
             }

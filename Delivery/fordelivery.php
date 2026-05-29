@@ -82,6 +82,43 @@ if ($user_role == 'delivery' && $driver_id > 0 && $delivery_driver_column_exists
     $driver_column_warning = true;
 }
 
+// GET PENDING WAREHOUSE PICKUP TASKS - Using existing data only (status = pending)
+$pending_pickup_tasks = [];
+$has_pending_tasks = false;
+
+if ($user_role == 'delivery' && $driver_id > 0) {
+    // Get pending deliveries that are ready for pickup (status = pending)
+    $pending_pickup_query = "
+        SELECT 
+            d.delivery_id,
+            d.so_id,
+            d.trip_id,
+            so.so_number,
+            c.customer_name,
+            c.address,
+            GROUP_CONCAT(CONCAT(i.item_name, ' (', soi.quantity_ordered, ' pcs)') SEPARATOR ', ') as items
+        FROM deliveries d
+        INNER JOIN sales_orders so ON d.so_id = so.so_id
+        INNER JOIN customers c ON d.customer_id = c.customer_id
+        LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
+        LEFT JOIN items i ON soi.item_id = i.item_id
+        WHERE d.delivery_status = 'pending'
+        AND d.driver_id = $driver_id
+        GROUP BY d.delivery_id
+        ORDER BY d.delivery_id ASC
+    ";
+    
+    $pending_result = $conn->query($pending_pickup_query);
+    if ($pending_result && $pending_result->num_rows > 0) {
+        $pending_pickup_tasks = $pending_result->fetch_all(MYSQLI_ASSOC);
+        $has_pending_tasks = true;
+        // Show modal on every page load if there are pending tasks
+        $show_pickup_modal = true;
+    } else {
+        $show_pickup_modal = false;
+    }
+}
+
 // AUTO-CREATE DELIVERIES FROM WAREHOUSE READY ORDERS
 try {
     // For delivery role, filter by driver
@@ -263,6 +300,144 @@ if (empty($user_initials)) {
     <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.css" />
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
+        /* Pickup Modal Styles */
+        .pickup-task-card {
+            border: 1px solid #e0e0e0;
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 15px;
+            background: #fff;
+            transition: all 0.3s ease;
+        }
+        .pickup-task-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+        .pickup-task-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .pickup-order-number {
+            font-weight: 600;
+            color: #047857;
+            font-size: 1.1rem;
+        }
+        .pickup-badge {
+            background-color: #ffc107;
+            color: #856404;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        .pickup-customer-name {
+            font-weight: 500;
+            margin-bottom: 5px;
+        }
+        .pickup-address {
+            color: #6c757d;
+            font-size: 0.85rem;
+            margin-bottom: 10px;
+        }
+        .pickup-items {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 0.85rem;
+            margin-bottom: 15px;
+            max-height: 100px;
+            overflow-y: auto;
+        }
+        .btn-claim {
+            background: linear-gradient(135deg, #047857, #44D34E);
+            border: none;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            width: 100%;
+        }
+        .btn-claim:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(4, 120, 87, 0.3);
+        }
+        .btn-claim:disabled {
+            background: #6c757d;
+            transform: none;
+            cursor: not-allowed;
+        }
+        .empty-pickup {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+        .empty-pickup i {
+            font-size: 3rem;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+        .pickup-modal-header {
+            background: linear-gradient(135deg, #047857, #44D34E);
+            color: white;
+        }
+        .pickup-modal-header .modal-title {
+            color: white;
+        }
+        .pickup-modal-header .btn-close {
+            filter: brightness(0) invert(1);
+        }
+        
+        /* Route and Map Styles - BLUE ROUTE */
+        .leaflet-routing-container {
+            display: none !important;
+        }
+        
+        /* Style for route lines - ensure bright blue color */
+        .leaflet-routing-line {
+            stroke: #007bff !important;
+            stroke-width: 6px !important;
+            stroke-opacity: 0.9 !important;
+        }
+        
+        /* Modern Green Truck Icon Styles */
+        .modern-truck-icon {
+            background: transparent !important;
+            border: none !important;
+            transition: transform 0.15s ease, filter 0.2s;
+            filter: drop-shadow(2px 4px 6px rgba(0,0,0,0.2));
+        }
+        .modern-truck-icon:hover {
+            transform: scale(1.05);
+            filter: drop-shadow(3px 6px 8px rgba(0,0,0,0.25));
+        }
+        
+        /* Truck animation */
+        @keyframes truck-pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+        
+        .modern-truck-icon svg {
+            animation: truck-pulse 1.5s ease-in-out infinite;
+        }
+        
+        /* Custom destination icon style */
+        .custom-destination-icon {
+            background-color: #dc3545;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border: 3px solid white;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+        }
+        
+        /* Existing styles (keep all original styles) */
         .branch-badge {
             background-color: #e7f1ff;
             color: #0d6efd;
@@ -272,7 +447,6 @@ if (empty($user_initials)) {
             font-weight: 600;
             margin-left: 5px;
         }
-        
         .driver-badge {
             background-color: #e7f1ff;
             color: #0d6efd;
@@ -282,7 +456,6 @@ if (empty($user_initials)) {
             font-weight: 600;
             display: inline-block;
         }
-        
         .driver-info-card {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
@@ -290,44 +463,36 @@ if (empty($user_initials)) {
             padding: 15px;
             margin-bottom: 20px;
         }
-        
         .driver-info-card h5 {
             color: white;
             border-bottom: 1px solid rgba(255,255,255,0.3);
             padding-bottom: 10px;
         }
-        
         .driver-info-card .info-label {
             color: rgba(255,255,255,0.8);
             font-size: 0.9rem;
         }
-        
         .driver-info-card .info-value {
             color: white;
             font-weight: 600;
         }
-        
         .alert-info {
             background-color: #d1ecf1;
             border-color: #bee5eb;
             color: #0c5460;
         }
-        
         .alert-info code {
             background-color: #f8f9fa;
             padding: 2px 4px;
             border-radius: 4px;
             color: #c7254e;
         }
-        
         .btn-group .btn {
             margin-right: 2px;
         }
-        
         .modal-xl {
             max-width: 800px;
         }
-        
         .map-icon-btn {
             background-color: #28a745;
             color: white;
@@ -341,49 +506,39 @@ if (empty($user_initials)) {
             align-items: center;
             gap: 3px;
         }
-        
         .map-icon-btn:hover {
             background-color: #218838;
             color: white;
         }
-        
         .map-icon-btn i {
             font-size: 0.9rem;
         }
-        
         .status-badge-delivered {
             background-color: #28a745;
             color: white;
         }
-        
         .delivered-row {
             background-color: #f8f9fa;
         }
-        
-        /* Map Modal Styles */
         .location-map {
             height: 400px;
             width: 100%;
             border-radius: 8px;
             margin-bottom: 15px;
         }
-        
         .location-info {
             background-color: #f8f9fa;
             border-radius: 8px;
             padding: 15px;
             margin-top: 15px;
         }
-        
         .location-info p {
             margin-bottom: 8px;
         }
-        
         .location-info i {
             color: #dc3545;
             margin-right: 8px;
         }
-        
         .coordinates-badge {
             background-color: #e7f1ff;
             color: #0d6efd;
@@ -394,20 +549,15 @@ if (empty($user_initials)) {
             align-items: center;
             gap: 5px;
         }
-        
         .coordinates-badge i {
             font-size: 1rem;
         }
-        
-        /* Photo Modal Styles */
         .photo-modal-img {
             max-width: 100%;
             max-height: 70vh;
             display: block;
             margin: 0 auto;
         }
-        
-        /* Thermal Paper Receipt */
         .thermal-receipt {
             font-family: 'Courier New', monospace;
             width: 72mm;
@@ -421,84 +571,69 @@ if (empty($user_initials)) {
             border: 1px solid #ddd;
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
-        
         .receipt-header {
             text-align: center;
             margin-bottom: 4px;
             padding-bottom: 2px;
             border-bottom: 1px dashed #333;
         }
-        
         .receipt-header .company-name {
             font-size: 16px;
             font-weight: bold;
             letter-spacing: 1px;
         }
-        
         .receipt-header .receipt-title {
             font-size: 12px;
             font-weight: bold;
         }
-        
         .receipt-header .receipt-no {
             font-size: 10px;
         }
-        
         .receipt-info {
             margin: 4px 0;
             padding: 4px;
             background: #f5f5f5;
             font-size: 10px;
         }
-        
         .info-line {
             display: flex;
             margin: 2px 0;
         }
-        
         .info-label {
             font-weight: bold;
             width: 70px;
             color: #333;
         }
-        
         .info-value {
             flex: 1;
             text-align: left;
         }
-        
         .items-table {
             width: 100%;
             border-collapse: collapse;
             margin: 4px 0;
             font-size: 10px;
         }
-        
         .items-table th {
             text-align: left;
             border-bottom: 1px solid #333;
             padding: 2px 0;
         }
-        
         .items-table td {
             padding: 2px 0;
             border-bottom: 1px dotted #999;
             vertical-align: top;
         }
-        
         .items-table .item-name {
             max-width: 100px;
             word-wrap: break-word;
         }
-        
         .items-table .text-right {
             text-align: right;
         }
-        
         .items-table .text-center {
             text-align: center;
         }
-        
         .receipt-total {
             margin-top: 4px;
             padding-top: 2px;
@@ -507,7 +642,6 @@ if (empty($user_initials)) {
             font-weight: bold;
             font-size: 12px;
         }
-        
         .receipt-footer {
             text-align: center;
             margin-top: 4px;
@@ -516,23 +650,18 @@ if (empty($user_initials)) {
             font-size: 9px;
             color: #666;
         }
-        
-        /* Receipt Modal */
         #receiptModal .modal-dialog {
             max-width: 500px;
             margin: 20px auto;
         }
-        
         #receiptModal .modal-content {
             border-radius: 10px;
             overflow: hidden;
         }
-        
         #receiptModal .modal-header {
             background: #f8f9fa;
             border-bottom: 1px solid #dee2e6;
         }
-        
         #receiptModal .modal-body {
             padding: 20px;
             background: #fff;
@@ -542,24 +671,19 @@ if (empty($user_initials)) {
             display: flex;
             justify-content: center;
         }
-        
         #receiptModal .modal-footer {
             background: #f8f9fa;
             border-top: 1px solid #dee2e6;
         }
-        
-        /* Print styles */
         @media print {
             body * {
                 visibility: hidden;
             }
-            
             #thermalReceipt, #thermalReceipt * {
                 visibility: visible;
             }
-            
             #thermalReceipt {
-                position: absolute;
+                position: fixed;
                 top: 0;
                 left: 0;
                 width: 100%;
@@ -570,28 +694,24 @@ if (empty($user_initials)) {
                 background: white;
                 margin: 0;
                 padding: 0;
+                z-index: 9999;
             }
-            
             .thermal-receipt {
                 width: 72mm;
-                height: auto;
                 margin: 0 auto;
                 padding: 2mm;
                 background: white;
                 font-family: 'Courier New', monospace;
-                page-break-inside: avoid;
-                page-break-after: avoid;
+                font-size: 11px;
+                line-height: 1.3;
                 box-sizing: border-box;
                 border: none;
                 box-shadow: none;
             }
-            
             @page {
                 margin: 0;
             }
         }
-        
-        /* GPS Tracking Styles */
         .tracking-indicator {
             display: inline-block;
             width: 12px;
@@ -599,22 +719,18 @@ if (empty($user_initials)) {
             border-radius: 50%;
             margin-right: 5px;
         }
-        
         .tracking-active {
             background-color: #28a745;
             animation: pulse 1.5s infinite;
         }
-        
         .tracking-inactive {
             background-color: #6c757d;
         }
-        
         @keyframes pulse {
             0% { opacity: 1; transform: scale(1); }
             50% { opacity: 0.5; transform: scale(1.1); }
             100% { opacity: 1; transform: scale(1); }
         }
-        
         #locationIndicator {
             display: inline-flex;
             align-items: center;
@@ -624,30 +740,24 @@ if (empty($user_initials)) {
             font-size: 0.85rem;
             transition: all 0.3s ease;
         }
-        
         #locationIndicator.bg-success {
             animation: pulse-green 2s infinite;
         }
-        
         @keyframes pulse-green {
             0% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.4); }
             70% { box-shadow: 0 0 0 10px rgba(40, 167, 69, 0); }
             100% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); }
         }
-        
         .update-counter {
             font-size: 0.75rem;
             margin-left: 5px;
             opacity: 0.8;
         }
-
-        /* Tracking Modal Styles - Taller modal */
         #trackingModal .modal-dialog {
             max-width: 1200px;
             margin: 10px auto;
             height: 95vh;
         }
-        
         #trackingModal .modal-content {
             border: none;
             border-radius: 12px;
@@ -656,20 +766,16 @@ if (empty($user_initials)) {
             display: flex;
             flex-direction: column;
         }
-        
         #trackingModal .modal-body {
             flex: 1;
             padding: 0;
             position: relative;
             overflow: hidden;
         }
-        
         #trackingMap {
             height: 100%;
             width: 100%;
         }
-        
-        /* Status Panel - Collapsible & Draggable on desktop */
         .status-panel {
             position: absolute;
             top: 20px;
@@ -686,17 +792,14 @@ if (empty($user_initials)) {
             max-height: calc(100% - 40px);
             overflow-y: auto;
         }
-        
         .status-panel.collapsed {
             padding: 10px 20px;
             width: auto;
             min-width: 200px;
         }
-        
         .status-panel.collapsed .panel-content {
             display: none;
         }
-        
         .status-panel h6 {
             color: #333;
             font-weight: 600;
@@ -708,15 +811,12 @@ if (empty($user_initials)) {
             gap: 8px;
             cursor: move;
         }
-        
         .status-panel.collapsed h6 {
             margin-bottom: 0;
         }
-        
         .status-panel h6 i:first-child {
             color: #0d6efd;
         }
-        
         .toggle-panel-btn {
             background: transparent;
             border: none;
@@ -727,19 +827,15 @@ if (empty($user_initials)) {
             cursor: pointer;
             transition: color 0.2s;
         }
-        
         .toggle-panel-btn:hover {
             color: #0d6efd;
         }
-        
         .panel-content {
             margin-top: 15px;
         }
-        
         .info-row {
             margin-bottom: 12px;
         }
-        
         .info-label {
             font-size: 0.8rem;
             color: #6c757d;
@@ -748,62 +844,30 @@ if (empty($user_initials)) {
             align-items: center;
             gap: 5px;
         }
-        
         .info-value {
             font-weight: 600;
             color: #333;
             font-size: 0.95rem;
         }
-        
         .coordinates-text {
             font-family: monospace;
             font-size: 0.8rem;
             color: #6c757d;
             margin-top: 2px;
         }
-        
         .progress {
             background-color: #e9ecef;
             border-radius: 10px;
             overflow: hidden;
             height: 8px;
         }
-        
         .progress-bar {
             transition: width 0.3s ease;
         }
-        
         .progress-bar.bg-success { background-color: #28a745 !important; }
         .progress-bar.bg-info { background-color: #17a2b8 !important; }
         .progress-bar.bg-warning { background-color: #ffc107 !important; }
         .progress-bar.bg-danger { background-color: #dc3545 !important; }
-        
-        .custom-user-icon {
-            background-color: #007bff;
-            border: 3px solid white;
-            border-radius: 50%;
-            width: 20px;
-            height: 20px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-            animation: pulse-blue 1.5s infinite;
-        }
-        
-        .custom-destination-icon {
-            background-color: #dc3545;
-            border: 3px solid white;
-            border-radius: 50%;
-            width: 20px;
-            height: 20px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.3);
-        }
-        
-        @keyframes pulse-blue {
-            0% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.3); opacity: 0.8; }
-            100% { transform: scale(1); opacity: 1; }
-        }
-        
-        /* Mobile Profile Modal Styles */
         .user-avatar-large {
             width: 100px;
             height: 100px;
@@ -819,40 +883,33 @@ if (empty($user_initials)) {
             border: 4px solid #d1fae5;
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
-
         #profileModal .modal-content {
             border: none;
             border-radius: 20px;
             overflow: hidden;
         }
-
         #profileModal .modal-header {
             background: linear-gradient(135deg, #047857, #44D34E);
             color: white;
             border-bottom: none;
             padding: 1.5rem;
         }
-
         #profileModal .modal-header .modal-title {
             color: white;
             font-weight: 600;
         }
-
         #profileModal .modal-header .btn-close {
             filter: brightness(0) invert(1);
             opacity: 0.9;
         }
-
         #profileModal .modal-header .btn-close:hover {
             opacity: 1;
             transform: rotate(90deg);
         }
-
         #profileModal .modal-body {
             padding: 2rem;
             background: linear-gradient(135deg, #f9fefc 0%, #f0fdf4 100%);
         }
-
         #profileModal .branch-info {
             background: #d1fae5;
             color: #047857;
@@ -861,7 +918,6 @@ if (empty($user_initials)) {
             display: inline-block;
             font-weight: 500;
         }
-
         #profileModal .btn-danger {
             background: linear-gradient(135deg, #dc3545, #f87171);
             border: none;
@@ -870,40 +926,29 @@ if (empty($user_initials)) {
             font-weight: 600;
             transition: all 0.3s ease;
         }
-
         #profileModal .btn-danger:hover {
             transform: translateY(-2px);
             box-shadow: 0 8px 20px rgba(220, 53, 69, 0.3);
         }
-
-        /* Mobile Logout Button in Bottom Nav */
         .mobile-nav .nav-link.logout-btn {
             color: #dc3545;
         }
-
         .mobile-nav .nav-link.logout-btn i {
             color: #dc3545;
         }
-
         .mobile-nav .nav-link.logout-btn.active,
         .mobile-nav .nav-link.logout-btn:hover {
             background: rgba(220, 53, 69, 0.1);
             color: #dc3545;
         }
-
         .mobile-nav .nav-link.logout-btn.active i,
         .mobile-nav .nav-link.logout-btn:hover i {
             color: #dc3545;
         }
-        
-        /* ===== RESPONSIVE MOBILE LAYOUT WITH DYNAMIC SIZING ===== */
         @media (max-width: 768px) {
-            /* Hide table headers on mobile */
             .custom-table thead {
                 display: none;
             }
-            
-            /* Make table behave like blocks */
             .custom-table,
             .custom-table tbody,
             .custom-table tr,
@@ -911,8 +956,6 @@ if (empty($user_initials)) {
                 display: block;
                 width: 100%;
             }
-            
-            /* Style each row as a card with minimal padding */
             .custom-table tbody tr {
                 background: white;
                 border-radius: 12px;
@@ -921,8 +964,6 @@ if (empty($user_initials)) {
                 box-shadow: 0 2px 6px rgba(0,0,0,0.06);
                 border: 1px solid #e9ecef;
             }
-            
-            /* First row: Order ID - dynamic sizing */
             .custom-table td:first-child {
                 font-size: clamp(0.85rem, 3.5vw, 1rem);
                 font-weight: 600;
@@ -932,7 +973,6 @@ if (empty($user_initials)) {
                 border: none !important;
                 line-height: 1.2;
             }
-            
             .custom-table td:first-child .badge {
                 font-size: inherit;
                 padding: 0;
@@ -940,8 +980,6 @@ if (empty($user_initials)) {
                 color: #047857 !important;
                 font-weight: 600;
             }
-            
-            /* Second row: Customer Name + Action Buttons - flexible layout */
             .custom-table td:nth-child(2) {
                 display: flex !important;
                 align-items: center;
@@ -952,8 +990,6 @@ if (empty($user_initials)) {
                 border: none !important;
                 width: 100%;
             }
-            
-            /* Customer name - dynamic sizing, no wrap */
             .custom-table td:nth-child(2) .customer-name-text {
                 font-size: clamp(0.95rem, 4.5vw, 1.2rem);
                 font-weight: 600;
@@ -964,15 +1000,11 @@ if (empty($user_initials)) {
                 flex: 1;
                 min-width: 0;
             }
-            
-            /* Action buttons container - fixed width based on content */
             .custom-table td:nth-child(2) .action-buttons {
                 display: flex !important;
                 gap: 5px;
                 flex-shrink: 0;
             }
-            
-            /* Dynamic button sizing */
             .custom-table td:nth-child(2) .btn-action {
                 width: clamp(30px, 7vw, 36px) !important;
                 height: clamp(30px, 7vw, 36px) !important;
@@ -983,13 +1015,9 @@ if (empty($user_initials)) {
                 justify-content: center;
                 padding: 0;
             }
-            
-            /* Hide the original actions column */
             .custom-table td:last-child {
                 display: none !important;
             }
-            
-            /* Third row: Status only - dynamic sizing */
             .custom-table td:nth-child(6) {
                 display: block !important;
                 font-size: clamp(0.8rem, 3.2vw, 0.95rem);
@@ -1000,8 +1028,6 @@ if (empty($user_initials)) {
                 margin-top: 2px;
                 line-height: 1.2;
             }
-            
-            /* Status colors */
             .custom-table td:nth-child(6) .badge {
                 all: unset;
                 font-size: inherit;
@@ -1009,35 +1035,26 @@ if (empty($user_initials)) {
                 padding: 0;
                 background: transparent !important;
             }
-            
             .custom-table td:nth-child(6) .badge.bg-warning {
                 color: #f59e0b;
             }
-            
             .custom-table td:nth-child(6) .badge.bg-primary {
                 color: #0d6efd;
             }
-            
             .custom-table td:nth-child(6) .badge.bg-info {
                 color: #0dcaf0;
             }
-            
             .custom-table td:nth-child(6) .badge.bg-success {
                 color: #198754;
             }
-            
             .custom-table td:nth-child(6) .badge.bg-secondary {
                 color: #6c757d;
             }
-            
-            /* Hide all other columns */
             .custom-table td:nth-child(3),
             .custom-table td:nth-child(4),
             .custom-table td:nth-child(5) {
                 display: none;
             }
-            
-            /* Driver badge - smaller */
             .custom-table td .driver-badge {
                 font-size: 0.65rem;
                 margin-top: 2px;
@@ -1045,66 +1062,51 @@ if (empty($user_initials)) {
                 padding: 2px 6px;
             }
         }
-
-        /* Medium phones (400px - 568px) */
         @media (min-width: 400px) and (max-width: 568px) {
             .custom-table tbody tr {
                 padding: 10px;
                 margin-bottom: 8px;
             }
-            
             .custom-table td:first-child {
                 font-size: 0.9rem;
                 margin-bottom: 3px;
             }
-            
             .custom-table td:nth-child(2) .customer-name-text {
                 font-size: 1rem;
             }
-            
             .custom-table td:nth-child(2) .btn-action {
                 width: 32px !important;
                 height: 32px !important;
                 font-size: 0.9rem !important;
             }
-            
             .custom-table td:nth-child(6) {
                 font-size: 0.85rem;
             }
         }
-
-        /* Small phones (below 400px) */
         @media (max-width: 399px) {
             .custom-table tbody tr {
                 padding: 8px;
                 margin-bottom: 6px;
             }
-            
             .custom-table td:first-child {
                 font-size: 0.8rem;
                 margin-bottom: 2px;
             }
-            
             .custom-table td:nth-child(2) .customer-name-text {
                 font-size: 0.9rem;
             }
-            
             .custom-table td:nth-child(2) .btn-action {
                 width: 28px !important;
                 height: 28px !important;
                 font-size: 0.8rem !important;
             }
-            
             .custom-table td:nth-child(2) .action-buttons {
                 gap: 4px;
             }
-            
             .custom-table td:nth-child(6) {
                 font-size: 0.75rem;
             }
         }
-
-        /* Extra small phones */
         @media (max-width: 320px) {
             .custom-table td:nth-child(2) .btn-action {
                 width: 26px !important;
@@ -1112,37 +1114,25 @@ if (empty($user_initials)) {
                 font-size: 0.75rem !important;
             }
         }
-
-        /* ===== DESKTOP FIX - HIDE MOBILE ACTION BUTTONS ===== */
         @media (min-width: 769px) {
-            /* Hide mobile action buttons on desktop */
             .custom-table td:nth-child(2) .action-buttons.d-flex.d-md-none {
                 display: none !important;
             }
-            
-            /* Also hide any action buttons in customer name column */
             .custom-table td:nth-child(2) .action-buttons {
                 display: none !important;
             }
-            
-            /* Ensure desktop action buttons are visible in Actions column */
             .custom-table td:last-child .action-buttons.d-none.d-md-inline-flex {
                 display: inline-flex !important;
             }
-            
-            /* Fix alignment for desktop actions */
             .custom-table td:last-child {
                 white-space: nowrap;
                 text-align: center;
                 vertical-align: middle;
             }
-            
             .custom-table td:last-child .action-buttons {
                 justify-content: center !important;
                 gap: 8px;
             }
-            
-            /* Style for action buttons in desktop */
             .custom-table td:last-child .btn-action {
                 width: 36px;
                 height: 36px;
@@ -1154,323 +1144,317 @@ if (empty($user_initials)) {
                 margin: 0 2px;
             }
         }
-        
         .stat-card-row {
             margin-bottom: 1.5rem !important;
         }
-
         @media (max-width: 768px) {
             .stat-card-row {
                 margin-bottom: 1rem !important;
             }
-            
             .form-card {
                 margin-top: 0.5rem;
             }
         }
-        /* ===== ULTIMATE DESKTOP FIX - FORCE HIDE MOBILE BUTTONS ===== */
-@media (min-width: 769px) {
-    /* Target all possible mobile button containers */
-    .custom-table td:nth-child(2) .action-buttons,
-    .custom-table td:nth-child(2) div[class*="action-buttons"],
-    .custom-table td:nth-child(2) .d-flex.d-md-none,
-    .custom-table td:nth-child(2) [class*="d-md-none"] {
-        display: none !important;
-        visibility: hidden !important;
-        opacity: 0 !important;
-        pointer-events: none !important;
-        width: 0 !important;
-        height: 0 !important;
-        overflow: hidden !important;
-        position: absolute !important;
-        z-index: -9999 !important;
-    }
-    
-    /* Ensure desktop buttons are visible */
-    .custom-table td:last-child .action-buttons,
-    .custom-table td:last-child .d-none.d-md-inline-flex,
-    .custom-table td:last-child [class*="d-md-inline-flex"] {
-        display: inline-flex !important;
-        visibility: visible !important;
-        opacity: 1 !important;
-        pointer-events: auto !important;
-    }
-}
-/* Thermal Receipt Modal - MAS MALAKI ANG HEIGHT, WHITE TEXT */
-#receiptModal .modal-dialog {
-    max-width: 500px;
-    margin: 1.75rem auto;
-}
-
-#receiptModal .modal-content {
-    border-radius: 12px;
-    border: none;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-    overflow: hidden;
-}
-
-#receiptModal .modal-header {
-    background: linear-gradient(135deg, #047857, #44D34E); /* Green gradient */
-    border-bottom: 1px solid rgba(255,255,255,0.2);
-    padding: 1rem 1.5rem;
-}
-
-#receiptModal .modal-header .modal-title {
-    color: white !important; /* White text */
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-#receiptModal .modal-header .modal-title i {
-    color: white !important; /* White icon */
-    font-size: 1.2rem;
-}
-
-#receiptModal .modal-header .btn-close {
-    filter: brightness(0) invert(1); /* White close button */
-    opacity: 0.9;
-}
-
-#receiptModal .modal-header .btn-close:hover {
-    opacity: 1;
-    transform: rotate(90deg);
-}
-
-#receiptModal .modal-body {
-    padding: 20px;
-    background: #f5f5f5;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start; /* Start from top */
-    min-height: auto;
-    max-height: 80vh; /* INCREASED HEIGHT from 70vh to 80vh */
-    overflow-y: auto;
-    /* Hide scrollbar but keep functionality */
-    scrollbar-width: none; /* Firefox */
-    -ms-overflow-style: none; /* IE/Edge */
-}
-
-#receiptModal .modal-body::-webkit-scrollbar {
-    display: none; /* Chrome/Safari/Opera */
-}
-
-/* Thermal receipt - EXACT SIZE, NEVER CHANGES */
-#receiptModal .thermal-receipt {
-    font-family: 'Courier New', monospace;
-    width: 72mm !important;
-    max-width: 72mm !important;
-    min-width: 72mm !important;
-    margin: 0 auto;
-    padding: 3mm;
-    background: white;
-    color: black;
-    font-size: 11px;
-    line-height: 1.3;
-    box-sizing: border-box;
-    border: 1px solid #ddd;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-/* Mobile - MAS MALAKI ANG HEIGHT */
-@media (max-width: 768px) {
-    #receiptModal .modal-dialog {
-        max-width: 500px;
-        margin: 1rem auto;
-    }
-    
-    #receiptModal .modal-body {
-        padding: 15px;
-        max-height: 85vh; /* INCREASED from 80vh to 85vh */
-    }
-    
-    /* Receipt stays EXACTLY THE SAME SIZE */
-    #receiptModal .thermal-receipt {
-        width: 72mm !important;
-        max-width: 72mm !important;
-        min-width: 72mm !important;
-        font-size: 11px !important;
-        padding: 3mm !important;
-    }
-}
-
-/* Very small phones - MAS MALAKI ANG HEIGHT */
-@media (max-width: 480px) {
-    #receiptModal .modal-dialog {
-        max-width: 95%;
-        margin: 0.5rem auto;
-    }
-    
-    #receiptModal .modal-body {
-        padding: 10px;
-        max-height: 90vh; /* INCREASED from 85vh to 90vh */
-    }
-    
-    /* Receipt STAYS EXACTLY THE SAME */
-    #receiptModal .thermal-receipt {
-        width: 72mm !important;
-        max-width: 72mm !important;
-        min-width: 72mm !important;
-        font-size: 11px !important;
-        padding: 3mm !important;
-    }
-}
-
-/* Extra small phones - MAS MALAKI ANG HEIGHT */
-@media (max-width: 360px) {
-    #receiptModal .modal-body {
-        padding: 5px;
-        max-height: 95vh; /* INCREASED from 90vh to 95vh */
-    }
-    
-    /* Receipt NEVER CHANGES SIZE */
-    #receiptModal .thermal-receipt {
-        width: 72mm !important;
-        max-width: 72mm !important;
-        min-width: 72mm !important;
-    }
-}
-/* Thermal Receipt Modal - SAME HEIGHT AS DELIVERY DETAILS */
-#receiptModal .modal-dialog {
-    max-width: 500px;
-    margin: 1.75rem auto;
-}
-
-#receiptModal .modal-content {
-    border-radius: 12px;
-    border: none;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-    overflow: hidden;
-    min-height: 400px; /* MINIMUM HEIGHT para di masyadong liit */
-}
-
-#receiptModal .modal-header {
-    background: linear-gradient(135deg, #047857, #44D34E);
-    border-bottom: 1px solid rgba(255,255,255,0.2);
-    padding: 1rem 1.5rem;
-}
-
-#receiptModal .modal-header .modal-title {
-    color: white !important;
-    font-weight: 600;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-#receiptModal .modal-header .modal-title i {
-    color: white !important;
-    font-size: 1.2rem;
-}
-
-#receiptModal .modal-header .btn-close {
-    filter: brightness(0) invert(1);
-    opacity: 0.9;
-}
-
-#receiptModal .modal-body {
-    padding: 20px;
-    background: #f5f5f5;
-    display: flex;
-    justify-content: center;
-    align-items: flex-start;
-    min-height: 350px; /* MINIMUM HEIGHT para kapareho ng details */
-    max-height: 70vh;
-    overflow-y: auto;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-}
-
-#receiptModal .modal-body::-webkit-scrollbar {
-    display: none;
-}
-
-/* Thermal receipt - exact size */
-#receiptModal .thermal-receipt {
-    font-family: 'Courier New', monospace;
-    width: 72mm !important;
-    max-width: 72mm !important;
-    min-width: 72mm !important;
-    margin: 0 auto;
-    padding: 3mm;
-    background: white;
-    color: black;
-    font-size: 11px;
-    line-height: 1.3;
-    box-sizing: border-box;
-    border: 1px solid #ddd;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-/* Mobile - SAME HEIGHT AS DETAILS */
-@media (max-width: 768px) {
-    #receiptModal .modal-dialog {
-        max-width: 500px;
-        margin: 1rem auto;
-    }
-    
-    #receiptModal .modal-content {
-        min-height: 450px; /* Mas malaki sa mobile */
-    }
-    
-    #receiptModal .modal-body {
-        padding: 15px;
-        min-height: 400px; /* SAME AS DETAILS */
-        max-height: 85vh;
-    }
-    
-    #receiptModal .thermal-receipt {
-        width: 72mm !important;
-        max-width: 72mm !important;
-        min-width: 72mm !important;
-        font-size: 11px !important;
-        padding: 3mm !important;
-    }
-}
-
-@media (max-width: 480px) {
-    #receiptModal .modal-dialog {
-        max-width: 95%;
-        margin: 0.5rem auto;
-    }
-    
-    #receiptModal .modal-content {
-        min-height: 500px; /* Mas malaki sa maliit na phone */
-    }
-    
-    #receiptModal .modal-body {
-        padding: 10px;
-        min-height: 450px; /* SAME AS DETAILS */
-        max-height: 90vh;
-    }
-    
-    #receiptModal .thermal-receipt {
-        width: 72mm !important;
-        max-width: 72mm !important;
-        min-width: 72mm !important;
-        font-size: 11px !important;
-        padding: 3mm !important;
-    }
-}
-
-@media (max-width: 360px) {
-    #receiptModal .modal-content {
-        min-height: 550px;
-    }
-    
-    #receiptModal .modal-body {
-        min-height: 500px;
-        padding: 5px;
-        max-height: 95vh;
-    }
-    
-    #receiptModal .thermal-receipt {
-        width: 72mm !important;
-        max-width: 72mm !important;
-        min-width: 72mm !important;
-    }
-}
+        @media (min-width: 769px) {
+            .custom-table td:nth-child(2) .action-buttons,
+            .custom-table td:nth-child(2) div[class*="action-buttons"],
+            .custom-table td:nth-child(2) .d-flex.d-md-none,
+            .custom-table td:nth-child(2) [class*="d-md-none"] {
+                display: none !important;
+                visibility: hidden !important;
+                opacity: 0 !important;
+                pointer-events: none !important;
+                width: 0 !important;
+                height: 0 !important;
+                overflow: hidden !important;
+                position: absolute !important;
+                z-index: -9999 !important;
+            }
+            .custom-table td:last-child .action-buttons,
+            .custom-table td:last-child .d-none.d-md-inline-flex,
+            .custom-table td:last-child [class*="d-md-inline-flex"] {
+                display: inline-flex !important;
+                visibility: visible !important;
+                opacity: 1 !important;
+                pointer-events: auto !important;
+            }
+        }
+        #receiptModal .modal-dialog {
+            max-width: 500px;
+            margin: 1.75rem auto;
+        }
+        #receiptModal .modal-content {
+            border-radius: 12px;
+            border: none;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+        }
+        #receiptModal .modal-header {
+            background: linear-gradient(135deg, #047857, #44D34E);
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+            padding: 1rem 1.5rem;
+        }
+        #receiptModal .modal-header .modal-title {
+            color: white !important;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        #receiptModal .modal-header .modal-title i {
+            color: white !important;
+            font-size: 1.2rem;
+        }
+        #receiptModal .modal-header .btn-close {
+            filter: brightness(0) invert(1);
+            opacity: 0.9;
+        }
+        #receiptModal .modal-body {
+            padding: 20px;
+            background: #f5f5f5;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: auto;
+            max-height: 80vh;
+            overflow-y: auto;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+        #receiptModal .modal-body::-webkit-scrollbar {
+            display: none;
+        }
+        #receiptModal .thermal-receipt {
+            font-family: 'Courier New', monospace;
+            width: 72mm !important;
+            max-width: 72mm !important;
+            min-width: 72mm !important;
+            margin: 0 auto;
+            padding: 3mm;
+            background: white;
+            color: black;
+            font-size: 11px;
+            line-height: 1.3;
+            box-sizing: border-box;
+            border: 1px solid #ddd;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        @media (max-width: 768px) {
+            #receiptModal .modal-dialog {
+                max-width: 500px;
+                margin: 1rem auto;
+            }
+            #receiptModal .modal-body {
+                padding: 15px;
+                max-height: 85vh;
+            }
+            #receiptModal .thermal-receipt {
+                width: 72mm !important;
+                max-width: 72mm !important;
+                min-width: 72mm !important;
+                font-size: 11px !important;
+                padding: 3mm !important;
+            }
+        }
+        @media (max-width: 480px) {
+            #receiptModal .modal-dialog {
+                max-width: 95%;
+                margin: 0.5rem auto;
+            }
+            #receiptModal .modal-body {
+                padding: 10px;
+                max-height: 90vh;
+            }
+            #receiptModal .thermal-receipt {
+                width: 72mm !important;
+                max-width: 72mm !important;
+                min-width: 72mm !important;
+                font-size: 11px !important;
+                padding: 3mm !important;
+            }
+        }
+        @media (max-width: 360px) {
+            #receiptModal .modal-body {
+                padding: 5px;
+                max-height: 95vh;
+            }
+            #receiptModal .thermal-receipt {
+                width: 72mm !important;
+                max-width: 72mm !important;
+                min-width: 72mm !important;
+            }
+        }
+        #receiptModal .modal-dialog {
+            max-width: 500px;
+            margin: 1.75rem auto;
+        }
+        #receiptModal .modal-content {
+            border-radius: 12px;
+            border: none;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            overflow: hidden;
+            min-height: 400px;
+        }
+        #receiptModal .modal-header {
+            background: linear-gradient(135deg, #047857, #44D34E);
+            border-bottom: 1px solid rgba(255,255,255,0.2);
+            padding: 1rem 1.5rem;
+        }
+        #receiptModal .modal-header .modal-title {
+            color: white !important;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        #receiptModal .modal-header .modal-title i {
+            color: white !important;
+            font-size: 1.2rem;
+        }
+        #receiptModal .modal-header .btn-close {
+            filter: brightness(0) invert(1);
+            opacity: 0.9;
+        }
+        #receiptModal .modal-body {
+            padding: 20px;
+            background: #f5f5f5;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 350px;
+            max-height: 70vh;
+            overflow-y: auto;
+            scrollbar-width: none;
+            -ms-overflow-style: none;
+        }
+        #receiptModal .modal-body::-webkit-scrollbar {
+            display: none;
+        }
+        #receiptModal .thermal-receipt {
+            font-family: 'Courier New', monospace;
+            width: 72mm !important;
+            max-width: 72mm !important;
+            min-width: 72mm !important;
+            margin: 0 auto;
+            padding: 3mm;
+            background: white;
+            color: black;
+            font-size: 11px;
+            line-height: 1.3;
+            box-sizing: border-box;
+            border: 1px solid #ddd;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        @media (max-width: 768px) {
+            #receiptModal .modal-dialog {
+                max-width: 500px;
+                margin: 1rem auto;
+            }
+            #receiptModal .modal-content {
+                min-height: 450px;
+            }
+            #receiptModal .modal-body {
+                padding: 15px;
+                min-height: 400px;
+                max-height: 85vh;
+            }
+            #receiptModal .thermal-receipt {
+                width: 72mm !important;
+                max-width: 72mm !important;
+                min-width: 72mm !important;
+                font-size: 11px !important;
+                padding: 3mm !important;
+            }
+        }
+        @media (max-width: 480px) {
+            #receiptModal .modal-dialog {
+                max-width: 95%;
+                margin: 0.5rem auto;
+            }
+            #receiptModal .modal-content {
+                min-height: 500px;
+            }
+            #receiptModal .modal-body {
+                padding: 10px;
+                min-height: 450px;
+                max-height: 90vh;
+            }
+            #receiptModal .thermal-receipt {
+                width: 72mm !important;
+                max-width: 72mm !important;
+                min-width: 72mm !important;
+                font-size: 11px !important;
+                padding: 3mm !important;
+            }
+        }
+        @media (max-width: 360px) {
+            #receiptModal .modal-content {
+                min-height: 550px;
+            }
+            #receiptModal .modal-body {
+                min-height: 500px;
+                padding: 5px;
+                max-height: 95vh;
+            }
+            #receiptModal .thermal-receipt {
+                width: 72mm !important;
+                max-width: 72mm !important;
+                min-width: 72mm !important;
+            }
+        }
+        
+        /* Contact buttons styles - Right Aligned */
+        .contact-buttons {
+            margin-top: 20px;
+            padding-top: 15px;
+            border-top: 1px solid #e0e0e0;
+            text-align: right;
+        }
+        .contact-buttons .btn-contact {
+            padding: 8px 16px;
+            border-radius: 8px;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+        .contact-buttons .btn-contact i {
+            margin-right: 8px;
+        }
+        .contact-buttons .btn-call {
+            background-color: #28a745;
+            border: none;
+            color: white;
+        }
+        .contact-buttons .btn-call:hover {
+            background-color: #218838;
+            transform: translateY(-2px);
+        }
+        .contact-buttons .btn-message {
+            background-color: #17a2b8;
+            border: none;
+            color: white;
+        }
+        .contact-buttons .btn-message:hover {
+            background-color: #138496;
+            transform: translateY(-2px);
+        }
+        .contact-buttons .phone-number-display {
+            font-size: 1rem;
+            font-weight: 600;
+            color: #333;
+            background: #f8f9fa;
+            padding: 8px 12px;
+            border-radius: 8px;
+            display: inline-block;
+        }
+        .justify-content-end {
+            justify-content: flex-end !important;
+        }
+        .d-flex {
+            display: flex !important;
+        }
+        .gap-2 {
+            gap: 0.5rem !important;
+        }
     </style>
 </head>
 <body>
@@ -1650,20 +1634,20 @@ if (empty($user_initials)) {
                 </div>
             <?php else: ?>
 
-            <!-- Delivery Orders Table - RESPONSIVE LAYOUT -->
+             <!-- Delivery Orders Table - RESPONSIVE LAYOUT -->
             <div class="card">
                 <div class="table-container">
                     <table class="table custom-table compact-table">
                         <thead class="table-light">
-                            <tr>
-                                <th>Order ID</th>
-                                <th>Customer Name</th>
-                                <th>Address</th>
-                                <th>Contact</th>
-                                <th>Items</th>
-                                <th>Status</th>
-                                <th class="text-center align-middle">Actions</th>
-                            </tr>
+                                <tr>
+                                    <th>Order ID</th>
+                                    <th>Customer Name</th>
+                                    <th>Address</th>
+                                    <th>Contact</th>
+                                    <th>Items</th>
+                                    <th>Status</th>
+                                    <th class="text-center align-middle">Actions</th>
+                                </tr>
                         </thead>
                         <tbody>
                             <?php foreach ($delivery_orders as $order): ?>
@@ -1675,9 +1659,9 @@ if (empty($user_initials)) {
                                     <?php endif; ?>
                                 </td>
                                 <td>
-                                    <span class="customer-name-text"><?php echo htmlspecialchars($order['customer_name']); ?></span>
-                                            <!-- Action buttons for MOBILE only (hidden on desktop) -->
-                                            <div class="action-buttons d-flex d-md-none" style="display: inline-flex !important; margin-left: 8px;">
+                                    <?php echo htmlspecialchars($order['customer_name']); ?>
+                                    <!-- Action buttons for MOBILE only (hidden on desktop) -->
+                                    <div class="action-buttons d-flex d-md-none" style="display: inline-flex !important; margin-left: 8px;">
                                         <button class="btn-action btn-view" title="View Details" onclick="viewDeliveryDetails(<?php echo $order['delivery_id']; ?>)">
                                             <i class="bi bi-eye"></i>
                                         </button>
@@ -1772,8 +1756,8 @@ if (empty($user_initials)) {
                                     </span>
                                 </td>
                                 <td class="text-center align-middle">
-    <!-- Desktop action buttons (hidden on mobile) -->
-    <div class="action-buttons d-none d-md-inline-flex" style="justify-content: center; gap: 8px;">
+                                    <!-- Desktop action buttons (hidden on mobile) -->
+                                    <div class="action-buttons d-none d-md-inline-flex" style="justify-content: center; gap: 8px;">
                                         <button class="btn-action btn-view" title="View Details" onclick="viewDeliveryDetails(<?php echo $order['delivery_id']; ?>)">
                                             <i class="bi bi-eye"></i>
                                         </button>
@@ -1925,8 +1909,8 @@ if (empty($user_initials)) {
                             <!-- Your Location -->
                             <div class="info-row">
                                 <div class="info-label">
-                                    <i class="bi bi-geo-alt-fill text-primary"></i>
-                                    Your Location:
+                                    <i class="bi bi-truck text-primary"></i>
+                                    Driver Location:
                                 </div>
                                 <div class="info-value" id="yourLocationText">Acquiring GPS...</div>
                                 <div class="coordinates-text" id="yourCoordinates">--</div>
@@ -2079,105 +2063,6 @@ if (empty($user_initials)) {
     </div>
 </div>
 
-<!-- Live Tracking Modal -->
-<div class="modal fade" id="trackingModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
-    <div class="modal-dialog modal-xl modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header bg-primary text-white">
-                <h5 class="modal-title">
-                    <i class="bi bi-navigation me-2"></i>
-                    Live Navigation to Customer
-                </h5>
-                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body p-0 position-relative">
-                <div id="trackingMap" class="location-map"></div>
-                
-                <!-- Navigation Status Panel -->
-                <div class="status-panel" id="navigationStatusPanel">
-                    <h6>
-                        <i class="bi bi-info-circle-fill text-primary me-2"></i>
-                        Navigation Status
-                        <button class="toggle-panel-btn" id="toggleStatusPanel" title="Expand/Collapse">
-                            <i class="bi bi-chevron-up"></i>
-                        </button>
-                    </h6>
-                    
-                    <div class="panel-content">
-                        <!-- Your Location -->
-                        <div class="info-row">
-                            <div class="info-label">
-                                <i class="bi bi-geo-alt-fill text-primary"></i>
-                                Your Location:
-                            </div>
-                            <div class="info-value" id="yourLocationText">Acquiring GPS...</div>
-                            <div class="coordinates-text" id="yourCoordinates">--</div>
-                        </div>
-                        
-                        <!-- Destination -->
-                        <div class="info-row">
-                            <div class="info-label">
-                                <i class="bi bi-pin-map-fill text-danger"></i>
-                                Destination:
-                            </div>
-                            <div class="info-value" id="destinationText">Customer Location</div>
-                            <div class="coordinates-text" id="destinationCoordinates">--</div>
-                        </div>
-                        
-                        <!-- Distance & Time -->
-                        <div class="row g-2 mb-3">
-                            <div class="col-6">
-                                <div class="bg-light p-2 rounded text-center">
-                                    <div class="info-label">Distance</div>
-                                    <div class="info-value" style="font-size: 1.2rem;">
-                                        <span id="distanceText">--</span> <small>km</small>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="col-6">
-                                <div class="bg-light p-2 rounded text-center">
-                                    <div class="info-label">Est. Time</div>
-                                    <div class="info-value" style="font-size: 1.2rem;">
-                                        <span id="timeText">--</span> <small>min</small>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- GPS Accuracy -->
-                        <div class="info-row">
-                            <div class="info-label">
-                                <i class="bi bi-satellite me-1"></i>
-                                GPS Accuracy:
-                            </div>
-                            <div class="progress mb-1" style="height: 8px;">
-                                <div id="accuracyBar" class="progress-bar bg-success" style="width: 100%"></div>
-                            </div>
-                            <div class="d-flex justify-content-between align-items-center">
-                                <small id="accuracyText" class="text-muted">High accuracy</small>
-                                <button class="retry-btn" onclick="retryGPSTracking()" title="Retry GPS">
-                                    <i class="bi bi-arrow-repeat"></i> Retry
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <!-- Navigation Actions -->
-                        <div class="d-grid gap-2 mt-3">
-                            <button class="btn btn-sm btn-success" onclick="centerOnYourLocation()">
-                                <i class="bi bi-crosshair me-2"></i>Center on Me
-                            </button>
-                            <button class="btn btn-sm btn-outline-primary" onclick="openGoogleMaps()">
-                                <i class="bi bi-google me-2"></i>Open in Google Maps
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <!-- Modal footer removed - Close button nasa header na -->
-        </div>
-    </div>
-</div>
-
 <!-- Delivery Modal -->
 <div class="modal fade" id="deliveryModal" tabindex="-1">
     <div class="modal-dialog modal-lg modal-dialog-scrollable">
@@ -2237,7 +2122,7 @@ if (empty($user_initials)) {
     </div>
 </div>
 
-<!-- Thermal Receipt Modal - MAS MALAKI ANG HEIGHT, WHITE TEXT -->
+<!-- Thermal Receipt Modal -->
 <div class="modal fade" id="receiptModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style="max-width: 500px;">
         <div class="modal-content">
@@ -2251,7 +2136,12 @@ if (empty($user_initials)) {
             <div class="modal-body" id="receiptContent" style="padding: 20px; min-height: auto;">
                 <!-- Receipt preview will be loaded here -->
             </div>
-            <!-- Modal footer removed -->
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary" onclick="printThermalReceipt()">
+                    <i class="bi bi-printer"></i> Print Receipt
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -2303,53 +2193,62 @@ if (empty($user_initials)) {
     </div>
 </div>
 
-<!-- Mobile Profile/Logout Modal -->
-<div class="modal fade" id="profileModal" tabindex="-1" aria-labelledby="profileModalLabel" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable">
+<!-- PICKUP TASKS MODAL - Driver's first login modal -->
+<?php if ($has_pending_tasks && $show_pickup_modal): ?>
+<div class="modal fade" id="pickupTasksModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title" id="profileModalLabel">
-                    <i class="bi bi-person-circle me-2"></i>User Profile
+            <div class="modal-header pickup-modal-header">
+                <h5 class="modal-title">
+                    <i class="bi bi-box-seam me-2"></i>
+                    Warehouse Pickup Required
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
-            <div class="modal-body text-center">
-                <!-- User Avatar -->
-                <div class="user-avatar-large mb-3">
-                    <?php echo $user_initials; ?>
+            <div class="modal-body" style="background: #f8f9fa;">
+                <div class="alert alert-warning mb-3">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                    <strong>Attention:</strong> Please claim the items below from the warehouse before starting your deliveries.
                 </div>
                 
-                <!-- User Name -->
-                <h4 class="mb-1"><?php echo htmlspecialchars($user_name); ?></h4>
-                
-                <!-- User Role -->
-                <p class="text-muted mb-3">
-                    <span class="badge bg-success"><?php echo ucfirst($user_role); ?></span>
-                </p>
-                
-                <!-- Branch Info (if applicable) -->
-                <?php if (!$view_all_branches && $branch_id > 0): ?>
-                <div class="branch-info mb-3">
-                    <i class="bi bi-building me-1"></i>
-                    <span><?php echo htmlspecialchars($branch_name); ?></span>
+                <div id="pickupTasksContainer">
+                    <?php foreach ($pending_pickup_tasks as $task): ?>
+                    <div class="pickup-task-card" id="task_<?php echo $task['delivery_id']; ?>">
+                        <div class="pickup-task-header">
+                            <span class="pickup-order-number"><?php echo htmlspecialchars($task['so_number']); ?></span>
+                            <span class="pickup-badge">Ready for Pickup</span>
+                        </div>
+                        <div class="pickup-customer-name">
+                            <i class="bi bi-person"></i> <?php echo htmlspecialchars($task['customer_name']); ?>
+                        </div>
+                        <div class="pickup-address">
+                            <i class="bi bi-geo-alt"></i> <?php echo htmlspecialchars($task['address']); ?>
+                        </div>
+                        <div class="pickup-items">
+                            <i class="bi bi-box"></i> <strong>Items:</strong><br>
+                            <?php echo htmlspecialchars($task['items']); ?>
+                        </div>
+                        <button class="btn-claim" onclick="claimWarehousePickup(<?php echo $task['delivery_id']; ?>, this)">
+                            <i class="bi bi-check2-circle"></i> Claim Items from Warehouse
+                        </button>
+                    </div>
+                    <?php endforeach; ?>
                 </div>
-                <?php endif; ?>
-                
-                <!-- Logout Button -->
-                <button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()">
-                    <i class="bi bi-box-arrow-right me-2"></i>Logout
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="bi bi-x-circle"></i> Close
                 </button>
             </div>
-            <!-- Modal footer removed -->
         </div>
     </div>
 </div>
-
+<?php endif; ?>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://unpkg.com/leaflet-routing-machine@3.2.12/dist/leaflet-routing-machine.js"></script>
-   <script>
+    <script>
         const branchId = <?php echo $branch_id; ?>;
         const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
         const userRole = '<?php echo $user_role; ?>';
@@ -2383,11 +2282,106 @@ if (empty($user_initials)) {
         let watchPositionId = null;
         let currentPosition = null;
         let destinationPosition = null;
-        let accuracyCircle = null;
         let gpsRetryTimeout = null;
+        let glowLine = null; // For route glow effect
 
         // Cache ng huling posisyon para sa mabilis na initial load
         let lastKnownPosition = null;
+        
+        // ================= WAREHOUSE PICKUP FUNCTIONS =================
+        function claimWarehousePickup(deliveryId, button) {
+            Swal.fire({
+                title: 'Confirm Pickup',
+                text: 'Have you collected all items from the warehouse?',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#047857',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, Claimed Items',
+                cancelButtonText: 'Not Yet'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    // Disable button and show loading
+                    const btn = button;
+                    btn.disabled = true;
+                    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Processing...';
+                    
+                    // Send request to update delivery status to in-transit (claimed from warehouse)
+                    const formData = new FormData();
+                    formData.append('delivery_id', deliveryId);
+                    formData.append('status', 'in-transit');
+                    formData.append('branch_id', branchId);
+                    formData.append('remarks', 'Items claimed from warehouse at ' + new Date().toLocaleString());
+                    
+                    fetch('update_delivery_status.php', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.success) {
+                            // Remove the task card with animation
+                            const taskCard = document.getElementById('task_' + deliveryId);
+                            if (taskCard) {
+                                taskCard.style.transition = 'all 0.3s ease';
+                                taskCard.style.opacity = '0';
+                                taskCard.style.transform = 'translateX(-20px)';
+                                setTimeout(() => {
+                                    taskCard.remove();
+                                    
+                                    // Check if there are no more tasks
+                                    const container = document.getElementById('pickupTasksContainer');
+                                    if (container && container.children.length === 0) {
+                                        Swal.fire({
+                                            icon: 'success',
+                                            title: 'All Items Claimed!',
+                                            text: 'You have claimed all warehouse items. You can now start your deliveries.',
+                                            confirmButtonColor: '#047857'
+                                        }).then(() => {
+                                            // Close the modal
+                                            const modal = bootstrap.Modal.getInstance(document.getElementById('pickupTasksModal'));
+                                            if (modal) {
+                                                modal.hide();
+                                            }
+                                            // Reload page to update delivery list
+                                            location.reload();
+                                        });
+                                    } else {
+                                        Swal.fire({
+                                            icon: 'success',
+                                            title: 'Items Claimed!',
+                                            text: 'You have successfully claimed the items from warehouse.',
+                                            timer: 1500,
+                                            showConfirmButton: false
+                                        });
+                                    }
+                                }, 300);
+                            }
+                        } else {
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Error',
+                                text: data.message || 'Failed to claim items. Please try again.',
+                                confirmButtonColor: '#dc3545'
+                            });
+                            btn.disabled = false;
+                            btn.innerHTML = '<i class="bi bi-check2-circle"></i> Claim Items from Warehouse';
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Error',
+                            text: 'Network error. Please try again.',
+                            confirmButtonColor: '#dc3545'
+                        });
+                        btn.disabled = false;
+                        btn.innerHTML = '<i class="bi bi-check2-circle"></i> Claim Items from Warehouse';
+                    });
+                }
+            });
+        }
 
         // ================= MOBILE NAVIGATION FUNCTIONS =================
         function initMobileNav() {
@@ -2831,9 +2825,11 @@ if (empty($user_initials)) {
             retryCount = 0;
             
             let btn = document.getElementById('trackingBtn');
-            btn.innerHTML = '<i class="bi bi-play-circle"></i> Start Tracking';
-            btn.classList.remove('btn-danger');
-            btn.classList.add('btn-success');
+            if (btn) {
+                btn.innerHTML = '<i class="bi bi-play-circle"></i> Start Tracking';
+                btn.classList.remove('btn-danger');
+                btn.classList.add('btn-success');
+            }
             
             updateUI('offline', 'Offline');
         }
@@ -2882,7 +2878,7 @@ if (empty($user_initials)) {
             });
         }
 
-        // ================= LIVE NAVIGATION FUNCTIONS =================
+        // ================= LIVE NAVIGATION FUNCTIONS WITH MODERN GREEN TRUCK ICON =================
         function openLiveNavigation(destLat, destLng, customerName, address) {
             // Check if browser supports geolocation
             if (!navigator.geolocation) {
@@ -2914,6 +2910,9 @@ if (empty($user_initials)) {
             // Remove existing map if any
             if (liveTrackingMap) {
                 liveTrackingMap.remove();
+                if (glowLine) {
+                    glowLine = null;
+                }
             }
 
             // Create map with mobile-friendly options
@@ -2932,12 +2931,12 @@ if (empty($user_initials)) {
                 maxZoom: 19
             }).addTo(liveTrackingMap);
 
-            // Add destination marker (red) - larger for mobile
-            const destIconSize = window.innerWidth <= 768 ? 28 : 20;
+            // Add destination marker (red) with location icon
+            const destIconSize = window.innerWidth <= 768 ? 40 : 32;
             destinationMarker = L.marker([destLat, destLng], {
                 icon: L.divIcon({
                     className: 'custom-destination-icon',
-                    html: '<div class="custom-destination-icon"></div>',
+                    html: '<div style="background-color: #dc3545; width: 28px; height: 28px; border-radius: 50%; border: 3px solid white; box-shadow: 0 2px 5px rgba(0,0,0,0.3); display: flex; align-items: center; justify-content: center;"><i class="bi bi-geo-alt-fill" style="color: white; font-size: 14px;"></i></div>',
                     iconSize: [destIconSize, destIconSize],
                     iconAnchor: [destIconSize/2, destIconSize/2]
                 })
@@ -2949,26 +2948,87 @@ if (empty($user_initials)) {
                 <small>${destLat.toFixed(6)}, ${destLng.toFixed(6)}</small>
             `).openPopup();
 
-            // Add user marker (blue)
+            // ========== DELIVERY TRUCK ICON (Bootstrap Icons SVG) ==========
+            const truckIconSize = window.innerWidth <= 768 ? 64 : 60;
+            
+            // Use divIcon with inline SVG from Bootstrap Icons
+            const truckIcon = L.divIcon({
+                className: 'modern-truck-icon',
+                html: `
+                    <div style="display: flex; align-items: center; justify-content: center; width: ${truckIconSize}px; height: ${truckIconSize}px; filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.3));">
+                        <svg width="${truckIconSize}" height="${truckIconSize}" viewBox="0 0 100 80" xmlns="http://www.w3.org/2000/svg">
+                            <defs>
+                                <linearGradient id="truckGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                                    <stop offset="0%" style="stop-color:#4ade80;stop-opacity:1" />
+                                    <stop offset="100%" style="stop-color:#22c55e;stop-opacity:1" />
+                                </linearGradient>
+                                <linearGradient id="cabGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+                                    <stop offset="0%" style="stop-color:#16a34a;stop-opacity:1" />
+                                    <stop offset="100%" style="stop-color:#15803d;stop-opacity:1" />
+                                </linearGradient>
+                            </defs>
+                            
+                            <!-- Shadow on ground -->
+                            <ellipse cx="50" cy="75" rx="35" ry="5" fill="rgba(0,0,0,0.1)"/>
+                            
+                            <!-- Main cargo body (3D effect) -->
+                            <g>
+                                <!-- Right side darker for 3D -->
+                                <polygon points="35,30 60,25 60,50 35,55" fill="#1b7f3d" opacity="0.8"/>
+                                <!-- Top of cargo -->
+                                <polygon points="35,30 60,25 75,35 50,40" fill="#22c55e"/>
+                                <!-- Front of cargo -->
+                                <rect x="35" y="30" width="25" height="25" fill="url(#truckGrad)"/>
+                                <!-- Back with shading -->
+                                <polygon points="50,40 75,35 75,60 50,55" fill="#1b7f3d" opacity="0.6"/>
+                            </g>
+                            
+                            <!-- Cabin (3D cube-like) -->
+                            <g>
+                                <!-- Cabin top (3D perspective) -->
+                                <polygon points="15,35 30,32 30,48 15,50" fill="#0d6435"/>
+                                <!-- Cabin front -->
+                                <rect x="15" y="35" width="15" height="20" fill="url(#cabGrad)"/>
+                                <!-- Window with reflection -->
+                                <rect x="18" y="38" width="9" height="10" fill="#60a5fa" opacity="0.8"/>
+                                <line x1="18" y1="40" x2="27" y2="40" stroke="#93c5fd" stroke-width="0.8" opacity="0.6"/>
+                                <!-- Cabin right side -->
+                                <polygon points="30,32 30,48 35,50 35,35" fill="#0d6435" opacity="0.7"/>
+                            </g>
+                            
+                            <!-- Wheels -->
+                            <!-- Front wheel -->
+                            <circle cx="25" cy="60" r="8" fill="#1f2937"/>
+                            <circle cx="25" cy="60" r="5" fill="#4b5563"/>
+                            <circle cx="25" cy="60" r="2" fill="#9ca3af"/>
+                            
+                            <!-- Back wheels -->
+                            <circle cx="55" cy="62" r="8" fill="#1f2937"/>
+                            <circle cx="55" cy="62" r="5" fill="#4b5563"/>
+                            <circle cx="55" cy="62" r="2" fill="#9ca3af"/>
+                            
+                            <circle cx="65" cy="62" r="8" fill="#1f2937"/>
+                            <circle cx="65" cy="62" r="5" fill="#4b5563"/>
+                            <circle cx="65" cy="62" r="2" fill="#9ca3af"/>
+                            
+                            <!-- Bumper detail -->
+                            <rect x="12" y="54" width="3" height="6" fill="#374151"/>
+                        </svg>
+                    </div>
+                `,
+                iconSize: [truckIconSize, truckIconSize],
+                iconAnchor: [truckIconSize/2, truckIconSize/2],
+                popupAnchor: [0, -truckIconSize/2]
+            });
+            
+            // Add user marker with modern green truck icon (no blue circle)
             userMarker = L.marker([destLat, destLng], {
-                icon: L.divIcon({
-                    className: 'custom-user-icon',
-                    html: '<div class="custom-user-icon"></div>',
-                    iconSize: [destIconSize, destIconSize],
-                    iconAnchor: [destIconSize/2, destIconSize/2]
-                })
+                icon: truckIcon
             }).addTo(liveTrackingMap);
             
-            userMarker.bindPopup('<b>Your Location</b><br>Waiting for GPS...');
+            userMarker.bindPopup('<b>Delivery Vehicle</b><br>Waiting for GPS...');
 
-            // Add accuracy circle
-            accuracyCircle = L.circle([destLat, destLng], {
-                color: '#44D34E',
-                fillColor: '#44D34E',
-                fillOpacity: 0.1,
-                radius: 100,
-                weight: 2
-            }).addTo(liveTrackingMap);
+            // NO ACCURACY CIRCLE - REMOVED
             
             // On mobile, ensure panel starts expanded and properly positioned
             if (window.innerWidth <= 768) {
@@ -3076,42 +3136,41 @@ if (empty($user_initials)) {
                 timestamp: Date.now()
             };
 
-            // Update user marker position
+            // Update user marker position (green truck)
             if (userMarker) {
                 userMarker.setLatLng([lat, lng]);
                 
+                // Get speed if available
+                const speed = position.coords.speed ? (position.coords.speed * 3.6).toFixed(1) : null;
+                const speedText = speed ? `<br><small>🚚 Speed: ${speed} km/h</small>` : '';
+                
                 if (window.innerWidth <= 768) {
                     userMarker.setPopupContent(`
-                        <b>You</b><br>
+                        <b>Delivery Vehicle</b><br>
                         <small>${accuracy.toFixed(0)}m accuracy</small>
+                        ${speedText}
                     `);
                 } else {
                     userMarker.setPopupContent(`
-                        <b>Your Location</b><br>
+                        <b>Delivery Vehicle</b><br>
                         <small>${lat.toFixed(6)}, ${lng.toFixed(6)}</small><br>
-                        <small>Accuracy: ${accuracy.toFixed(1)}m</small>
+                        ${speedText}
                     `);
                 }
             }
 
-            // Update accuracy circle
-            if (accuracyCircle) {
-                accuracyCircle.setLatLng([lat, lng]);
-                accuracyCircle.setRadius(accuracy);
-            }
-
             // Update UI
             const isMobile = window.innerWidth <= 768;
-            const locationText = isMobile ? '📍 You' : 'Your Location:';
+            const locationText = isMobile ? '🚛 Driver' : 'Driver Location:';
             document.getElementById('yourLocationText').innerHTML = `<i class="bi bi-check-circle-fill text-success me-1"></i> ${locationText}`;
             document.getElementById('yourCoordinates').innerHTML = isMobile ? 
                 `${lat.toFixed(5)}, ${lng.toFixed(5)}` : 
                 `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
 
-            // Update or create route
+            // Update or create route with BRIGHT BLUE color
             if (destinationPosition) {
                 if (!routingControl) {
-                    // Create route for the first time
+                    // Create route for the first time with BRIGHT BLUE color
                     routingControl = L.Routing.control({
                         waypoints: [
                             L.latLng(lat, lng),
@@ -3121,15 +3180,47 @@ if (empty($user_initials)) {
                         showAlternatives: false,
                         fitSelectedRoutes: false,
                         lineOptions: {
-                            styles: [{ color: '#44D34E', opacity: 0.8, weight: 5 }]
+                            styles: [
+                                { 
+                                    color: '#007bff',
+                                    opacity: 0.95, 
+                                    weight: 7,
+                                    lineJoin: 'round',
+                                    lineCap: 'round'
+                                }
+                            ],
+                            extendToWaypoints: true,
+                            missingRouteTolerance: 0
                         },
-                        createMarker: function() { return null; }
+                        createMarker: function() { return null; },
+                        show: false,
+                        addWaypoints: false,
+                        draggableWaypoints: false,
+                        fitSelectedRoutes: false,
+                        showAlternatives: false,
+                        collapsible: false,
+                        zoomToBounds: false
                     }).addTo(liveTrackingMap);
-
-                    // Listen for route calculation
+                    
+                    // Add glow effect
                     routingControl.on('routesfound', function(e) {
                         const routes = e.routes;
                         const summary = routes[0].summary;
+                        
+                        // Add a glow effect (thicker semi-transparent line underneath)
+                        const coordinates = routes[0].coordinates;
+                        if (coordinates && coordinates.length > 0) {
+                            if (glowLine && liveTrackingMap) {
+                                liveTrackingMap.removeLayer(glowLine);
+                            }
+                            glowLine = L.polyline(coordinates, {
+                                color: '#80bfff',
+                                opacity: 0.4,
+                                weight: 14,
+                                lineJoin: 'round',
+                                lineCap: 'round'
+                            }).addTo(liveTrackingMap);
+                        }
 
                         // Update distance and time
                         const distance = (summary.totalDistance / 1000).toFixed(2);
@@ -3147,7 +3238,7 @@ if (empty($user_initials)) {
                 }
             }
 
-            // Update accuracy bar and text
+            // Update accuracy bar and text (for GPS accuracy panel)
             const accuracyPercent = Math.max(0, Math.min(100, 100 - (accuracy / 10)));
             document.getElementById('accuracyBar').style.width = accuracyPercent + '%';
 
@@ -3237,6 +3328,12 @@ if (empty($user_initials)) {
             if (routingControl && liveTrackingMap) {
                 liveTrackingMap.removeControl(routingControl);
                 routingControl = null;
+            }
+            
+            // Remove glow line
+            if (glowLine && liveTrackingMap) {
+                liveTrackingMap.removeLayer(glowLine);
+                glowLine = null;
             }
 
             // Close modal
@@ -3597,6 +3694,11 @@ if (empty($user_initials)) {
                             showPhotoModal(photoUrl);
                         });
                     });
+                    
+                    // Extract customer phone number from the loaded content
+                    setTimeout(() => {
+                        addContactButtonsToModal();
+                    }, 100);
                 })
                 .catch(error => {
                     console.error('Error:', error);
@@ -3608,13 +3710,163 @@ if (empty($user_initials)) {
                     `;
                 });
         }
+        
+        // Function to add contact buttons to the delivery details modal (RIGHT ALIGNED)
+        function addContactButtonsToModal() {
+            // Check if contact buttons already exist
+            if (document.querySelector('#viewDetailsModalBody .contact-buttons')) {
+                return;
+            }
+            
+            // Find the phone number in the modal content
+            let phoneNumber = null;
+            let customerName = null;
+            
+            // Try to find phone number in various places
+            const modalContent = document.getElementById('viewDetailsModalBody');
+            if (modalContent) {
+                // Look for phone number in the content
+                const phoneRegex = /(0|\+63)[0-9]{10,11}/;
+                const text = modalContent.innerText;
+                const match = text.match(phoneRegex);
+                if (match) {
+                    phoneNumber = match[0];
+                }
+                
+                // Look for customer name (usually in a heading or strong tag)
+                const nameElement = modalContent.querySelector('h4, h5, strong, .customer-name');
+                if (nameElement) {
+                    customerName = nameElement.innerText.trim();
+                } else {
+                    // Try to get from the first line
+                    const firstLine = modalContent.innerText.split('\n')[0];
+                    if (firstLine && !firstLine.includes('Delivery ID')) {
+                        customerName = firstLine.substring(0, 50).trim();
+                    }
+                }
+            }
+            
+            // If no phone number found, don't add buttons
+            if (!phoneNumber) {
+                console.log('No phone number found in delivery details');
+                return;
+            }
+            
+            // Clean up phone number
+            phoneNumber = phoneNumber.replace(/\D/g, '');
+            if (phoneNumber.length === 10 && phoneNumber.startsWith('0')) {
+                phoneNumber = '+63' + phoneNumber.substring(1);
+            } else if (phoneNumber.length === 10) {
+                phoneNumber = '+63' + phoneNumber;
+            } else if (phoneNumber.length === 11 && phoneNumber.startsWith('0')) {
+                phoneNumber = '+63' + phoneNumber.substring(1);
+            }
+            
+            // Create contact buttons section with right alignment
+            const contactSection = document.createElement('div');
+            contactSection.className = 'contact-buttons';
+            contactSection.innerHTML = `
+                <div class="d-flex gap-2 justify-content-end">
+                    <button class="btn btn-call btn-contact" onclick="makePhoneCall('${phoneNumber}')">
+                        <i class="bi bi-telephone-fill"></i> Call
+                    </button>
+                    <button class="btn btn-message btn-contact" onclick="sendTextMessage('${phoneNumber}', '${customerName ? customerName.replace(/'/g, "\\'") : 'Customer'}')">
+                        <i class="bi bi-chat-dots-fill"></i> Message
+                    </button>
+                </div>
+            `;
+            
+            // Find the best position to insert the buttons (after the delivery info, before the footer)
+            const modalBody = document.getElementById('viewDetailsModalBody');
+            const hrElements = modalBody.querySelectorAll('hr');
+            
+            if (hrElements.length > 0) {
+                // Insert after the last hr
+                hrElements[hrElements.length - 1].after(contactSection);
+            } else {
+                // Find a good position (after customer info)
+                const addressElement = modalBody.querySelector('p i.bi-geo-alt, .address, .customer-address');
+                if (addressElement) {
+                    const parent = addressElement.closest('p, div');
+                    if (parent && parent.parentNode) {
+                        parent.after(contactSection);
+                    } else {
+                        modalBody.appendChild(contactSection);
+                    }
+                } else {
+                    modalBody.appendChild(contactSection);
+                }
+            }
+        }
+        
+        // Function to make a phone call
+        function makePhoneCall(phoneNumber) {
+            if (!phoneNumber || phoneNumber === 'N/A') {
+                Swal.fire('Info', 'No phone number available for this customer.', 'info');
+                return;
+            }
+            
+            Swal.fire({
+                title: 'Call Customer',
+                text: `Call ${phoneNumber}?`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#28a745',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, Call',
+                cancelButtonText: 'Cancel'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    window.location.href = `tel:${phoneNumber}`;
+                }
+            });
+        }
+        
+        // Function to send a text message
+        function sendTextMessage(phoneNumber, customerName) {
+            if (!phoneNumber || phoneNumber === 'N/A') {
+                Swal.fire('Info', 'No phone number available for this customer.', 'info');
+                return;
+            }
+            
+            Swal.fire({
+                title: 'Send Message',
+                text: `Send SMS to ${phoneNumber}?`,
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#17a2b8',
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, Send',
+                cancelButtonText: 'Cancel',
+                input: 'textarea',
+                inputLabel: 'Message',
+                inputPlaceholder: 'Type your message here...',
+                inputValue: `Hello ${customerName}, this is your delivery driver. I'm on my way with your order.`,
+                preConfirm: (message) => {
+                    if (!message || message.trim() === '') {
+                        Swal.showValidationMessage('Please enter a message');
+                        return false;
+                    }
+                    return message;
+                }
+            }).then((result) => {
+                if (result.isConfirmed && result.value) {
+                    // For mobile devices, open SMS app with pre-filled message
+                    const encodedMessage = encodeURIComponent(result.value);
+                    window.location.href = `sms:${phoneNumber}?body=${encodedMessage}`;
+                    
+                    // Also log to console for debugging
+                    console.log(`Sending SMS to ${phoneNumber}: ${result.value}`);
+                }
+            });
+        }
 
         function showPhotoModal(photoUrl) {
             const modalImg = document.getElementById('photoModalImg');
             const downloadBtn = document.getElementById('downloadPhotoBtn');
             
             modalImg.src = photoUrl;
-            downloadBtn.href = photoUrl;
+            if (downloadBtn) downloadBtn.href = photoUrl;
             
             const modal = new bootstrap.Modal(document.getElementById('photoModal'));
             modal.show();
@@ -3630,31 +3882,20 @@ if (empty($user_initials)) {
                 minute: '2-digit',
                 hour12: true
             });
-            
-            const items = itemsRaw ? itemsRaw.split('||') : [];
-            
-            const today = new Date();
-            const receiptDate = today.toLocaleDateString('en-PH', {
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit'
-            });
-            const receiptTime = today.toLocaleTimeString('en-PH', {
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: true
-            });
-            
-            const receiptNumber = 'DR' + today.getFullYear() + 
-                                 String(today.getMonth() + 1).padStart(2, '0') + 
-                                 String(today.getDate()).padStart(2, '0') + 
+
+            // Use delivery date for receipt header
+            const receiptNumber = 'DR' + date.getFullYear() +
+                                 String(date.getMonth() + 1).padStart(2, '0') +
+                                 String(date.getDate()).padStart(2, '0') +
                                  String(deliveryId).padStart(4, '0');
-            
+
+            // Parse items from itemsRaw (format: "qty x item - ₱price||...")
+            const items = itemsRaw ? itemsRaw.split('||') : [];
             let itemsHtml = '';
             let total = 0;
-            
+
             if (items.length === 0) {
-                itemsHtml = '<tr><td colspan="4" style="text-align: center; padding: 8px;">No items</td></tr>';
+                itemsHtml = '<tr><td colspan="4" style="text-align: center; padding: 8px;">No items</td> </tr>';
             } else {
                 items.forEach(item => {
                     const parts = item.split(' x ');
@@ -3666,45 +3907,42 @@ if (empty($user_initials)) {
                             const price = parseFloat(qtyPrice[1]);
                             const subtotal = qty * price;
                             total += subtotal;
-                            
+
                             itemsHtml += `
-                                <tr>
+                                 <tr>
                                     <td class="item-name">${itemName}</td>
                                     <td class="text-center">${qty}</td>
                                     <td class="text-right">₱${price.toFixed(2)}</td>
                                     <td class="text-right">₱${subtotal.toFixed(2)}</td>
-                                </tr>
+                                 </tr>
                             `;
                         }
                     }
                 });
             }
-            
+
             return `
                 <div class="thermal-receipt">
                     <div class="receipt-header">
                         <div class="company-name">AMGC</div>
                         <div class="receipt-title">DELIVERY RECEIPT</div>
                         <div class="receipt-no">#${receiptNumber}</div>
-                        <div>${receiptDate} ${receiptTime}</div>
+                        <div>${formattedDate}</div>
                     </div>
                     
                     <div class="receipt-info">
                         <div class="info-line"><span class="info-label">Order:</span><span class="info-value">${soNumber}</span></div>
-                        <div class="info-line"><span class="info-label">Customer:</span><span class="info-value">${customerName}</span></div>
-                        <div class="info-line"><span class="info-label">Address:</span><span class="info-value">${address}</span></div>
                         <div class="info-line"><span class="info-label">Received:</span><span class="info-value">${signedBy}</span></div>
-                        <div class="info-line"><span class="info-label">Date:</span><span class="info-value">${formattedDate}</span></div>
                     </div>
                     
                     <table class="items-table">
                         <thead>
-                            <tr>
+                             <tr>
                                 <th>Item</th>
                                 <th class="text-center">Qty</th>
                                 <th class="text-right">Price</th>
                                 <th class="text-right">Total</th>
-                            </tr>
+                             </tr>
                         </thead>
                         <tbody>
                             ${itemsHtml}
@@ -3736,11 +3974,14 @@ if (empty($user_initials)) {
             const thermalDiv = document.getElementById('thermalReceipt');
             thermalDiv.style.display = 'block';
             thermalDiv.innerHTML = currentThermalReceipt;
-            
-            window.print();
-            
+
             setTimeout(() => {
-                thermalDiv.style.display = 'none';
+                window.print();
+
+                setTimeout(() => {
+                    thermalDiv.style.display = 'none';
+                    thermalDiv.innerHTML = '';
+                }, 100);
             }, 100);
         }
 
@@ -4144,8 +4385,10 @@ if (empty($user_initials)) {
                     userMarker = null;
                     destinationMarker = null;
                     routingControl = null;
-                    accuracyCircle = null;
                     currentPosition = null;
+                    if (glowLine) {
+                        glowLine = null;
+                    }
                 });
             }
 
@@ -4178,6 +4421,14 @@ if (empty($user_initials)) {
                 makePanelDraggable();
                 initMobilePanelToggle();
             }
+            
+            // Show pickup tasks modal if there are pending tasks
+            <?php if ($has_pending_tasks && $show_pickup_modal): ?>
+            setTimeout(function() {
+                const pickupModal = new bootstrap.Modal(document.getElementById('pickupTasksModal'));
+                pickupModal.show();
+            }, 500);
+            <?php endif; ?>
         });
 
         // Keyboard shortcuts

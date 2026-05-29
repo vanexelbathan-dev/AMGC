@@ -2,12 +2,16 @@
 require_once '../config/database.php';
 require_once '../config/session_handler.php';
 
+// Protect page - only Rolling Account role can access
+requireLogin();
+requireRole(['rolling_account']);
+
 // Get current user info and branch context
 $user_id = $_SESSION['user_id'] ?? 0;
-$user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Branch Admin';
-$user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'branch_admin';
-$branch_id = $_SESSION['branch_id'] ?? 0;
-$view_all_branches = $_SESSION['view_all_branches'] ?? false;
+$user_name = isset($_SESSION['first_name']) ? $_SESSION['first_name'] . ' ' . $_SESSION['last_name'] : 'Rolling Account';
+$user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'rolling_account';
+$branch_id = $_SESSION['rolling_branch_id'] ?? $_SESSION['branch_id'] ?? 0;
+$view_all_branches = false; // Rolling accounts are restricted to their assigned branch
 
 // Get user initials for avatar
 $user_initials = '';
@@ -20,7 +24,7 @@ if (!empty($user_name)) {
     }
 }
 if (empty($user_initials)) {
-    $user_initials = 'BA';
+    $user_initials = 'RA';
 }
 
 // Get user's branch name for display
@@ -107,11 +111,23 @@ if ($check_item_unit_types && $check_item_unit_types->num_rows > 0) {
     $item_unit_types_exists = true;
 }
 
+// Receive Inventory category support.
+$item_category_column = null;
+foreach (['category', 'item_category', 'category_name'] as $category_candidate) {
+    $check_category_column = $conn->query("SHOW COLUMNS FROM items LIKE '" . $conn->real_escape_string($category_candidate) . "'");
+    if ($check_category_column && $check_category_column->num_rows > 0) {
+        $item_category_column = $category_candidate;
+        break;
+    }
+}
+$item_category_select = $item_category_column ? ", `{$item_category_column}` AS category" : ", '' AS category";
+
 $items_query = "SELECT 
     item_id, 
     item_code, 
     item_name, 
-    description,
+    description
+    $item_category_select,
     unit_type,
     unit_price as price_piece,
     price_case,
@@ -427,6 +443,8 @@ function getConfirmedProcessedRmrRequests(mysqli $conn, int $branchId, bool $vie
     $qtyCol = firstExistingColumn($columns, ['return_quantity', 'quantity', 'qty', 'return_qty', 'returned_qty', 'approved_qty', 'processed_qty']);
     $uomCol = firstExistingColumn($columns, ['unit_type', 'uom', 'unit', 'unit_of_measure']);
     $customerCol = firstExistingColumn($columns, ['customer_name', 'store_name', 'client_name']);
+    $customerIdCol = firstExistingColumn($columns, ['customer_id', 'client_id']);
+    $deliveryIdCol = firstExistingColumn($columns, ['delivery_id']);
     $reasonCol = firstExistingColumn($columns, ['reason', 'remarks', 'notes', 'return_reason']);
     $processedAtCol = firstExistingColumn($columns, ['processed_at', 'confirmed_at', 'updated_at', 'created_at']);
 
@@ -438,9 +456,25 @@ function getConfirmedProcessedRmrRequests(mysqli $conn, int $branchId, bool $vie
     $itemNameExpr = $itemNameCol ? sqlExpr('r', $itemNameCol) : 'i.item_name';
     $itemCodeExpr = $itemCodeCol ? sqlExpr('r', $itemCodeCol) : 'i.item_code';
     $uomExpr = $uomCol ? sqlExpr('r', $uomCol) : 'i.unit_type';
-    $customerExpr = sqlExpr('r', $customerCol, "''");
     $reasonExpr = sqlExpr('r', $reasonCol, "''");
     $processedAtExpr = sqlExpr('r', $processedAtCol, "''");
+
+    // Build customer fallback safely. Priority: rmr_requests customer_name -> customers via customer_id -> deliveries customer -> blank.
+    $joins = "";
+    $customerParts = [];
+    if ($customerCol) {
+        $customerParts[] = "NULLIF(TRIM(" . sqlExpr('r', $customerCol) . "), '')";
+    }
+    if ($customerIdCol && dbTableExists($conn, 'customers')) {
+        $joins .= " LEFT JOIN customers c ON c.customer_id = r." . sqlIdentifier($customerIdCol);
+        $customerParts[] = "NULLIF(TRIM(c.customer_name), '')";
+    }
+    if ($deliveryIdCol && dbTableExists($conn, 'deliveries') && dbTableExists($conn, 'customers')) {
+        $joins .= " LEFT JOIN deliveries d ON d.delivery_id = r." . sqlIdentifier($deliveryIdCol);
+        $joins .= " LEFT JOIN customers dc ON dc.customer_id = d.customer_id";
+        $customerParts[] = "NULLIF(TRIM(dc.customer_name), '')";
+    }
+    $customerExpr = !empty($customerParts) ? "COALESCE(" . implode(', ', $customerParts) . ", '')" : "''";
 
     $query = "
         SELECT
@@ -454,11 +488,12 @@ function getConfirmedProcessedRmrRequests(mysqli $conn, int $branchId, bool $vie
             r." . sqlIdentifier($qtyCol) . " AS quantity,
             COALESCE({$uomExpr}, i.unit_type, '') AS unit_type,
             COALESCE(i.unit_price, 0) AS unit_price,
-            COALESCE({$customerExpr}, '') AS customer_name,
+            {$customerExpr} AS customer_name,
             COALESCE({$reasonExpr}, '') AS reason,
             COALESCE({$processedAtExpr}, '') AS processed_at
         FROM {$tableSql} r
         LEFT JOIN items i ON i.item_id = r." . sqlIdentifier($itemCol) . "
+        {$joins}
         WHERE LOWER(TRIM(r." . sqlIdentifier($statusCol) . ")) IN ('confirmed', 'processed', 'approved')
           AND r." . sqlIdentifier($itemCol) . " IS NOT NULL
           AND r." . sqlIdentifier($qtyCol) . " > 0
@@ -788,11 +823,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $item_name = trim($rowItem['name'] ?? '');
                 $item_code = trim($rowItem['code'] ?? '');
                 $item_description = trim($rowItem['description'] ?? '');
+                $item_category = trim($rowItem['category'] ?? '');
                 $item_uom = trim($rowItem['uom'] ?? '');
                 $item_qty = (float)($rowItem['qty'] ?? 0);
                 $item_price = (float)($rowItem['price'] ?? 0);
 
-                if ($item_name === '' || $item_code === '' || $item_description === '' || $item_uom === '' || $item_qty <= 0) {
+                if ($item_name === '' || $item_code === '' || $item_description === '' || $item_category === '' || $item_uom === '' || $item_qty <= 0) {
                     throw new Exception('Please complete all received item details.');
                 }
 
@@ -810,25 +846,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
 
                 if ($item_id <= 0) {
-                    $insert_item_query = "INSERT INTO items (item_code, item_name, description, unit_type, unit_price, stock, stock_in_default_uom, status, created_at, updated_at" . ($items_branch_column_exists ? ", branch_id" : "") . ") VALUES (?, ?, ?, ?, ?, ?, ?, 'active', NOW(), NOW()" . ($items_branch_column_exists ? ", ?" : "") . ")";
+                    $item_insert_fields = ['item_code', 'item_name', 'description'];
+                    $item_insert_placeholders = ['?', '?', '?'];
+                    $item_insert_types = 'sss';
+                    $item_insert_values = [$item_code, $item_name, $item_description];
+
+                    if ($item_category_column) {
+                        $item_insert_fields[] = '`' . $item_category_column . '`';
+                        $item_insert_placeholders[] = '?';
+                        $item_insert_types .= 's';
+                        $item_insert_values[] = $item_category;
+                    }
+
+                    $item_insert_fields = array_merge($item_insert_fields, ['unit_type', 'unit_price', 'stock', 'stock_in_default_uom', 'status', 'created_at', 'updated_at']);
+                    $item_insert_placeholders = array_merge($item_insert_placeholders, ['?', '?', '?', '?', "'active'", 'NOW()', 'NOW()']);
+                    $item_insert_types .= 'sddd';
+                    array_push($item_insert_values, $item_uom, $item_price, $item_qty, $item_qty);
+
+                    if ($items_branch_column_exists) {
+                        $item_insert_fields[] = 'branch_id';
+                        $item_insert_placeholders[] = '?';
+                        $item_insert_types .= 'i';
+                        $item_insert_values[] = $branch_id;
+                    }
+
+                    $insert_item_query = "INSERT INTO items (" . implode(', ', $item_insert_fields) . ") VALUES (" . implode(', ', $item_insert_placeholders) . ")";
                     $insert_item_stmt = $conn->prepare($insert_item_query);
                     if (!$insert_item_stmt) {
                         throw new Exception('Unable to prepare new item save.');
                     }
-                    if ($items_branch_column_exists) {
-                        $insert_item_stmt->bind_param("ssssdddi", $item_code, $item_name, $item_description, $item_uom, $item_price, $item_qty, $item_qty, $branch_id);
-                    } else {
-                        $insert_item_stmt->bind_param("ssssddd", $item_code, $item_name, $item_description, $item_uom, $item_price, $item_qty, $item_qty);
-                    }
+                    $insert_item_stmt->bind_param($item_insert_types, ...$item_insert_values);
                     if (!$insert_item_stmt->execute()) {
                         throw new Exception('Failed to create new item: ' . $insert_item_stmt->error);
                     }
                     $item_id = (int)$conn->insert_id;
                     $insert_item_stmt->close();
                 } else {
-                    $update_item_stmt = $conn->prepare("UPDATE items SET item_name = ?, description = ?, unit_type = ?, unit_price = ?, updated_at = NOW() WHERE item_id = ?");
+                    if ($item_category_column) {
+                        $update_item_stmt = $conn->prepare("UPDATE items SET item_name = ?, description = ?, `{$item_category_column}` = ?, unit_type = ?, unit_price = ?, updated_at = NOW() WHERE item_id = ?");
+                    } else {
+                        $update_item_stmt = $conn->prepare("UPDATE items SET item_name = ?, description = ?, unit_type = ?, unit_price = ?, updated_at = NOW() WHERE item_id = ?");
+                    }
                     if ($update_item_stmt) {
-                        $update_item_stmt->bind_param("sssdi", $item_name, $item_description, $item_uom, $item_price, $item_id);
+                        if ($item_category_column) {
+                            $update_item_stmt->bind_param("ssssdi", $item_name, $item_description, $item_category, $item_uom, $item_price, $item_id);
+                        } else {
+                            $update_item_stmt->bind_param("sssdi", $item_name, $item_description, $item_uom, $item_price, $item_id);
+                        }
                         if (!$update_item_stmt->execute()) {
                             throw new Exception('Failed to update item details.');
                         }
@@ -872,39 +936,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     }
                 }
 
-                $inventory_lookup = $conn->prepare("SELECT inventory_id, quantity_on_hand FROM inventory WHERE branch_id = ? AND item_id = ? LIMIT 1");
-                if (!$inventory_lookup) {
-                    throw new Exception('Unable to prepare current inventory lookup.');
-                }
-                $inventory_lookup->bind_param("ii", $branch_id, $item_id);
-                $inventory_lookup->execute();
-                $inventory_result = $inventory_lookup->get_result();
-                if ($inventory_row = $inventory_result->fetch_assoc()) {
-                    $new_qty = (float)$inventory_row['quantity_on_hand'] + $item_qty;
-                    $update_inventory = $conn->prepare("UPDATE inventory SET quantity_on_hand = ?, last_updated_by = ?, updated_at = NOW() WHERE inventory_id = ?");
-                    $update_inventory->bind_param("dii", $new_qty, $user_id, $inventory_row['inventory_id']);
-                    if (!$update_inventory->execute()) {
-                        throw new Exception('Failed to update current inventory stock.');
-                    }
-                    $update_inventory->close();
-                } else {
-                    $insert_inventory = $conn->prepare("INSERT INTO inventory (branch_id, item_id, quantity_on_hand, quantity_reserved, last_updated_by, updated_at) VALUES (?, ?, ?, 0, ?, NOW())");
-                    $insert_inventory->bind_param("iidi", $branch_id, $item_id, $item_qty, $user_id);
-                    if (!$insert_inventory->execute()) {
-                        throw new Exception('Failed to insert current inventory stock.');
-                    }
-                    $insert_inventory->close();
-                }
-                $inventory_lookup->close();
-
-                $update_item_stock = $conn->prepare("UPDATE items SET stock = COALESCE(stock, 0) + ?, stock_in_default_uom = COALESCE(stock_in_default_uom, 0) + ?, updated_at = NOW() WHERE item_id = ?");
-                if ($update_item_stock) {
-                    $update_item_stock->bind_param("ddi", $item_qty, $item_qty, $item_id);
-                    if (!$update_item_stock->execute()) {
-                        throw new Exception('Failed to update item stock.');
-                    }
-                    $update_item_stock->close();
-                }
+                // NOTE: Don't update 'inventory' table here
+                // The inventory_transactions record below will be synced to item_unit_inventory by current_inventory.php
+                // This ensures a single source of truth for inventory data
 
                 $reference_type = $source === 'supplier' ? 'purchase_order' : ($source === 'rmr' ? 'rmr' : 'production');
                 $reference_id = $source === 'rmr' ? $reference_rmr_id : ($reference_po_id ?: 0);
@@ -917,11 +951,79 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     throw new Exception('Failed to save inventory transaction.');
                 }
                 $saved_transaction_ids[] = (int)$conn->insert_id;
+                
+                // DIRECTLY UPDATE EXISTING item_unit_inventory ROW ONLY
+                // IMPORTANT: Do NOT insert a new unit type inventory row here.
+                // The item already has its UoM rows from Current Inventory > Add/Edit Item.
+                // We only add the received quantity to the matching existing UoM row.
+                $matched_inventory_id = 0;
+                $matched_unit_type_id = 0;
+                $matched_current_inventory = 0.00;
+
+                // 1) Match existing item_unit_inventory by item + UoM name.
+                // This prevents creating duplicate UoM rows when unit_types has the same name in another branch/global scope.
+                $find_existing_unit_inventory = $conn->prepare("\n                    SELECT \n                        iui.inventory_id,\n                        iui.unit_type_id,\n                        COALESCE(iui.current_inventory, 0) AS current_inventory\n                    FROM item_unit_inventory iui\n                    INNER JOIN unit_types ut ON ut.unit_type_id = iui.unit_type_id\n                    WHERE iui.item_id = ?\n                      AND LOWER(TRIM(ut.unit_type_name)) = LOWER(TRIM(?))\n                    ORDER BY \n                        CASE WHEN ut.branch_id = ? THEN 0 WHEN ut.branch_id IS NULL THEN 1 ELSE 2 END ASC,\n                        iui.inventory_id ASC\n                    LIMIT 1\n                ");
+                if ($find_existing_unit_inventory) {
+                    $find_existing_unit_inventory->bind_param("isi", $item_id, $item_uom, $branch_id);
+                    $find_existing_unit_inventory->execute();
+                    $existing_unit_inventory_result = $find_existing_unit_inventory->get_result();
+                    if ($existing_unit_inventory_row = $existing_unit_inventory_result->fetch_assoc()) {
+                        $matched_inventory_id = (int)$existing_unit_inventory_row['inventory_id'];
+                        $matched_unit_type_id = (int)$existing_unit_inventory_row['unit_type_id'];
+                        $matched_current_inventory = (float)$existing_unit_inventory_row['current_inventory'];
+                    }
+                    $find_existing_unit_inventory->close();
+                }
+
+                // 2) Fallback: if no UoM name match, use this item's default UoM inventory row only.
+                // Still update only an existing row; never insert a duplicate UoM row from receiving.
+                if ($matched_inventory_id <= 0) {
+                    $find_default_unit_inventory = $conn->prepare("\n                        SELECT \n                            iui.inventory_id,\n                            iui.unit_type_id,\n                            COALESCE(iui.current_inventory, 0) AS current_inventory\n                        FROM items i\n                        INNER JOIN item_unit_inventory iui \n                            ON iui.item_id = i.item_id \n                           AND iui.unit_type_id = i.default_unit_type_id\n                        WHERE i.item_id = ?\n                        LIMIT 1\n                    ");
+                    if ($find_default_unit_inventory) {
+                        $find_default_unit_inventory->bind_param("i", $item_id);
+                        $find_default_unit_inventory->execute();
+                        $default_unit_inventory_result = $find_default_unit_inventory->get_result();
+                        if ($default_unit_inventory_row = $default_unit_inventory_result->fetch_assoc()) {
+                            $matched_inventory_id = (int)$default_unit_inventory_row['inventory_id'];
+                            $matched_unit_type_id = (int)$default_unit_inventory_row['unit_type_id'];
+                            $matched_current_inventory = (float)$default_unit_inventory_row['current_inventory'];
+                        }
+                        $find_default_unit_inventory->close();
+                    }
+                }
+
+                if ($matched_inventory_id > 0) {
+                    $new_current_inventory = $matched_current_inventory + (float)$item_qty;
+                    $update_existing_unit_inventory = $conn->prepare("\n                        UPDATE item_unit_inventory\n                        SET current_inventory = ?,\n                            as_of_date = ?,\n                            updated_at = NOW()\n                        WHERE inventory_id = ?\n                        LIMIT 1\n                    ");
+                    if (!$update_existing_unit_inventory) {
+                        throw new Exception('Unable to prepare unit inventory update.');
+                    }
+                    $as_of_date_for_receive = $receive_date ?: date('Y-m-d');
+                    $update_existing_unit_inventory->bind_param("dsi", $new_current_inventory, $as_of_date_for_receive, $matched_inventory_id);
+                    if (!$update_existing_unit_inventory->execute()) {
+                        throw new Exception('Failed to update existing unit inventory stock.');
+                    }
+                    $update_existing_unit_inventory->close();
+
+                    // Keep the items summary synced when the updated UoM is the default UoM.
+                    $sync_default_summary = $conn->prepare("\n                        UPDATE items i\n                        INNER JOIN unit_types ut ON ut.unit_type_id = ?\n                        SET i.stock = CASE WHEN i.default_unit_type_id = ? THEN ? ELSE i.stock END,\n                            i.unit_type = CASE WHEN i.default_unit_type_id = ? THEN ut.unit_type_name ELSE i.unit_type END,\n                            i.updated_at = NOW()\n                        WHERE i.item_id = ?\n                    ");
+                    if ($sync_default_summary) {
+                        $sync_default_summary->bind_param("iidii", $matched_unit_type_id, $matched_unit_type_id, $new_current_inventory, $matched_unit_type_id, $item_id);
+                        $sync_default_summary->execute();
+                        $sync_default_summary->close();
+                    }
+                } else {
+                    // No matching UoM row exists for this item.
+                    // Do not create a new UoM row here because that causes duplicate unit types in Current Inventory.
+                    throw new Exception('No existing Unit Type inventory row found for this item/UoM. Please add the UoM first in Current Inventory before receiving stock.');
+                }
+                
                 $manifest_item_rows[] = [
                     'item_id' => (int)$item_id,
                     'item_name' => $item_name,
                     'item_code' => $item_code,
                     'item_description' => $item_description,
+                    'category' => $item_category,
                     'uom' => $item_uom,
                     'qty' => $item_qty,
                     'unit_price' => $item_price
@@ -1319,11 +1421,17 @@ elseif ($_POST['action'] === 'get_receive_history_details') {
                         po.expected_delivery,
                         po.total_amount,
                         po.po_status,
+                        rr.rmr_number,
+                        COALESCE(NULLIF(TRIM(rc.customer_name), ''), NULLIF(TRIM(rdc.customer_name), '')) AS rmr_customer_name,
                         b.branch_name,
                         CONCAT(u.first_name, ' ', u.last_name) AS received_by_name
                     FROM inventory_transactions it
                     LEFT JOIN items i ON it.item_id = i.item_id
                     LEFT JOIN purchase_orders po ON it.reference_type = 'purchase_order' AND it.reference_id = po.po_id
+                    LEFT JOIN rmr_requests rr ON it.reference_type = 'rmr' AND it.reference_id = rr.rmr_id
+                    LEFT JOIN customers rc ON rc.customer_id = rr.customer_id
+                    LEFT JOIN deliveries rd ON rd.delivery_id = rr.delivery_id
+                    LEFT JOIN customers rdc ON rdc.customer_id = rd.customer_id
                     LEFT JOIN branches b ON it.branch_id = b.branch_id
                     LEFT JOIN users u ON it.created_by = u.user_id
                     WHERE it.transaction_id = ?
@@ -1368,11 +1476,17 @@ elseif ($_POST['action'] === 'get_receive_history_details') {
                         po.expected_delivery,
                         po.total_amount,
                         po.po_status,
+                        rr.rmr_number,
+                        COALESCE(NULLIF(TRIM(rc.customer_name), ''), NULLIF(TRIM(rdc.customer_name), '')) AS rmr_customer_name,
                         b.branch_name,
                         CONCAT(u.first_name, ' ', u.last_name) AS received_by_name
                     FROM inventory_transactions it
                     LEFT JOIN items i ON it.item_id = i.item_id
                     LEFT JOIN purchase_orders po ON it.reference_type = 'purchase_order' AND it.reference_id = po.po_id
+                    LEFT JOIN rmr_requests rr ON it.reference_type = 'rmr' AND it.reference_id = rr.rmr_id
+                    LEFT JOIN customers rc ON rc.customer_id = rr.customer_id
+                    LEFT JOIN deliveries rd ON rd.delivery_id = rr.delivery_id
+                    LEFT JOIN customers rdc ON rdc.customer_id = rd.customer_id
                     LEFT JOIN branches b ON it.branch_id = b.branch_id
                     LEFT JOIN users u ON it.created_by = u.user_id
                     WHERE it.transaction_type = 'in'
@@ -1705,6 +1819,8 @@ elseif ($_POST['action'] === 'get_receive_history_details') {
                         poi.*,
                         i.item_code,
                         i.item_name,
+                        i.description,
+                        " . ($item_category_column ? "i.`{$item_category_column}` AS category," : "'' AS category,") . "
                         i.unit_type
                     FROM purchase_order_items poi
                     JOIN items i ON poi.item_id = i.item_id
@@ -1930,13 +2046,19 @@ $receive_history_query = "
         i.unit_type,
         po.po_number,
         po.supplier_name,
+        rr.rmr_number,
+        COALESCE(NULLIF(TRIM(rc.customer_name), ''), NULLIF(TRIM(rdc.customer_name), '')) AS rmr_customer_name,
         CONCAT(u.first_name, ' ', u.last_name) AS received_by_name
     FROM inventory_transactions it
     LEFT JOIN items i ON it.item_id = i.item_id
     LEFT JOIN purchase_orders po ON it.reference_type = 'purchase_order' AND it.reference_id = po.po_id
+    LEFT JOIN rmr_requests rr ON it.reference_type = 'rmr' AND it.reference_id = rr.rmr_id
+    LEFT JOIN customers rc ON rc.customer_id = rr.customer_id
+    LEFT JOIN deliveries rd ON rd.delivery_id = rr.delivery_id
+    LEFT JOIN customers rdc ON rdc.customer_id = rd.customer_id
     LEFT JOIN users u ON it.created_by = u.user_id
     WHERE it.transaction_type = 'in'
-      AND it.reference_type IN ('purchase_order', 'production')
+      AND it.reference_type IN ('purchase_order', 'production', 'rmr')
 ";
 if (!$view_all_branches) {
     $receive_history_query .= " AND it.branch_id = " . (int)$branch_id;
@@ -2024,6 +2146,8 @@ function formatDateForInput($dateStr) {
     <!-- SweetAlert2 -->
     <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        <!-- Session Checker -->
+    <script src="../js/session-checker.js"></script>
     
     <style>
                 /* Branch badge styling */
@@ -2936,136 +3060,41 @@ function formatDateForInput($dateStr) {
                 <i class="bi bi-list" id="toggleIcon"></i>
             </button>
             <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
-            <span class="nav-text">Branch Admin</span>
+            <span class="nav-text">Rolling Account</span>
         </h3>
     </div>
     
     <div class="sidebar-content">
         <div class="sidebar-menu">
             <ul class="nav flex-column">
-                <!-- Warehouse Dropdown - walang dropdown-toggle class -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'warehouseMenu')">
-        <i class="bi bi-shop"></i>
-        <span class="nav-text">Warehouse</span>
-        <i class="bi bi-chevron-down dropdown-arrow"></i>
-    </a>
-    <div class="collapse" id="warehouseMenu">
-        <ul class="nav flex-column ps-4">
-            <li class="nav-item">
-                <a class="nav-link" href="current_inventory.php">
-                        <i class="bi bi-bar-chart-line"></i>
+                <li class="nav-item">
+                    <a class="nav-link" href="current_inventory.php">
+                        <i class="bi bi-box-seam"></i>
                         <span class="nav-text">Current Inventory</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="bad_orders.php">
-                    <i class="bi bi-recycle"></i>
-                    <span class="nav-text">Bad Orders</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="pick_list_items.php">
-                    <i class="bi bi-list-check"></i>
-                    <span class="nav-text">Pick List Items</span>
-                </a>
-            </li>
-        </ul>
-    </div>
-</li>
-
-                
-                <!-- Supplier Dropdown - walang dropdown-toggle class -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'supplierMenu')">
-        <i class="bi bi-building"></i>
-        <span class="nav-text">Supplier</span>
-        <i class="bi bi-chevron-down dropdown-arrow"></i>
-    </a>
-    <div class="collapse" id="supplierMenu">
-        <ul class="nav flex-column ps-4">
-            <li class="nav-item">
-                <a class="nav-link" href="purchase_order.php">
-                    <i class="bi bi-box"></i>
-                    <span class="nav-text">Receive Inventory</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="supplier.php">
-                    <i class="bi bi-people"></i>
-                    <span class="nav-text">Supplier List</span>
-                </a>
-            </li>
-        </ul>
-    </div>
-</li>
-
-<!-- Customer Dropdown - walang dropdown-toggle class -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'customerMenu')">
-        <i class="bi bi-people"></i>
-        <span class="nav-text">Customer</span>
-        <i class="bi bi-chevron-down dropdown-arrow"></i>
-    </a>
-    <div class="collapse" id="customerMenu">
-        <ul class="nav flex-column ps-4">
-            <li class="nav-item">
-                <a class="nav-link" href="sales_order.php">
-                    <i class="bi bi-cart"></i>
-                    <span class="nav-text">Sales Order</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="collections.php">
-                    <i class="bi bi-cash-stack"></i>
-                    <span class="nav-text">Collections</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="customer_list.php">
-                    <i class="bi bi-person-badge"></i>
-                    <span class="nav-text">Customer List</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="approve_credit_requests.php">
-                    <i class="bi bi-pencil-square"></i>
-                    <span class="nav-text">Approved Credit Request</span>
-                </a>
-            </li>
-        </ul>
-    </div>
-</li>
-
-<!-- Delivery Dropdown - walang dropdown-toggle class -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'deliveryMenu')">
-        <i class="bi bi-truck"></i>
-        <span class="nav-text">Delivery</span>
-        <i class="bi bi-chevron-down dropdown-arrow"></i>
-    </a>
-    <div class="collapse" id="deliveryMenu">
-        <ul class="nav flex-column ps-4">
-            <li class="nav-item">
-                <a class="nav-link" href="trip_tickets.php">
-                    <i class="bi bi-ticket-perforated"></i>
-                    <span class="nav-text">Trip Tickets</span>
-                </a>
-            </li>
-        </ul>
-    </div>
-</li>
+                    </a>
+                </li>
                 <li class="nav-item">
-    <a class="nav-link" href="banking.php">
-        <i class="bi bi-bank2"></i>
-        <span class="nav-text">Banking</span>
-    </a>
-</li>
-                <!-- Users -->
+                    <a class="nav-link" href="customer_orderproduct.php">
+                        <i class="bi bi-person-plus"></i>
+                        <span class="nav-text">Orders</span>
+                    </a>
+                </li>
                 <li class="nav-item">
-                    <a class="nav-link" href="drivers.php">
-                        <i class="bi bi-people-fill"></i>
-                        <span class="nav-text">Users</span>
+                    <a class="nav-link" href="collections.php">
+                        <i class="bi bi-cash-stack"></i>
+                        <span class="nav-text">Collections</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="sales_order.php">
+                        <i class="bi bi-cart"></i>
+                        <span class="nav-text">Sales Orders</span>
+                    </a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link active" href="purchase_order.php">
+                        <i class="bi bi-truck"></i>
+                        <span class="nav-text">Purchase Orders</span>
                     </a>
                 </li>
             </ul>
@@ -3255,6 +3284,10 @@ function formatDateForInput($dateStr) {
                                                 <label for="itemDescription" class="form-label">Item Description</label>
                                                 <input type="text" class="form-control" id="itemDescription" placeholder="Item description">
                                             </div>
+                                            <div class="col-md-3">
+                                                <label for="itemCategory" class="form-label">Category</label>
+                                                <input type="text" class="form-control" id="itemCategory" placeholder="Category">
+                                            </div>
                                             <div class="col-md-3" id="itemUomSelectWrapper" style="display:none;">
                                                 <label for="itemUoM" class="form-label">UoM</label>
                                                 <select class="form-select" id="itemUoM">
@@ -3330,6 +3363,10 @@ function formatDateForInput($dateStr) {
                                                 <label for="productionItemDescription" class="form-label">Item Description</label>
                                                 <input type="text" class="form-control" id="productionItemDescription" placeholder="Item description">
                                             </div>
+                                            <div class="col-md-3">
+                                                <label for="productionItemCategory" class="form-label">Category</label>
+                                                <input type="text" class="form-control" id="productionItemCategory" placeholder="Category">
+                                            </div>
                                             <div class="col-md-3" id="productionItemUomSelectWrapper" style="display:none;">
                                                 <label for="productionItemUoM" class="form-label">UoM</label>
                                                 <select class="form-select" id="productionItemUoM">
@@ -3389,7 +3426,7 @@ function formatDateForInput($dateStr) {
                                                             data-status="<?= htmlspecialchars($rmr['status'] ?? '') ?>"
                                                             data-customer="<?= htmlspecialchars($rmr['customer_name'] ?? '') ?>"
                                                             data-reason="<?= htmlspecialchars($rmr['reason'] ?? '') ?>">
-                                                            <?= htmlspecialchars(($rmr['rmr_number'] ?? ('RMR-' . $rmr['rmr_id'])) . ' - ' . ($rmr['item_name'] ?? 'Item') . ' - Qty: ' . ($rmr['quantity'] ?? 0) . ' ' . ($rmr['unit_type'] ?? '')) ?>
+                                                            <?= htmlspecialchars(($rmr['rmr_number'] ?? ('RMR-' . $rmr['rmr_id'])) . ' - ' . (($rmr['customer_name'] ?? '') !== '' ? ($rmr['customer_name'] . ' - ') : '') . ($rmr['item_name'] ?? 'Item') . ' - Qty: ' . ($rmr['quantity'] ?? 0) . ' ' . ($rmr['unit_type'] ?? '')) ?>
                                                         </option>
                                                     <?php endforeach; ?>
                                                 </select>
@@ -3423,6 +3460,7 @@ function formatDateForInput($dateStr) {
                                             <th>Item Name</th>
                                             <th>Item Code</th>
                                             <th>Item Description</th>
+                                            <th>Category</th>
                                             <th>Qty</th>
                                             <th>UoM</th>
                                             <th>Unit Price</th>
@@ -3432,7 +3470,7 @@ function formatDateForInput($dateStr) {
                                     </thead>
                                     <tbody id="receiveItemsTableBody">
                                         <tr class="text-center text-muted">
-                                            <td colspan="8">No items added yet</td>
+                                            <td colspan="9">No items added yet</td>
                                         </tr>
                                     </tbody>
                                 </table>
@@ -6081,6 +6119,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 newItemName: null,
                 itemCode: null,
                 itemDescription: null,
+                itemCategory: null,
                 itemUomSelectWrapper: null,
                 itemUoM: null,
                 newItemUomWrapper: null,
@@ -6097,6 +6136,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 newItemName: document.getElementById('productionNewItemName'),
                 itemCode: document.getElementById('productionItemCode'),
                 itemDescription: document.getElementById('productionItemDescription'),
+                itemCategory: document.getElementById('productionItemCategory'),
                 itemUomSelectWrapper: document.getElementById('productionItemUomSelectWrapper'),
                 itemUoM: document.getElementById('productionItemUoM'),
                 newItemUomWrapper: document.getElementById('productionNewItemUomWrapper'),
@@ -6112,6 +6152,7 @@ document.addEventListener('DOMContentLoaded', function() {
             newItemName: document.getElementById('newItemName'),
             itemCode: document.getElementById('itemCode'),
             itemDescription: document.getElementById('itemDescription'),
+            itemCategory: document.getElementById('itemCategory'),
             itemUomSelectWrapper: document.getElementById('itemUomSelectWrapper'),
             itemUoM: document.getElementById('itemUoM'),
             newItemUomWrapper: document.getElementById('newItemUomWrapper'),
@@ -6228,6 +6269,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <td>${escapeHtml(String(item.name || ''))}</td>
                 <td>${escapeHtml(String(item.code || ''))}</td>
                 <td>${escapeHtml(String(item.description || ''))}</td>
+                <td>${escapeHtml(String(item.category || ''))}</td>
                 <td><input type="number" class="form-control form-control-sm qty-input" data-item-id="${item.id}" value="${item.qty}" min="0" step="0.01"></td>
                 <td>${escapeHtml(String(item.uom || ''))}</td>
                 <td><input type="number" class="form-control form-control-sm price-input" data-item-id="${item.id}" value="${Number(item.price || 0).toFixed(2)}" min="0" step="0.01"></td>
@@ -6244,6 +6286,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (fields.newItemName) fields.newItemName.value = '';
         if (fields.itemCode) fields.itemCode.value = '';
         if (fields.itemDescription) fields.itemDescription.value = '';
+        if (fields.itemCategory) fields.itemCategory.value = '';
         if (fields.qty) fields.qty.value = '';
         if (fields.itemPrice) fields.itemPrice.value = '';
         if (fields.newItemUom) fields.newItemUom.value = '';
@@ -6265,12 +6308,14 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         if (fields.itemCode) fields.itemCode.value = '';
         if (fields.itemDescription) fields.itemDescription.value = '';
+        if (fields.itemCategory) fields.itemCategory.value = '';
         if (fields.itemPrice) fields.itemPrice.value = '';
 
         if (selectedValue === '__new__') {
             if (fields.newItemNameWrapper) fields.newItemNameWrapper.style.display = 'block';
             if (fields.itemCode) fields.itemCode.readOnly = false;
             if (fields.itemDescription) fields.itemDescription.readOnly = false;
+            if (fields.itemCategory) fields.itemCategory.readOnly = false;
             if (fields.itemPrice) fields.itemPrice.readOnly = false;
             populateUomForSelectedItem(null, mode);
             return;
@@ -6282,9 +6327,11 @@ document.addEventListener('DOMContentLoaded', function() {
         if (selectedItem) {
             if (fields.itemCode) fields.itemCode.value = selectedItem.item_code || '';
             if (fields.itemDescription) fields.itemDescription.value = selectedItem.description || selectedItem.item_name || '';
+            if (fields.itemCategory) fields.itemCategory.value = selectedItem.category || '';
             if (fields.itemPrice) fields.itemPrice.value = Number(selectedItem.price_piece || 0).toFixed(2);
             if (fields.itemCode) fields.itemCode.readOnly = true;
             if (fields.itemDescription) fields.itemDescription.readOnly = true;
+            if (fields.itemCategory) fields.itemCategory.readOnly = true;
             if (fields.itemPrice) fields.itemPrice.readOnly = false;
             populateUomForSelectedItem(selectedItem, mode);
             if (fields.selectedItemPreview) {
@@ -6292,13 +6339,15 @@ document.addEventListener('DOMContentLoaded', function() {
                     <strong>Selected Item:</strong> ${escapeHtml(String(selectedItem.item_name || ''))}<br>
                     <small>
                         <strong>Code:</strong> ${escapeHtml(String(selectedItem.item_code || 'N/A'))} &nbsp;|&nbsp;
-                        <strong>Description:</strong> ${escapeHtml(String(selectedItem.description || selectedItem.item_name || 'N/A'))}
+                        <strong>Description:</strong> ${escapeHtml(String(selectedItem.description || selectedItem.item_name || 'N/A'))} &nbsp;|&nbsp;
+                        <strong>Category:</strong> ${escapeHtml(String(selectedItem.category || 'N/A'))}
                     </small>`;
                 fields.selectedItemPreview.style.display = 'block';
             }
         } else {
             if (fields.itemCode) fields.itemCode.readOnly = false;
             if (fields.itemDescription) fields.itemDescription.readOnly = false;
+            if (fields.itemCategory) fields.itemCategory.readOnly = false;
             if (fields.itemPrice) fields.itemPrice.readOnly = false;
             populateUomForSelectedItem(null, mode);
         }
@@ -6312,6 +6361,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const itemName = isNewItem ? ((fields.newItemName ? fields.newItemName.value : '') || '').trim() : (selectedItem?.item_name || '');
         const itemCode = ((fields.itemCode ? fields.itemCode.value : '') || '').trim();
         const itemDescription = ((fields.itemDescription ? fields.itemDescription.value : '') || '').trim();
+        const itemCategory = ((fields.itemCategory ? fields.itemCategory.value : '') || '').trim();
         const qty = parseFloat(fields.qty ? fields.qty.value : 0) || 0;
         const uom = isNewItem ? (((fields.newItemUom || {}).value || '').trim()) : ((((fields.itemUoM || {}).value || '').trim()));
         const price = parseFloat(fields.itemPrice ? fields.itemPrice.value : 0) || 0;
@@ -6324,7 +6374,7 @@ document.addEventListener('DOMContentLoaded', function() {
             alert('Please enter the new item name.');
             return;
         }
-        if (!itemName || !itemCode || !itemDescription || !uom) {
+        if (!itemName || !itemCode || !itemDescription || !itemCategory || !uom) {
             alert('Please complete the item details.');
             return;
         }
@@ -6340,6 +6390,7 @@ document.addEventListener('DOMContentLoaded', function() {
             name: itemName,
             code: itemCode,
             description: itemDescription,
+            category: itemCategory,
             qty: qty,
             uom: uom,
             price: price,
@@ -6449,6 +6500,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 name: item.item_name || '',
                 code: item.item_code || '',
                 description: item.description || item.item_name || '',
+                category: item.category || '',
                 qty: parseFloat(item.quantity_ordered || 0),
                 uom: item.unit_type || '',
                 price: parseFloat(item.unit_price || 0),
@@ -6568,7 +6620,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const detail = data.detail || {};
             const poItems = Array.isArray(data.po_items) ? data.po_items : [];
-            const sourceLabel = String(detail.reference_type || '').toLowerCase() === 'production' ? 'Production' : 'Supplier';
+            const refType = String(detail.reference_type || '').toLowerCase();
+            const sourceLabel = refType === 'production' ? 'Production' : (refType === 'rmr' ? 'Returned Merchandise' : 'Supplier');
             const unitPrice = Number(detail.unit_price || 0);
             const qty = Number(detail.quantity_changed || 0);
             const totalAmount = qty * unitPrice;
@@ -6640,6 +6693,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Branch</div><div class="fw-semibold">${formatReceiveHistoryValue(detail.branch_name)}</div></div></div>
                     <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Supplier</div><div class="fw-semibold">${sourceLabel === 'Supplier' ? formatReceiveHistoryValue(detail.supplier_name) : 'N/A'}</div></div></div>
                     <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">PO Number</div><div class="fw-semibold">${sourceLabel === 'Supplier' ? formatReceiveHistoryValue(detail.po_number) : 'N/A'}</div></div></div>
+                    <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">RMR Number</div><div class="fw-semibold">${sourceLabel === 'Returned Merchandise' ? formatReceiveHistoryValue(detail.rmr_number) : 'N/A'}</div></div></div>
+                    <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Customer</div><div class="fw-semibold">${sourceLabel === 'Returned Merchandise' ? formatReceiveHistoryValue(detail.rmr_customer_name) : 'N/A'}</div></div></div>
                     <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">PO Status</div><div class="fw-semibold">${sourceLabel === 'Supplier' ? formatReceiveHistoryValue(detail.po_status) : 'N/A'}</div></div></div>
                     <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Reference</div><div class="fw-semibold">${formatReceiveHistoryValue(detail.reference_type)} #${formatReceiveHistoryValue(detail.reference_id, '0')}</div></div></div>
                     <div class="col-12"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Attachment</div><div class="fw-semibold">${renderReceiveAttachments(data.attachments || [], data.attachment_note || 'No saved attachment found for this receive record.')}</div></div></div>
