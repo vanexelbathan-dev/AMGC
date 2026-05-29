@@ -1226,7 +1226,11 @@ $stats['completed_today'] = $result->fetch_assoc()['count'] ?? 0;
                                 <i class="bi bi-search"></i> Search
                             </label>
                             <div class="search-wrapper">
+<<<<<<< HEAD
                                 <input type="text" class="form-control search-input" id="searchInput" placeholder="Search pick list, item name, or item code...">
+=======
+                                <input type="text" class="form-control search-input" id="searchInput" placeholder="Search pick list or item...">
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                             </div>
                         </div>
                         
@@ -1294,7 +1298,10 @@ $stats['completed_today'] = $result->fetch_assoc()['count'] ?? 0;
                     <table class="table custom-table compact-table">
                         <thead> 
                             <tr>
+<<<<<<< HEAD
                                 <th class="text-center">Item</th>
+=======
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                                 <th class="text-center">Pick List</th>
                                 <th class="text-center">To Pick</th>
                                 <th class="text-center">Picked</th>
@@ -1400,6 +1407,7 @@ $stats['completed_today'] = $result->fetch_assoc()['count'] ?? 0;
                                             else echo 'none';
                                         ?>">
                                         <td class="text-center">
+<<<<<<< HEAD
                                             <div class="product-info-cell">
                                                 <?php echo $product_image; ?>
                                                 <div class="product-details">
@@ -1418,6 +1426,15 @@ $stats['completed_today'] = $result->fetch_assoc()['count'] ?? 0;
                                                 <?php endif; ?>
                                             </div>
                                         </td>
+=======
+                                            <span class="fw-semibold"><?php echo htmlspecialchars($row['pick_list_number']); ?></span>
+                                            <?php if (!empty($row['pick_list_status'])): ?>
+                                                <br><small class="badge <?php echo getPickStatusBadge($row['pick_list_status']); ?>" style="font-size: 10px;">
+                                                    <?php echo getPickStatusText($row['pick_list_status']); ?>
+                                                </small>
+                                            <?php endif; ?>
+                                        </td>
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                                        
                                         <td class="text-center"><?php echo number_format($row['quantity_to_pick']); ?></td>
                                         <td class="text-center"><?php echo number_format($row['quantity_picked']); ?></td>
@@ -1462,7 +1479,11 @@ $stats['completed_today'] = $result->fetch_assoc()['count'] ?? 0;
                                     <?php
                                 }
                             } else {
+<<<<<<< HEAD
                                 $colspan = $view_all_branches ? 7 : 6;
+=======
+                                $colspan = $view_all_branches ? 6 : 5;
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                                 echo '<tr><td colspan="' . $colspan . '" class="text-center py-5 text-muted">';
                                 echo '<i class="bi bi-inbox fs-1 d-block mb-3"></i>';
                                 echo '<p>No pick list items found</p>';

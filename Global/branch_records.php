@@ -182,11 +182,13 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
         switch ($source) {
             case 'sales_orders':
                 $sql = "SELECT so.*, b.branch_name, c.customer_name, c.address, c.phone_number,
-                        CONCAT(u.first_name, ' ', u.last_name) as created_by_name
+                        CONCAT(u.first_name, ' ', u.last_name) as created_by_name,
+                        CONCAT(u2.first_name, ' ', u2.last_name) as confirmed_by_name
                         FROM sales_orders so
                         LEFT JOIN branches b ON so.branch_id = b.branch_id
                         LEFT JOIN customers c ON so.customer_id = c.customer_id
                         LEFT JOIN users u ON so.created_by = u.user_id
+                        LEFT JOIN users u2 ON so.confirmed_by = u2.user_id
                         WHERE so.so_id = ?";
                 $stmt = $conn->prepare($sql);
                 if (!$stmt) {
@@ -197,6 +199,10 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                 $result = $stmt->get_result();
                 
                 if ($row = $result->fetch_assoc()) {
+<<<<<<< HEAD
+=======
+                    // Get Sales Order Items
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                     $items_sql = "SELECT soi.*, i.item_name, i.item_code, i.category
                                  FROM sales_order_items soi
                                  LEFT JOIN items i ON soi.item_id = i.item_id
@@ -219,6 +225,10 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         }
                     }
                     
+<<<<<<< HEAD
+=======
+                    // Get related Pick Lists with picked_at and verified_at
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                     $pick_lists = [];
                     $pick_sql = "SELECT pl.*, d.driver_name,
                                 pl.picked_at,
@@ -238,6 +248,10 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         $pick_result = $pick_stmt->get_result();
                         
                         while ($pick = $pick_result->fetch_assoc()) {
+<<<<<<< HEAD
+=======
+                            // Get Pick List Items
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                             $pick_items_sql = "SELECT pli.*, i.item_name, i.item_code
                                              FROM pick_list_items pli
                                              LEFT JOIN items i ON pli.item_id = i.item_id
@@ -274,6 +288,10 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         }
                     }
                     
+<<<<<<< HEAD
+=======
+                    // Get related Invoices with paid_at and paid_by (FIXED QUERY)
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                     $invoices = [];
                     $inv_sql = "SELECT i.*,
                                 CONCAT(u.first_name, ' ', u.last_name) as paid_by_name
@@ -292,7 +310,7 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                                 'invoice_id' => $inv['invoice_id'],
                                 'invoice_number' => $inv['invoice_number'],
                                 'amount' => $inv['total_amount'],
-                                'status' => $inv['status'],
+                                'status' => $inv['status'], // Dapat 'paid' na ito kung paid na sa DB
                                 'created_at' => $inv['created_at'],
                                 'due_date' => $inv['due_date'] ?? null,
                                 'paid_at' => $inv['paid_at'],
@@ -301,6 +319,10 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         }
                     }
                     
+<<<<<<< HEAD
+=======
+                    // Get related Trip Tickets with assigned_at and assigned_by
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                     $trip_tickets = [];
                     $trip_sql = "SELECT tt.*, d.driver_name, d.vehicle_plate_number,
                                 tt.assigned_at,
@@ -335,6 +357,10 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         }
                     }
                     
+<<<<<<< HEAD
+=======
+                    // Get Delivery Status
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                     $delivery = null;
                     $del_sql = "SELECT d.*, dr.driver_name
                               FROM deliveries d
@@ -359,7 +385,14 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         }
                     }
                     
+<<<<<<< HEAD
                     $history = [];
+=======
+                    // Build complete transaction history (correct order)
+                    $history = [];
+                    
+                    // 1. Order Created
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                     $history[] = [
                         'timestamp' => $row['created_at'] ?? $row['order_date'],
                         'action' => 'Order Created',
@@ -367,16 +400,36 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         'details' => 'Sales order created'
                     ];
                     
+<<<<<<< HEAD
+=======
+                    // 2. Order Confirmed (if confirmed)
+                    if (!empty($row['confirmed_at'])) {
+                        $history[] = [
+                            'timestamp' => $row['confirmed_at'],
+                            'action' => 'Order Confirmed',
+                            'user' => $row['confirmed_by_name'] ?? 'System',
+                            'details' => 'Sales order confirmed for processing'
+                        ];
+                    }
+                    
+                    // 3. Pick List Events
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                     foreach ($pick_lists as $pick) {
+                        // Pick List Created
                         $history[] = [
                             'timestamp' => $pick['created_at'],
                             'action' => 'Pick List Created',
                             'user' => $pick['picked_by_name'] !== 'N/A' ? $pick['picked_by_name'] : 'System',
                             'details' => 'Pick List #' . $pick['pick_list_number'] . ' created'
                         ];
+<<<<<<< HEAD
                     }
                     
                     foreach ($pick_lists as $pick) {
+=======
+                        
+                        // Items Picked
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                         if (!empty($pick['picked_at'])) {
                             $history[] = [
                                 'timestamp' => $pick['picked_at'],
@@ -385,9 +438,14 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                                 'details' => 'Items picked from warehouse'
                             ];
                         }
+<<<<<<< HEAD
                     }
                     
                     foreach ($pick_lists as $pick) {
+=======
+                        
+                        // Items Verified
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                         if (!empty($pick['verified_at'])) {
                             $history[] = [
                                 'timestamp' => $pick['verified_at'],
@@ -398,6 +456,10 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         }
                     }
                     
+<<<<<<< HEAD
+=======
+                    // 4. Invoice Generated
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                     foreach ($invoices as $inv) {
                         $history[] = [
                             'timestamp' => $inv['created_at'],
@@ -405,9 +467,25 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                             'user' => 'System',
                             'details' => 'Invoice #' . $inv['invoice_number'] . ' generated for P' . number_format($inv['amount'], 2)
                         ];
+                        
+                        // Invoice Paid - lalabas lang ito kung may paid_at
+                        if (!empty($inv['paid_at'])) {
+                            $history[] = [
+                                'timestamp' => $inv['paid_at'],
+                                'action' => 'Invoice Paid',
+                                'user' => $inv['paid_by_name'] ?? 'System',
+                                'details' => 'Invoice #' . $inv['invoice_number'] . ' marked as paid'
+                            ];
+                        }
                     }
                     
+<<<<<<< HEAD
                     foreach ($trip_tickets as $trip) {
+=======
+                    // 5. Trip Events
+                    foreach ($trip_tickets as $trip) {
+                        // Trip Assigned
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                         if (!empty($trip['assigned_at'])) {
                             $history[] = [
                                 'timestamp' => $trip['assigned_at'],
@@ -416,9 +494,14 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                                 'details' => 'Trip #' . $trip['trip_number'] . ' assigned to driver ' . $trip['driver_name']
                             ];
                         }
+<<<<<<< HEAD
                     }
                     
                     foreach ($trip_tickets as $trip) {
+=======
+                        
+                        // Trip Started (departure)
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                         if (!empty($trip['departure_time'])) {
                             $history[] = [
                                 'timestamp' => $trip['departure_time'],
@@ -427,6 +510,7 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                                 'details' => 'Driver departed for delivery'
                             ];
                         }
+<<<<<<< HEAD
                     }
                     
                     foreach ($invoices as $inv) {
@@ -450,6 +534,10 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                     }
                     
                     foreach ($trip_tickets as $trip) {
+=======
+                        
+                        // Trip Completed (arrival)
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                         if (!empty($trip['arrival_time'])) {
                             $history[] = [
                                 'timestamp' => $trip['arrival_time'],
@@ -460,6 +548,7 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         }
                     }
                     
+<<<<<<< HEAD
                     if ($delivery && $delivery['status'] === 'rejected') {
                         $history[] = [
                             'timestamp' => $delivery['delivered_at'] ?? date('Y-m-d H:i:s'),
@@ -489,6 +578,30 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         if ($seqA != $seqB) {
                             return $seqA - $seqB;
                         }
+=======
+                    // 6. Delivery Events
+                    if ($delivery) {
+                        if (!empty($delivery['delivered_at'])) {
+                            $history[] = [
+                                'timestamp' => $delivery['delivered_at'],
+                                'action' => 'Order Delivered',
+                                'user' => $delivery['received_by'],
+                                'details' => 'Order delivered - signed by ' . $delivery['received_by']
+                            ];
+                        }
+                        if ($delivery['status'] === 'rejected') {
+                            $history[] = [
+                                'timestamp' => $delivery['delivered_at'] ?? date('Y-m-d H:i:s'),
+                                'action' => 'Delivery Rejected',
+                                'user' => $delivery['received_by'],
+                                'details' => 'Delivery was rejected'
+                            ];
+                        }
+                    }
+                    
+                    // Sort history by timestamp (ascending)
+                    usort($history, function($a, $b) {
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                         return strtotime($a['timestamp'] ?? '0') - strtotime($b['timestamp'] ?? '0');
                     });
                     
@@ -1982,6 +2095,10 @@ if (empty($user_initials)) {
 
             function pill(status) {
                 if (!status) return '';
+<<<<<<< HEAD
+=======
+                // I-remove ang extra spaces at gawing lowercase
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                 const s = status.toString().trim().toLowerCase();
                 
                 let c = 'gray';
@@ -1989,6 +2106,10 @@ if (empty($user_initials)) {
                 else if (['pending','draft','planned','open','processing','in_transit'].includes(s)) c = 'yellow';
                 else if (['cancelled','rejected'].includes(s)) c = 'red';
                 
+<<<<<<< HEAD
+=======
+                // Ibalik ang original status para sa display (hindi lowercase)
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                 return `<span class="s-pill ${c}">${escapeHtml(status)}</span>`;
             }
             function peso(v) { const n = parseFloat(v||0); return '₱' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
@@ -2061,19 +2182,31 @@ if (empty($user_initials)) {
                 });
             }
 
+<<<<<<< HEAD
+=======
+            // Invoices - Dito ididisplay ang invoice status (paid/pending)
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
             if (invCount > 0) {
+                // I-print sa console ang lahat ng invoice data
+                console.log("=== INVOICE DEBUG ===");
+                console.log(record.invoices);
+                
                 leftHtml += `
                     <div class="m-section-title"><i class="bi bi-receipt"></i> Invoices (${invCount})</div>
                     <div class="m-card"><div class="m-card-body" style="padding:0"><div style="overflow-x:auto">
                         <table class="m-tbl">
                             <thead><tr><th>Invoice #</th><th style="text-align:right">Amount</th><th>Status</th><th>Created</th><th>Due Date</th></tr></thead>
-                            <tbody>${record.invoices.map(inv=>`<tr>
-                                <td style="font-weight:600">${escapeHtml(inv.invoice_number)}</td>
-                                <td style="text-align:right">${peso(inv.amount)}</td>
-                                <td>${pill(inv.status)}</td>
-                                <td>${formatDateTime(inv.created_at)}</td>
-                                <td>${inv.due_date?formatDateTime(inv.due_date):'N/A'}</td>
-                            </tr>`).join('')}</tbody>
+                            <tbody>${record.invoices.map(inv=>{
+                                // I-print ang bawat invoice status
+                                console.log("Invoice status from PHP:", inv.status);
+                                return `<tr>
+                                    <td style="font-weight:600">${escapeHtml(inv.invoice_number)}</td>
+                                    <td style="text-align:right">${peso(inv.amount)}</td>
+                                    <td>${pill(inv.status)}</td>
+                                    <td>${formatDateTime(inv.created_at)}</td>
+                                    <td>${inv.due_date?formatDateTime(inv.due_date):'N/A'}</td>
+                                </tr>`;
+                            }).join('')}</tbody>
                         </table>
                     </div></div></div>`;
             }
@@ -2223,6 +2356,10 @@ if (empty($user_initials)) {
             }
         });
 
+<<<<<<< HEAD
+=======
+        // ================= FILTER TOGGLE FUNCTIONS =================
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
         function toggleFilter(filterType) {
             const content = document.getElementById(filterType + 'FilterContent');
             const icon = document.getElementById(filterType + 'FilterIcon');
@@ -2238,6 +2375,10 @@ if (empty($user_initials)) {
             }
         }
 
+<<<<<<< HEAD
+=======
+        // Initialize filter states on page load - DEFAULT CLOSED
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
         function initFilterStates() {
             const filterTypes = ['branch'];
             

@@ -264,6 +264,7 @@ $items = [];
 if ($items_branch_column_exists) {
     if ($view_all_branches) {
         $items_query = "SELECT i.item_id, i.item_code, i.item_name, i.description, i.category, 
+<<<<<<< HEAD
                     i.stock, i.stock_in_default_uom, i.unit_type, i.unit_price, i.price_case, i.price_inner_pack, 
                     i.price_box, i.price_carton, i.reorder_level, i.status,
                     i.product_image_url,
@@ -272,8 +273,19 @@ if ($items_branch_column_exists) {
                     LEFT JOIN branches b ON i.branch_id = b.branch_id
                     WHERE i.status = 'active'
                     ORDER BY i.category ASC, i.item_name ASC";
+=======
+                       i.stock, i.unit_type, i.unit_price, i.price_case, i.price_inner_pack, 
+                       i.price_box, i.price_carton, i.reorder_level, i.status,
+                       i.product_image_url,
+                       b.branch_name
+                       FROM items i
+                       LEFT JOIN branches b ON i.branch_id = b.branch_id
+                       WHERE i.status = 'active'
+                       ORDER BY i.category ASC, i.item_name ASC";
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
     } else {
         $items_query = "SELECT i.item_id, i.item_code, i.item_name, i.description, i.category, 
+<<<<<<< HEAD
                     i.stock, i.stock_in_default_uom, i.unit_type, i.unit_price, i.price_case, i.price_inner_pack, 
                     i.price_box, i.price_carton, i.reorder_level, i.status,
                     i.product_image_url,
@@ -282,15 +294,34 @@ if ($items_branch_column_exists) {
                     LEFT JOIN branches b ON i.branch_id = b.branch_id
                     WHERE i.status = 'active' AND i.branch_id = $branch_id
                     ORDER BY i.category ASC, i.item_name ASC";
+=======
+                       i.stock, i.unit_type, i.unit_price, i.price_case, i.price_inner_pack, 
+                       i.price_box, i.price_carton, i.reorder_level, i.status,
+                       i.product_image_url,
+                       b.branch_name
+                       FROM items i
+                       LEFT JOIN branches b ON i.branch_id = b.branch_id
+                       WHERE i.status = 'active' AND i.branch_id = $branch_id
+                       ORDER BY i.category ASC, i.item_name ASC";
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
     }
 } else {
     $items_query = "SELECT i.item_id, i.item_code, i.item_name, i.description, i.category, 
+<<<<<<< HEAD
                 i.stock, i.stock_in_default_uom, i.unit_type, i.unit_price, i.price_case, i.price_inner_pack, 
                 i.price_box, i.price_carton, i.reorder_level, i.status,
                 i.product_image_url
                 FROM items i
                 WHERE i.status = 'active'
                 ORDER BY i.category ASC, i.item_name ASC";
+=======
+                   i.stock, i.unit_type, i.unit_price, i.price_case, i.price_inner_pack, 
+                   i.price_box, i.price_carton, i.reorder_level, i.status,
+                   i.product_image_url
+                   FROM items i
+                   WHERE i.status = 'active'
+                   ORDER BY i.category ASC, i.item_name ASC";
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
 }
 
 $items_result = $conn->query($items_query);
@@ -300,6 +331,7 @@ if ($items_result) {
     error_log("Items query error: " . $conn->error);
 }
 
+<<<<<<< HEAD
 // Get all unit types and quantities for each item (using smallest pack as base)
 $all_items_unit_types = [];
 foreach ($items as $item) {
@@ -335,6 +367,14 @@ $categories = array_filter($categories);
 sort($categories);
 
 // Get all customers
+=======
+// Get all unique categories
+$categories = array_unique(array_column($items, 'category'));
+$categories = array_filter($categories); // Remove empty categories
+sort($categories); // Sort alphabetically
+
+// Get all customers - filter by branch if not admin AND if branch_id column exists
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
 $customers = [];
 
 if ($branch_column_exists) {
@@ -366,6 +406,7 @@ if ($customers_result) {
     error_log("Customers query error: " . $conn->error);
 }
 
+<<<<<<< HEAD
 // Resolve selected customer from customer_id.
 // This makes the customer label work even if customer.php only sends customer_id in the URL.
 $selected_customer = null;
@@ -522,18 +563,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
+=======
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
 // Handle AJAX request for product details
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'get_product_details') {
     header('Content-Type: application/json');
     
     try {
         $product_id = isset($_POST['product_id']) ? (int)$_POST['product_id'] : 0;
+<<<<<<< HEAD
         $price_level = isset($_POST['price_level']) ? trim($_POST['price_level']) : 'Standard';
+=======
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
         
         if ($product_id <= 0) {
             throw new Exception("Invalid product ID");
         }
         
+<<<<<<< HEAD
         if ($items_branch_column_exists && !$view_all_branches) {
             $product_query = "SELECT i.item_id, i.item_code, i.item_name, i.description, i.category, 
                             i.stock, i.stock_in_default_uom, i.unit_type, i.unit_price, i.price_case, i.price_inner_pack, 
@@ -543,15 +590,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                             FROM items i
                             LEFT JOIN branches b ON i.branch_id = b.branch_id
                             WHERE i.item_id = ? AND i.branch_id = ?";
+=======
+        // Get product details
+        if ($items_branch_column_exists && !$view_all_branches) {
+            $product_query = "SELECT i.item_id, i.item_code, i.item_name, i.description, i.category, 
+                             i.stock, i.unit_type, i.unit_price, i.price_case, i.price_inner_pack, 
+                             i.price_box, i.price_carton, i.reorder_level, i.status,
+                             i.product_image_url,
+                             b.branch_name
+                             FROM items i
+                             LEFT JOIN branches b ON i.branch_id = b.branch_id
+                             WHERE i.item_id = ? AND i.branch_id = ?";
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
             $stmt = $conn->prepare($product_query);
             $stmt->bind_param('ii', $product_id, $branch_id);
         } else {
             $product_query = "SELECT i.item_id, i.item_code, i.item_name, i.description, i.category, 
+<<<<<<< HEAD
                             i.stock, i.stock_in_default_uom, i.unit_type, i.unit_price, i.price_case, i.price_inner_pack, 
                             i.price_box, i.price_carton, i.reorder_level, i.status,
                             i.product_image_url
                             FROM items i
                             WHERE i.item_id = ?";
+=======
+                             i.stock, i.unit_type, i.unit_price, i.price_case, i.price_inner_pack, 
+                             i.price_box, i.price_carton, i.reorder_level, i.status,
+                             i.product_image_url
+                             FROM items i
+                             WHERE i.item_id = ?";
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
             $stmt = $conn->prepare($product_query);
             $stmt->bind_param('i', $product_id);
         }
@@ -564,6 +631,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             throw new Exception("Product not found");
         }
         
+<<<<<<< HEAD
         $unit_types_query = "
             SELECT unit_type_id, unit_type_name, uom_initial, unit_price, quantity_smallest_pack
             FROM (
@@ -618,6 +686,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         JOIN sales_orders so ON soi.so_id = so.so_id
                         JOIN customers c ON so.customer_id = c.customer_id
                         WHERE soi.item_id = ?";
+=======
+        // Get order history for this product
+        $history_query = "SELECT so.so_number, so.order_date, c.customer_name, so.order_status,
+                         soi.quantity_ordered, soi.unit_type, soi.unit_price,
+                         (soi.quantity_ordered * soi.unit_price) as total_price
+                         FROM sales_order_items soi
+                         JOIN sales_orders so ON soi.so_id = so.so_id
+                         JOIN customers c ON so.customer_id = c.customer_id
+                         WHERE soi.item_id = ?";
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
         
         if ($items_branch_column_exists && !$view_all_branches) {
             $history_query .= " AND so.branch_id = ?";
@@ -637,8 +715,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         echo json_encode([
             'success' => true,
             'product' => $product,
+<<<<<<< HEAD
             'unit_types' => $unit_types,
             'images' => $images,
+=======
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
             'order_history' => $order_history
         ]);
         exit;
@@ -652,7 +733,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
+<<<<<<< HEAD
 // Handle order submission via AJAX (with stock deduction using conversion)
+=======
+// Handle order submission via AJAX
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'submit_order') {
     header('Content-Type: application/json');
     
@@ -1452,6 +1537,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         <!-- Session Checker -->
     <script src="../js/session-checker.js"></script>
     <style>
+<<<<<<< HEAD
         html,
 body {
     height: 100dvh; /* mobile-safe viewport */
@@ -1492,23 +1578,49 @@ body {
         * {
             box-sizing: border-box;
             -webkit-tap-highlight-color: transparent;
+=======
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        :root {
+            --primary-green: #2E7D32;
+            --dark-green: #1B5E20;
+            --light-gray: #F5F5F5;
+            --white: #FFFFFF;
+            --black: #212121;
+            --border-gray: #e0e0e0;
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
         }
 
         /* Cart Item Styling */
         .cart-item {
+<<<<<<< HEAD
             background: #F5F5F5;
+=======
+            background: var(--light-gray);
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
             padding: 12px;
             border-radius: 8px;
             margin-bottom: 10px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+<<<<<<< HEAD
             border-left: 4px solid #047857;
+=======
+            border-left: 4px solid var(--primary-green);
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
         }
         
         /* Cart Icon Button in Header */
         .navbar-top .btn-success {
+<<<<<<< HEAD
             background: #047857;
+=======
+            background: var(--primary-green);
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
             border: none;
             padding: 8px 12px;
             border-radius: 8px;
@@ -1525,6 +1637,7 @@ body {
         
         .navbar-top .btn-success:active {
             transform: scale(0.95);
+<<<<<<< HEAD
             background: #1B5E20;
         }
         
@@ -1551,6 +1664,25 @@ body {
             background-color: #F5F5F5;
             border-color: #e0e0e0;
             color: #212121;
+=======
+            background: var(--dark-green);
+        }
+        
+        .navbar-top .btn-success .badge {
+            font-size: 10px;
+            padding: 3px 5px;
+            top: -5px;
+            right: -5px;
+            background: var(--dark-green) !important;
+            border: 2px solid var(--white);
+        }
+                
+        /* Alert for missing branch column */
+        .alert-info {
+            background-color: var(--light-gray);
+            border-color: var(--border-gray);
+            color: var(--black);
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
             border-radius: 8px;
             margin: 10px;
             font-size: 13px;
@@ -1558,7 +1690,11 @@ body {
 
         /* ===== CATEGORY TABS DESIGN ===== */
         .category-tabs-container {
+<<<<<<< HEAD
             background: #FFFFFF;
+=======
+            background: var(--white);
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
             border-radius: 10px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.05);
             margin-bottom: 20px;
@@ -1566,6 +1702,7 @@ body {
         }
         
         .tabs-header {
+<<<<<<< HEAD
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -1663,6 +1800,14 @@ body {
         font-size: 11px;
     }
 }
+=======
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            border-bottom: 2px solid var(--border-gray);
+            padding-bottom: 10px;
+        }
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
         
         .tabs-scroll {
             flex: 1;
@@ -1672,6 +1817,7 @@ body {
             -webkit-overflow-scrolling: touch;
             scrollbar-width: thin;
             padding-bottom: 5px;
+<<<<<<< HEAD
         }
         
         .tabs-scroll::-webkit-scrollbar {
@@ -2055,12 +2201,389 @@ body {
             border-radius: 4px;
             font-size: 15px !important;
             padding: 0 4px;
+=======
+        }
+        
+        .tabs-scroll::-webkit-scrollbar {
+            height: 4px;
+        }
+        
+        .tabs-scroll::-webkit-scrollbar-track {
+            background: var(--light-gray);
+            border-radius: 4px;
+        }
+        
+        .tabs-scroll::-webkit-scrollbar-thumb {
+            background: var(--primary-green);
+            border-radius: 4px;
+        }
+        
+        .category-tabs {
+            display: inline-flex;
+            gap: 5px;
+            padding: 2px 0;
+        }
+        
+        .tab-btn {
+            padding: 8px 20px;
+            border: none;
+            background: none;
+            color: #666;
+            font-weight: 600;
+            font-size: 14px;
+            border-radius: 20px;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        
+        .tab-btn:hover {
+            background: var(--light-gray);
+            color: var(--primary-green);
+        }
+        
+        .tab-btn.active {
+            background: var(--primary-green);
+            color: var(--white);
+        }
+        
+        .search-wrapper {
+            position: relative;
+            min-width: 250px;
+        }
+        
+        .search-icon {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #999;
+            font-size: 14px;
+        }
+        
+        .search-input {
+            width: 100%;
+            padding: 10px 15px 10px 40px;
+            border: 1px solid var(--border-gray);
+            border-radius: 25px;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        
+        .search-input:focus {
+            outline: none;
+            border-color: var(--primary-green);
+            box-shadow: 0 0 0 3px rgba(46,125,50,0.1);
+        }
+        
+        .search-reset {
+            position: absolute;
+            right: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: none;
+            border: none;
+            color: #999;
+            font-size: 18px;
+            cursor: pointer;
+            display: none;
+            padding: 0 5px;
+        }
+        
+        .search-reset:hover {
+            color: #dc3545;
+        }
+        
+        .search-reset.visible {
+            display: block;
+        }
+        
+        /* Products container */
+        .products-section {
+            margin-top: 20px;
+        }
+        
+        /* ===== COMPACT TABLE VIEW ===== */
+        .product-table-container {
+            background: var(--white);
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            overflow-x: auto;
+            margin-bottom: 20px;
+        }
+        
+        .product-table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 100%;
+        }
+        
+        .product-table thead {
+            background: var(--primary-green);
+            color: var(--white);
+        }
+        
+        .product-table th {
+            padding: 8px 4px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            text-align: center;
+            vertical-align: middle;
+        }
+        
+        .product-table td {
+            padding: 6px 4px;
+            font-size: 11px;
+            border-bottom: 1px solid var(--border-gray);
+            vertical-align: middle;
+        }
+        
+        /* Desktop default - full columns */
+        .product-table th:nth-child(1) { width: 8%; } /* Image */
+        .product-table th:nth-child(2) { width: 22%; } /* Product */
+        .product-table th:nth-child(3) { width: 20%; } /* Unit */
+        .product-table th:nth-child(4) { width: 12%; } /* Qty */
+        .product-table th:nth-child(5) { width: 15%; } /* Price */
+        .product-table th:nth-child(6) { width: 10%; } /* Action */
+        
+        /* Product column left aligned */
+        .product-table td:nth-child(2) {
+            text-align: left;
+        }
+        
+        /* Other columns center aligned */
+        .product-table td:not(:nth-child(2)) {
+            text-align: center;
+        }
+        
+        /* Product image */
+        .product-image-cell {
+            padding: 4px !important;
+        }
+        
+        .product-thumbnail {
+            width: 30px;
+            height: 30px;
+            object-fit: cover;
+            border-radius: 4px;
+            border: 1px solid var(--border-gray);
+            background: var(--light-gray);
+        }
+        
+        .product-info {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .product-name {
+            font-weight: 600;
+            color: var(--black);
+            font-size: 11px;
+            margin-bottom: 2px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .stock-info {
+            font-size: 9px;
+            color: var(--primary-green);
+            font-weight: 600;
+        }
+        
+        .stock-warning {
+            color: #dc3545 !important;
+            font-weight: 600;
+        }
+        
+        /* Action Buttons */
+        .action-buttons {
+            display: flex;
+            gap: 3px;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .add-cart-btn {
+            background: var(--primary-green);
+            border: none;
+            color: var(--white);
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            cursor: pointer;
+            padding: 0;
+        }
+        
+        .add-cart-btn:active {
+            transform: scale(0.95);
+            background: var(--dark-green);
+        }
+        
+        .add-cart-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+        
+        .view-btn {
+            background: #17a2b8;
+            border: none;
+            color: var(--white);
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            cursor: pointer;
+            padding: 0;
+        }
+        
+        .view-btn:active {
+            transform: scale(0.95);
+            background: #138496;
+        }
+        
+        /* Unit type buttons - PARA SA DESKTOP/WEB VIEW LANG */
+        .unit-buttons {
+            display: flex;
+            gap: 2px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+        
+        .unit-btn {
+            background: var(--white);
+            border: 1px solid var(--border-gray);
+            border-radius: 3px;
+            padding: 2px 3px;
+            font-size: 8px;
+            font-weight: 600;
+            color: var(--black);
+            min-width: 22px;
+            cursor: pointer;
+        }
+        
+        .unit-btn:active {
+            transform: scale(0.95);
+            background: var(--light-gray);
+        }
+        
+        .unit-btn.active {
+            background: var(--primary-green);
+            color: var(--white);
+            border-color: var(--primary-green);
+        }
+        
+        .unit-btn.sold-out {
+            opacity: 0.4;
+            cursor: not-allowed;
+            background: var(--light-gray);
+            pointer-events: none;
+        }
+        
+        /* Unit dropdown - PARA SA MOBILE VIEW LANG */
+        .unit-dropdown {
+            display: none; /* Nakatago sa desktop */
+            width: 100%;
+            padding: 8px 10px;
+            border: 1px solid var(--border-gray);
+            border-radius: 6px;
+            font-size: 13px;
+            background: white;
+            cursor: pointer;
+        }
+        
+        .unit-dropdown:focus {
+            outline: none;
+            border-color: var(--primary-green);
+        }
+        
+        .unit-dropdown.sold-out {
+            opacity: 0.6;
+            background: var(--light-gray);
+            cursor: not-allowed;
+        }
+        
+        /* Price Column */
+        .price-cell {
+            font-weight: 700;
+            color: var(--primary-green);
+            font-size: 11px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .price-unit-label {
+            font-size: 7px;
+            color: #6c757d;
+            font-weight: normal;
+            margin-top: 1px;
+        }
+        
+        /* Quantity Controls */
+        .quantity-controls {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 2px;
+        }
+        
+        .qty-btn {
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--white);
+            border: 1px solid var(--border-gray);
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+            color: var(--black);
+            cursor: pointer;
+            padding: 0;
+        }
+        
+        .qty-btn:active {
+            transform: scale(0.95);
+            background: var(--light-gray);
+        }
+        
+        .qty-btn:disabled {
+            background: var(--light-gray);
+            color: #adb5bd;
+            cursor: not-allowed;
+        }
+        
+        .qty-input {
+            width: 35px;
+            height: 24px;
+            text-align: center;
+            border: 1px solid var(--border-gray);
+            border-radius: 4px;
+            font-size: 11px;
+            padding: 0;
+            margin: 0 2px;
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
             -moz-appearance: textfield;
         }
         
         .qty-input:focus {
             outline: none;
+<<<<<<< HEAD
             border-color: #047857;
+=======
+            border-color: var(--primary-green);
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
         }
         
         /* Desktop/Web at Mobile visibility classes */
@@ -2072,6 +2595,7 @@ body {
             display: none;
         }
         
+<<<<<<< HEAD
         .mobile-unit-qty-container {
             display: none;
         }
@@ -2098,6 +2622,127 @@ body {
             .price-cell {
                 display: flex !important;
             }
+=======
+        /* ===== MOBILE VIEW - UNIT AT QTY SA IISANG COLUMN ===== */
+        @media (max-width: 768px) {
+            .main-content {
+                padding: 8px !important;
+            }
+            
+            .navbar-top {
+                padding: 6px 10px;
+            }
+            
+            .page-title h2 {
+                font-size: 16px;
+            }
+            
+            .page-title p {
+                font-size: 10px;
+            }
+            
+            .category-tabs-container {
+                padding: 8px 8px 0 8px;
+            }
+            
+            .tab-btn {
+                padding: 5px 12px;
+                font-size: 11px;
+            }
+            
+            .search-input {
+                padding: 6px 10px 6px 30px;
+                font-size: 11px;
+            }
+            
+            /* Mobile table layout - 5 columns lang */
+            .product-table th:nth-child(1) { width: 15%; } /* Image */
+            .product-table th:nth-child(2) { width: 30%; } /* Product */
+            .product-table th:nth-child(3) { width: 30%; } /* Unit (dropdown) */
+            .product-table th:nth-child(4) { width: 15%; } /* Price */
+            .product-table th:nth-child(5) { width: 15%; } /* Action */
+            
+            /* Itago ang original Qty column header */
+            .product-table th:nth-child(4) { 
+                display: table-cell; /* Price column */
+            }
+            
+            /* Itago ang Qty column cells */
+            .product-table td:nth-child(4) { 
+                display: none; 
+            }
+            
+            /* Desktop elements - itago sa mobile */
+            .desktop-only {
+                display: none !important;
+            }
+            
+            /* Mobile elements - ipakita sa mobile */
+            .mobile-only {
+                display: block !important;
+            }
+            
+            /* Unit dropdown sa mobile */
+            .unit-dropdown.mobile-only {
+                display: block !important;
+                width: 100%;
+                margin-bottom: 8px;
+            }
+            
+            /* Quantity controls sa mobile - dapat flex */
+            .quantity-controls.mobile-only {
+                display: flex !important;
+                justify-content: center;
+                align-items: center;
+                gap: 5px;
+            }
+            
+            /* Adjustments for mobile */
+            .qty-btn {
+                width: 32px;
+                height: 32px;
+                font-size: 14px;
+            }
+            
+            .qty-input {
+                width: 45px;
+                height: 32px;
+                font-size: 13px;
+            }
+            
+            .product-thumbnail {
+                width: 45px;
+                height: 45px;
+            }
+            
+            .product-name {
+                font-size: 13px;
+            }
+            
+            .stock-info {
+                font-size: 10px;
+            }
+            
+            .price-cell {
+                font-size: 13px;
+            }
+            
+            .add-cart-btn, .view-btn {
+                width: 36px;
+                height: 36px;
+                font-size: 16px;
+            }
+        }
+        
+        /* Desktop view adjustments */
+        @media (min-width: 769px) {
+            .product-table th:nth-child(1) { width: 6%; }
+            .product-table th:nth-child(2) { width: 22%; }
+            .product-table th:nth-child(3) { width: 20%; }
+            .product-table th:nth-child(4) { width: 12%; }
+            .product-table th:nth-child(5) { width: 15%; }
+            .product-table th:nth-child(6) { width: 12%; }
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
             
             .product-thumbnail {
                 width: 40px;
@@ -2108,10 +2753,13 @@ body {
                 font-size: 13px;
             }
             
+<<<<<<< HEAD
             .stock-info, .stock-warning {
                 font-size: 10px;
             }
             
+=======
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
             .unit-btn {
                 padding: 4px 6px;
                 font-size: 10px;
@@ -2119,18 +2767,29 @@ body {
             }
             
             .qty-btn {
+<<<<<<< HEAD
                 width: 28px;
                 height: 28px;
+=======
+                width: 24px;
+                height: 24px;
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                 font-size: 12px;
             }
             
             .qty-input {
+<<<<<<< HEAD
                 width: 55px;
                 height: 28px;
+=======
+                width: 35px;
+                height: 24px;
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                 font-size: 11px;
             }
             
             .add-cart-btn, .view-btn {
+<<<<<<< HEAD
                 width: 32px;
                 height: 32px;
                 font-size: 14px;
@@ -2399,13 +3058,27 @@ body {
             }
         }
         
+=======
+                width: 28px;
+                height: 28px;
+                font-size: 14px;
+            }
+        }
+        
+        /* Toast notification */
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
         .toast-notification {
             position: fixed;
             top: 20px;
             right: 20px;
             left: 20px;
+<<<<<<< HEAD
             background: #047857;
             color: #FFFFFF;
+=======
+            background: var(--primary-green);
+            color: var(--white);
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
             padding: 12px 20px;
             border-radius: 8px;
             z-index: 9999;
@@ -2422,6 +3095,10 @@ body {
             opacity: 0;
         }
         
+<<<<<<< HEAD
+=======
+        /* Navbar Top */
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
         .navbar-top {
             display: flex;
             justify-content: space-between;
@@ -2429,7 +3106,11 @@ body {
             gap: 10px;
             padding: 12px 15px;
             margin-bottom: 15px;
+<<<<<<< HEAD
             background: #FFFFFF;
+=======
+            background: var(--white);
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
             border-radius: 10px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.05);
         }
@@ -2442,7 +3123,11 @@ body {
             margin: 0;
             font-size: 20px;
             font-weight: 600;
+<<<<<<< HEAD
             color: #212121;
+=======
+            color: var(--black);
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
         }
         
         .page-title p {
@@ -2456,7 +3141,11 @@ body {
             background: none;
             border: none;
             font-size: 22px;
+<<<<<<< HEAD
             color: #2E7D32;
+=======
+            color: var(--primary-green);
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
             padding: 8px;
             border-radius: 8px;
             width: 40px;
@@ -2464,6 +3153,7 @@ body {
             align-items: center;
             justify-content: center;
             cursor: pointer;
+<<<<<<< HEAD
         }
         
         @media (max-width: 992px) {
@@ -3160,10 +3850,76 @@ body {
             border-radius: 6px;
             padding: 6px 10px;
             font-size: 12px;
+=======
+        }
+        
+        @media (max-width: 992px) {
+            .mobile-toggle-btn {
+                display: flex;
+            }
+            
+            .tabs-header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .search-wrapper {
+                width: 100%;
+            }
+        }
+        
+        /* No results */
+        .no-results {
+            text-align: center;
+            padding: 40px;
+            background: var(--white);
+            border-radius: 10px;
+            color: #666;
+        }
+        
+        .no-results i {
+            font-size: 48px;
+            color: var(--border-gray);
+            margin-bottom: 10px;
+        }
+
+        /* Modal Styles */
+        .modal-header {
+            background: var(--primary-green);
+            color: var(--white);
+            border: none;
+            padding: 12px 15px;
+        }
+        
+        .modal-header .btn-close {
+            filter: brightness(0) invert(1);
+            opacity: 0.8;
+            width: 28px;
+            height: 28px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+        
+        /* Customer Selection */
+        .customer-selection {
+            background: var(--light-gray);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 15px;
+            border-left: 4px solid var(--primary-green);
+        }
+        
+        .customer-selection .form-select {
+            border: 1px solid var(--border-gray);
+            border-radius: 6px;
+            padding: 8px 10px;
+            font-size: 13px;
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
             height: auto;
             cursor: pointer;
         }
         
+<<<<<<< HEAD
         /* Locked customer alert - mas compact */
         .customer-selection .alert-info {
             font-size: 11px;
@@ -3770,6 +4526,102 @@ body {
 .product-table.no-results-mode thead {
     display: none;
 }
+=======
+        /* Product Info Modal */
+        .product-info-container {
+            padding: 15px;
+        }
+        
+        .product-header-section {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            background: var(--light-gray);
+            padding: 15px;
+            border-radius: 10px;
+        }
+        
+        .product-image-large {
+            width: 120px;
+            height: 120px;
+            object-fit: cover;
+            border-radius: 10px;
+            border: 2px solid var(--primary-green);
+            background: var(--white);
+            padding: 3px;
+        }
+        
+        .info-row {
+            display: flex;
+            align-items: baseline;
+            padding: 8px 0;
+            border-bottom: 1px dashed var(--border-gray);
+            font-size: 13px;
+        }
+        
+        .info-label {
+            width: 100px;
+            font-weight: 600;
+            color: var(--black);
+        }
+        
+        .info-value {
+            flex: 1;
+            color: var(--primary-green);
+            font-weight: 600;
+        }
+        
+        .price-tag {
+            font-size: 20px;
+            font-weight: 700;
+        }
+        
+        .stock-tag {
+            background: var(--primary-green);
+            color: var(--white);
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            display: inline-block;
+        }
+        
+        .history-table {
+            width: 100%;
+            font-size: 12px;
+            border-collapse: collapse;
+        }
+        
+        .history-table th {
+            background: var(--primary-green);
+            color: var(--white);
+            padding: 8px 5px;
+            font-size: 11px;
+        }
+        
+        .history-table td {
+            padding: 6px 5px;
+            border-bottom: 1px solid var(--border-gray);
+            text-align: center;
+        }
+        
+        .status-badge {
+            padding: 3px 8px;
+            border-radius: 15px;
+            font-size: 10px;
+            font-weight: 600;
+            display: inline-block;
+        }
+        
+        .status-pending { background: #ffc107; color: var(--black); }
+        .status-completed { background: var(--primary-green); color: var(--white); }
+        .status-cancelled { background: #dc3545; color: var(--white); }
+        
+        .loading-state {
+            text-align: center;
+            padding: 40px;
+        }
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
     </style>
 </head>
 <body>
@@ -3835,9 +4687,13 @@ body {
                 </button>
                 <div class="page-title">
                     <h2>Order Products</h2>
-                    <p>Select products and quantities to create an order</p>
+                    <p>Pindutin ang 👁️ para makita ang details</p>
                 </div>
+<<<<<<< HEAD
                 <button class="btn btn-success position-relative" type="button" onclick="viewCart()" title="View Cart">
+=======
+                <button class="btn btn-success position-relative" type="button" onclick="viewCartSummary()" title="View Cart">
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                     <i class="bi bi-cart3"></i>
                     <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill" id="cartBadge" style="display: none;">
                         <span id="cartItemCount">0</span>
@@ -3868,6 +4724,7 @@ body {
                 </div>
             <?php endif; ?>
 
+<<<<<<< HEAD
             <!-- Category Tabs na may customer display -->
 <div class="category-tabs-container">
     <div class="tabs-header">
@@ -3879,6 +4736,27 @@ body {
                         <?php echo htmlspecialchars($category); ?>
                     </button>
                 <?php endforeach; ?>
+=======
+            <!-- Category Tabs with Search -->
+            <div class="category-tabs-container">
+                <div class="tabs-header">
+                    <div class="tabs-scroll">
+                        <div class="category-tabs" id="categoryTabs">
+                            <button class="tab-btn active" onclick="filterByCategory('all')">All Products</button>
+                            <?php foreach ($categories as $category): ?>
+                                <button class="tab-btn" onclick="filterByCategory('<?php echo htmlspecialchars($category); ?>')">
+                                    <?php echo htmlspecialchars($category); ?>
+                                </button>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                    <div class="search-wrapper">
+                        <i class="bi bi-search search-icon"></i>
+                        <input type="text" class="search-input" id="searchInput" placeholder="Search products...">
+                        <button class="search-reset" id="searchReset" onclick="resetSearch()"><i class="bi bi-x"></i></button>
+                    </div>
+                </div>
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
             </div>
         </div>
         <div class="customer-display" id="customerDisplay">
@@ -3886,6 +4764,7 @@ body {
         <i class="bi bi-person-circle"></i>
     </span>
 
+<<<<<<< HEAD
     <span class="customer-name" id="selectedCustomerName">
         <?php echo !empty($pre_selected_customer_name)
             ? htmlspecialchars($pre_selected_customer_name)
@@ -3912,10 +4791,20 @@ body {
                         <thead>
                               <tr>
                                 <th></th>
+=======
+            <!-- Products Section - Isang table lang -->
+            <div class="col-12 products-section">
+                <div class="product-table-container">
+                    <table class="product-table" id="productsTable">
+                        <thead>
+                            <tr>
+                                <th></th> <!-- Image -->
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                                 <th>Product</th>
                                 <th>Unit</th>
                                 <th>Qty</th>
                                 <th>Price</th>
+<<<<<<< HEAD
                               </tr>
                         </thead>
                         <tbody id="productsContainer">
@@ -3933,6 +4822,13 @@ body {
                                     </div>
                                 </td>
                             </tr>
+=======
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="productsContainer">
+                            <!-- Products will be loaded here -->
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                         </tbody>
                     </table>
                 </div>
@@ -3941,6 +4837,7 @@ body {
     </div>
 
     <!-- Product Info Modal -->
+<<<<<<< HEAD
 <div class="modal fade" id="productInfoModal" tabindex="-1">
     <div class="modal-dialog modal-xl modal-dialog-scrollable">
         <div class="modal-content">
@@ -4015,18 +4912,147 @@ body {
                     <div class="customer-selection">
                         <h6><i class="bi bi-person-check"></i> Select Customer</h6>
                         <select class="form-select" id="modalCustomerSelect" <?php echo $is_customer_locked ? 'disabled' : ''; ?>>
+=======
+    <div class="modal fade" id="productInfoModal" tabindex="-1">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-box-seam me-2"></i><span id="modalProductName">Product Details</span></h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-0">
+                    <div class="product-info-container">
+                        <div id="loadingState" class="loading-state">
+                            <div class="spinner-border text-success mb-3" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p>Loading product details...</p>
+                        </div>
+                        
+                        <div id="productContent" style="display: none;">
+                            <div class="product-header-section">
+                                <img id="modalProductImage" src="" alt="Product Image" class="product-image-large">
+                                <div class="product-basic-info">
+                                    <div class="info-row">
+                                        <span class="info-label">Code:</span>
+                                        <span class="info-value" id="modalProductCode">-</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">Category:</span>
+                                        <span class="info-value" id="modalProductCategory">-</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">Price:</span>
+                                        <span class="info-value price-tag" id="modalProductPrice">₱0.00</span>
+                                    </div>
+                                    <div class="info-row">
+                                        <span class="info-label">Stock:</span>
+                                        <span class="info-value"><span class="stock-tag" id="modalProductStock">0 pcs</span></span>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="px-3 mb-3">
+                                <h6 class="fw-bold text-success">Description</h6>
+                                <p class="text-muted" id="modalProductDescription">-</p>
+                            </div>
+                            
+                            <h6 class="fw-bold text-success px-3"><i class="bi bi-clock-history"></i> Order History</h6>
+                            <div class="table-responsive px-3 pb-3">
+                                <table class="history-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Date</th>
+                                            <th>Order #</th>
+                                            <th>Customer</th>
+                                            <th>Unit</th>
+                                            <th>Qty</th>
+                                            <th>Price</th>
+                                            <th>Total</th>
+                                            <th>Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="modalOrderHistory">
+                                        <tr><td colspan="8" class="text-center">No order history</td></tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cart Summary Modal -->
+    <div class="modal fade" id="cartSummaryModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-cart3"></i> Order Summary</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="cartModalItems" class="mb-3">
+                        <p class="text-muted text-center">No items in cart</p>
+                    </div>
+                    <hr>
+                    <div class="mb-2 d-flex justify-content-between">
+                        <span><strong>Subtotal:</strong></span>
+                        <span id="cartModalSubtotal">₱0.00</span>
+                    </div>
+                    <div class="mb-3 d-flex justify-content-between">
+                        <span><strong>Total Items:</strong></span>
+                        <span id="cartModalTotalItems">0</span>
+                    </div>
+                    <hr>
+                    <div class="mb-4">
+                        <h6 class="mb-2"><strong>Total</strong></h6>
+                        <h3 id="cartModalTotalPrice" class="mb-0 text-success">₱0.00</h3>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-success" onclick="viewCart()">View & Confirm</button>
+                    <button type="button" class="btn btn-outline-danger" onclick="clearCart()">Clear Cart</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Cart Modal (Review) -->
+    <div class="modal fade" id="cartModal" tabindex="-1">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-cart-check"></i> Review & Confirm Order</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="customer-selection">
+                        <h6><i class="bi bi-person-check"></i> Select Customer</h6>
+                        <select class="form-select" id="modalCustomerSelect">
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                             <option value="">-- Choose Customer --</option>
                             <?php foreach ($customers as $customer): ?>
                                 <option value="<?php echo $customer['customer_id']; ?>" 
                                         data-email="<?php echo htmlspecialchars($customer['email'] ?? ''); ?>"
                                         data-phone="<?php echo htmlspecialchars($customer['phone_number'] ?? ''); ?>"
+<<<<<<< HEAD
                                         data-address="<?php echo htmlspecialchars($customer['address'] ?? ''); ?>"
                                         data-price-level="<?php echo htmlspecialchars($customer['price_level'] ?? 'Standard'); ?>"
                                         <?php echo ($pre_selected_customer_id == $customer['customer_id']) ? 'selected' : ''; ?>>
+=======
+                                        data-address="<?php echo htmlspecialchars($customer['address'] ?? ''); ?>">
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                                     <?php echo htmlspecialchars($customer['customer_name']); ?>
                                 </option>
                             <?php endforeach; ?>
                         </select>
+<<<<<<< HEAD
                         <?php if ($is_customer_locked): ?>
                             <?php 
                                 // Use the customer resolved near the top of the file.
@@ -4043,6 +5069,8 @@ body {
                                 <i class="bi bi-info-circle"></i> Customer is locked. Please go back to Customer List to change customer.
                             </div>
                         <?php endif; ?>
+=======
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                     </div>
 
                     <h6 class="mb-3">Order Items</h6>
@@ -4079,6 +5107,7 @@ body {
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Add Order</button>
                     <button type="button" class="btn btn-success" id="confirmOrderBtn" onclick="submitOrder()">Confirm & Submit</button>
+<<<<<<< HEAD
                 </div>
             </div>
         </div>
@@ -4098,6 +5127,8 @@ body {
                 <div class="modal-footer">
                     <button type="button" class="btn btn-danger" id="cancelOrderBtn" style="display: none;" onclick="cancelOrderFromOrderProduct()">Cancel Order</button>
                     <button type="button" class="btn btn-primary" id="printOrderFromDetails" style="display: none;" onclick="printOrderFromOrderProduct()">Print Order</button>
+=======
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                 </div>
             </div>
         </div>
@@ -4150,6 +5181,7 @@ body {
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
                 <div class="modal-header">
+<<<<<<< HEAD
                     <h5 class="modal-title" id="profileModalLabel">
                         <i class="bi bi-person-circle me-2"></i>User Profile
                     </h5>
@@ -4172,6 +5204,23 @@ body {
                     <button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()">
                         <i class="bi bi-box-arrow-right me-2"></i>Logout
                     </button>
+=======
+                    <h5 class="modal-title">Success!</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center py-4">
+                    <div class="display-4 text-success mb-3">✓</div>
+                    <h5 class="mb-3">Order Submitted Successfully!</h5>
+                    <div class="bg-light p-3 rounded">
+                        <p class="mb-2"><strong>Order #:</strong> <span id="successSoNumber">-</span></p>
+                        <p class="mb-2"><strong>Date:</strong> <span id="successOrderDate">-</span></p>
+                        <p class="mb-0"><strong>Branch:</strong> <span id="successBranch">Branch <?php echo $branch_id; ?></span></p>
+                    </div>
+                </div>
+                <div class="modal-footer justify-content-center">
+                    <button type="button" class="btn btn-primary" onclick="createNewOrder()">New Order</button>
+                    <button type="button" class="btn btn-outline-secondary" onclick="viewOrders()">View Orders</button>
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                 </div>
             </div>
         </div>
@@ -4180,6 +5229,7 @@ body {
     <!-- JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+<<<<<<< HEAD
         // Helper to escape HTML to prevent XSS
         function escapeHtml(str) {
             if (!str) return '';
@@ -4246,10 +5296,24 @@ body {
         }
 
         // Unit conversions - defaults, will be overridden by database values
+=======
+        // Copy SQL functions
+        function copyItemsSQL() {
+            const sql = "ALTER TABLE items ADD COLUMN branch_id INT NULL;\nALTER TABLE items ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+            navigator.clipboard.writeText(sql).then(() => alert('SQL copied!'));
+        }
+        function copyCustomersSQL() {
+            const sql = "ALTER TABLE customers ADD COLUMN branch_id INT NULL;\nALTER TABLE customers ADD FOREIGN KEY (branch_id) REFERENCES branches(branch_id);";
+            navigator.clipboard.writeText(sql).then(() => alert('SQL copied!'));
+        }
+
+        // Unit conversions
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
         const UNIT_CONVERSIONS = {
             'piece': 1, 'case': 12, 'inner-pack': 6, 'box': 24, 'carton': 48
         };
 
+<<<<<<< HEAD
         // Inventory data (base stock is DEFAULT UOM, with stock_smallest derived for conversion)
         const inventory = <?php echo $inventory_json; ?>;
         
@@ -4261,6 +5325,24 @@ body {
         
         // Store dynamic unit conversions per product from database (quantity_smallest_pack)
         const productUnitConversions = <?php echo $unit_conversions_json; ?>;
+=======
+        // Inventory data
+        const inventory = <?php echo json_encode(array_map(function($item) {
+            return [
+                'id' => (int)$item['item_id'],
+                'name' => $item['item_name'],
+                'sku' => $item['item_code'],
+                'category' => !empty($item['category']) ? $item['category'] : 'Uncategorized',
+                'unit_price' => (float)$item['unit_price'],
+                'price_case' => isset($item['price_case']) ? (float)$item['price_case'] : null,
+                'price_inner_pack' => isset($item['price_inner_pack']) ? (float)$item['price_inner_pack'] : null,
+                'price_box' => isset($item['price_box']) ? (float)$item['price_box'] : null,
+                'price_carton' => isset($item['price_carton']) ? (float)$item['price_carton'] : null,
+                'stock' => (int)($item['stock'] ?? 0),
+                'image' => $item['product_image_url'] ?? null
+            ];
+        }, $items)); ?>;
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
 
         const branchId = <?php echo $branch_id; ?>;
         let cart = [];
@@ -4268,6 +5350,7 @@ body {
         let toastTimeout = null;
         let currentFilter = 'all';
         let searchTerm = '';
+<<<<<<< HEAD
         let currentDiscountPercent = 0;
         let currentDiscountType = 'percentage';
         let currentDiscountFixedAmount = 0;
@@ -5657,6 +6740,234 @@ if (table) {
                     badge.style.display = 'none';
                     countSpan.textContent = '0';
                 }
+=======
+
+        // Initialize
+        function init() {
+            renderProducts();
+            updateCartBadge();
+            setupSearch();
+        }
+
+        function setupSearch() {
+            const searchInput = document.getElementById('searchInput');
+            const resetBtn = document.getElementById('searchReset');
+            
+            searchInput.addEventListener('input', function() {
+                searchTerm = this.value.toLowerCase();
+                resetBtn.classList.toggle('visible', searchTerm.length > 0);
+                filterProducts();
+            });
+        }
+
+        function resetSearch() {
+            const searchInput = document.getElementById('searchInput');
+            const resetBtn = document.getElementById('searchReset');
+            searchInput.value = '';
+            searchTerm = '';
+            resetBtn.classList.remove('visible');
+            filterProducts();
+        }
+
+        function filterByCategory(category) {
+            currentFilter = category;
+            
+            // Update active tab
+            document.querySelectorAll('.tab-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            filterProducts();
+        }
+
+        function filterProducts() {
+            const container = document.getElementById('productsContainer');
+            if (!container) return;
+            
+            const filtered = inventory.filter(product => {
+                if (currentFilter !== 'all' && product.category !== currentFilter) {
+                    return false;
+                }
+                if (searchTerm) {
+                    return product.name.toLowerCase().includes(searchTerm) || 
+                           product.sku.toLowerCase().includes(searchTerm);
+                }
+                return true;
+            });
+            
+            if (filtered.length === 0) {
+                container.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="text-center p-4">
+                            <i class="bi bi-search fs-1 d-block mb-2" style="color: #ccc;"></i>
+                            <p class="text-muted">No products found matching your criteria</p>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            renderFilteredProducts(filtered);
+        }
+
+        function renderFilteredProducts(filteredInventory) {
+            const container = document.getElementById('productsContainer');
+            
+            let html = '';
+            filteredInventory.forEach(p => {
+                const avail = getAvailableStock(p.id);
+                const low = avail > 0 && avail < 50;
+                const out = avail === 0;
+                
+                if (!activeUnitTypes[p.id]) activeUnitTypes[p.id] = 'piece';
+                
+                const placeholder = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2240%22 height=%2240%22%3E%3Crect fill=%22%23e0e0e0%22 width=%2240%22 height=%2240%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22 font-size=%229%22%3ENo%3C/text%3E%3C/svg%3E';
+                const img = p.image ? '../uploads/products/' + p.image : placeholder;
+                
+                let currPrice = p.unit_price, currUnit = 'piece';
+                const currType = activeUnitTypes[p.id];
+                if (currType === 'case' && p.price_case) { currPrice = p.price_case; currUnit = 'case'; }
+                else if (currType === 'inner-pack' && p.price_inner_pack) { currPrice = p.price_inner_pack; currUnit = 'inner-pack'; }
+                else if (currType === 'box' && p.price_box) { currPrice = p.price_box; currUnit = 'box'; }
+                else if (currType === 'carton' && p.price_carton) { currPrice = p.price_carton; currUnit = 'carton'; }
+                
+                // Build unit buttons HTML (para sa desktop)
+                let unitButtonsHtml = '';
+                // Build unit dropdown options (para sa mobile)
+                let unitDropdownOptions = '';
+                
+                const opts = [
+                    { type: 'piece', label: 'PC', fullLabel: 'Piece', avail: true },
+                    { type: 'inner-pack', label: 'IP', fullLabel: 'Inner Pack', avail: p.price_inner_pack !== null },
+                    { type: 'case', label: 'CS', fullLabel: 'Case', avail: p.price_case !== null },
+                    { type: 'box', label: 'BX', fullLabel: 'Box', avail: p.price_box !== null },
+                    { type: 'carton', label: 'CTN', fullLabel: 'Carton', avail: p.price_carton !== null }
+                ];
+                
+                opts.forEach(o => {
+                    if (o.avail) {
+                        const sold = avail < UNIT_CONVERSIONS[o.type];
+                        // Buttons para sa desktop
+                        unitButtonsHtml += `<button class="unit-btn ${activeUnitTypes[p.id] === o.type ? 'active' : ''} ${sold ? 'sold-out' : ''}" data-product-id="${p.id}" data-unit-type="${o.type}" onclick="setActiveUnit(${p.id}, '${o.type}')" ${sold ? 'disabled' : ''}>${o.label}</button>`;
+                        
+                        // Options para sa mobile dropdown
+                        unitDropdownOptions += `<option value="${o.type}" ${activeUnitTypes[p.id] === o.type ? 'selected' : ''} ${sold ? 'disabled' : ''}>${o.fullLabel} (${o.label})</option>`;
+                    }
+                });
+                
+                html += `<tr id="row-${p.id}">
+                    <td class="product-image-cell"><img src="${img}" class="product-thumbnail" onerror="this.src='${placeholder}'"></td>
+                    <td>
+                        <div class="product-info">
+                            <span class="product-name">${p.name}</span>
+                            <span id="stock-${p.id}" class="${low && !out ? 'stock-warning' : 'stock-info'}">Stock: ${avail} pcs</span>
+                        </div>
+                    </td>
+                    <td class="unit-column">
+                        <!-- Desktop: Unit buttons lang -->
+                        <div class="unit-buttons desktop-only">
+                            ${unitButtonsHtml}
+                        </div>
+                        <!-- Mobile: Unit dropdown LANG -->
+                        <select class="unit-dropdown mobile-only" id="unit-dropdown-${p.id}" onchange="setActiveUnitFromDropdown(${p.id}, this.value)">
+                            ${unitDropdownOptions}
+                        </select>
+                    </td>
+                    <td class="qty-column">
+                        <!-- Desktop: Quantity controls lang -->
+                        <div class="quantity-controls desktop-only">
+                            <button class="qty-btn" onclick="decQty(${p.id})" ${out ? 'disabled' : ''}><i class="bi bi-dash"></i></button>
+                            <input type="number" class="qty-input" id="qty-desktop-${p.id}" min="0" value="0" onchange="validateQuantityDesktop(${p.id})" ${out ? 'disabled' : ''}>
+                            <button class="qty-btn" onclick="incQty(${p.id})" ${out ? 'disabled' : ''}><i class="bi bi-plus"></i></button>
+                        </div>
+                        <!-- Mobile: Quantity controls lang -->
+                        <div class="quantity-controls mobile-only">
+                            <button class="qty-btn" onclick="decQty(${p.id})" ${out ? 'disabled' : ''}><i class="bi bi-dash"></i></button>
+                            <input type="number" class="qty-input" id="qty-${p.id}" min="0" value="0" onchange="validateQuantity(${p.id})" ${out ? 'disabled' : ''}>
+                            <button class="qty-btn" onclick="incQty(${p.id})" ${out ? 'disabled' : ''}><i class="bi bi-plus"></i></button>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="price-cell" id="price-display-${p.id}">
+                            <span class="price-value">₱${currPrice.toFixed(0)}</span>
+                            <span class="price-unit-label">/${currUnit}</span>
+                        </div>
+                    </td>
+                    <td>
+                        <div class="action-buttons">
+                            <button class="add-cart-btn" id="add-btn-${p.id}" onclick="addToCart(${p.id})" ${out ? 'disabled' : ''}><i class="bi bi-cart-plus-fill"></i></button>
+                            <button class="view-btn" onclick="showProductInfo(${p.id})"><i class="bi bi-eye-fill"></i></button>
+                        </div>
+                    </td>
+                </tr>`;
+            });
+            
+            container.innerHTML = html;
+        }
+
+        function setActiveUnitFromDropdown(pid, type) {
+            activeUnitTypes[pid] = type;
+            renderProducts(); // Re-render to update UI
+        }
+
+        function validateQuantityDesktop(pid) {
+            const desktopInp = document.getElementById(`qty-desktop-${pid}`);
+            if (!desktopInp) return 0;
+            let v = parseInt(desktopInp.value) || 0;
+            if (v < 0) v = 0;
+            desktopInp.value = v;
+            
+            // Sync mobile qty
+            const mobileInp = document.getElementById(`qty-${pid}`);
+            if (mobileInp) mobileInp.value = v;
+            
+            return v;
+        }
+
+        function renderProducts() {
+            filterProducts();
+        }
+
+        function getAvailableStock(productId) {
+            const p = inventory.find(p => p.id === productId);
+            if (!p) return 0;
+            const inCart = cart.filter(i => i.id === productId).reduce((t, i) => t + (i.quantity * UNIT_CONVERSIONS[i.unit_type]), 0);
+            return Math.max(0, p.stock - inCart);
+        }
+
+        function getProductById(id) {
+            return inventory.find(p => p.id === id);
+        }
+
+        function setActiveUnit(pid, type) {
+            activeUnitTypes[pid] = type;
+            renderProducts(); // Re-render to update UI
+        }
+
+        function validateQuantity(pid) {
+            const inp = document.getElementById(`qty-${pid}`);
+            if (!inp) return 0;
+            let v = parseInt(inp.value) || 0;
+            if (v < 0) v = 0;
+            inp.value = v;
+            
+            // Sync desktop qty
+            const desktopInp = document.getElementById(`qty-desktop-${pid}`);
+            if (desktopInp) desktopInp.value = v;
+            
+            return v;
+        }
+
+        function incQty(pid) {
+            const inp = document.getElementById(`qty-${pid}`);
+            if (inp) {
+                inp.value = (parseInt(inp.value) || 0) + 1;
+                
+                // Sync desktop qty
+                const desktopInp = document.getElementById(`qty-desktop-${pid}`);
+                if (desktopInp) desktopInp.value = inp.value;
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
             }
             
             const itemsDiv = document.getElementById('cartModalItems');
@@ -5698,12 +7009,189 @@ if (table) {
             if (totalPriceEl) totalPriceEl.textContent = formatCurrency(subtotal);
         }
 
+<<<<<<< HEAD
+=======
+        function decQty(pid) {
+            const inp = document.getElementById(`qty-${pid}`);
+            if (inp) {
+                let v = parseInt(inp.value) || 0;
+                if (v > 0) inp.value = v - 1;
+                
+                // Sync desktop qty
+                const desktopInp = document.getElementById(`qty-desktop-${pid}`);
+                if (desktopInp) desktopInp.value = inp.value;
+            }
+        }
+
+        function addToCart(pid) {
+            console.log('addToCart', pid);
+            const p = getProductById(pid);
+            if (!p) return;
+            
+            const type = activeUnitTypes[pid] || 'piece';
+            const qty = parseInt(document.getElementById(`qty-${pid}`)?.value) || 0;
+            
+            if (qty <= 0) {
+                showToast('Please enter quantity');
+                return;
+            }
+            
+            const needed = qty * UNIT_CONVERSIONS[type];
+            const avail = getAvailableStock(pid);
+            
+            if (needed > avail) {
+                showToast(`Only ${avail} pieces available`);
+                return;
+            }
+            
+            let price = p.unit_price;
+            if (type === 'case' && p.price_case) price = p.price_case;
+            else if (type === 'inner-pack' && p.price_inner_pack) price = p.price_inner_pack;
+            else if (type === 'box' && p.price_box) price = p.price_box;
+            else if (type === 'carton' && p.price_carton) price = p.price_carton;
+            
+            const existing = cart.find(i => i.id === pid && i.unit_type === type);
+            if (existing) {
+                existing.quantity += qty;
+            } else {
+                cart.push({ id: pid, name: p.name, price, quantity: qty, sku: p.sku, unit_type: type });
+            }
+            
+            document.getElementById(`qty-${pid}`).value = '0';
+            const desktopInp = document.getElementById(`qty-desktop-${pid}`);
+            if (desktopInp) desktopInp.value = '0';
+            
+            updateCartBadge();
+            renderProducts(); // Re-render to update stock display
+            showToast('Added to cart!');
+        }
+
+        function showProductInfo(pid) {
+            console.log('showProductInfo', pid);
+            document.getElementById('loadingState').style.display = 'block';
+            document.getElementById('productContent').style.display = 'none';
+            
+            const modal = new bootstrap.Modal(document.getElementById('productInfoModal'));
+            modal.show();
+            
+            const fd = new FormData();
+            fd.append('action', 'get_product_details');
+            fd.append('product_id', pid);
+            
+            fetch(window.location.href, { 
+                method: 'POST', 
+                body: fd,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(r => r.text())
+            .then(text => {
+                if (text.trim().startsWith('<')) throw new Error('Server error');
+                return JSON.parse(text);
+            })
+            .then(data => {
+                if (data.success) {
+                    const p = data.product;
+                    document.getElementById('modalProductName').textContent = p.item_name || 'Product';
+                    
+                    const placeholder = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22120%22 height=%22120%22%3E%3Crect fill=%22%23e0e0e0%22 width=%22120%22 height=%22120%22/%3E%3Ctext x=%2250%25%22 y=%2250%25%22 text-anchor=%22middle%22 dy=%22.3em%22 fill=%22%23999%22 font-size=%2212%22%3ENo Image%3C/text%3E%3C/svg%3E';
+                    document.getElementById('modalProductImage').src = p.product_image_url ? '../uploads/products/' + p.product_image_url : placeholder;
+                    
+                    document.getElementById('modalProductCode').textContent = p.item_code || '-';
+                    document.getElementById('modalProductCategory').textContent = p.category || '-';
+                    document.getElementById('modalProductDescription').textContent = p.description || '-';
+                    document.getElementById('modalProductPrice').textContent = `₱${parseFloat(p.unit_price || 0).toFixed(2)}`;
+                    document.getElementById('modalProductStock').textContent = `${p.stock || 0} pcs`;
+                    
+                    let histHtml = '';
+                    if (data.order_history && data.order_history.length) {
+                        data.order_history.forEach(o => {
+                            const d = new Date(o.order_date).toLocaleDateString();
+                            const sc = o.order_status === 'pending' ? 'status-pending' : (o.order_status === 'cancelled' ? 'status-cancelled' : 'status-completed');
+                            histHtml += `<tr><td>${d}</td><td>${o.so_number}</td><td>${o.customer_name}</td><td>${o.unit_type}</td><td>${o.quantity_ordered}</td><td>₱${parseFloat(o.unit_price).toFixed(2)}</td><td>₱${parseFloat(o.total_price).toFixed(2)}</td><td><span class="status-badge ${sc}">${o.order_status}</span></td></tr>`;
+                        });
+                    } else {
+                        histHtml = '<tr><td colspan="8" class="text-center">No history</td></tr>';
+                    }
+                    document.getElementById('modalOrderHistory').innerHTML = histHtml;
+                    
+                    document.getElementById('loadingState').style.display = 'none';
+                    document.getElementById('productContent').style.display = 'block';
+                } else {
+                    showToast('Error: ' + data.message);
+                    modal.hide();
+                }
+            })
+            .catch(e => {
+                console.error('Error:', e);
+                showToast('Error loading details');
+                modal.hide();
+            });
+        }
+
+        function updateCartBadge() {
+            const badge = document.getElementById('cartBadge');
+            const countSpan = document.getElementById('cartItemCount');
+            const total = cart.reduce((s, i) => s + i.quantity, 0);
+            
+            if (badge && countSpan) {
+                if (total > 0) {
+                    countSpan.textContent = total;
+                    badge.style.display = 'inline-block';
+                } else {
+                    badge.style.display = 'none';
+                    countSpan.textContent = '0';
+                }
+            }
+            
+            const itemsDiv = document.getElementById('cartModalItems');
+            if (itemsDiv) {
+                if (cart.length === 0) {
+                    itemsDiv.innerHTML = '<p class="text-muted text-center">No items in cart</p>';
+                } else {
+                    let html = '';
+                    cart.forEach(i => {
+                        const pieces = i.quantity * UNIT_CONVERSIONS[i.unit_type];
+                        html += `<div class="cart-item">
+                            <div>
+                                <div class="fw-bold">${i.name} (${i.unit_type})</div>
+                                <div class="text-muted small">${i.sku}</div>
+                                <div class="text-muted small">₱${i.price.toFixed(2)} × ${i.quantity}</div>
+                                <div class="text-muted small">Total pieces: ${pieces}</div>
+                            </div>
+                            <div class="text-end">
+                                <div class="fw-bold text-success">₱${(i.price * i.quantity).toFixed(2)}</div>
+                                <button class="btn btn-sm btn-outline-danger mt-1" onclick="removeFromCart(${i.id}, '${i.unit_type}')">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </div>`;
+                    });
+                    itemsDiv.innerHTML = html;
+                }
+            }
+            
+            const subtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+            const totalQty = cart.reduce((s, i) => s + i.quantity, 0);
+            
+            const subtotalEl = document.getElementById('cartModalSubtotal');
+            const totalItemsEl = document.getElementById('cartModalTotalItems');
+            const totalPriceEl = document.getElementById('cartModalTotalPrice');
+            
+            if (subtotalEl) subtotalEl.textContent = `₱${subtotal.toFixed(2)}`;
+            if (totalItemsEl) totalItemsEl.textContent = totalQty;
+            if (totalPriceEl) totalPriceEl.textContent = `₱${subtotal.toFixed(2)}`;
+        }
+
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
         function clearCart() {
             if (cart.length === 0) {
                 showToast('Cart is already empty');
                 return;
             }
             
+<<<<<<< HEAD
             showSweetAlert({
                 icon: 'warning',
                 title: 'Clear Cart?',
@@ -5742,6 +7230,37 @@ if (table) {
                     showToast('Cart cleared successfully');
                 }
             });
+=======
+            if (confirm('Clear all items from cart?')) {
+                cart = [];
+                updateCartBadge();
+                
+                const reviewItems = document.getElementById('reviewItems');
+                if (reviewItems) {
+                    reviewItems.innerHTML = '<p class="text-muted text-center">No items in cart</p>';
+                }
+                
+                document.getElementById('reviewSubtotal').textContent = '₱0.00';
+                document.getElementById('reviewTotal').textContent = '₱0.00';
+                document.getElementById('reviewCustomer').textContent = '-';
+                document.getElementById('reviewEmail').textContent = '-';
+                document.getElementById('reviewPhone').textContent = '-';
+                document.getElementById('reviewAddress').textContent = '-';
+                
+                const customerSelect = document.getElementById('modalCustomerSelect');
+                if (customerSelect) customerSelect.value = '';
+                
+                showToast('Cart cleared successfully');
+                
+                const cartSummaryModal = bootstrap.Modal.getInstance(document.getElementById('cartSummaryModal'));
+                if (cartSummaryModal) cartSummaryModal.hide();
+                
+                const cartModal = bootstrap.Modal.getInstance(document.getElementById('cartModal'));
+                if (cartModal) cartModal.hide();
+                
+                renderProducts();
+            }
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
         }
 
         function removeFromCart(id, unit) {
@@ -5750,6 +7269,7 @@ if (table) {
             
             const reviewItems = document.getElementById('reviewItems');
             if (reviewItems && cart.length > 0) {
+<<<<<<< HEAD
                 let html = '<div class="table-responsive"><table class="table table-sm"><thead class="table-light"><tr><th>Product</th><th>Unit</th><th>Qty</th><th>Price</th><th>Total</th></td></thead><tbody>';
                 cart.forEach(i => {
                     const pieces = getCartItemPieces(i);
@@ -5761,15 +7281,28 @@ if (table) {
                           </tr>`;
                 });
                 html += '</tbody></div>';
+=======
+                let html = '<div class="table-responsive"><table class="table table-sm"><thead class="table-light"><tr><th>Product</th><th>Unit</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>';
+                cart.forEach(i => {
+                    const pieces = i.quantity * UNIT_CONVERSIONS[i.unit_type];
+                    html += `<tr><td>${i.name}</td><td>${i.unit_type}</td><td>${i.quantity} (${pieces} pcs)</td><td>₱${i.price.toFixed(2)}</td><td>₱${(i.price * i.quantity).toFixed(2)}</td></tr>`;
+                });
+                html += '</tbody></table></div>';
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                 reviewItems.innerHTML = html;
             } else if (reviewItems) {
                 reviewItems.innerHTML = '<p class="text-muted text-center">No items in cart</p>';
             }
             
             const subtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+<<<<<<< HEAD
             document.getElementById('reviewSubtotal').textContent = formatCurrency(subtotal);
             const discountAmount = renderDiscountLine(subtotal);
             document.getElementById('reviewTotal').textContent = formatCurrency(Math.max(0, subtotal - discountAmount));
+=======
+            document.getElementById('reviewSubtotal').textContent = `₱${subtotal.toFixed(2)}`;
+            document.getElementById('reviewTotal').textContent = `₱${subtotal.toFixed(2)}`;
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
             
             showToast('Item removed from cart');
             renderProducts();
@@ -5783,13 +7316,18 @@ if (table) {
             
             const toast = document.createElement('div');
             toast.className = 'toast-notification';
+<<<<<<< HEAD
             toast.innerHTML = `<i class="bi bi-check-circle-fill me-2"></i>${escapeHtml(msg)}`;
+=======
+            toast.innerHTML = `<i class="bi bi-check-circle-fill me-2"></i>${msg}`;
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
             document.body.appendChild(toast);
             
             toastTimeout = setTimeout(() => {
                 toast.classList.add('fade-out');
                 setTimeout(() => toast.remove(), 300);
             }, 2000);
+<<<<<<< HEAD
         }
 
         function viewCart() {
@@ -5869,6 +7407,47 @@ if (table) {
                     }
                 }
                 
+=======
+        }
+
+        function viewCartSummary() {
+            updateCartBadge();
+            new bootstrap.Modal(document.getElementById('cartSummaryModal')).show();
+        }
+
+        function viewCart() {
+            if (!cart.length) {
+                showToast('Cart is empty');
+                return;
+            }
+            
+            bootstrap.Modal.getInstance(document.getElementById('cartSummaryModal'))?.hide();
+            
+            document.getElementById('modalCustomerSelect').value = '';
+            document.getElementById('reviewCustomer').textContent = '-';
+            document.getElementById('reviewEmail').textContent = '-';
+            document.getElementById('reviewPhone').textContent = '-';
+            document.getElementById('reviewAddress').textContent = '-';
+            
+            const reviewDiv = document.getElementById('reviewItems');
+            let html = '<div class="table-responsive"><table class="table table-sm"><thead class="table-light"><tr><th>Product</th><th>Unit</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>';
+            cart.forEach(i => {
+                const pieces = i.quantity * UNIT_CONVERSIONS[i.unit_type];
+                html += `<tr><td>${i.name}</td><td>${i.unit_type}</td><td>${i.quantity} (${pieces} pcs)</td><td>₱${i.price.toFixed(2)}</td><td>₱${(i.price * i.quantity).toFixed(2)}</td></tr>`;
+            });
+            html += '</tbody></table></div>';
+            reviewDiv.innerHTML = html;
+            
+            const subtotal = cart.reduce((s, i) => s + i.price * i.quantity, 0);
+            document.getElementById('reviewSubtotal').textContent = `₱${subtotal.toFixed(2)}`;
+            document.getElementById('reviewTotal').textContent = `₱${subtotal.toFixed(2)}`;
+            
+            const select = document.getElementById('modalCustomerSelect');
+            if (select) {
+                const newSelect = select.cloneNode(true);
+                select.parentNode.replaceChild(newSelect, select);
+                
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                 newSelect.addEventListener('change', function() {
                     const opt = this.options[this.selectedIndex];
                     if (opt.value) {
@@ -5876,17 +7455,21 @@ if (table) {
                         document.getElementById('reviewEmail').textContent = opt.dataset.email || '-';
                         document.getElementById('reviewPhone').textContent = opt.dataset.phone || '-';
                         document.getElementById('reviewAddress').textContent = opt.dataset.address || '-';
+<<<<<<< HEAD
                         
                         const priceLevel = opt.dataset.priceLevel || 'Standard';
                         reloadProductPrices(priceLevel);
                         
                         fetchCustomerDiscount(opt.value);
                         fetchCustomerCreditTerms(opt.value);
+=======
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                     } else {
                         document.getElementById('reviewCustomer').textContent = '-';
                         document.getElementById('reviewEmail').textContent = '-';
                         document.getElementById('reviewPhone').textContent = '-';
                         document.getElementById('reviewAddress').textContent = '-';
+<<<<<<< HEAD
                         resetCurrentDiscount();
                         currentCreditTermsDays = 0;
                         currentCreditLimit = 0;
@@ -6058,8 +7641,81 @@ function updateReviewTotals() {
                     currentDiscountPercent = parseFloat(data.discount || 0);
                     currentDiscountFixedAmount = parseFloat(data.calculated_discount_amount || data.discount_based_amount || 0);
                     updateReviewTotals();
-                }
+=======
+                    }
+                });
+            }
+            
+            new bootstrap.Modal(document.getElementById('cartModal')).show();
+        }
+
+        function submitOrder() {
+            const select = document.getElementById('modalCustomerSelect');
+            const custId = select?.value ? parseInt(select.value) : 0;
+            const opt = select?.options[select.selectedIndex];
+            
+            if (!custId) {
+                showToast('Please select a customer');
+                return;
+            }
+            
+            const items = cart.map(i => ({
+                id: i.id, name: i.name, price: i.price, quantity: i.quantity, sku: i.sku, unit_type: i.unit_type
+            }));
+            
+            const fd = new FormData();
+            fd.append('action', 'submit_order');
+            fd.append('customer_id', custId);
+            fd.append('customer_name', opt.text.split('(')[0].trim());
+            fd.append('email', opt.dataset.email || '');
+            fd.append('phone', opt.dataset.phone || '');
+            fd.append('address', opt.dataset.address || '');
+            fd.append('items', JSON.stringify(items));
+            
+            const btn = document.getElementById('confirmOrderBtn');
+            const orig = btn.innerHTML;
+            btn.innerHTML = 'Processing...';
+            btn.disabled = true;
+            
+            fetch(window.location.href, { 
+                method: 'POST', 
+                body: fd,
+                headers: { 'X-Requested-With': 'XMLHttpRequest' }
             })
+            .then(r => r.text())
+            .then(t => {
+                if (!t || t.trim().startsWith('<')) throw new Error('Invalid response');
+                return JSON.parse(t);
+            })
+            .then(d => {
+                bootstrap.Modal.getInstance(document.getElementById('cartModal'))?.hide();
+                
+                if (d.success) {
+                    if (d.updated_stock) {
+                        d.updated_stock.forEach(i => {
+                            const p = inventory.find(p => p.id === i.item_id);
+                            if (p) p.stock = i.stock;
+                        });
+                    }
+                    cart = [];
+                    updateCartBadge();
+                    
+                    document.getElementById('successSoNumber').textContent = d.so_number;
+                    document.getElementById('successOrderDate').textContent = new Date().toLocaleDateString();
+                    document.getElementById('successBranch').textContent = `Branch ${branchId}`;
+                    
+                    new bootstrap.Modal(document.getElementById('successModal')).show();
+                    if (select) select.value = '';
+                    
+                    renderProducts();
+                } else {
+                    showToast('Error: ' + (d.message || 'Failed'));
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
+                }
+                btn.innerHTML = orig;
+                btn.disabled = false;
+            })
+<<<<<<< HEAD
             .catch(err => console.error('Fetch discount error:', err));
         }
 
@@ -6952,6 +8608,128 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 });
+=======
+            .catch(e => {
+                console.error('Submit error:', e);
+                showToast('Error: ' + e.message);
+                btn.innerHTML = orig;
+                btn.disabled = false;
+            });
+        }
+
+        // Sidebar functions
+        function toggleSidebar() {
+            const s = document.getElementById('sidebar');
+            if (window.innerWidth <= 992) {
+                s.classList.toggle('active');
+                if (!document.querySelector('.sidebar-overlay')) {
+                    const o = document.createElement('div');
+                    o.className = 'sidebar-overlay';
+                    document.body.appendChild(o);
+                    o.addEventListener('click', closeMobileSidebar);
+                    setTimeout(() => o.classList.add('active'), 10);
+                }
+            } else {
+                s.classList.toggle('collapsed');
+                localStorage.setItem('sidebarCollapsed', s.classList.contains('collapsed'));
+                document.querySelectorAll('.nav-text').forEach(t => t.style.display = s.classList.contains('collapsed') ? 'none' : 'inline-block');
+                document.querySelector('.main-content').style.marginLeft = s.classList.contains('collapsed') ? '80px' : '250px';
+            }
+        }
+
+        function closeMobileSidebar() {
+            document.getElementById('sidebar').classList.remove('active');
+            const o = document.querySelector('.sidebar-overlay');
+            if (o) {
+                o.classList.remove('active');
+                setTimeout(() => o.remove(), 300);
+            }
+        }
+
+        function initializeSidebar() {
+            const s = document.getElementById('sidebar');
+            if (window.innerWidth > 992) {
+                const saved = localStorage.getItem('sidebarCollapsed') === 'true';
+                s.classList.toggle('collapsed', saved);
+                document.querySelectorAll('.nav-text').forEach(t => t.style.display = saved ? 'none' : 'inline-block');
+                document.querySelector('.main-content').style.marginLeft = saved ? '80px' : '250px';
+            } else {
+                s.classList.remove('active', 'collapsed');
+                document.querySelectorAll('.nav-text').forEach(t => t.style.display = 'inline-block');
+                document.querySelector('.main-content').style.marginLeft = '0';
+            }
+        }
+
+        function handleSidebarResize() {
+            const s = document.getElementById('sidebar');
+            const o = document.querySelector('.sidebar-overlay');
+            if (window.innerWidth > 992) {
+                if (o) o.remove();
+                s.classList.remove('active');
+                const saved = localStorage.getItem('sidebarCollapsed') === 'true';
+                s.classList.toggle('collapsed', saved);
+                document.querySelectorAll('.nav-text').forEach(t => t.style.display = saved ? 'none' : 'inline-block');
+                document.querySelector('.main-content').style.marginLeft = saved ? '80px' : '250px';
+            } else {
+                s.classList.remove('collapsed');
+                document.querySelectorAll('.nav-text').forEach(t => t.style.display = 'inline-block');
+                document.querySelector('.main-content').style.marginLeft = '0';
+            }
+        }
+
+        // Start
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeSidebar();
+            
+            document.getElementById('mobileToggleBtn')?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                toggleSidebar();
+            });
+            
+            document.getElementById('desktopToggleBtn')?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                toggleSidebar();
+            });
+            
+            document.querySelectorAll('.sidebar .nav-link').forEach(l => {
+                l.addEventListener('click', () => {
+                    if (window.innerWidth <= 992) closeMobileSidebar();
+                });
+            });
+            
+            window.addEventListener('resize', handleSidebarResize);
+            
+            init();
+        });
+
+        function createNewOrder() {
+            bootstrap.Modal.getInstance(document.getElementById('successModal'))?.hide();
+        }
+
+        function viewOrders() {
+            window.location.href = 'sales_order.php';
+        }
+
+        function logout() {
+            window.location.href = '../logout.php';
+        }
+
+        window.cancelOrder = function(id) {
+            return new Promise((resolve, reject) => {
+                const fd = new FormData();
+                fd.append('action', 'cancel_order');
+                fd.append('order_id', id);
+                fetch(window.location.href, { 
+                    method: 'POST', 
+                    body: fd,
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                })
+                .then(r => r.json())
+                .then(d => d.success ? resolve(d) : reject(new Error(d.message)))
+                .catch(reject);
+            });
+        };
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
     </script>
 </body>
 </html>

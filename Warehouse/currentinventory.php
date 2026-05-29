@@ -507,6 +507,88 @@ $price_columns_available = $price_case_exists || $price_inner_exists || $price_b
         color: #dc3545;
         font-weight: bold;
     }
+<<<<<<< HEAD
+=======
+    
+    /* ===== CLEAN STAT CARDS - NO ANIMATIONS, WHITE ICONS ===== */
+    /* Stat Cards - Clean design like warehouse.php */
+.stat-card {
+    background: white;
+    border-radius: 10px;
+    padding: 20px;
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    cursor: pointer;
+    transition: none;
+    border: none;
+}
+
+.stat-card i {
+    font-size: 2.5rem;
+}
+
+.stat-card .stat-content {
+    flex: 1;
+}
+
+.stat-card .stat-value {
+    font-size: 2rem;
+    font-weight: bold;
+    line-height: 1.2;
+    color: white;
+}
+
+.stat-card .stat-label {
+    font-size: 0.9rem;
+    color: white;
+    opacity: 0.9;
+}
+
+/* Card variations with background colors */
+.stat-card.inventory {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.stat-card.stock {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+}
+
+.stat-card.delivery {
+    background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+
+.stat-card.approved {
+    background: linear-gradient(135deg, #43e97b 0%, #38f9d7 100%);
+}
+
+.stat-card.pending {
+    background: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+}
+
+/* White icons */
+.stat-card i {
+    color: white !important;
+}
+
+/* No hover effects */
+.stat-card:hover {
+    transform: none;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Active filter state - if needed */
+.stat-card.active-filter {
+    box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    border: 2px solid #07d826;
+}
+    
+    /* Filter header */
+    .filter-header {
+        cursor: pointer;
+    }
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
 </style>
 <body>
     <!-- MAIN APPLICATION -->

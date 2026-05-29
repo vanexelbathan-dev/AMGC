@@ -511,6 +511,7 @@ if ($check_column && $check_column->num_rows > 0) {
     $branch_column_exists = true;
 }
 
+<<<<<<< HEAD
 // Walk-in customer filters
 // Use customer_code/customer_name instead of customer_id because customer_id is numeric.
 $walkin_customer_filter = "(customer_code IS NULL OR customer_code NOT LIKE 'WALKIN-%')
@@ -600,6 +601,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['action']) && $_GET['act
 }
 
 // Philippine Regions data (keep for address selection in add/edit)
+=======
+// Philippine Regions data
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
 $regions = [
     'NCR' => 'National Capital Region',
     'CAR' => 'Cordillera Administrative Region',
@@ -620,7 +624,11 @@ $regions = [
     'BARMM' => 'Bangsamoro Autonomous Region in Muslim Mindanao'
 ];
 
+<<<<<<< HEAD
 // Provinces data by region
+=======
+// Provinces data by region (sorted alphabetically)
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
 $provinces = [
     'NCR' => ['Metro Manila'],
     'CAR' => ['Abra', 'Apayao', 'Benguet', 'Ifugao', 'Kalinga', 'Mountain Province'],
@@ -646,6 +654,7 @@ foreach ($provinces as $region => $province_list) {
     sort($provinces[$region]);
 }
 
+<<<<<<< HEAD
 // COMPLETE CITIES/MUNICIPALITIES DATA (fallback kung mag-fail ang API)
 $cities = [
     'Metro Manila' => ['Manila', 'Quezon City', 'Caloocan', 'Las Piñas', 'Makati', 'Malabon', 'Mandaluyong', 'Marikina', 'Muntinlupa', 'Navotas', 'Parañaque', 'Pasay', 'Pasig', 'San Juan', 'Taguig', 'Valenzuela', 'Pateros'],
@@ -730,6 +739,16 @@ $cities = [
     'Maguindanao' => ['Ampatuan', 'Barira', 'Buldon', 'Buluan', 'Datu Abdullah Sangki', 'Datu Anggal Midtimbang', 'Datu Blah T. Sinsuat', 'Datu Hoffer Ampatuan', 'Datu Montawal', 'Datu Odin Sinsuat', 'Datu Paglas', 'Datu Piang', 'Datu Salibo', 'Datu Saudi-Ampatuan', 'Datu Unsay', 'General Salipada K. Pendatun', 'Guindulungan', 'Kabuntalan', 'Mamasapano', 'Mangudadatu', 'Matanog', 'Northern Kabuntalan', 'Pagalungan', 'Paglat', 'Pandag', 'Parang', 'Rajah Buayan', 'Shariff Aguak', 'Shariff Saydona Mustapha', 'South Upi', 'Sultan Kudarat', 'Sultan Mastura', 'Sultan sa Barongis', 'Talayan', 'Upi'],
     'Sulu' => ['Hadji Panglima Tahil', 'Indanan', 'Jolo', 'Kalingalan Caluang', 'Lugus', 'Luuk', 'Maimbung', 'Old Panamao', 'Omar', 'Pandami', 'Panglima Estino', 'Pangutaran', 'Parang', 'Pata', 'Patikul', 'Siasi', 'Talipao', 'Tapul'],
     'Tawi-Tawi' => ['Bongao', 'Languyan', 'Mapun', 'Panglima Sugala', 'Sapa-Sapa', 'Sibutu', 'Simunul', 'Sitangkai', 'South Ubian', 'Tandubas', 'Turtle Islands']
+=======
+// Cities/Municipalities data by province (sorted alphabetically)
+$cities = [
+    'Metro Manila' => ['Manila', 'Quezon City', 'Caloocan', 'Las Piñas', 'Makati', 'Malabon', 'Mandaluyong', 'Marikina', 'Muntinlupa', 'Navotas', 'Parañaque', 'Pasay', 'Pasig', 'San Juan', 'Taguig', 'Valenzuela', 'Pateros'],
+    'Batangas' => ['Batangas City', 'Lipa City', 'Tanauan City', 'Nasugbu', 'San Jose', 'Balayan', 'Calaca', 'Lemery', 'Taal', 'San Juan', 'Rosario', 'Ibaan', 'Taysan', 'Lobo', 'Mabini', 'Bauan', 'Cuenca', 'Balete', 'Malvar', 'Mataasnakahoy', 'Padre Garcia', 'Laurel', 'Agoncillo', 'San Nicolas', 'Santa Teresita', 'Alitagtag', 'San Luis'],
+    'Cavite' => ['Dasmariñas', 'Bacoor', 'Imus', 'General Trias', 'Tagaytay', 'Cavite City', 'Trece Martires', 'Silang', 'Carmona', 'Naic', 'Tanza', 'Rosario', 'Noveleta', 'Kawit', 'Ternate', 'Maragondon', 'Magallanes', 'General Emilio Aguinaldo', 'Indang', 'Amadeo', 'Alfonso', 'Mendez'],
+    'Laguna' => ['Calamba', 'Santa Rosa', 'Biñan', 'San Pedro', 'Cabuyao', 'Los Baños', 'Bay', 'Calauan', 'Victoria', 'Pila', 'Santa Cruz', 'Liliw', 'Nagcarlan', 'Rizal', 'Luisiana', 'Cavinti', 'Lumban', 'Kalayaan', 'Paete', 'Pakil', 'Siniloan', 'Famy', 'Mabitac', 'Santa Maria', 'Magdalena', 'Majayjay', 'San Pablo City'],
+    'Quezon' => ['Lucena', 'Tayabas', 'Sariaya', 'Candelaria', 'Lucban', 'Pagbilao', 'Atimonan', 'Mauban', 'Gumaca', 'Lopez', 'Calauag', 'Guinayangan', 'Tagkawayan', 'Buenavista', 'Catanauan', 'Mulanay', 'San Francisco', 'San Andres', 'San Narciso'],
+    'Rizal' => ['Antipolo', 'Cainta', 'Taytay', 'Angono', 'Binangonan', 'Cardona', 'Jala-Jala', 'Morong', 'Baras', 'Tanay', 'Pililla', 'Teresa', 'Rodriguez', 'San Mateo']
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
 ];
 
 // Sort cities alphabetically for each province
@@ -737,6 +756,23 @@ foreach ($cities as $province => $city_list) {
     sort($cities[$province]);
 }
 
+<<<<<<< HEAD
+=======
+// Barangays data by city/municipality (sorted alphabetically)
+$barangays = [
+    'Manila' => ['Binondo', 'Ermita', 'Intramuros', 'Malate', 'Paco', 'Pandacan', 'Port Area', 'Quiapo', 'Sampaloc', 'San Andres', 'San Miguel', 'San Nicolas', 'Santa Ana', 'Santa Cruz', 'Santa Mesa', 'Tondo'],
+    'Quezon City' => ['Bagbag', 'Batasan Hills', 'Commonwealth', 'Holy Spirit', 'Payatas', 'Sauyo', 'Talipapa', 'Tandang Sora', 'UP Campus', 'Veterans Village'],
+    'Dasmariñas' => ['Burol', 'Langkaan', 'Paliparan', 'Salitran', 'San Agustin', 'San Jose', 'San Simon', 'Sampaloc', 'Santa Cristina', 'Victoria Reyes'],
+    'Bacoor' => ['Alima', 'Aniban', 'Banalo', 'Bayanan', 'Campos', 'Daang Bukid', 'Digman', 'Dulong Bayan', 'Habay', 'Kaingin'],
+    'Calamba' => ['Bagong Kalsada', 'Banadero', 'Banlic', 'Barandal', 'Batino', 'Bubuyan', 'Bucal', 'Bunggo', 'Burol', 'Camaligan']
+];
+
+// Sort barangays alphabetically for each city
+foreach ($barangays as $city => $barangay_list) {
+    sort($barangays[$city]);
+}
+
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
 // Handle Add Customer
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['action']) && $_POST['action'] === 'add_customer') {
@@ -744,11 +780,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $contact_person = trim($_POST['contact_person']);
         $email = trim($_POST['email']);
         $phone = trim($_POST['phone_number']);
+<<<<<<< HEAD
         $price_level = trim($_POST['price_level'] ?? '');
         $region = trim($_POST['region']);
         $province = trim($_POST['province']);
         $city = trim($_POST['city']);
         $city_code = trim($_POST['city_code'] ?? '');
+=======
+        $region = trim($_POST['region']);
+        $province = trim($_POST['province']);
+        $city = trim($_POST['city']);
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
         $barangay = trim($_POST['barangay']);
         $latitude = trim($_POST['latitude']);
         $longitude = trim($_POST['longitude']);
@@ -798,6 +840,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!empty($region)) $address_parts[] = $region;
         $address = implode(', ', $address_parts);
         
+        // Combine address components for full_address
+        $full_address_parts = [];
+        if (!empty($barangay)) $full_address_parts[] = $barangay;
+        if (!empty($city)) $full_address_parts[] = $city;
+        if (!empty($province)) $full_address_parts[] = $province;
+        if (!empty($region)) $full_address_parts[] = $region;
+        $full_address = implode(', ', $full_address_parts);
+        
         // Auto-generate customer code
         $customer_code = generateCustomerCode($conn);
 
@@ -805,6 +855,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $error = 'Please complete all required fields including Price Level, Region, Province, City/Municipality, and Barangay.';
         } elseif (empty($error)) {
             if ($branch_column_exists) {
+<<<<<<< HEAD
                 $sql = "INSERT INTO customers (
                             customer_name, customer_code, contact_person, email, phone_number, address,
                             region, province, city, barangay, price_level,
@@ -830,6 +881,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $region, $province, $city, $barangay, $price_level,
                     $latitude, $longitude, $store_name, $store_image, $status, $city_code, $user_id
                 );
+=======
+                // Column exists, include branch_id
+                $sql = "INSERT INTO customers (customer_name, customer_code, contact_person, email, phone_number, barangay, city, province, region, full_address, latitude, longitude, status, branch_id) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                $stmt = $conn->prepare($sql);
+                $stmt->bind_param('sssssssssssssi', $customer_name, $customer_code, $contact_person, $email, $phone, $barangay, $city, $province, $region, $full_address, $latitude, $longitude, $status, $branch_id);
+            } else {
+                // Column doesn't exist, insert without branch_id
+                $sql = "INSERT INTO customers (customer_name, customer_code, contact_person, email, phone_number, barangay, city, province, region, full_address, latitude, longitude, status) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+                $stmt = $conn->prepare($sql);
+                $stmt->bind_param('sssssssssssss', $customer_name, $customer_code, $contact_person, $email, $phone, $barangay, $city, $province, $region, $full_address, $latitude, $longitude, $status);
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
             }
 
             if ($stmt && $stmt->execute()) {
@@ -849,11 +913,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $contact_person = trim($_POST['contact_person']);
         $email = trim($_POST['email']);
         $phone = trim($_POST['phone_number']);
+<<<<<<< HEAD
         $price_level = trim($_POST['price_level'] ?? '');
         $region = trim($_POST['region']);
         $province = trim($_POST['province']);
         $city = trim($_POST['city']);
         $city_code = trim($_POST['city_code'] ?? '');
+=======
+        $region = trim($_POST['region']);
+        $province = trim($_POST['province']);
+        $city = trim($_POST['city']);
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
         $barangay = trim($_POST['barangay']);
         $latitude = trim($_POST['latitude']);
         $longitude = trim($_POST['longitude']);
@@ -861,6 +931,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $store_name = trim($_POST['store_name'] ?? '');
         $store_image = isset($_POST['existing_store_image']) ? trim($_POST['existing_store_image']) : '';
 
+<<<<<<< HEAD
         // Handle store image upload
         if (isset($_FILES['store_image']) && $_FILES['store_image']['error'] === UPLOAD_ERR_OK) {
             $upload_dir = '../uploads/store_images/';
@@ -897,6 +968,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $error = 'Error uploading file.';
                 }
             }
+=======
+        // Combine address components for full_address
+        $full_address_parts = [];
+        if (!empty($barangay)) $full_address_parts[] = $barangay;
+        if (!empty($city)) $full_address_parts[] = $city;
+        if (!empty($province)) $full_address_parts[] = $province;
+        if (!empty($region)) $full_address_parts[] = $region;
+        $full_address = implode(', ', $full_address_parts);
+
+        if (empty($customer_name) || empty($customer_code) || empty($email)) {
+            $error = 'Please fill in all required fields';
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
         } else {
             // If no new file uploaded, get existing image from database
             $old_img_query = "SELECT store_image FROM customers WHERE customer_id = ?";
@@ -926,12 +1009,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     contact_person = ?,
                     email = ?,
                     phone_number = ?,
+<<<<<<< HEAD
                     address = ?,
                     region = ?,
                     province = ?,
                     city = ?,
                     barangay = ?,
                     price_level = ?,
+=======
+                    barangay = ?,
+                    city = ?,
+                    province = ?,
+                    region = ?,
+                    full_address = ?,
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                     latitude = ?,
                     longitude = ?,
                     store_name = ?,
@@ -941,8 +1032,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     updated_at = NOW()
                     WHERE customer_id = ?";
             $stmt = $conn->prepare($sql);
+<<<<<<< HEAD
             if (!$stmt) {
                 $error = 'Prepare Error: ' . $conn->error;
+=======
+            $stmt->bind_param('sssssssssssssi', $customer_name, $customer_code, $contact_person, $email, $phone, $barangay, $city, $province, $region, $full_address, $latitude, $longitude, $status, $customer_id);
+            
+            if ($stmt->execute()) {
+                $success = 'Customer updated successfully!';
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
             } else {
                 $bind_result = $stmt->bind_param(
                     'sssssssssssssssssi',
@@ -1153,11 +1251,17 @@ if (isset($_GET['success']) && $_GET['success'] === 'updated') {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <!-- Leaflet CSS for Maps -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<<<<<<< HEAD
     <!-- SweetAlert2 -->
     <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <!-- Session Checker -->
     <script src="../js/session-checker.js"></script>
+=======
+    <!-- Select2 CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
+    <link href="https://cdn.jsdelivr.net/npm/select2-bootstrap-5-theme@1.3.0/dist/select2-bootstrap-5-theme.min.css" rel="stylesheet" />
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
     <style>
        .amgc-swal-popup {
             border-radius: 16px !important;
@@ -1591,6 +1695,14 @@ if (isset($_GET['success']) && $_GET['success'] === 'updated') {
             border-radius: 0 5px 5px 0;
             font-size: 0.95em;
         }
+<<<<<<< HEAD
+=======
+
+        /* Select2 custom styling */
+        .select2-container--bootstrap-5 .select2-selection {
+            min-height: 38px;
+        }
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
         
         .form-section-title {
             font-size: 1rem;
@@ -1601,6 +1713,7 @@ if (isset($_GET['success']) && $_GET['success'] === 'updated') {
             border-bottom: 2px solid #e9ecef;
         }
 
+<<<<<<< HEAD
         /* Loading indicator */
         .loading-spinner {
             display: inline-block;
@@ -2656,6 +2769,18 @@ button[data-bs-target="#addCustomerModal"] i,
         padding: 12px 16px;
     }
 }
+=======
+        /* Fix for disabled select2 */
+        .select2-container--bootstrap-5.select2-container--disabled .select2-selection {
+            background-color: #e9ecef;
+            opacity: 0.7;
+        }
+        
+        /* Ensure select2 dropdowns appear above modals */
+        .select2-container {
+            z-index: 10000 !important;
+        }
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
     </style>
 </head>
 <body>
@@ -2676,9 +2801,21 @@ button[data-bs-target="#addCustomerModal"] i,
             <div class="sidebar-menu">
                 <ul class="nav flex-column">
                     <li class="nav-item">
+<<<<<<< HEAD
                         <a class="nav-link" href="currentinventory.php">
                             <i class="bi bi-speedometer2"></i>
                             <span class="nav-text">Dashboard</span>
+=======
+                        <a class="nav-link" href="orderproduct.php">
+                            <i class="bi bi-bag"></i>
+                            <span class="nav-text">Order Product</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="sales_order.php">
+                            <i class="bi bi-list-check"></i>
+                            <span class="nav-text">Sales Orders</span>
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                         </a>
                     </li>
                     <li class="nav-item">
@@ -2874,6 +3011,7 @@ button[data-bs-target="#addCustomerModal"] i,
                 </div>
             </div>
 
+<<<<<<< HEAD
             <!-- Municipality Tabs (only existing cities) -->
             <div class="location-tabs-container">
                 <ul class="nav location-tabs" id="cityTabs">
@@ -3009,6 +3147,71 @@ button[data-bs-target="#addCustomerModal"] i,
                                     <div class="col-12">
                                         <div class="code-label">
                                             <i class="bi bi-upc-scan"></i> Customer Code (Auto-generated)
+=======
+            <!-- Customer Table -->
+            <div class="card">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>Customer Code</th>
+                                <th>Customer Name</th>
+                                <th>Email</th>
+                                <th>Phone</th>
+                                <th>Location</th>
+                                <th>Status</th>
+                                <th>Total Orders</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php if (count($customers) > 0): ?>
+                                <?php foreach ($customers as $customer): ?>
+                                <tr>
+                                    <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($customer['customer_code']); ?></span></td>
+                                    <td><?php echo htmlspecialchars($customer['customer_name']); ?></td>
+                                    <td><?php echo htmlspecialchars($customer['email']); ?></td>
+                                    <td><?php echo htmlspecialchars($customer['phone_number']); ?></td>
+                                    <td>
+                                        <?php 
+                                        $location_parts = [];
+                                        if (!empty($customer['barangay'])) $location_parts[] = $customer['barangay'];
+                                        if (!empty($customer['city'])) $location_parts[] = $customer['city'];
+                                        if (!empty($customer['province'])) $location_parts[] = $customer['province'];
+                                        echo htmlspecialchars(implode(', ', $location_parts) ?: 'N/A'); 
+                                        ?>
+                                    </td>
+                                    <td>
+                                        <?php
+                                        $status_badge = [
+                                            'active' => 'bg-success',
+                                            'inactive' => 'bg-danger',
+                                            'pending' => 'bg-warning'
+                                        ];
+                                        $status_color = $status_badge[$customer['status']] ?? 'bg-secondary';
+                                        ?>
+                                        <span class="badge <?php echo $status_color; ?>">
+                                            <?php echo ucfirst($customer['status']); ?>
+                                        </span>
+                                    </td>
+                                    <td><?php echo $customer['total_orders'] ?? 0; ?></td>
+                                    <td>
+                                        <div class="action-buttons">
+                                            <button class="btn-action btn-view" onclick="viewCustomerDetails(<?php echo $customer['customer_id']; ?>)" 
+                                                    title="View Details">
+                                                <i class="bi bi-eye"></i>
+                                            </button>
+                                            <button class="btn-action btn-edit" onclick="editCustomer(<?php echo $customer['customer_id']; ?>)" 
+                                                    title="Edit Customer">
+                                                <i class="bi bi-pencil"></i>
+                                            </button>
+                                            <?php if (!empty($customer['latitude']) && !empty($customer['longitude'])): ?>
+                                                <button class="btn-action btn-location" onclick="viewLocationOnMap(<?php echo $customer['customer_id']; ?>, '<?php echo htmlspecialchars($customer['customer_name']); ?>', <?php echo $customer['latitude']; ?>, <?php echo $customer['longitude']; ?>)" 
+                                                        title="View Location">
+                                                    <i class="bi bi-geo-alt"></i>
+                                                </button>
+                                            <?php endif; ?>
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                                         </div>
                                         <div class="code-preview" id="customerCodePreview">
                                             <?php echo $preview_code; ?>
@@ -3419,6 +3622,7 @@ button[data-bs-target="#addCustomerModal"] i,
                             </h5>
                             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                         </div>
+<<<<<<< HEAD
                         <div class="modal-body text-center">
                             <div class="user-avatar-large mb-3">
                                 <?php echo $user_initials; ?>
@@ -3431,6 +3635,61 @@ button[data-bs-target="#addCustomerModal"] i,
                             <div class="branch-info mb-3">
                                 <i class="bi bi-building me-1"></i>
                                 <span><?php echo htmlspecialchars($branch_name); ?></span>
+=======
+
+                        <!-- Location Section - Region, Province, City, Barangay with Dropdowns -->
+                        <h6 class="form-section-title"><i class="bi bi-geo-alt"></i> Address Information</h6>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Region *</label>
+                                <select class="form-select region-select" name="region" required>
+                                    <option value="">Select Region</option>
+                                    <?php foreach ($regions as $region_code => $region_name): ?>
+                                        <option value="<?php echo $region_code; ?>"><?php echo $region_name; ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Province *</label>
+                                <select class="form-select province-select" name="province" required disabled>
+                                    <option value="">Select Province</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">City/Municipality *</label>
+                                <select class="form-select city-select" name="city" required disabled>
+                                    <option value="">Select City/Municipality</option>
+                                </select>
+                            </div>
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Barangay *</label>
+                                <select class="form-select barangay-select" name="barangay" required disabled>
+                                    <option value="">Select Barangay</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <!-- Address Preview -->
+                        <div class="address-preview" id="addressPreview">
+                            <small><i class="bi bi-info-circle"></i> Full address will be: <strong><span id="fullAddressPreview">Not yet specified</span></strong></small>
+                        </div>
+                        
+                        <!-- Map Location Section -->
+                        <h6 class="form-section-title mt-4"><i class="bi bi-map"></i> Geographic Location</h6>
+                        <div class="location-info">
+                            <small><i class="bi bi-info-circle"></i> Click on the map to set the customer location, or enter coordinates manually</small>
+                        </div>
+                        
+                        <div id="locationMap"></div>
+                        
+                        <div class="row mt-3">
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">Latitude</label>
+                                <input type="text" class="form-control" name="latitude" id="latitudeInput" placeholder="14.5995" value="14.5995">
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                             </div>
                             <?php endif; ?>
                             <div class="user-id text-muted small mb-4">
@@ -3444,10 +3703,32 @@ button[data-bs-target="#addCustomerModal"] i,
                 </div>
             </div>
 
+<<<<<<< HEAD
             <!-- JavaScript -->
             <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
             <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
             <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+=======
+    <!-- JavaScript -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <!-- jQuery -->
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <!-- Select2 JS -->
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+    <!-- Leaflet JS for Maps -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <script>
+        // Philippine location data (matching PHP arrays)
+        const provincesByRegion = <?php echo json_encode($provinces); ?>;
+        const citiesByProvince = <?php echo json_encode($cities); ?>;
+        const barangaysByCity = <?php echo json_encode($barangays); ?>;
+
+        // ================= SIDEBAR FUNCTIONS =================
+        function toggleSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const isMobile = window.innerWidth <= 992;
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
             
             <script>
                 // Philippine location data (matching PHP arrays)
@@ -3510,6 +3791,7 @@ button[data-bs-target="#addCustomerModal"] i,
                     }
                 }
 
+<<<<<<< HEAD
                 function initializeSidebar() {
                     const sidebar = document.getElementById('sidebar');
                     if (window.innerWidth > 992) {
@@ -3542,6 +3824,538 @@ button[data-bs-target="#addCustomerModal"] i,
                         const mainContent = document.querySelector('.main-content');
                         if (mainContent) {
                             mainContent.style.marginLeft = '0';
+=======
+        function closeMobileSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.querySelector('.sidebar-overlay');
+            sidebar.classList.remove('active');
+            if (overlay) {
+                overlay.classList.remove('active');
+                setTimeout(() => {
+                    if (overlay.parentNode) {
+                        overlay.remove();
+                    }
+                }, 300);
+            }
+        }
+
+        function initializeSidebar() {
+            const sidebar = document.getElementById('sidebar');
+            if (window.innerWidth > 992) {
+                const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+                if (savedCollapsed === 'true') {
+                    sidebar.classList.add('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'none';
+                    });
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '80px';
+                    }
+                } else {
+                    sidebar.classList.remove('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'inline-block';
+                    });
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '250px';
+                    }
+                }
+            } else {
+                sidebar.classList.remove('active');
+                sidebar.classList.remove('collapsed');
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'inline-block';
+                });
+                const mainContent = document.querySelector('.main-content');
+                if (mainContent) {
+                    mainContent.style.marginLeft = '0';
+                }
+            }
+        }
+
+        function handleSidebarResize() {
+            const sidebar = document.getElementById('sidebar');
+            const overlay = document.querySelector('.sidebar-overlay');
+            
+            if (window.innerWidth > 992) {
+                if (overlay) {
+                    overlay.remove();
+                }
+                sidebar.classList.remove('active');
+                const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+                if (savedCollapsed === 'true') {
+                    sidebar.classList.add('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'none';
+                    });
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '80px';
+                    }
+                } else {
+                    sidebar.classList.remove('collapsed');
+                    document.querySelectorAll('.nav-text').forEach(text => {
+                        text.style.display = 'inline-block';
+                    });
+                    const mainContent = document.querySelector('.main-content');
+                    if (mainContent) {
+                        mainContent.style.marginLeft = '250px';
+                    }
+                }
+            } else {
+                sidebar.classList.remove('collapsed');
+                document.querySelectorAll('.nav-text').forEach(text => {
+                    text.style.display = 'inline-block';
+                });
+                const mainContent = document.querySelector('.main-content');
+                if (mainContent) {
+                    mainContent.style.marginLeft = '0';
+                }
+            }
+        }
+        // ================= END SIDEBAR FUNCTIONS =================
+
+        // Map variables
+        let map;
+        let marker;
+        let editMap;
+        let editMarker;
+        let viewMap;
+        let viewMarker;
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log("Customer Management page loaded!");
+            
+            // Initialize sidebar
+            initializeSidebar();
+            
+            // Setup mobile toggle button
+            const mobileToggleBtn = document.getElementById('mobileToggleBtn');
+            if (mobileToggleBtn) {
+                mobileToggleBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleSidebar();
+                });
+            }
+            
+            const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+            if (mobileMenuBtn) {
+                mobileMenuBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleSidebar();
+                });
+            }
+            
+            // Setup desktop toggle button
+            const desktopToggleBtn = document.getElementById('desktopToggleBtn');
+            if (desktopToggleBtn) {
+                desktopToggleBtn.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    toggleSidebar();
+                });
+            }
+            
+            // Add click listeners to sidebar links to close on mobile
+            document.querySelectorAll('.sidebar .nav-link').forEach(link => {
+                link.addEventListener('click', function() {
+                    if (window.innerWidth <= 992) {
+                        closeMobileSidebar();
+                    }
+                });
+            });
+            
+            // Close sidebar when clicking outside on mobile
+            document.addEventListener('click', function(event) {
+                const sidebar = document.getElementById('sidebar');
+                const mobileBtn = document.getElementById('mobileToggleBtn') || document.getElementById('mobileMenuBtn');
+                const overlay = document.querySelector('.sidebar-overlay');
+                const isMobile = window.innerWidth <= 992;
+                
+                if (isMobile && sidebar && sidebar.classList.contains('active') && 
+                    !sidebar.contains(event.target) && 
+                    (!mobileBtn || !mobileBtn.contains(event.target)) &&
+                    (!overlay || !overlay.contains(event.target))) {
+                    closeMobileSidebar();
+                }
+            });
+
+            // Add resize event listener
+            window.addEventListener('resize', handleSidebarResize);
+
+            // Setup event listeners
+            setupEventListeners();
+            
+            // Auto-hide alerts after 5 seconds
+            document.querySelectorAll('.alert').forEach(function(alert) {
+                setTimeout(function() {
+                    try {
+                        let alertInstance = new bootstrap.Alert(alert);
+                        alertInstance.close();
+                    } catch(e) {
+                        console.log('Alert already closed');
+                    }
+                }, 5000);
+            });
+
+            // Initialize add customer map when modal is shown
+            const addCustomerModal = document.getElementById('addCustomerModal');
+            if (addCustomerModal) {
+                addCustomerModal.addEventListener('shown.bs.modal', function() {
+                    initAddCustomerMap();
+                    initLocationDropdowns();
+                });
+                
+                addCustomerModal.addEventListener('hidden.bs.modal', function() {
+                    if (map) {
+                        map.remove();
+                        map = null;
+                        marker = null;
+                    }
+                });
+            }
+
+            // Initialize edit map when modal is shown
+            const editCustomerModal = document.getElementById('editCustomerModal');
+            if (editCustomerModal) {
+                editCustomerModal.addEventListener('hidden.bs.modal', function() {
+                    if (editMap) {
+                        editMap.remove();
+                        editMap = null;
+                        editMarker = null;
+                    }
+                });
+            }
+
+            // Clean up view map when modal is hidden
+            const viewLocationModal = document.getElementById('viewLocationModal');
+            if (viewLocationModal) {
+                viewLocationModal.addEventListener('hidden.bs.modal', function() {
+                    if (viewMap) {
+                        viewMap.remove();
+                        viewMap = null;
+                        viewMarker = null;
+                    }
+                });
+            }
+        });
+
+        // Initialize location dropdowns for Add Customer - SIMPLIFIED VERSION
+        function initLocationDropdowns() {
+            console.log("Initializing location dropdowns");
+            
+            // Get the select elements
+            const regionSelect = document.querySelector('.region-select');
+            const provinceSelect = document.querySelector('.province-select');
+            const citySelect = document.querySelector('.city-select');
+            const barangaySelect = document.querySelector('.barangay-select');
+            
+            if (!regionSelect || !provinceSelect || !citySelect || !barangaySelect) {
+                console.error("Could not find select elements");
+                return;
+            }
+            
+            // Clear any existing options in dependent selects
+            provinceSelect.innerHTML = '<option value="">Select Province</option>';
+            citySelect.innerHTML = '<option value="">Select City/Municipality</option>';
+            barangaySelect.innerHTML = '<option value="">Select Barangay</option>';
+            
+            // Set initial disabled states
+            provinceSelect.disabled = true;
+            citySelect.disabled = true;
+            barangaySelect.disabled = true;
+            
+            // Region change handler
+            regionSelect.addEventListener('change', function() {
+                const region = this.value;
+                console.log("Region changed to:", region);
+                
+                // Clear and disable dependent dropdowns
+                provinceSelect.innerHTML = '<option value="">Select Province</option>';
+                citySelect.innerHTML = '<option value="">Select City/Municipality</option>';
+                barangaySelect.innerHTML = '<option value="">Select Barangay</option>';
+                
+                if (region && provincesByRegion[region]) {
+                    // Enable province select and populate
+                    provinceSelect.disabled = false;
+                    
+                    // Add province options
+                    provincesByRegion[region].forEach(province => {
+                        const option = document.createElement('option');
+                        option.value = province;
+                        option.textContent = province;
+                        provinceSelect.appendChild(option);
+                    });
+                    
+                    citySelect.disabled = true;
+                    barangaySelect.disabled = true;
+                } else {
+                    provinceSelect.disabled = true;
+                    citySelect.disabled = true;
+                    barangaySelect.disabled = true;
+                }
+                
+                updateAddressPreview();
+            });
+            
+            // Province change handler
+            provinceSelect.addEventListener('change', function() {
+                const province = this.value;
+                console.log("Province changed to:", province);
+                
+                // Clear and disable dependent dropdowns
+                citySelect.innerHTML = '<option value="">Select City/Municipality</option>';
+                barangaySelect.innerHTML = '<option value="">Select Barangay</option>';
+                
+                if (province && citiesByProvince[province]) {
+                    // Enable city select and populate
+                    citySelect.disabled = false;
+                    
+                    // Add city options
+                    citiesByProvince[province].forEach(city => {
+                        const option = document.createElement('option');
+                        option.value = city;
+                        option.textContent = city;
+                        citySelect.appendChild(option);
+                    });
+                    
+                    barangaySelect.disabled = true;
+                } else {
+                    citySelect.disabled = true;
+                    barangaySelect.disabled = true;
+                }
+                
+                updateAddressPreview();
+            });
+            
+            // City change handler
+            citySelect.addEventListener('change', function() {
+                const city = this.value;
+                console.log("City changed to:", city);
+                
+                // Clear and disable barangay dropdown
+                barangaySelect.innerHTML = '<option value="">Select Barangay</option>';
+                
+                if (city && barangaysByCity[city]) {
+                    // Enable barangay select and populate
+                    barangaySelect.disabled = false;
+                    
+                    // Add barangay options
+                    barangaysByCity[city].forEach(barangay => {
+                        const option = document.createElement('option');
+                        option.value = barangay;
+                        option.textContent = barangay;
+                        barangaySelect.appendChild(option);
+                    });
+                } else {
+                    barangaySelect.disabled = true;
+                }
+                
+                updateAddressPreview();
+            });
+            
+            // Barangay change handler
+            barangaySelect.addEventListener('change', function() {
+                updateAddressPreview();
+            });
+        }
+
+        // Update address preview
+        function updateAddressPreview() {
+            const regionSelect = document.querySelector('.region-select');
+            const provinceSelect = document.querySelector('.province-select');
+            const citySelect = document.querySelector('.city-select');
+            const barangaySelect = document.querySelector('.barangay-select');
+            
+            const region = regionSelect ? regionSelect.options[regionSelect.selectedIndex]?.text || '' : '';
+            const province = provinceSelect ? provinceSelect.value || '' : '';
+            const city = citySelect ? citySelect.value || '' : '';
+            const barangay = barangaySelect ? barangaySelect.value || '' : '';
+            
+            const parts = [];
+            if (barangay) parts.push(barangay);
+            if (city) parts.push(city);
+            if (province) parts.push(province);
+            if (region) parts.push(region);
+            
+            const fullAddress = parts.join(', ') || 'Not yet specified';
+            const previewSpan = document.getElementById('fullAddressPreview');
+            if (previewSpan) {
+                previewSpan.textContent = fullAddress;
+            }
+        }
+
+        // Setup event listeners
+        function setupEventListeners() {
+            const searchInput = document.getElementById('searchInput');
+            if (searchInput) {
+                searchInput.addEventListener('keyup', function() {
+                    const filter = this.value.toLowerCase();
+                    const rows = document.querySelectorAll('tbody tr');
+                    rows.forEach(row => {
+                        const text = row.textContent.toLowerCase();
+                        row.style.display = text.includes(filter) ? '' : 'none';
+                    });
+                });
+            }
+
+            const statusFilter = document.getElementById('statusFilter');
+            if (statusFilter) {
+                statusFilter.addEventListener('change', function() {
+                    const filter = this.value.toLowerCase();
+                    const rows = document.querySelectorAll('tbody tr');
+                    rows.forEach(row => {
+                        if (row.cells.length < 6) return;
+                        const status = row.cells[5].textContent.toLowerCase();
+                        row.style.display = (filter === '' || status.includes(filter)) ? '' : 'none';
+                    });
+                });
+            }
+        }
+
+        // Refresh customer code via AJAX
+        function refreshCustomerCode() {
+            fetch('generate_customer_code.php')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const customerCodePreview = document.getElementById('customerCodePreview');
+                        if (customerCodePreview) {
+                            customerCodePreview.innerHTML = data.code + ' <i class="bi bi-arrow-repeat refresh-code" onclick="refreshCustomerCode()" title="Generate new code"></i>';
+                        }
+                        const customerCodeInput = document.getElementById('customerCodeInput');
+                        if (customerCodeInput) {
+                            customerCodeInput.value = data.code;
+                        }
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                });
+        }
+
+        // Initialize add customer map
+        function initAddCustomerMap() {
+            if (document.getElementById('locationMap')) {
+                const defaultLat = 14.5995;
+                const defaultLng = 120.9842;
+                
+                map = L.map('locationMap').setView([defaultLat, defaultLng], 13);
+                
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap contributors'
+                }).addTo(map);
+                
+                marker = L.marker([defaultLat, defaultLng], {
+                    draggable: true
+                }).addTo(map);
+                
+                marker.on('dragend', function(e) {
+                    const position = marker.getLatLng();
+                    const latInput = document.getElementById('latitudeInput');
+                    const lngInput = document.getElementById('longitudeInput');
+                    if (latInput) latInput.value = position.lat.toFixed(6);
+                    if (lngInput) lngInput.value = position.lng.toFixed(6);
+                });
+                
+                map.on('click', function(e) {
+                    marker.setLatLng(e.latlng);
+                    const latInput = document.getElementById('latitudeInput');
+                    const lngInput = document.getElementById('longitudeInput');
+                    if (latInput) latInput.value = e.latlng.lat.toFixed(6);
+                    if (lngInput) lngInput.value = e.latlng.lng.toFixed(6);
+                });
+                
+                const latInput = document.getElementById('latitudeInput');
+                const lngInput = document.getElementById('longitudeInput');
+                
+                if (latInput) latInput.addEventListener('change', updateMarkerFromInputs);
+                if (lngInput) lngInput.addEventListener('change', updateMarkerFromInputs);
+            }
+        }
+
+        function updateMarkerFromInputs() {
+            const latInput = document.getElementById('latitudeInput');
+            const lngInput = document.getElementById('longitudeInput');
+            if (!latInput || !lngInput) return;
+            const lat = parseFloat(latInput.value);
+            const lng = parseFloat(lngInput.value);
+            if (!isNaN(lat) && !isNaN(lng) && map && marker) {
+                marker.setLatLng([lat, lng]);
+                map.setView([lat, lng], 13);
+            }
+        }
+
+        function getCurrentLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    function(position) {
+                        const lat = position.coords.latitude;
+                        const lng = position.coords.longitude;
+                        const latInput = document.getElementById('latitudeInput');
+                        const lngInput = document.getElementById('longitudeInput');
+                        if (latInput) latInput.value = lat.toFixed(6);
+                        if (lngInput) lngInput.value = lng.toFixed(6);
+                        if (map && marker) {
+                            marker.setLatLng([lat, lng]);
+                            map.setView([lat, lng], 13);
+                        }
+                    },
+                    function(error) {
+                        alert('Unable to get your location: ' + error.message);
+                    }
+                );
+            } else {
+                alert('Geolocation is not supported by your browser');
+            }
+        }
+
+        function viewCustomerDetails(customerId) {
+            fetch('get_customer_details.php?id=' + customerId)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        const customer = data.customer;
+                        const modal = new bootstrap.Modal(document.getElementById('viewCustomerModal'));
+                        const customerDetailsContent = document.getElementById('customerDetailsContent');
+                        if (customerDetailsContent) {
+                            customerDetailsContent.innerHTML = `
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <p><strong>Customer Code:</strong><br>${customer.customer_code || 'N/A'}</p>
+                                        <p><strong>Name:</strong><br>${customer.customer_name || 'N/A'}</p>
+                                        <p><strong>Contact Person:</strong><br>${customer.contact_person || 'N/A'}</p>
+                                        <p><strong>Email:</strong><br>${customer.email || 'N/A'}</p>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <p><strong>Phone:</strong><br>${customer.phone_number || 'N/A'}</p>
+                                        <p><strong>Full Address:</strong><br>${customer.full_address || 'N/A'}</p>
+                                        <p><strong>Barangay:</strong><br>${customer.barangay || 'N/A'}</p>
+                                        <p><strong>City/Municipality:</strong><br>${customer.city || 'N/A'}</p>
+                                        <p><strong>Province:</strong><br>${customer.province || 'N/A'}</p>
+                                        <p><strong>Region:</strong><br>${customer.region || 'N/A'}</p>
+                                        <p><strong>Status:</strong><br>
+                                            <span class="badge ${customer.status === 'active' ? 'bg-success' : customer.status === 'inactive' ? 'bg-danger' : 'bg-warning'}">
+                                                ${customer.status || 'N/A'}
+                                            </span>
+                                        </p>
+                                    </div>
+                                </div>
+                                ${customer.latitude && customer.longitude ? `
+                                <hr>
+                                <div class="location-info">
+                                    <p><strong>Location Coordinates:</strong></p>
+                                    <p>Latitude: ${customer.latitude}</p>
+                                    <p>Longitude: ${customer.longitude}</p>
+                                    <button class="btn btn-sm btn-outline-primary mt-2" onclick="viewLocationOnMap('${customer.customer_id}', '${customer.customer_name.replace(/'/g, "\\'")}', ${customer.latitude}, ${customer.longitude})">
+                                        <i class="bi bi-map"></i> View on Map
+                                    </button>
+                                </div>
+                                ` : ''}
+                            `;
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                         }
                     }
                 }
@@ -4797,6 +5611,7 @@ button[data-bs-target="#addCustomerModal"] i,
                                         <i class="bi bi-exclamation-triangle fs-1 text-danger"></i>
                                         <p class="mt-3">${escapeHtml(data.message || 'Error loading order details.')}</p>
                                     </div>
+<<<<<<< HEAD
                                 `;
                             }
                             const printButton = document.getElementById('printOrderFromDetails');
@@ -4814,10 +5629,80 @@ button[data-bs-target="#addCustomerModal"] i,
                                     <p class="mt-3">Network error: ${escapeHtml(error.message)}</p>
                                     <button class="btn btn-outline-danger mt-2" onclick="viewOrderFromCustomer(${orderId})">
                                         <i class="bi bi-arrow-repeat"></i> Try Again
+=======
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Phone</label>
+                                        <input type="tel" class="form-control" name="phone_number" value="${customer.phone_number || ''}">
+                                    </div>
+                                </div>
+
+                                <h6 class="form-section-title mt-3"><i class="bi bi-geo-alt"></i> Address Information</h6>
+                                
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Region</label>
+                                        <select class="form-select edit-region-select" name="region" id="editRegion">
+                                            <option value="">Select Region</option>
+                                            <?php foreach ($regions as $region_code => $region_name): ?>
+                                                <option value="<?php echo $region_code; ?>" ${customer.region === '<?php echo $region_code; ?>' ? 'selected' : ''}>${customer.region === '<?php echo $region_code; ?>' ? '<?php echo $region_name; ?>' : '<?php echo $region_name; ?>'}</option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Province</label>
+                                        <select class="form-select edit-province-select" name="province" id="editProvince">
+                                            <option value="">Select Province</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">City/Municipality</label>
+                                        <select class="form-select edit-city-select" name="city" id="editCity">
+                                            <option value="">Select City/Municipality</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Barangay</label>
+                                        <select class="form-select edit-barangay-select" name="barangay" id="editBarangay">
+                                            <option value="">Select Barangay</option>
+                                        </select>
+                                    </div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    <label class="form-label">Status</label>
+                                    <select class="form-select" name="status">
+                                        <option value="active" ${customer.status === 'active' ? 'selected' : ''}>Active</option>
+                                        <option value="inactive" ${customer.status === 'inactive' ? 'selected' : ''}>Inactive</option>
+                                        <option value="pending" ${customer.status === 'pending' ? 'selected' : ''}>Pending</option>
+                                    </select>
+                                </div>
+                                <div class="location-info">
+                                    <small><i class="bi bi-info-circle"></i> Update location coordinates</small>
+                                </div>
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Latitude</label>
+                                        <input type="text" class="form-control" name="latitude" id="editLatitude" value="${customer.latitude || '14.5995'}">
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Longitude</label>
+                                        <input type="text" class="form-control" name="longitude" id="editLongitude" value="${customer.longitude || '120.9842'}">
+                                    </div>
+                                </div>
+                                <div id="editLocationMap" style="height: 250px; margin-bottom: 15px; border-radius: 8px;"></div>
+                                <div class="location-buttons">
+                                    <button type="button" class="btn btn-outline-secondary" onclick="getCurrentLocationForEdit()">
+                                        <i class="bi bi-geo-alt"></i> Use My Location
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                                     </button>
                                 </div>
                             `;
                         }
+<<<<<<< HEAD
                         const printButton = document.getElementById('printOrderFromDetails');
                         if (printButton) printButton.style.display = 'none';
                         const cancelButton = document.getElementById('cancelOrderBtn');
@@ -4894,6 +5779,167 @@ button[data-bs-target="#addCustomerModal"] i,
                             printBtn.innerHTML = '<i class="bi bi-printer"></i> Print Order';
                             printBtn.disabled = false;
                         }
+=======
+                        modal.show();
+                        setTimeout(() => {
+                            initEditLocationDropdowns(customer);
+                            initEditCustomerMap(customer);
+                        }, 500);
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Error loading customer details');
+                });
+        }
+
+        function initEditLocationDropdowns(customer) {
+            console.log("Initializing edit location dropdowns", customer);
+            
+            const regionSelect = document.getElementById('editRegion');
+            const provinceSelect = document.getElementById('editProvince');
+            const citySelect = document.getElementById('editCity');
+            const barangaySelect = document.getElementById('editBarangay');
+            
+            if (!regionSelect || !provinceSelect || !citySelect || !barangaySelect) {
+                console.error("Could not find edit select elements");
+                return;
+            }
+            
+            // Clear dependent selects
+            provinceSelect.innerHTML = '<option value="">Select Province</option>';
+            citySelect.innerHTML = '<option value="">Select City/Municipality</option>';
+            barangaySelect.innerHTML = '<option value="">Select Barangay</option>';
+            
+            // Set initial disabled states
+            provinceSelect.disabled = true;
+            citySelect.disabled = true;
+            barangaySelect.disabled = true;
+            
+            // Region change handler
+            regionSelect.addEventListener('change', function() {
+                const region = this.value;
+                console.log("Edit region changed to:", region);
+                
+                provinceSelect.innerHTML = '<option value="">Select Province</option>';
+                citySelect.innerHTML = '<option value="">Select City/Municipality</option>';
+                barangaySelect.innerHTML = '<option value="">Select Barangay</option>';
+                
+                if (region && provincesByRegion[region]) {
+                    provinceSelect.disabled = false;
+                    
+                    provincesByRegion[region].forEach(province => {
+                        const option = document.createElement('option');
+                        option.value = province;
+                        option.textContent = province;
+                        provinceSelect.appendChild(option);
+                    });
+                    
+                    citySelect.disabled = true;
+                    barangaySelect.disabled = true;
+                } else {
+                    provinceSelect.disabled = true;
+                    citySelect.disabled = true;
+                    barangaySelect.disabled = true;
+                }
+            });
+            
+            // Province change handler
+            provinceSelect.addEventListener('change', function() {
+                const province = this.value;
+                console.log("Edit province changed to:", province);
+                
+                citySelect.innerHTML = '<option value="">Select City/Municipality</option>';
+                barangaySelect.innerHTML = '<option value="">Select Barangay</option>';
+                
+                if (province && citiesByProvince[province]) {
+                    citySelect.disabled = false;
+                    
+                    citiesByProvince[province].forEach(city => {
+                        const option = document.createElement('option');
+                        option.value = city;
+                        option.textContent = city;
+                        citySelect.appendChild(option);
+                    });
+                    
+                    barangaySelect.disabled = true;
+                } else {
+                    citySelect.disabled = true;
+                    barangaySelect.disabled = true;
+                }
+            });
+            
+            // City change handler
+            citySelect.addEventListener('change', function() {
+                const city = this.value;
+                console.log("Edit city changed to:", city);
+                
+                barangaySelect.innerHTML = '<option value="">Select Barangay</option>';
+                
+                if (city && barangaysByCity[city]) {
+                    barangaySelect.disabled = false;
+                    
+                    barangaysByCity[city].forEach(barangay => {
+                        const option = document.createElement('option');
+                        option.value = barangay;
+                        option.textContent = barangay;
+                        barangaySelect.appendChild(option);
+                    });
+                } else {
+                    barangaySelect.disabled = true;
+                }
+            });
+            
+            // Set initial values if customer has data
+            if (customer.region) {
+                regionSelect.value = customer.region;
+                
+                // Trigger change to load provinces
+                const event = new Event('change');
+                regionSelect.dispatchEvent(event);
+                
+                // Use setTimeout to ensure province options are loaded
+                setTimeout(() => {
+                    if (customer.province) {
+                        provinceSelect.value = customer.province;
+                        provinceSelect.dispatchEvent(event);
+                        
+                        setTimeout(() => {
+                            if (customer.city) {
+                                citySelect.value = customer.city;
+                                citySelect.dispatchEvent(event);
+                                
+                                setTimeout(() => {
+                                    if (customer.barangay) {
+                                        barangaySelect.value = customer.barangay;
+                                    }
+                                }, 300);
+                            }
+                        }, 300);
+                    }
+                }, 300);
+            }
+        }
+
+        function initEditCustomerMap(customer) {
+            setTimeout(() => {
+                if (document.getElementById('editLocationMap')) {
+                    const lat = parseFloat(customer.latitude) || 14.5995;
+                    const lng = parseFloat(customer.longitude) || 120.9842;
+                    editMap = L.map('editLocationMap').setView([lat, lng], 13);
+                    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                        attribution: '© OpenStreetMap contributors'
+                    }).addTo(editMap);
+                    editMarker = L.marker([lat, lng], {
+                        draggable: true
+                    }).addTo(editMap);
+                    editMarker.on('dragend', function(e) {
+                        const position = editMarker.getLatLng();
+                        const editLatitude = document.getElementById('editLatitude');
+                        const editLongitude = document.getElementById('editLongitude');
+                        if (editLatitude) editLatitude.value = position.lat.toFixed(6);
+                        if (editLongitude) editLongitude.value = position.lng.toFixed(6);
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                     });
                 }
 
@@ -5479,6 +6525,7 @@ button[data-bs-target="#addCustomerModal"] i,
                     }
                 }
 
+<<<<<<< HEAD
                 function getCurrentLocationForEdit() {
                     if (navigator.geolocation) {
                         navigator.geolocation.getCurrentPosition(
@@ -5584,6 +6631,21 @@ button[data-bs-target="#addCustomerModal"] i,
                         });
                     } else {
                         mobileNav.style.display = 'none';
+=======
+        function viewLocationOnMap(customerId, customerName, latitude, longitude) {
+            const locationCustomerName = document.getElementById('locationCustomerName');
+            const viewLatitude = document.getElementById('viewLatitude');
+            const viewLongitude = document.getElementById('viewLongitude');
+            if (locationCustomerName) locationCustomerName.textContent = customerName;
+            if (viewLatitude) viewLatitude.textContent = latitude;
+            if (viewLongitude) viewLongitude.textContent = longitude;
+            const modal = new bootstrap.Modal(document.getElementById('viewLocationModal'));
+            modal.show();
+            setTimeout(() => {
+                if (document.getElementById('viewLocationMap')) {
+                    if (viewMap) {
+                        viewMap.remove();
+>>>>>>> 1bcf3b66714c50eace882b1c946948f48fb2be54
                     }
                 }
 
