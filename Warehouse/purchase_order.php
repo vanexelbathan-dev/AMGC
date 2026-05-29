@@ -91,19 +91,32 @@ if (isset($_GET['load_po_details'])) {
             throw new Exception("You don't have permission to view this PO");
         }
         
-        // Get PO items
+        // Get PO items - FILTER BY USER CATEGORY
         $items_query = "SELECT poi.*, i.item_code, i.item_name, i.unit_type, i.stock
                         FROM purchase_order_items poi
                         JOIN items i ON poi.item_id = i.item_id
-                        WHERE poi.po_id = ?
-                        ORDER BY poi.po_item_id";
+                        WHERE poi.po_id = ?";
+        
+        // Add category filter if user has a category
+        if (!empty($user_category)) {
+            $items_query .= " AND i.category = ?";
+        } else {
+            $items_query .= " AND 1=0"; // No category assigned, show nothing
+        }
+        
+        $items_query .= " ORDER BY poi.po_item_id";
         
         $items_stmt = $conn->prepare($items_query);
         if (!$items_stmt) {
             throw new Exception("Database error: " . $conn->error);
         }
         
-        $items_stmt->bind_param("i", $po_id);
+        if (!empty($user_category)) {
+            $items_stmt->bind_param("is", $po_id, $user_category);
+        } else {
+            $items_stmt->bind_param("i", $po_id);
+        }
+        
         if (!$items_stmt->execute()) {
             throw new Exception("Execution error: " . $items_stmt->error);
         }
@@ -114,7 +127,7 @@ if (isset($_GET['load_po_details'])) {
             $items[] = $row;
         }
         
-        // Calculate totals and completion percentage
+        // Calculate totals and completion percentage (only for filtered items)
         $total_ordered = 0;
         $total_received = 0;
         foreach ($items as $item) {
@@ -277,15 +290,32 @@ if (isset($_GET['load_receive_items'])) {
         $stmt->execute();
         $po = $stmt->get_result()->fetch_assoc();
         
-        // Get PO items with current stock
+        // Get PO items with current stock - FILTER BY USER CATEGORY
         $items_query = "SELECT poi.*, i.item_code, i.item_name, i.unit_type, i.stock
                         FROM purchase_order_items poi
                         JOIN items i ON poi.item_id = i.item_id
-                        WHERE poi.po_id = ?
-                        ORDER BY poi.po_item_id";
+                        WHERE poi.po_id = ?";
+        
+        // Add category filter if user has a category
+        if (!empty($user_category)) {
+            $items_query .= " AND i.category = ?";
+        } else {
+            $items_query .= " AND 1=0"; // No category assigned, show nothing
+        }
+        
+        $items_query .= " ORDER BY poi.po_item_id";
         
         $items_stmt = $conn->prepare($items_query);
-        $items_stmt->bind_param("i", $po_id);
+        if (!$items_stmt) {
+            throw new Exception("Database error: " . $conn->error);
+        }
+        
+        if (!empty($user_category)) {
+            $items_stmt->bind_param("is", $po_id, $user_category);
+        } else {
+            $items_stmt->bind_param("i", $po_id);
+        }
+        
         $items_stmt->execute();
         $items_result = $items_stmt->get_result();
         ?>
@@ -425,9 +455,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 if (!$update_stock_stmt->execute()) {
                     throw new Exception('Failed to update item stock');
                 }
-                
-                // Log the stock movement (optional - if you want to track)
-                // You can add this to a stock_movements table if you have one
             }
             
             // Check if all items are fully received for this PO
@@ -990,7 +1017,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                                         $status_text = 'Pending';
                                     }
                                     ?>
-                                    <tr>
+                                    <tr data-po-id="<?php echo $po['po_id']; ?>">
                                         <td><strong><?php echo htmlspecialchars($po['po_number']); ?></strong></td>
                                         <td><?php echo htmlspecialchars($po['supplier_name']); ?></td>
                                         <td><?php echo date('M d, Y', strtotime($po['order_date'])); ?></td>
@@ -1185,6 +1212,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         let currentPoItemId = null;
         let currentMaxQuantity = 0;
         const logoBase64 = '<?php echo $logo_base64; ?>';
+
+        // ================= AUTO-OPEN FUNCTIONALITY FROM DASHBOARD =================
+        // Check if we need to auto-open the receive modal for a specific purchase order
+        const autoOpenPoId = sessionStorage.getItem('auto_open_po');
+        
+        if (autoOpenPoId) {
+            // Clear the stored ID immediately to prevent reopening on refresh
+            sessionStorage.removeItem('auto_open_po');
+            
+            // Wait for page to fully load
+            document.addEventListener('DOMContentLoaded', function() {
+                setTimeout(function() {
+                    // Check if the PO is already fully received
+                    const poRow = document.querySelector(`tr[data-po-id="${autoOpenPoId}"]`);
+                    if (poRow) {
+                        const statusBadge = poRow.querySelector('.badge');
+                        const statusText = statusBadge ? statusBadge.textContent : '';
+                        
+                        if (statusText === 'Received') {
+                            // PO is already fully received, just show details
+                            Swal.fire({
+                                title: 'Purchase Order Already Received',
+                                text: 'This purchase order has already been fully received. Viewing details instead.',
+                                icon: 'info',
+                                timer: 2000,
+                                showConfirmButton: false
+                            }).then(() => {
+                                showPODetails(parseInt(autoOpenPoId));
+                            });
+                        } else {
+                            // Open the receive modal for this PO
+                            Swal.fire({
+                                title: 'Receiving Purchase Order',
+                                text: 'Opening receive items form...',
+                                icon: 'info',
+                                timer: 1500,
+                                showConfirmButton: false
+                            }).then(() => {
+                                openReceiveModal(parseInt(autoOpenPoId));
+                                
+                                // Highlight the row briefly
+                                poRow.style.backgroundColor = '#fff3cd';
+                                setTimeout(() => {
+                                    poRow.style.backgroundColor = '';
+                                }, 3000);
+                            });
+                        }
+                    } else {
+                        // Couldn't find the row, maybe it's not in the current view
+                        Swal.fire({
+                            title: 'Purchase Order Not Found',
+                            text: 'The purchase order may have been processed or is not available.',
+                            icon: 'warning',
+                            timer: 2000,
+                            showConfirmButton: false
+                        });
+                    }
+                }, 1000);
+            });
+        }
 
         // ================= SIDEBAR FUNCTIONS =================
         function toggleSidebar() {
@@ -1899,81 +1986,81 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
         // ================= PURCHASE ORDERS FILTER FUNCTIONS =================
 
-// Toggle filter visibility
-function togglePOFilter() {
-    const content = document.getElementById('poFilterContent');
-    const icon = document.getElementById('poFilterIcon');
-    const toggleBtn = document.getElementById('poFilterToggle');
-    
-    if (content && icon && toggleBtn) {
-        const isExpanded = toggleBtn.getAttribute('aria-expanded') === 'true';
-        
-        if (isExpanded) {
-            // Collapse
-            content.classList.add('collapsed');
-            toggleBtn.setAttribute('aria-expanded', 'false');
-            icon.style.transform = 'rotate(0deg)';
-            localStorage.setItem('poFilterHidden', 'true');
-        } else {
-            // Expand
-            content.classList.remove('collapsed');
-            toggleBtn.setAttribute('aria-expanded', 'true');
-            icon.style.transform = 'rotate(180deg)';
-            localStorage.setItem('poFilterHidden', 'false');
+        // Toggle filter visibility
+        function togglePOFilter() {
+            const content = document.getElementById('poFilterContent');
+            const icon = document.getElementById('poFilterIcon');
+            const toggleBtn = document.getElementById('poFilterToggle');
+            
+            if (content && icon && toggleBtn) {
+                const isExpanded = toggleBtn.getAttribute('aria-expanded') === 'true';
+                
+                if (isExpanded) {
+                    // Collapse
+                    content.classList.add('collapsed');
+                    toggleBtn.setAttribute('aria-expanded', 'false');
+                    icon.style.transform = 'rotate(0deg)';
+                    localStorage.setItem('poFilterHidden', 'true');
+                } else {
+                    // Expand
+                    content.classList.remove('collapsed');
+                    toggleBtn.setAttribute('aria-expanded', 'true');
+                    icon.style.transform = 'rotate(180deg)';
+                    localStorage.setItem('poFilterHidden', 'false');
+                }
+            }
         }
-    }
-}
 
-// Apply filters
-function applyPOFilters() {
-    const search = document.getElementById('searchInput')?.value || '';
-    const status = document.getElementById('statusFilter')?.value || '';
-    
-    const params = new URLSearchParams();
-    if (search) params.append('search', search);
-    if (status) params.append('status', status);
-    
-    window.location.href = 'purchase_orders.php?' + params.toString();
-}
+        // Apply filters
+        function applyPOFilters() {
+            const search = document.getElementById('searchInput')?.value || '';
+            const status = document.getElementById('statusFilter')?.value || '';
+            
+            const params = new URLSearchParams();
+            if (search) params.append('search', search);
+            if (status) params.append('status', status);
+            
+            window.location.href = 'purchase_orders.php?' + params.toString();
+        }
 
-// Clear filters
-function clearPOFilters() {
-    document.getElementById('searchInput') && (document.getElementById('searchInput').value = '');
-    document.getElementById('statusFilter') && (document.getElementById('statusFilter').value = '');
-    
-    applyPOFilters();
-}
+        // Clear filters
+        function clearPOFilters() {
+            document.getElementById('searchInput') && (document.getElementById('searchInput').value = '');
+            document.getElementById('statusFilter') && (document.getElementById('statusFilter').value = '');
+            
+            applyPOFilters();
+        }
 
-// Initialize filter state - DEFAULT CLOSED
-function initPOFilterState() {
-    const content = document.getElementById('poFilterContent');
-    const icon = document.getElementById('poFilterIcon');
-    const toggleBtn = document.getElementById('poFilterToggle');
-    
-    if (content && icon && toggleBtn) {
-        // ALWAYS START CLOSED
-        content.classList.add('collapsed');
-        toggleBtn.setAttribute('aria-expanded', 'false');
-        icon.style.transform = 'rotate(0deg)';
-        
-        // Reset localStorage
-        localStorage.setItem('poFilterHidden', 'true');
-    }
-}
+        // Initialize filter state - DEFAULT CLOSED
+        function initPOFilterState() {
+            const content = document.getElementById('poFilterContent');
+            const icon = document.getElementById('poFilterIcon');
+            const toggleBtn = document.getElementById('poFilterToggle');
+            
+            if (content && icon && toggleBtn) {
+                // ALWAYS START CLOSED
+                content.classList.add('collapsed');
+                toggleBtn.setAttribute('aria-expanded', 'false');
+                icon.style.transform = 'rotate(0deg)';
+                
+                // Reset localStorage
+                localStorage.setItem('poFilterHidden', 'true');
+            }
+        }
 
-// Add event listeners
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize filter - ALWAYS CLOSED
-    initPOFilterState();
-    
-    // Toggle button
-    document.getElementById('poFilterToggle')?.addEventListener('click', togglePOFilter);
-    
-    // Enter key on search
-    document.getElementById('searchInput')?.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') applyPOFilters();
-    });
-});
+        // Add event listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize filter - ALWAYS CLOSED
+            initPOFilterState();
+            
+            // Toggle button
+            document.getElementById('poFilterToggle')?.addEventListener('click', togglePOFilter);
+            
+            // Enter key on search
+            document.getElementById('searchInput')?.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') applyPOFilters();
+            });
+        });
     </script>
 </body>
 </html>

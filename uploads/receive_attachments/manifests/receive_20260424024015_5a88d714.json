@@ -1,0 +1,28 @@
+{
+    "manifest_id": "receive_20260424024015_5a88d714",
+    "source": "rmr",
+    "supplier_id": null,
+    "supplier_name": "",
+    "po_number": "RMR-11",
+    "reference_type": "rmr",
+    "reference_id": 11,
+    "receive_date": "2026-04-24",
+    "created_at": "2026-04-24 02:40:15",
+    "created_by": 2,
+    "branch_id": 1,
+    "transaction_ids": [
+        0
+    ],
+    "attachments": [],
+    "items": [
+        {
+            "item_id": 8,
+            "item_name": "Coke Mismo",
+            "item_code": "ITEM008",
+            "item_description": "Coke Mismo",
+            "uom": "Bundle",
+            "qty": 25,
+            "unit_price": 240
+        }
+    ]
+}

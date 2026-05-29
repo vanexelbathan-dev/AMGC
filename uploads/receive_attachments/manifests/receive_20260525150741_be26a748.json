@@ -1,0 +1,33 @@
+{
+    "manifest_id": "receive_20260525150741_be26a748",
+    "source": "supplier",
+    "supplier_id": 3,
+    "supplier_name": "Ross",
+    "po_number": "PO-RCV-20260525150741",
+    "reference_type": "purchase_order",
+    "reference_id": 23,
+    "receive_date": "2026-05-06",
+    "encoded_date": "2026-05-25",
+    "receive_memo": "",
+    "created_at": "2026-05-25 15:07:41",
+    "created_by": 2,
+    "branch_id": 1,
+    "transaction_ids": [
+        278
+    ],
+    "attachments": [],
+    "items": [
+        {
+            "item_id": 166,
+            "item_name": "KAHIT ANO",
+            "item_code": "ITEM015",
+            "item_description": "KAHIT ANO",
+            "category": "General",
+            "uom": "Piece",
+            "qty": 50,
+            "unit_price": 20,
+            "unit_cost": 20,
+            "total_cost": 1000
+        }
+    ]
+}

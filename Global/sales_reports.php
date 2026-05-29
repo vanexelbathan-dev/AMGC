@@ -47,6 +47,9 @@ if (empty($user_initials)) {
 $period = isset($_GET['period']) ? $_GET['period'] : 'monthly';
 $date = isset($_GET['date']) ? $_GET['date'] : '2026-02';
 
+// Define monthly quota
+define('MONTHLY_QUOTA', 100000);
+
 // Handle AJAX request
 if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
     header('Content-Type: application/json');
@@ -60,7 +63,9 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
         ],
         'topItems' => [],
         'locationSales' => [],
-        'periodBreakdown' => []
+        'periodBreakdown' => [],
+        'locationVerifications' => [],
+        'agentKPIs' => []
     ];
 
     // Parse date for filtering
@@ -111,7 +116,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
         ];
     }
 
-    // Get top selling items - with filtering
+    // Get top selling items
     $top_items_sql = "SELECT 
                         i.item_name,
                         i.item_code,
@@ -140,7 +145,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
         }
     }
 
-    // Get sales by location/branch - with filtering
+    // Get sales by location/branch
     $location_sales_sql = "SELECT 
                             b.branch_name as location,
                             COUNT(DISTINCT so.so_id) as total_orders,
@@ -168,7 +173,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
         }
     }
 
-    // Get period breakdown - with filtering
+    // Get period breakdown (daily sales)
     $breakdown_sql = "SELECT 
                         DATE_FORMAT(so.order_date, '%Y-%m-%d') as sale_date,
                         b.branch_name as location,
@@ -201,7 +206,146 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
         }
     }
 
+    // Get location verification data (retained for completeness)
+    $verification_where = " WHERE so.order_status != 'cancelled' AND so.agent_location IS NOT NULL AND so.agent_location != ''";
+    if (!$view_all_branches && $user_branch_id > 0) {
+        $verification_where .= " AND so.branch_id = $user_branch_id";
+    }
+    if ($period == 'monthly' && !empty($date)) {
+        $verification_where .= " AND YEAR(so.order_date) = $year AND MONTH(so.order_date) = $month";
+    } elseif ($period == 'daily' && !empty($date)) {
+        $verification_where .= " AND DATE(so.order_date) = '$date'";
+    }
+    
+    $verification_sql = "SELECT 
+                            so.so_id,
+                            so.so_number,
+                            so.order_date,
+                            so.agent_location,
+                            c.customer_id,
+                            c.customer_name,
+                            c.address,
+                            c.latitude,
+                            c.longitude,
+                            CONCAT(u.first_name, ' ', u.last_name) as agent_name,
+                            b.branch_name as branch
+                         FROM sales_orders so
+                         INNER JOIN customers c ON so.customer_id = c.customer_id
+                         INNER JOIN users u ON so.created_by = u.user_id
+                         INNER JOIN branches b ON so.branch_id = b.branch_id
+                         $verification_where
+                         ORDER BY so.order_date DESC
+                         LIMIT 50";
+    
+    $verification_result = $conn->query($verification_sql);
+    if ($verification_result) {
+        while ($row = $verification_result->fetch_assoc()) {
+            $agent_coords = explode(',', $row['agent_location']);
+            $agent_lat = isset($agent_coords[0]) ? (float)$agent_coords[0] : null;
+            $agent_lng = isset($agent_coords[1]) ? (float)$agent_coords[1] : null;
+            
+            $response['locationVerifications'][] = [
+                'so_id' => $row['so_id'],
+                'so_number' => $row['so_number'],
+                'order_date' => $row['order_date'],
+                'customer_id' => $row['customer_id'],
+                'customer_name' => $row['customer_name'],
+                'customer_address' => $row['address'],
+                'customer_lat' => $row['latitude'] ? (float)$row['latitude'] : null,
+                'customer_lng' => $row['longitude'] ? (float)$row['longitude'] : null,
+                'agent_name' => $row['agent_name'],
+                'agent_lat' => $agent_lat,
+                'agent_lng' => $agent_lng,
+                'branch' => $row['branch']
+            ];
+        }
+    }
+
+    // Get Agent KPI data
+    $agent_kpi_sql = "SELECT 
+                        u.user_id,
+                        CONCAT(u.first_name, ' ', u.last_name) as agent_name,
+                        b.branch_name as branch,
+                        COUNT(DISTINCT so.so_id) as total_orders,
+                        IFNULL(SUM(so.total_amount), 0) as total_sales,
+                        IFNULL(SUM(soi.quantity_ordered), 0) as total_items_sold,
+                        IFNULL(AVG(so.total_amount), 0) as avg_order_value
+                    FROM sales_orders so
+                    INNER JOIN users u ON so.created_by = u.user_id
+                    INNER JOIN branches b ON so.branch_id = b.branch_id
+                    LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
+                    $where_clause
+                    GROUP BY u.user_id, b.branch_id
+                    ORDER BY total_sales DESC";
+    
+    $agent_kpi_result = $conn->query($agent_kpi_sql);
+    $agent_kpis = [];
+    if ($agent_kpi_result) {
+        while ($row = $agent_kpi_result->fetch_assoc()) {
+            $agent_kpis[] = [
+                'agent_name' => $row['agent_name'],
+                'branch' => $row['branch'],
+                'total_orders' => (int)$row['total_orders'],
+                'total_sales' => (float)$row['total_sales'],
+                'total_items_sold' => (int)$row['total_items_sold'],
+                'avg_order_value' => (float)$row['avg_order_value']
+            ];
+        }
+    }
+    $response['agentKPIs'] = $agent_kpis;
+
     echo json_encode($response);
+    exit;
+}
+
+// Handle geocoding AJAX request
+if (isset($_POST['action']) && $_POST['action'] == 'geocode_customer') {
+    header('Content-Type: application/json');
+    
+    $customer_id = isset($_POST['customer_id']) ? (int)$_POST['customer_id'] : 0;
+    $address = isset($_POST['address']) ? trim($_POST['address']) : '';
+    
+    if (empty($address)) {
+        echo json_encode(['success' => false, 'message' => 'Address is required']);
+        exit;
+    }
+    
+    // Use OpenStreetMap Nominatim API
+    $encoded_address = urlencode($address . ', Philippines');
+    $url = "https://nominatim.openstreetmap.org/search?q={$encoded_address}&format=json&limit=1";
+    
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_USERAGENT, 'AMGC Sales System/1.0');
+    curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+    
+    $response = curl_exec($ch);
+    $http_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    curl_close($ch);
+    
+    if ($http_code == 200 && $response) {
+        $data = json_decode($response, true);
+        if (!empty($data)) {
+            $lat = (float)$data[0]['lat'];
+            $lng = (float)$data[0]['lon'];
+            
+            // Update customer with coordinates
+            if ($customer_id > 0) {
+                $update_sql = "UPDATE customers SET latitude = ?, longitude = ? WHERE customer_id = ?";
+                $update_stmt = $conn->prepare($update_sql);
+                $update_stmt->bind_param('ddi', $lat, $lng, $customer_id);
+                $update_stmt->execute();
+                $update_stmt->close();
+            }
+            
+            echo json_encode(['success' => true, 'latitude' => $lat, 'longitude' => $lng]);
+            exit;
+        }
+    }
+    
+    echo json_encode(['success' => false, 'message' => 'Could not geocode address']);
     exit;
 }
 ?>
@@ -221,6 +365,8 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <!-- Leaflet CSS for Maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <!-- SweetAlert2 -->
     <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -291,7 +437,6 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
     transition: all 0.2s ease;
     line-height: 1.4;
     box-sizing: border-box;
-    /* REMOVED: white-space, overflow, text-overflow - hindi dapat sa select/input mismo */
 }
 
 /* SELECT SPECIFIC - WITH CUSTOM ARROW */
@@ -304,12 +449,6 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
     appearance: none;
     -webkit-appearance: none;
     -moz-appearance: none;
-    /* REMOVED: white-space, overflow, text-overflow */
-}
-
-/* INPUT SPECIFIC */
-.form-control {
-    padding-right: clamp(0.7rem, 3vw, 1rem);
 }
 
 /* Focus States */
@@ -343,328 +482,281 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
     transform: scale(1.1);
 }
 
-/* ===== RESPONSIVE BREAKPOINTS - SMOOTH TRANSITIONS ===== */
-
-/* Extra Small (below 400px) - 1 column */
+/* ===== RESPONSIVE BREAKPOINTS ===== */
 @media (max-width: 399px) {
-    .form-card {
-        padding: 0.7rem;
-    }
-    
-    .form-card h5 {
-        font-size: 0.95rem;
-    }
-    
-    .form-card h5 i {
-        font-size: 0.85rem;
-        padding: 0.25rem;
-    }
-    
-    .form-label {
-        font-size: 0.7rem;
-    }
-    
-    .form-label i {
-        font-size: 0.75rem;
-    }
-    
-    .form-select, 
-    .form-control {
-        font-size: 0.7rem;
-        padding: 0.25rem 0.5rem;
-        min-height: 30px;
-    }
-    
-    .form-select {
-        padding-right: 1.6rem;
-        background-position: right 0.4rem center;
-        background-size: 10px 8px;
-    }
-    
-    .col-12, .col-sm-6 {
-        width: 100% !important;
-        flex: 0 0 100%;
-        max-width: 100%;
-    }
-    
-    .row.g-3 {
-        --bs-gutter-y: 0.5rem;
-    }
+    .form-card { padding: 0.7rem; }
+    .form-card h5 { font-size: 0.95rem; }
+    .form-select, .form-control { font-size: 0.7rem; padding: 0.25rem 0.5rem; min-height: 30px; }
+    .col-12, .col-sm-6 { width: 100% !important; flex: 0 0 100%; max-width: 100%; }
 }
 
-/* Small (400px - 575px) - 1 column para hindi mag-break */
 @media (min-width: 400px) and (max-width: 575px) {
-    .form-card {
-        padding: 0.8rem;
-    }
-    
-    .form-card h5 {
-        font-size: 1rem;
-    }
-    
-    .form-card h5 i {
-        font-size: 0.9rem;
-        padding: 0.3rem;
-    }
-    
-    .form-label {
-        font-size: 0.75rem;
-    }
-    
-    .form-label i {
-        font-size: 0.8rem;
-    }
-    
-    .form-select, 
-    .form-control {
-        font-size: 0.75rem;
-        padding: 0.3rem 0.6rem;
-        min-height: 32px;
-    }
-    
-    .form-select {
-        padding-right: 1.8rem;
-        background-position: right 0.5rem center;
-        background-size: 11px 9px;
-    }
-    
-    .col-12, .col-sm-6 {
-        width: 100% !important;
-        flex: 0 0 100%;
-        max-width: 100%;
-    }
-    
-    .row.mt-3 > [class*="col-"] {
-        margin-bottom: 0.8rem;
-    }
-    
-    .row.mt-3 > [class*="col-"]:last-child {
-        margin-bottom: 0;
-    }
+    .form-card { padding: 0.8rem; }
+    .form-card h5 { font-size: 1rem; }
+    .form-select, .form-control { font-size: 0.75rem; padding: 0.3rem 0.6rem; min-height: 32px; }
+    .col-12, .col-sm-6 { width: 100% !important; flex: 0 0 100%; max-width: 100%; }
 }
 
-/* Medium (576px - 767px) - 2 columns na */
 @media (min-width: 576px) and (max-width: 767px) {
-    .form-card {
-        padding: 1rem;
-    }
-    
-    .form-card h5 {
-        font-size: 1.1rem;
-    }
-    
-    .form-card h5 i {
-        font-size: 1rem;
-        padding: 0.35rem;
-    }
-    
-    .form-label {
-        font-size: 0.8rem;
-    }
-    
-    .form-label i {
-        font-size: 0.85rem;
-    }
-    
-    .form-select, 
-    .form-control {
-        font-size: 0.8rem;
-        padding: 0.35rem 0.65rem;
-        min-height: 34px;
-    }
-    
-    .form-select {
-        padding-right: 2rem;
-        background-size: 12px 10px;
-    }
-    
-    .col-sm-6 {
-        width: 50% !important;
-        flex: 0 0 50%;
-        max-width: 50%;
-    }
+    .form-card { padding: 1rem; }
+    .col-sm-6 { width: 50% !important; flex: 0 0 50%; max-width: 50%; }
 }
 
-/* Tablet (768px - 991px) */
 @media (min-width: 768px) and (max-width: 991px) {
-    .form-card {
-        padding: 1.2rem;
+    .form-card { padding: 1.2rem; }
+    .col-md-6 { width: 50% !important; }
+}
+
+/* ===== LOCATION VERIFICATION TABLE STYLES ===== */
+.location-badge {
+    display: inline-block;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.badge-location-yes {
+    background: #d4edda;
+    color: #155724;
+}
+
+.badge-location-no {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.badge-location-pending {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.view-location-btn {
+    background: #17a2b8;
+    border: none;
+    color: white;
+    padding: 4px 10px;
+    border-radius: 4px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.view-location-btn:hover {
+    background: #138496;
+    transform: scale(1.02);
+}
+
+.geocode-btn {
+    background: #6c757d;
+    border: none;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    cursor: pointer;
+    margin-left: 5px;
+}
+
+.geocode-btn:hover {
+    background: #5a6268;
+}
+
+/* Map Modal Styles */
+.map-modal .modal-dialog {
+    max-width: 90%;
+    width: 800px;
+}
+
+.map-container {
+    height: 500px;
+    width: 100%;
+    border-radius: 8px;
+    margin-top: 15px;
+}
+
+.location-info {
+    background: #f8f9fa;
+    padding: 12px;
+    border-radius: 8px;
+    margin-bottom: 15px;
+    font-size: 13px;
+}
+
+.location-info .info-row {
+    margin-bottom: 5px;
+}
+
+.location-info .info-label {
+    font-weight: 600;
+    width: 120px;
+    display: inline-block;
+}
+
+.distance-info {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #dee2e6;
+    font-weight: 600;
+    color: #28a745;
+}
+
+/* Table Styles */
+.data-table {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+    overflow: hidden;
+    margin-bottom: 20px;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.table-header {
+    padding: 15px 20px;
+    background: white;
+    border-bottom: 1px solid rgba(0,0,0,0.05);
+    flex-shrink: 0;
+}
+
+.table-header h5 {
+    margin: 0;
+    font-weight: 600;
+    color: #2c3e50;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* SCROLLABLE TABLE CONTAINER - FIXED HEADER */
+.table-responsive-scroll {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: auto;
+    position: relative;
+}
+
+.custom-table {
+    margin-bottom: 0;
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.custom-table thead th {
+    background: #f8f9fa;
+    padding: 12px 15px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #495057;
+    border-bottom: 2px solid #dee2e6;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    box-shadow: 0 1px 0 0 #dee2e6;
+}
+
+/* Ensure thead background covers sticky header */
+.custom-table thead {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background-color: #f8f9fa;
+}
+
+.custom-table tbody td {
+    padding: 12px 15px;
+    font-size: 13px;
+    vertical-align: middle;
+    border-bottom: 1px solid #eef2f5;
+}
+
+/* Filter Toggle */
+.filter-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+}
+
+.filter-toggle-btn {
+    background: none;
+    border: none;
+    font-size: 1.2rem;
+    color: #6c757d;
+    cursor: pointer;
+    transition: transform 0.3s;
+    padding: 5px;
+}
+
+.filter-toggle-btn:hover {
+    color: #2E7D32;
+}
+
+.filter-content {
+    transition: all 0.3s ease;
+    overflow: hidden;
+}
+
+.filter-content.collapsed {
+    display: none;
+}
+
+/* Responsive Table */
+@media (max-width: 768px) {
+    .custom-table th, .custom-table td {
+        padding: 8px 10px;
+        font-size: 11px;
     }
     
-    .form-card h5 {
+    .stat-value {
         font-size: 1.2rem;
     }
     
-    .form-card h5 i {
-        font-size: 1.1rem;
-        padding: 0.4rem;
-    }
-    
-    .form-label {
-        font-size: 0.85rem;
-    }
-    
-    .form-label i {
-        font-size: 0.9rem;
-    }
-    
-    .form-select, 
-    .form-control {
-        font-size: 0.85rem;
-        padding: 0.4rem 0.7rem;
-        min-height: 36px;
-    }
-    
-    .col-md-6 {
-        width: 50% !important;
-    }
-}
-
-/* Small Desktop (992px - 1199px) */
-@media (min-width: 992px) and (max-width: 1199px) {
-    .form-card {
-        padding: 1.3rem;
-    }
-    
-    .form-card h5 {
-        font-size: 1.3rem;
-    }
-    
-    .form-label {
-        font-size: 0.9rem;
-    }
-    
-    .form-select, 
-    .form-control {
-        font-size: 0.9rem;
-        padding: 0.5rem 0.8rem;
-        min-height: 38px;
-    }
-}
-
-/* Large Desktop (1200px and up) */
-@media (min-width: 1200px) {
-    .form-card {
-        padding: 1.5rem;
-    }
-    
-    .form-card h5 {
-        font-size: 1.4rem;
-    }
-    
-    .form-label {
-        font-size: 0.95rem;
-    }
-    
-    .form-select, 
-    .form-control {
-        font-size: 0.95rem;
-        padding: 0.6rem 0.9rem;
-        min-height: 40px;
-    }
-}
-
-/* Extra Large Desktop (1400px and up) */
-@media (min-width: 1400px) {
-    .form-card {
-        padding: 1.8rem;
-    }
-    
-    .form-card h5 {
+    .stat-card i {
         font-size: 1.5rem;
+        padding: 8px;
     }
     
-    .form-label {
-        font-size: 1rem;
+    .map-container {
+        height: 400px;
     }
     
-    .form-select, 
-    .form-control {
-        font-size: 1rem;
-        padding: 0.7rem 1rem;
-        min-height: 42px;
+    .table-responsive-scroll {
+        max-height: 300px;
     }
 }
 
-/* ===== CONTAINER FIXES - PARA HINDI MAG-BREAK ===== */
-.row.mt-3 {
+/* Custom scrollbar */
+.table-responsive-scroll::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.table-responsive-scroll::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 10px;
+}
+
+.table-responsive-scroll::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 10px;
+}
+
+.table-responsive-scroll::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
+/* Ensure consistent height for data-table containers */
+.row.g-3.mb-4 > [class*="col-"] {
     display: flex;
-    flex-wrap: wrap;
-    margin-right: -0.5rem;
-    margin-left: -0.5rem;
+    flex-direction: column;
 }
 
-.row.mt-3 > [class*="col-"] {
-    padding-right: 0.5rem;
-    padding-left: 0.5rem;
-    box-sizing: border-box;
-}
-
-/* Fix para sa Bootstrap grid */
-.g-3 {
-    --bs-gutter-x: 1rem;
-    --bs-gutter-y: 1rem;
-}
-
-@media (max-width: 575px) {
-    .g-3 {
-        --bs-gutter-y: 0.75rem;
-    }
-}
-
-/* ===== DROPDOWN OPTIONS ===== */
-.form-select option {
-    font-size: inherit;
-    padding: clamp(0.2rem, 1vw, 0.4rem);
-    /* REMOVED: white-space, overflow, text-overflow - sa options lang dapat */
-}
-
-/* ===== ANIMATION ===== */
-.form-card {
-    animation: fadeInUp 0.3s ease-out;
-}
-
-@keyframes fadeInUp {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-/* ===== SPACING BETWEEN SECTIONS ===== */
-
-/* Space between Filter and Table */
 .data-table {
-    margin-top: -2rem !important; /* dagdag space sa taas ng table */
-}
-
-/* Alternative kung gusto mo sa filter mismo ang space */
-.form-card {
-    margin-bottom: 2rem !important; /* space sa baba ng filter */
-}
-
-/* Responsive spacing */
-@media (max-width: 768px) {
-    .data-table {
-        margin-top: -1.5rem !important;
-    }
-    
-    .form-card {
-        margin-bottom: 1.5rem !important;
-    }
-}
-
-@media (max-width: 576px) {
-    .data-table {
-        margin-top: -1rem !important;
-    }
-    
-    .form-card {
-        margin-bottom: 1rem !important;
-    }
+    height: 100%;
+    min-height: 400px;
 }
 </style>
 </head>
@@ -672,7 +764,7 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
     <!-- MAIN APPLICATION -->
     <div id="appPage">
         <!-- Sidebar -->
-       <div class="sidebar" id="sidebar">
+        <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <h3>
                     <button class="desktop-toggle-btn" id="desktopToggleBtn">
@@ -684,6 +776,12 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
             </div>
             <div class="sidebar-menu">
                 <ul class="nav flex-column">
+                    <li class="nav-item">
+                        <a class="nav-link" href="dashboard.php">
+                            <i class="bi bi-speedometer2"></i>
+                            <span class="nav-text">Dashboard</span>
+                        </a>
+                    </li>
                     <li class="nav-item">
                         <a class="nav-link active" href="sales_reports.php">
                             <i class="bi bi-graph-up"></i>
@@ -700,6 +798,12 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                         <a class="nav-link" href="all_items.php">
                             <i class="bi bi-box"></i>
                             <span class="nav-text">All Items</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="location_verification.php">
+                          <i class="bi bi-geo-alt-fill"></i>
+                          <span class="nav-text">Location Verification</span>
                         </a>
                     </li>
                     <li class="nav-item">
@@ -747,88 +851,88 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                     </button>
                     <div class="page-title">
                         <h2>Sales Reports</h2>
-                        <p>Monitor sales performance by period</p>
+                        <p>Monitor sales performance and location verification</p>
                     </div>
                 </div>
 
-           <div class="row stat-card-row g-1 g-sm-2">
-    <!-- Card 1 -->
-    <div class="col">
-        <div class="stat-card total">
-            <i class="bi bi-graph-up-arrow"></i>
-            <div class="stat-content">
-                <div class="stat-value" id="totalSales">₱0.00</div>
-                <div class="stat-label">Total Sales</div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Card 2 -->
-    <div class="col">
-        <div class="stat-card sales">
-            <i class="bi bi-box-seam"></i>
-            <div class="stat-content">
-                <div class="stat-value" id="itemsSold">0</div>
-                <div class="stat-label">Items Sold</div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Card 3 -->
-    <div class="col">
-        <div class="stat-card complete">
-            <i class="bi bi-calculator"></i>
-            <div class="stat-content">
-                <div class="stat-value" id="avgOrderValue">₱0.00</div>
-                <div class="stat-label">Avg Order Value</div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Pwedeng magdagdag ng Card 4, 5, 6 - automatic mag-aadjust -->
-</div>
-                
-              <!-- FILTER SECTION - SALES REPORTS -->
-<div class="row g-3 mb-4">
-    <div class="col-12">
-        <div class="form-card">
-            <div class="filter-header">
-                <h5 class="mb-0">
-                    <i class="bi bi-funnel"></i> Filter Reports
-                </h5>
-                <button class="filter-toggle-btn" id="toggleSalesFilter" onclick="toggleFilter('sales')" title="Toggle Filter">
-                    <i class="bi bi-chevron-down" id="salesFilterIcon"></i>
-                </button>
-            </div>
-            <div class="filter-content" id="salesFilterContent">
-                <div class="row mt-3 g-3">
-                    <div class="col-12 col-sm-6">
-                        <label class="form-label">
-                            <i class="bi bi-calendar-range"></i> Period
-                        </label>
-                        <select class="form-select" id="periodFilter" onchange="toggleDateFilter()">
-                            <option value="monthly" selected>Monthly</option>
-                            <option value="daily">Daily</option>
-                        </select>
+                <div class="row stat-card-row g-1 g-sm-2">
+                    <!-- Card 1 -->
+                    <div class="col">
+                        <div class="stat-card total">
+                            <i class="bi bi-graph-up-arrow"></i>
+                            <div class="stat-content">
+                                <div class="stat-value" id="totalSales">₱0.00</div>
+                                <div class="stat-label">Total Sales</div>
+                            </div>
+                        </div>
                     </div>
-                    <div class="col-12 col-sm-6">
-                        <label class="form-label" id="dateLabel">
-                            <i class="bi bi-calendar-month"></i> Month
-                        </label>
-                        <input type="month" class="form-control" id="dateFilter" value="2026-02" onchange="loadReports()">
+                    
+                    <!-- Card 2 -->
+                    <div class="col">
+                        <div class="stat-card sales">
+                            <i class="bi bi-box-seam"></i>
+                            <div class="stat-content">
+                                <div class="stat-value" id="itemsSold">0</div>
+                                <div class="stat-label">Items Sold</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Card 3 -->
+                    <div class="col">
+                        <div class="stat-card complete">
+                            <i class="bi bi-calculator"></i>
+                            <div class="stat-content">
+                                <div class="stat-value" id="avgOrderValue">₱0.00</div>
+                                <div class="stat-label">Avg Order Value</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </div>
-        </div>
-    </div>
-</div>
+                
+                <!-- FILTER SECTION -->
+                <div class="row g-3 mb-4">
+                    <div class="col-12">
+                        <div class="form-card">
+                            <div class="filter-header">
+                                <h5 class="mb-0">
+                                    <i class="bi bi-funnel"></i> Filter Reports
+                                </h5>
+                                <button class="filter-toggle-btn" id="toggleSalesFilter" onclick="toggleFilter('sales')" title="Toggle Filter">
+                                    <i class="bi bi-chevron-down" id="salesFilterIcon"></i>
+                                </button>
+                            </div>
+                            <div class="filter-content" id="salesFilterContent">
+                                <div class="row mt-3 g-3">
+                                    <div class="col-12 col-sm-6">
+                                        <label class="form-label">
+                                            <i class="bi bi-calendar-range"></i> Period
+                                        </label>
+                                        <select class="form-select" id="periodFilter" onchange="toggleDateFilter()">
+                                            <option value="monthly" selected>Monthly</option>
+                                            <option value="daily">Daily</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-12 col-sm-6">
+                                        <label class="form-label" id="dateLabel">
+                                            <i class="bi bi-calendar-month"></i> Month
+                                        </label>
+                                        <input type="month" class="form-control" id="dateFilter" value="2026-02" onchange="loadReports()">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Top Items & Sales by Location -->
                 <div class="row g-3 mb-4">
                     <div class="col-lg-6">
                         <div class="data-table">
                             <div class="table-header">
                                 <h5>Top Selling Items</h5>
                             </div>
-                            <div class="table-responsive">
+                            <div class="table-responsive-scroll">
                                 <table class="table custom-table">
                                     <thead>
                                         <tr>
@@ -853,7 +957,7 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                             <div class="table-header">
                                 <h5>Sales by Location</h5>
                             </div>
-                            <div class="table-responsive">
+                            <div class="table-responsive-scroll">
                                 <table class="table custom-table">
                                     <thead>
                                         <tr>
@@ -874,13 +978,14 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                     </div>
                 </div>
 
-                <div class="row g-3">
-                    <div class="col-12">
+                <!-- Daily Sales Breakdown & Sales Agent KPI - SIDE BY SIDE -->
+                <div class="row g-3 mb-4">
+                    <div class="col-lg-6">
                         <div class="data-table">
                             <div class="table-header">
-                                <h5>Daily Sales Breakdown</h5>
+                                <h5> Daily Sales Breakdown</h5>
                             </div>
-                            <div class="table-responsive">
+                            <div class="table-responsive-scroll">
                                 <table class="table custom-table">
                                     <thead>
                                         <tr>
@@ -900,12 +1005,38 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                             </div>
                         </div>
                     </div>
+
+                    <div class="col-lg-6">
+                        <div class="data-table">
+                            <div class="table-header">
+                                <h5> Sales Agent KPI Performance</h5>
+                            </div>
+                            <div class="table-responsive-scroll">
+                                <table class="table custom-table">
+                                    <thead>
+                                        <tr>
+                                            <th class="text-start">Agent Name</th>
+                                            <th class="text-start">Branch</th>
+                                            <th class="text-end">Total Sales</th>
+                                            <th class="text-end">Avg Order Value</th>
+                                            <th class="text-center">Quota Status</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="agentKPITable">
+                                        <tr>
+                                            <td colspan="5" class="text-center py-4">Loading agent data...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
     </div>
 
-     <!-- Mobile Bottom Navigation -->
+    <!-- Mobile Bottom Navigation -->
     <div class="mobile-nav" id="mobileNav">
         <ul class="nav">
             <li class="nav-item">
@@ -927,7 +1058,7 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 </a>
             </li>
             <li class="nav-item">
-                <a class="nav-link active" href="drivers.php">
+                <a class="nav-link" href="drivers.php">
                     <i class="bi bi-people"></i>
                     <span>Users</span>
                 </a>
@@ -953,6 +1084,47 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
         </ul>
     </div>
 
+    <!-- Location Map Modal -->
+    <div class="modal fade map-modal" id="locationMapModal" tabindex="-1">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="bi bi-map"></i> Location Verification
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="location-info" id="locationInfo">
+                        <div class="info-row">
+                            <span class="info-label">Order #:</span>
+                            <span id="mapSoNumber">-</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Sales Agent:</span>
+                            <span id="mapAgentName">-</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Customer:</span>
+                            <span id="mapCustomerName">-</span>
+                        </div>
+                        <div class="info-row">
+                            <span class="info-label">Customer Address:</span>
+                            <span id="mapCustomerAddress">-</span>
+                        </div>
+                        <div class="distance-info" id="distanceInfo">
+                            Calculating distance...
+                        </div>
+                    </div>
+                    <div id="mapContainer" class="map-container"></div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Mobile Profile/Logout Modal -->
     <div class="modal fade" id="profileModal" tabindex="-1" aria-labelledby="profileModalLabel" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -964,28 +1136,19 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                     <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
                 </div>
                 <div class="modal-body text-center">
-                    <!-- User Avatar -->
                     <div class="user-avatar-large mb-3">
                         <?php echo $user_initials; ?>
                     </div>
-                    
-                    <!-- User Name -->
                     <h4 class="mb-1"><?php echo htmlspecialchars($user_name); ?></h4>
-                    
-                    <!-- User Role -->
                     <p class="text-muted mb-3">
                         <span class="badge bg-success"><?php echo ucfirst($user_role); ?></span>
                     </p>
-                    
-                    <!-- Branch Info (if applicable) -->
                     <?php if (!$view_all_branches && $user_branch_id > 0): ?>
                     <div class="branch-info mb-3">
                         <i class="bi bi-building me-1"></i>
                         <span><?php echo htmlspecialchars($branch_name); ?></span>
                     </div>
                     <?php endif; ?>
-                    
-                    <!-- Logout Button -->
                     <button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()">
                         <i class="bi bi-box-arrow-right me-2"></i>Logout
                     </button>
@@ -994,6 +1157,8 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
         </div>
     </div>
     
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <!-- Bootstrap JS -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
@@ -1098,8 +1263,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
         
         if (isMobile) {
             mobileNav.style.display = 'block';
-            
-            // Set active state based on current page (excluding logout)
             const currentPage = window.location.pathname.split('/').pop();
             const navLinks = mobileNav.querySelectorAll('.nav-link:not(.logout-btn)');
             
@@ -1122,19 +1285,17 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
     }
 
     function confirmLogout() {
-        // Close the modal first
         const modal = bootstrap.Modal.getInstance(document.getElementById('profileModal'));
         if (modal) {
             modal.hide();
         }
         
-        // Show confirmation dialog
         Swal.fire({
             title: 'Are you sure?',
             text: 'You will be logged out of the system',
             icon: 'question',
             showCancelButton: true,
-            confirmButtonColor: '#dc3545',
+            confirmButtonColor: '#07d826',
             cancelButtonColor: '#6c757d',
             confirmButtonText: 'Yes, logout'
         }).then((result) => {
@@ -1145,7 +1306,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
         });
     }
 
-    // Original logout function for sidebar
     function logout() {
         Swal.fire({
             title: 'Are you sure?',
@@ -1164,6 +1324,8 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
     }
 
     // ================= REPORT FUNCTIONS =================
+    const MONTHLY_QUOTA = <?php echo MONTHLY_QUOTA; ?>;
+
     function toggleDateFilter() {
         const period = document.getElementById('periodFilter').value;
         const dateFilter = document.getElementById('dateFilter');
@@ -1180,6 +1342,9 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
         }
         loadReports();
     }
+
+    // Global variable to store agent KPI data
+    let agentKpiData = [];
 
     async function loadReports() {
         const period = document.getElementById('periodFilter').value;
@@ -1246,12 +1411,46 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 } else {
                     periodBreakdown.innerHTML = '<tr><td colspan="5" class="text-center py-4">No transactions found for this period</td></tr>';
                 }
+                
+                // Store agent KPI data and render table
+                if (data.agentKPIs) {
+                    agentKpiData = data.agentKPIs;
+                    renderAgentKPITable();
+                }
             }
         } catch (error) {
             console.error('Error:', error);
         }
     }
 
+    // Render agent KPI table based on fixed quota
+    function renderAgentKPITable() {
+        const tbody = document.getElementById('agentKPITable');
+        
+        if (!agentKpiData || agentKpiData.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center py-4">No agent sales data for this period</td></tr>';
+            return;
+        }
+        
+        tbody.innerHTML = agentKpiData.map(agent => {
+            const metQuota = agent.total_sales >= MONTHLY_QUOTA;
+            const statusBadge = metQuota 
+                ? '<span class="badge bg-success"><i class="bi bi-check-circle"></i> Met</span>'
+                : '<span class="badge bg-danger"><i class="bi bi-x-circle"></i> Not Met</span>';
+            
+            return `
+                <tr>
+                    <td class="text-start"><strong>${escapeHtml(agent.agent_name)}</strong></td>
+                    <td class="text-start">${escapeHtml(agent.branch)}</td>
+                    <td class="text-end">₱${agent.total_sales.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</td>
+                    <td class="text-end">₱${agent.avg_order_value.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</td>
+                    <td class="text-center">${statusBadge}</td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    // Utility function to escape HTML
     function escapeHtml(text) {
         if (!text) return '';
         const div = document.createElement('div');
@@ -1259,10 +1458,51 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
         return div.innerHTML;
     }
 
+    // ================= FILTER TOGGLE FUNCTIONS =================
+    let isFilterCollapsed = true;
+
+    function toggleFilter(filterType) {
+        const content = document.getElementById(filterType + 'FilterContent');
+        const icon = document.getElementById(filterType + 'FilterIcon');
+        
+        if (content && icon) {
+            if (content.classList.contains('collapsed')) {
+                content.classList.remove('collapsed');
+                icon.style.transform = 'rotate(0deg)';
+                localStorage.setItem(filterType + 'FilterHidden', 'false');
+                isFilterCollapsed = false;
+            } else {
+                content.classList.add('collapsed');
+                icon.style.transform = 'rotate(-90deg)';
+                localStorage.setItem(filterType + 'FilterHidden', 'true');
+                isFilterCollapsed = true;
+            }
+        }
+    }
+
+    function initFilterStates() {
+        const content = document.getElementById('salesFilterContent');
+        const icon = document.getElementById('salesFilterIcon');
+        
+        if (content && icon) {
+            const savedState = localStorage.getItem('salesFilterHidden');
+            if (savedState === 'true' || savedState === null) {
+                content.classList.add('collapsed');
+                icon.style.transform = 'rotate(-90deg)';
+                isFilterCollapsed = true;
+            } else {
+                content.classList.remove('collapsed');
+                icon.style.transform = 'rotate(0deg)';
+                isFilterCollapsed = false;
+            }
+        }
+    }
+
     // ================= INITIALIZATION =================
     document.addEventListener('DOMContentLoaded', function() {
         initializeSidebar();
         initMobileNav();
+        initFilterStates();
         
         document.getElementById('mobileToggleBtn')?.addEventListener('click', (e) => {
             e.stopPropagation();
@@ -1285,131 +1525,28 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
             initMobileNav();
         });
         
-        // Set default to February 2026 and load data
         document.getElementById('dateFilter').value = '2026-02';
         loadReports();
     });
 
     // Keyboard shortcuts
     document.addEventListener('keydown', function(e) {
-        // Ctrl + B to toggle sidebar (desktop only)
         if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
             e.preventDefault();
             toggleSidebar();
-        }
-        // Escape to close sidebar on mobile
-        else if (e.key === 'Escape' && window.innerWidth <= 992) {
+        } else if (e.key === 'Escape' && window.innerWidth <= 992) {
             closeMobileSidebar();
-        }
-        // Escape to close modal
-        else if (e.key === 'Escape') {
+        } else if (e.key === 'Escape') {
             const profileModal = document.getElementById('profileModal');
             if (profileModal.classList.contains('show')) {
                 bootstrap.Modal.getInstance(profileModal).hide();
             }
+            const mapModal = document.getElementById('locationMapModal');
+            if (mapModal.classList.contains('show')) {
+                bootstrap.Modal.getInstance(mapModal).hide();
+            }
         }
     });
-    // ================= FILTER TOGGLE FUNCTIONS =================
-// Toggle filter section visibility with localStorage
-function toggleFilter(filterType) {
-    const contentId = filterType + 'FilterContent';
-    const iconId = filterType + 'FilterIcon';
-    
-    const content = document.getElementById(contentId);
-    const icon = document.getElementById(iconId);
-    
-    if (content && icon) {
-        if (content.classList.contains('collapsed')) {
-            // Show filter
-            content.classList.remove('collapsed');
-            icon.style.transform = 'rotate(0deg)';
-            localStorage.setItem(filterType + 'FilterHidden', 'false');
-        } else {
-            // Hide filter
-            content.classList.add('collapsed');
-            icon.style.transform = 'rotate(-90deg)';
-            localStorage.setItem(filterType + 'FilterHidden', 'true');
-        }
-    }
-}
-
-// ================= FILTER TOGGLE FUNCTIONS =================
-// Toggle filter section visibility with localStorage
-function toggleFilter(filterType) {
-    const contentId = filterType + 'FilterContent';
-    const iconId = filterType + 'FilterIcon';
-    
-    const content = document.getElementById(contentId);
-    const icon = document.getElementById(iconId);
-    
-    if (content && icon) {
-        if (content.classList.contains('collapsed')) {
-            // Show filter
-            content.classList.remove('collapsed');
-            icon.style.transform = 'rotate(0deg)';
-            localStorage.setItem(filterType + 'FilterHidden', 'false');
-        } else {
-            // Hide filter
-            content.classList.add('collapsed');
-            icon.style.transform = 'rotate(-90deg)';
-            localStorage.setItem(filterType + 'FilterHidden', 'true');
-        }
-    }
-}
-
-// ================= FILTER TOGGLE FUNCTIONS =================
-// Toggle filter section visibility with localStorage
-function toggleFilter(filterType) {
-    const contentId = filterType + 'FilterContent';
-    const iconId = filterType + 'FilterIcon';
-    
-    const content = document.getElementById(contentId);
-    const icon = document.getElementById(iconId);
-    
-    if (content && icon) {
-        if (content.classList.contains('collapsed')) {
-            // Show filter
-            content.classList.remove('collapsed');
-            icon.style.transform = 'rotate(0deg)';
-            localStorage.setItem(filterType + 'FilterHidden', 'false');
-        } else {
-            // Hide filter
-            content.classList.add('collapsed');
-            icon.style.transform = 'rotate(-90deg)';
-            localStorage.setItem(filterType + 'FilterHidden', 'true');
-        }
-    }
-}
-
-// Initialize filter states on page load - DEFAULT CLOSED
-function initFilterStates() {
-    const filterTypes = ['sales', 'branch', 'items', 'driver', 'trip'];
-    
-    filterTypes.forEach(type => {
-        const contentId = type + 'FilterContent';
-        const iconId = type + 'FilterIcon';
-        
-        const content = document.getElementById(contentId);
-        const icon = document.getElementById(iconId);
-        
-        if (content && icon) {
-            // DEFAULT: CLOSED sa simula
-            content.classList.add('collapsed');
-            icon.style.transform = 'rotate(-90deg)';
-            
-            // Save sa localStorage na closed para consistent
-            localStorage.setItem(type + 'FilterHidden', 'true');
-        }
-    });
-}
-
-// Call this sa loob ng DOMContentLoaded
-document.addEventListener('DOMContentLoaded', function() {
-    // ... existing code ...
-    
-    // Initialize filter states - lahat closed
-    initFilterStates();
-});
     </script>
 </body>
 </html>

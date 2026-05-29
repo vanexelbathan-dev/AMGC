@@ -1,13 +1,14 @@
 <?php
 /**
  * Driver GPS Shift Start/Stop API
- * Manages driver shift status and GPS tracking control for AMGC Delivery System
- * FIXED: Added duplicate prevention
+ * Enhanced version with detailed error logging and validation
  */
 
-// Disable error display to prevent HTML error pages
-error_reporting(0);
+// Disable error display but log them
+error_reporting(E_ALL);
 ini_set('display_errors', 0);
+ini_set('log_errors', 1);
+ini_set('error_log', __DIR__ . '/gps_shift_errors.log');
 
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
@@ -82,9 +83,13 @@ try {
     $heading = isset($data['heading']) ? floatval($data['heading']) : 0;
     $force = isset($data['force']) ? boolval($data['force']) : false;
 
+    // Log incoming data for debugging
+    error_log("GPS action: $action, driver_id: $driver_id, lat: $latitude, lng: $longitude");
+
     // If driver_id not provided, try to get from session
     if ($driver_id == 0 && isset($_SESSION['driver_id'])) {
         $driver_id = $_SESSION['driver_id'];
+        error_log("Using driver_id from session: $driver_id");
     }
 
     // If still no driver_id, try to get from users table
@@ -99,27 +104,42 @@ try {
             if ($row = $result->fetch_assoc()) {
                 $driver_id = $row['driver_id'];
                 $_SESSION['driver_id'] = $driver_id;
+                error_log("Found driver_id from users table: $driver_id");
             }
             $stmt->close();
         }
     }
 
-    // Get driver name if not provided
-    if ($driver_id > 0 && empty($driver_name)) {
-        $name_query = "SELECT driver_name FROM drivers WHERE driver_id = ? LIMIT 1";
-        $stmt = $conn->prepare($name_query);
-        if ($stmt) {
-            $stmt->bind_param("i", $driver_id);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            if ($row = $result->fetch_assoc()) {
-                $driver_name = $row['driver_name'];
-            }
-            $stmt->close();
-        }
+    // Validate driver_id
+    if ($driver_id == 0) {
+        echo json_encode([
+            'success' => false,
+            'error' => 'Invalid driver ID (0). Cannot proceed.',
+            'timestamp' => date('Y-m-d H:i:s')
+        ]);
+        exit();
     }
 
-    // Create tables if they don't exist with unique constraint
+    // Check if driver exists in drivers table
+    $check_driver = "SELECT driver_id, driver_name FROM drivers WHERE driver_id = ?";
+    $check_stmt = $conn->prepare($check_driver);
+    $check_stmt->bind_param("i", $driver_id);
+    $check_stmt->execute();
+    $check_result = $check_stmt->get_result();
+    if ($check_result->num_rows === 0) {
+        echo json_encode([
+            'success' => false,
+            'error' => "Driver ID $driver_id not found in drivers table",
+            'timestamp' => date('Y-m-d H:i:s')
+        ]);
+        $check_stmt->close();
+        exit();
+    }
+    $driver_row = $check_result->fetch_assoc();
+    $driver_name = $driver_row['driver_name']; // override with actual name
+    $check_stmt->close();
+
+    // Create tables if they don't exist
     $conn->query("CREATE TABLE IF NOT EXISTS driver_sessions (
         session_id INT AUTO_INCREMENT PRIMARY KEY,
         driver_id INT NOT NULL,
@@ -141,21 +161,17 @@ try {
         FOREIGN KEY (trip_id) REFERENCES trip_tickets(trip_id) ON DELETE SET NULL
     )");
 
-    $conn->query("CREATE TABLE IF NOT EXISTS driver_locations (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        driver_id INT NOT NULL UNIQUE,
-        driver_name VARCHAR(100),
+    $conn->query("CREATE TABLE IF NOT EXISTS driver_tracking (
+        tracking_id INT AUTO_INCREMENT PRIMARY KEY,
+        driver_id INT NOT NULL,
         trip_id INT DEFAULT NULL,
-        latitude DECIMAL(10,8),
-        longitude DECIMAL(11,8),
-        accuracy DECIMAL(8,2),
-        speed DECIMAL(8,2),
-        heading DECIMAL(8,2),
-        last_update TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-        is_active TINYINT DEFAULT 1,
+        latitude DECIMAL(10,8) NOT NULL,
+        longitude DECIMAL(11,8) NOT NULL,
+        speed_kmh DECIMAL(5,2) DEFAULT 0,
+        location_timestamp DATETIME NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         INDEX idx_driver_id (driver_id),
-        INDEX idx_is_active (is_active),
-        INDEX idx_last_update (last_update),
+        INDEX idx_driver_time (driver_id, location_timestamp),
         FOREIGN KEY (driver_id) REFERENCES drivers(driver_id) ON DELETE CASCADE,
         FOREIGN KEY (trip_id) REFERENCES trip_tickets(trip_id) ON DELETE SET NULL
     )");
@@ -165,25 +181,6 @@ try {
 
     try {
         if ($action === 'start_shift') {
-            // Validate required fields
-            if (!$driver_id) {
-                throw new Exception('Missing required field: driver_id');
-            }
-
-            // Check if driver exists
-            $checkDriver = "SELECT driver_id, driver_name, status FROM drivers WHERE driver_id = ?";
-            $stmt = $conn->prepare($checkDriver);
-            $stmt->bind_param("i", $driver_id);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            
-            if ($result->num_rows === 0) {
-                throw new Exception('Driver not found');
-            }
-            
-            $driver = $result->fetch_assoc();
-            $stmt->close();
-
             // Check if driver already has an active session
             $checkActive = "SELECT session_id FROM driver_sessions WHERE driver_id = ? AND shift_end IS NULL";
             $stmt = $conn->prepare($checkActive);
@@ -203,6 +200,7 @@ try {
                     $endStmt->bind_param("i", $driver_id);
                     $endStmt->execute();
                     $endStmt->close();
+                    error_log("Force ended previous shift for driver $driver_id");
                 } else {
                     throw new Exception('Driver already has an active shift. Use force=true to override.');
                 }
@@ -245,23 +243,16 @@ try {
             $stmt->execute();
             $stmt->close();
 
-            // Insert initial location if provided (with duplicate handling)
+            // Insert initial location if provided
             if ($latitude && $longitude) {
-                $loc_sql = "INSERT INTO driver_locations 
-                           (driver_id, driver_name, trip_id, latitude, longitude, is_active) 
-                           VALUES (?, ?, ?, ?, ?, 1)
-                           ON DUPLICATE KEY UPDATE
-                           driver_name = VALUES(driver_name),
-                           trip_id = VALUES(trip_id),
-                           latitude = VALUES(latitude),
-                           longitude = VALUES(longitude),
-                           is_active = 1,
-                           last_update = CURRENT_TIMESTAMP";
-                
+                $loc_sql = "INSERT INTO driver_tracking 
+                           (driver_id, trip_id, latitude, longitude, speed_kmh, location_timestamp) 
+                           VALUES (?, ?, ?, ?, ?, NOW())";
                 $stmt = $conn->prepare($loc_sql);
-                $stmt->bind_param("isidd", $driver_id, $driver_name, $trip_id, $latitude, $longitude);
+                $stmt->bind_param("iiddd", $driver_id, $trip_id, $latitude, $longitude, $speed);
                 $stmt->execute();
                 $stmt->close();
+                error_log("Inserted initial location for driver $driver_id");
             }
 
             $conn->commit();
@@ -278,10 +269,6 @@ try {
             ]);
 
         } elseif ($action === 'end_shift') {
-            if (!$driver_id) {
-                throw new Exception('Missing required field: driver_id');
-            }
-
             // End active shift
             $endShift = "UPDATE driver_sessions 
                         SET shift_end = NOW(), 
@@ -316,13 +303,6 @@ try {
             $stmt->execute();
             $stmt->close();
 
-            // Update driver_locations to mark as inactive
-            $updateLocation = "UPDATE driver_locations SET is_active = 0 WHERE driver_id = ?";
-            $stmt = $conn->prepare($updateLocation);
-            $stmt->bind_param("i", $driver_id);
-            $stmt->execute();
-            $stmt->close();
-
             $conn->commit();
 
             echo json_encode([
@@ -334,15 +314,11 @@ try {
             ]);
 
         } elseif ($action === 'update_location') {
-            if (!$driver_id) {
-                throw new Exception('Missing required field: driver_id');
-            }
-
             if (!$latitude || !$longitude) {
                 throw new Exception('Missing coordinates');
             }
 
-            // Update driver_sessions
+            // Update driver_sessions (current status)
             $updateSession = "UPDATE driver_sessions 
                              SET last_heartbeat = NOW(), 
                                  is_online = 1,
@@ -368,30 +344,20 @@ try {
                 $trip_stmt->close();
             }
 
-            // Insert or update location (with ON DUPLICATE KEY para iwas duplicate)
-            $insertLoc = "INSERT INTO driver_locations 
-                         (driver_id, driver_name, trip_id, latitude, longitude, speed, accuracy, heading, is_active)
-                         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
-                         ON DUPLICATE KEY UPDATE
-                         driver_name = VALUES(driver_name),
-                         trip_id = VALUES(trip_id),
-                         latitude = VALUES(latitude),
-                         longitude = VALUES(longitude),
-                         speed = VALUES(speed),
-                         accuracy = VALUES(accuracy),
-                         heading = VALUES(heading),
-                         is_active = 1,
-                         last_update = CURRENT_TIMESTAMP";
+            // Insert location into driver_tracking (historical)
+            $insertLoc = "INSERT INTO driver_tracking 
+                         (driver_id, trip_id, latitude, longitude, speed_kmh, location_timestamp) 
+                         VALUES (?, ?, ?, ?, ?, NOW())";
             
             $stmt = $conn->prepare($insertLoc);
-            $stmt->bind_param("isiddddd", $driver_id, $driver_name, $trip_id, $latitude, $longitude, $speed, $accuracy, $heading);
+            $stmt->bind_param("iiddd", $driver_id, $trip_id, $latitude, $longitude, $speed);
             
             if (!$stmt->execute()) {
-                throw new Exception('Failed to update location: ' . $stmt->error);
+                throw new Exception('Failed to insert location: ' . $stmt->error);
             }
             $stmt->close();
 
-            // Update drivers table
+            // Update drivers table (optional)
             $updateDriver = "UPDATE drivers 
                             SET last_latitude = ?, 
                                 last_longitude = ?, 
@@ -413,10 +379,6 @@ try {
             ]);
 
         } elseif ($action === 'get_shift_status') {
-            if (!$driver_id) {
-                throw new Exception('Missing required field: driver_id');
-            }
-
             $getStatus = "SELECT ds.*, d.driver_name, d.vehicle_plate_number, tt.trip_number 
                          FROM driver_sessions ds
                          JOIN drivers d ON ds.driver_id = d.driver_id
@@ -432,11 +394,11 @@ try {
                 $session = $result->fetch_assoc();
                 $stmt->close();
                 
-                // Get latest location
-                $loc_query = "SELECT latitude, longitude, last_update, speed 
-                             FROM driver_locations 
+                // Get latest location from driver_tracking
+                $loc_query = "SELECT latitude, longitude, location_timestamp as last_update, speed_kmh as speed 
+                             FROM driver_tracking 
                              WHERE driver_id = ? 
-                             ORDER BY last_update DESC LIMIT 1";
+                             ORDER BY location_timestamp DESC LIMIT 1";
                 $loc_stmt = $conn->prepare($loc_query);
                 $location = null;
                 if ($loc_stmt) {
@@ -482,10 +444,6 @@ try {
             }
 
         } elseif ($action === 'heartbeat') {
-            if (!$driver_id) {
-                throw new Exception('Missing required field: driver_id');
-            }
-
             $heartbeat = "UPDATE driver_sessions 
                          SET last_heartbeat = NOW(), 
                              is_online = 1
@@ -495,7 +453,6 @@ try {
             $stmt->execute();
             $stmt->close();
 
-            // Also update driver status
             $updateDriver = "UPDATE drivers SET status = 'active' WHERE driver_id = ?";
             $stmt = $conn->prepare($updateDriver);
             $stmt->bind_param("i", $driver_id);
@@ -512,10 +469,6 @@ try {
             ]);
 
         } elseif ($action === 'force_end_shift') {
-            if (!$driver_id) {
-                throw new Exception('Missing required field: driver_id');
-            }
-
             $endShift = "UPDATE driver_sessions 
                         SET shift_end = NOW(), 
                             gps_active = 0,
@@ -528,14 +481,6 @@ try {
             $affected = $conn->affected_rows;
             $stmt->close();
 
-            // Update driver_locations
-            $updateLocation = "UPDATE driver_locations SET is_active = 0 WHERE driver_id = ?";
-            $stmt = $conn->prepare($updateLocation);
-            $stmt->bind_param("i", $driver_id);
-            $stmt->execute();
-            $stmt->close();
-
-            // Update driver status
             $updateDriver = "UPDATE drivers SET status = 'inactive' WHERE driver_id = ?";
             $stmt = $conn->prepare($updateDriver);
             $stmt->bind_param("i", $driver_id);

@@ -1,0 +1,32 @@
+{
+    "manifest_id": "receive_20260525150327_9d2cd546",
+    "source": "supplier",
+    "supplier_id": 3,
+    "supplier_name": "Ross",
+    "po_number": "PO-RCV-20260525150327",
+    "reference_type": "purchase_order",
+    "reference_id": 20,
+    "receive_date": "2026-05-25",
+    "receive_memo": "",
+    "created_at": "2026-05-25 15:03:27",
+    "created_by": 2,
+    "branch_id": 1,
+    "transaction_ids": [
+        275
+    ],
+    "attachments": [],
+    "items": [
+        {
+            "item_id": 187,
+            "item_name": "Kopiko Brown",
+            "item_code": "ITEM016",
+            "item_description": "kape siya",
+            "category": "General",
+            "uom": "Piece",
+            "qty": 10,
+            "unit_price": 18,
+            "unit_cost": 18,
+            "total_cost": 180
+        }
+    ]
+}

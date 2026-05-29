@@ -99,7 +99,8 @@ $sql = "SELECT
             i.status,
             i.created_at,
             i.updated_at,
-            i.branch_id
+            i.branch_id,
+            i.product_image_url
         FROM items i
         $where_clause
         ORDER BY i.item_id DESC";
@@ -180,7 +181,8 @@ if (isset($_GET['ajax']) && isset($_GET['id'])) {
                     i.status,
                     i.created_at,
                     i.updated_at,
-                    i.branch_id
+                    i.branch_id,
+                    i.product_image_url
                  FROM items i 
                  WHERE i.item_id = ? AND i.status = 'active'";
     $item_stmt = $conn->prepare($item_sql);
@@ -216,7 +218,7 @@ if (isset($_GET['ajax']) && isset($_GET['id'])) {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
     <title>Global - All Items Catalog</title>
     <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
@@ -298,7 +300,6 @@ if (isset($_GET['ajax']) && isset($_GET['id'])) {
     transition: all 0.2s ease;
     line-height: 1.4;
     box-sizing: border-box;
-    /* REMOVED: white-space, overflow, text-overflow - hindi dapat sa select/input mismo */
 }
 
 /* SELECT SPECIFIC - WITH CUSTOM ARROW */
@@ -311,7 +312,6 @@ if (isset($_GET['ajax']) && isset($_GET['id'])) {
     appearance: none;
     -webkit-appearance: none;
     -moz-appearance: none;
-    /* REMOVED: white-space, overflow, text-overflow */
 }
 
 /* INPUT SPECIFIC */
@@ -623,7 +623,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 .form-select option {
     font-size: inherit;
     padding: clamp(0.2rem, 1vw, 0.4rem);
-    /* REMOVED: white-space, overflow, text-overflow - sa options lang dapat */
 }
 
 /* ===== ANIMATION ===== */
@@ -641,7 +640,7 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
         transform: translateY(0);
     }
 }
-/* I-add ito sa loob ng <style> tag */
+
 .stat-card-row {
     margin-bottom: 1.5rem !important;
 }
@@ -660,12 +659,12 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
 
 /* Space between Filter and Table */
 .data-table {
-    margin-top: -2rem !important; /* dagdag space sa taas ng table */
+    margin-top: -2rem !important;
 }
 
 /* Alternative kung gusto mo sa filter mismo ang space */
 .form-card {
-    margin-bottom: 2rem !important; /* space sa baba ng filter */
+    margin-bottom: 2rem !important;
 }
 
 /* Responsive spacing */
@@ -688,6 +687,399 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
         margin-bottom: 1rem !important;
     }
 }
+
+/* ===== MODAL STYLES - CLEAN TABLE-LIKE LAYOUT ===== */
+
+/* Modal Container */
+.modal-content {
+    border: none;
+    border-radius: 16px;
+    overflow: hidden;
+}
+
+/* Modal Header - Clean header */
+.modal-header {
+    background: linear-gradient(135deg, #047857, #44D34E);
+    border: none;
+    padding: 1rem 1.5rem;
+}
+
+.modal-header .modal-title {
+    color: white;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.modal-header .modal-title i {
+    color: white;
+    font-size: 1.2rem;
+}
+
+.modal-header .btn-close {
+    filter: brightness(0) invert(1);
+    opacity: 0.8;
+    transition: opacity 0.2s;
+}
+
+.modal-header .btn-close:hover {
+    opacity: 1;
+}
+
+/* Modal Body */
+.modal-body {
+    padding: 0;
+    background: #f8fafc;
+}
+
+/* Product Header Section - Upper left ang picture sa desktop, centered sa mobile */
+.product-header-section {
+    padding: 1.5rem;
+    background: white;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    gap: 1.5rem;
+    align-items: flex-start;
+}
+
+.product-header-section .product-image {
+    flex-shrink: 0;
+}
+
+.product-image-large {
+    width: 120px;
+    height: 120px;
+    object-fit: cover;
+    border-radius: 12px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+}
+
+.product-title-info {
+    flex: 1;
+}
+
+.product-title-info h3 {
+    margin: 0 0 0.5rem 0;
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.product-code {
+    display: inline-block;
+    background: #f1f5f9;
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    color: #475569;
+    margin-bottom: 0.75rem;
+}
+
+.stock-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.stock-badge.in-stock {
+    background: #dcfce7;
+    color: #166534;
+}
+
+.stock-badge.low-stock {
+    background: #fef9c3;
+    color: #854d0e;
+}
+
+.stock-badge.out-of-stock {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+/* Info Sections - Clean card style */
+.info-section {
+    background: white;
+    margin: 1rem;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid #e2e8f0;
+}
+
+.section-title {
+    background: #f8fafc;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid #e2e8f0;
+    font-weight: 600;
+    color: #0f172a;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+}
+
+.section-title i {
+    color: #047857;
+    font-size: 1rem;
+}
+
+.info-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.info-table tr {
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.info-table tr:last-child {
+    border-bottom: none;
+}
+
+.info-table td {
+    padding: 0.75rem 1rem;
+    vertical-align: top;
+}
+
+.info-table td:first-child {
+    width: 130px;
+    font-weight: 600;
+    color: #475569;
+    background: #fefefe;
+    font-size: 0.85rem;
+}
+
+.info-table td:last-child {
+    color: #0f172a;
+    font-size: 0.9rem;
+}
+
+/* Description Section */
+.description-text {
+    padding: 1rem;
+    color: #334155;
+    line-height: 1.5;
+    font-size: 0.9rem;
+    background: white;
+    margin: 0;
+}
+
+/* Timestamp Section */
+.timestamp-section {
+    background: white;
+    margin: 1rem;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    display: flex;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    font-size: 0.75rem;
+    color: #64748b;
+}
+
+.timestamp-section i {
+    margin-right: 4px;
+    color: #047857;
+}
+
+/* Modal Footer */
+.modal-footer {
+    background: white;
+    border-top: 1px solid #e2e8f0;
+    padding: 0.75rem 1.25rem;
+}
+
+.modal-footer .btn-secondary {
+    background: #f1f5f9;
+    border: none;
+    border-radius: 8px;
+    padding: 0.5rem 1.5rem;
+    font-weight: 500;
+    color: #475569;
+    transition: all 0.2s;
+}
+
+.modal-footer .btn-secondary:hover {
+    background: #e2e8f0;
+    color: #0f172a;
+}
+
+/* ===== DESKTOP VIEW - Clickable Row Styles ===== */
+.custom-table tbody tr {
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.custom-table tbody tr:hover {
+    background-color: #f8fafc;
+}
+
+/* No action column needed */
+
+/* ===== MOBILE VIEW - Card style ===== */
+@media (max-width: 768px) {
+    .custom-table thead {
+        display: none;
+    }
+    .custom-table,
+    .custom-table tbody,
+    .custom-table tr,
+    .custom-table td {
+        display: block;
+        width: 100%;
+    }
+    .custom-table tbody tr {
+        background: white;
+        border-radius: 12px;
+        margin-bottom: 10px;
+        padding: 14px;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+        border: 1px solid #e9ecef;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        cursor: pointer;
+    }
+    
+    /* Hide original table cells in mobile */
+    .custom-table tbody tr td {
+        display: none;
+    }
+    
+    /* Left side content - stacked */
+    .custom-table tbody tr .mobile-card-left {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+    }
+    
+    /* Item name - green, bold */
+    .mobile-item-name {
+        font-size: clamp(0.85rem, 3.5vw, 1rem);
+        font-weight: 600;
+        color: #047857;
+        margin-bottom: 2px;
+    }
+    
+    /* Category - medium weight */
+    .mobile-category {
+        font-size: clamp(0.8rem, 3.2vw, 0.95rem);
+        font-weight: 500;
+        color: #212529;
+    }
+    
+    /* Price and Quantity row */
+    .mobile-price-qty {
+        display: flex;
+        gap: 12px;
+        font-size: clamp(0.75rem, 3vw, 0.85rem);
+        color: #6c757d;
+        margin-top: 2px;
+    }
+    
+    .mobile-price {
+        font-weight: 600;
+        color: #198754;
+    }
+    
+    .mobile-quantity {
+        color: #6c757d;
+    }
+    
+    /* Stock status badge */
+    .mobile-status {
+        display: inline-block;
+        margin-top: 6px;
+    }
+    .mobile-status .badge {
+        font-size: 0.7rem;
+        padding: 4px 10px;
+        display: inline-block;
+    }
+    
+    /* Right side - Action icon (click indicator) */
+    .mobile-action {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-left: 12px;
+        color: #0d6efd;
+        font-size: 1.2rem;
+    }
+}
+
+/* Responsive Styles for Modal */
+@media (max-width: 768px) {
+    .product-header-section {
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+    }
+    
+    .product-image-large {
+        width: 140px;
+        height: 140px;
+        margin-bottom: 0.5rem;
+    }
+    
+    .product-title-info {
+        text-align: center;
+    }
+    
+    .info-table td:first-child {
+        width: 100px;
+        font-size: 0.8rem;
+    }
+    
+    .info-table td:last-child {
+        font-size: 0.85rem;
+    }
+    
+    .timestamp-section {
+        flex-direction: column;
+        gap: 8px;
+        text-align: center;
+    }
+}
+
+@media (max-width: 480px) {
+    .product-header-section {
+        padding: 1rem;
+    }
+    
+    .product-image-large {
+        width: 100px;
+        height: 100px;
+    }
+    
+    .product-title-info h3 {
+        font-size: 1.1rem;
+    }
+    
+    .info-section {
+        margin: 0.75rem;
+    }
+    
+    .timestamp-section {
+        margin: 0.75rem;
+    }
+    
+    .info-table td {
+        padding: 0.6rem 0.75rem;
+    }
+    
+    .info-table td:first-child {
+        width: 85px;
+        font-size: 0.75rem;
+    }
+}
     </style>
 </head>
 <body>
@@ -697,7 +1089,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
         <div class="sidebar" id="sidebar">
             <div class="sidebar-header">
                 <h3>
-                    <!-- Burger icon moved before logo -->
                     <button class="desktop-toggle-btn" id="desktopToggleBtn">
                         <i class="bi bi-list" id="toggleIcon"></i>
                     </button>
@@ -708,6 +1099,12 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
             
             <div class="sidebar-menu">
                 <ul class="nav flex-column">
+                    <li class="nav-item">
+                        <a class="nav-link" href="dashboard.php">
+                            <i class="bi bi-speedometer2"></i>
+                            <span class="nav-text">Dashboard</span>
+                        </a>
+                    </li>
                     <li class="nav-item">
                         <a class="nav-link" href="sales_reports.php">
                             <i class="bi bi-graph-up"></i>
@@ -724,6 +1121,12 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                         <a class="nav-link active" href="all_items.php">
                             <i class="bi bi-box"></i>
                             <span class="nav-text">All Items</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="location_verification.php">
+                            <i class="bi bi-geo-alt-fill"></i>
+                            <span class="nav-text">Location Verification</span>
                         </a>
                     </li>
                     <li class="nav-item">
@@ -809,7 +1212,7 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
             </div>
         </div>
     </div>
-</div> <!-- Isang closing div lang dito -->
+</div>
 
 <!-- FILTER SECTION - ALL ITEMS -->
 <div class="row g-3 mb-4">
@@ -867,18 +1270,15 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                     <div class="table-container">
                         <table class="table custom-table compact-table" id="itemsTable">
                             <thead>
-                                <tr>
-                                    <th>ID</th>
                                     <th>Item Name</th>
                                     <th>Category</th>
                                     <th>Unit Price</th>
                                     <th>Total Quantity</th>
                                     <th>Available</th>
                                     <th>Stock Status</th>
-                                    <th>Actions</th>
                                 </tr>
                             </thead>
-                            <tbody id="itemsTable">
+                            <tbody id="itemsTableBody">
                                 <?php if (count($items) > 0): ?>
                                     <?php foreach ($items as $item): ?>
                                         <?php 
@@ -895,8 +1295,14 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                                             $statusText = 'Low Stock';
                                         }
                                         ?>
-                                        <tr>
-                                            <td><?php echo htmlspecialchars($item['id']); ?></td>
+                                        <tr data-id="<?php echo $item['id']; ?>" 
+                                            data-item-name="<?php echo htmlspecialchars($item['item_name']); ?>" 
+                                            data-category="<?php echo htmlspecialchars($item['category'] ?? 'N/A'); ?>"
+                                            data-price="₱<?php echo number_format($item['unit_price'] ?? 0, 2); ?>"
+                                            data-quantity="<?php echo number_format($stock_quantity); ?>"
+                                            data-status="<?php echo $statusText; ?>"
+                                            data-status-class="<?php echo $statusBadge; ?>"
+                                            onclick="viewItemFromRow(this)">
                                             <td><strong><?php echo htmlspecialchars($item['item_name']); ?></strong></td>
                                             <td><?php echo htmlspecialchars($item['category'] ?? 'N/A'); ?></td>
                                             <td>₱<?php echo number_format($item['unit_price'] ?? 0, 2); ?></td>
@@ -906,17 +1312,12 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                                                 <span class="badge <?php echo $statusBadge; ?>">
                                                     <?php echo $statusText; ?>
                                                 </span>
-                                            </td>
-                                            <td>
-                                                <button class="btn-action btn-view" onclick="viewItem(<?php echo $item['id']; ?>)">
-                                                    <i class="bi bi-eye"></i>
-                                                </button>
-                                            </td>
-                                        </tr>
+                                             </td>
+                                         </tr>
                                     <?php endforeach; ?>
                                 <?php else: ?>
                                     <tr>
-                                        <td colspan="8" class="text-center py-4">No items found</td>
+                                        <td colspan="6" class="text-center py-4">No items found</td>
                                     </tr>
                                 <?php endif; ?>
                             </tbody>
@@ -1016,16 +1417,24 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
         </div>
     </div>
 
-    <!-- Item Details Modal -->
+    <!-- Enhanced Item Details Modal - Clean Table-Like Layout -->
     <div class="modal fade" id="itemModal" tabindex="-1">
-        <div class="modal-dialog modal-lg">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
             <div class="modal-content">
                 <div class="modal-header">
-                    <h5 class="modal-title">Item Details</h5>
+                    <h5 class="modal-title">
+                        <i class="bi bi-box-seam me-2"></i>
+                        <span id="modalItemName">Item Details</span>
+                    </h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body" id="itemDetails">
-                    <!-- Details will be populated here -->
+                    <div class="text-center py-4">
+                        <div class="spinner-border text-success" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2 text-muted">Loading item details...</p>
+                    </div>
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
@@ -1039,16 +1448,13 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
     
     <script>
         // ================= SIDEBAR FUNCTIONS =================
-        // Toggle sidebar collapse/expand
         function toggleSidebar() {
             const sidebar = document.getElementById('sidebar');
             const isMobile = window.innerWidth <= 992;
             
             if (isMobile) {
-                // On mobile, toggle active state
                 sidebar.classList.toggle('active');
                 
-                // Create overlay for mobile
                 if (!document.querySelector('.sidebar-overlay')) {
                     const overlay = document.createElement('div');
                     overlay.className = 'sidebar-overlay';
@@ -1062,7 +1468,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                         overlay.classList.add('active');
                     }, 10);
                 } else {
-                    // If overlay exists, toggle its active state
                     const overlay = document.querySelector('.sidebar-overlay');
                     overlay.classList.toggle('active');
                     if (!sidebar.classList.contains('active')) {
@@ -1074,18 +1479,13 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                     }
                 }
             } else {
-                // On desktop, toggle between expanded and collapsed
                 sidebar.classList.toggle('collapsed');
-                
-                // Store preference in localStorage
                 localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
                 
-                // Show/hide nav text
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = sidebar.classList.contains('collapsed') ? 'none' : 'inline-block';
                 });
                 
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = sidebar.classList.contains('collapsed') ? '80px' : '250px';
@@ -1093,7 +1493,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
             }
         }
 
-        // Close mobile sidebar
         function closeMobileSidebar() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.querySelector('.sidebar-overlay');
@@ -1110,11 +1509,9 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
             }
         }
 
-        // Initialize sidebar when page loads
         function initializeSidebar() {
             const sidebar = document.getElementById('sidebar');
             
-            // Load saved preference from localStorage for desktop
             if (window.innerWidth > 992) {
                 const savedCollapsed = localStorage.getItem('sidebarCollapsed');
                 if (savedCollapsed === 'true') {
@@ -1123,7 +1520,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                         text.style.display = 'none';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '80px';
@@ -1134,21 +1530,18 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                         text.style.display = 'inline-block';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '250px';
                     }
                 }
             } else {
-                // On mobile, always start with closed sidebar
                 sidebar.classList.remove('active');
                 sidebar.classList.remove('collapsed');
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = 'inline-block';
                 });
                 
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = '0';
@@ -1156,19 +1549,16 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
             }
         }
 
-        // Handle window resize for sidebar
         function handleSidebarResize() {
             const sidebar = document.getElementById('sidebar');
             const overlay = document.querySelector('.sidebar-overlay');
             
             if (window.innerWidth > 992) {
-                // Desktop mode - remove mobile overlay
                 if (overlay) {
                     overlay.remove();
                 }
                 sidebar.classList.remove('active');
                 
-                // Load saved preference
                 const savedCollapsed = localStorage.getItem('sidebarCollapsed');
                 if (savedCollapsed === 'true') {
                     sidebar.classList.add('collapsed');
@@ -1176,7 +1566,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                         text.style.display = 'none';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '80px';
@@ -1187,20 +1576,17 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                         text.style.display = 'inline-block';
                     });
                     
-                    // Adjust main content margin
                     const mainContent = document.querySelector('.main-content');
                     if (mainContent) {
                         mainContent.style.marginLeft = '250px';
                     }
                 }
             } else {
-                // Mobile mode - always show expanded when visible
                 sidebar.classList.remove('collapsed');
                 document.querySelectorAll('.nav-text').forEach(text => {
                     text.style.display = 'inline-block';
                 });
                 
-                // Adjust main content margin
                 const mainContent = document.querySelector('.main-content');
                 if (mainContent) {
                     mainContent.style.marginLeft = '0';
@@ -1217,7 +1603,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
             if (isMobile) {
                 mobileNav.style.display = 'block';
                 
-                // Set active state based on current page (excluding logout)
                 const currentPage = window.location.pathname.split('/').pop();
                 const navLinks = mobileNav.querySelectorAll('.nav-link:not(.logout-btn)');
                 
@@ -1240,19 +1625,17 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
         }
 
         function confirmLogout() {
-            // Close the modal first
             const modal = bootstrap.Modal.getInstance(document.getElementById('profileModal'));
             if (modal) {
                 modal.hide();
             }
             
-            // Show confirmation dialog
             Swal.fire({
                 title: 'Are you sure?',
                 text: 'You will be logged out of the system',
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonColor: '#dc3545',
+                confirmButtonColor: '#07d826',
                 cancelButtonColor: '#6c757d',
                 confirmButtonText: 'Yes, logout'
             }).then((result) => {
@@ -1263,7 +1646,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
             });
         }
 
-        // Original logout function for sidebar
         function logout() {
             Swal.fire({
                 title: 'Are you sure?',
@@ -1295,11 +1677,28 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
             window.location.href = 'all_items.php?' + params.toString();
         }
 
-        // View item details via AJAX
+        // View item from row click
+        function viewItemFromRow(row) {
+            const id = row.getAttribute('data-id');
+            if (id) {
+                viewItem(id);
+            }
+        }
+
+        // View item details via AJAX with clean table-like layout
         function viewItem(id) {
             const modal = new bootstrap.Modal(document.getElementById('itemModal'));
             const details = document.getElementById('itemDetails');
-            details.innerHTML = '<p>Loading item details...</p>';
+            
+            // Show loading state
+            details.innerHTML = `
+                <div class="text-center py-4">
+                    <div class="spinner-border text-success" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <p class="mt-2 text-muted">Loading item details...</p>
+                </div>
+            `;
             modal.show();
             
             fetch('all_items.php?ajax=1&id=' + id)
@@ -1307,42 +1706,97 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 .then(data => {
                     if (data.success) {
                         const item = data.item;
+                        
+                        let stockStatus = '';
+                        let stockBadgeClass = '';
+                        let stockIcon = '';
+                        const stockQty = Number(item.stock || 0);
+                        const reorderLevel = Number(item.reorder_level || 50);
+                        
+                        if (stockQty <= 0) {
+                            stockStatus = 'Out of Stock';
+                            stockBadgeClass = 'out-of-stock';
+                            stockIcon = '<i class="bi bi-x-circle"></i>';
+                        } else if (stockQty < reorderLevel) {
+                            stockStatus = 'Low Stock';
+                            stockBadgeClass = 'low-stock';
+                            stockIcon = '<i class="bi bi-exclamation-triangle"></i>';
+                        } else {
+                            stockStatus = 'In Stock';
+                            stockBadgeClass = 'in-stock';
+                            stockIcon = '<i class="bi bi-check-circle"></i>';
+                        }
+                        
+                        const placeholderImage = 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"%3E%3Crect fill="%23e9ecef" width="200" height="200"/%3E%3Ctext x="50%25" y="50%25" text-anchor="middle" dy=".3em" fill="%23999" font-size="14"%3ENo Image%3C/text%3E%3C/svg%3E';
+                        const productImage = item.product_image_url ? '../uploads/products/' + item.product_image_url : placeholderImage;
+                        
                         details.innerHTML = `
-                            <dl class="row">
-                                <dt class="col-sm-4">Item ID:</dt>
-                                <dd class="col-sm-8">${item.id}</dd>
-                                <dt class="col-sm-4">Item Code:</dt>
-                                <dd class="col-sm-8">${item.item_code || 'N/A'}</dd>
-                                <dt class="col-sm-4">Item Name:</dt>
-                                <dd class="col-sm-8">${escapeHtml(item.item_name)}</dd>
-                                <dt class="col-sm-4">Category:</dt>
-                                <dd class="col-sm-8">${escapeHtml(item.category || 'N/A')}</dd>
-                                <dt class="col-sm-4">Description:</dt>
-                                <dd class="col-sm-8">${escapeHtml(item.description || 'No description')}</dd>
-                                <dt class="col-sm-4">Unit Type:</dt>
-                                <dd class="col-sm-8">${escapeHtml(item.unit_type || 'piece')}</dd>
-                                <dt class="col-sm-4">Unit Price:</dt>
-                                <dd class="col-sm-8">₱${parseFloat(item.unit_price || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</dd>
-                                <dt class="col-sm-4">Stock Quantity:</dt>
-                                <dd class="col-sm-8">${Number(item.stock || 0).toLocaleString()}</dd>
-                                <dt class="col-sm-4">Reorder Level:</dt>
-                                <dd class="col-sm-8">${Number(item.reorder_level || 50).toLocaleString()}</dd>
-                                <dt class="col-sm-4">Status:</dt>
-                                <dd class="col-sm-8"><span class="badge ${item.status === 'active' ? 'bg-success' : 'bg-secondary'}">${escapeHtml(item.status || 'active')}</span></dd>
-                                ${item.branch_id ? `<dt class="col-sm-4">Branch:</dt><dd class="col-sm-8">${escapeHtml(item.branch_name || 'Branch ' + item.branch_id)}</dd>` : ''}
-                                <dt class="col-sm-4">Created At:</dt>
-                                <dd class="col-sm-8">${item.created_at ? new Date(item.created_at).toLocaleString() : 'N/A'}</dd>
-                                <dt class="col-sm-4">Updated At:</dt>
-                                <dd class="col-sm-8">${item.updated_at ? new Date(item.updated_at).toLocaleString() : 'N/A'}</dd>
-                            </dl>
+                            <div class="product-header-section">
+                                <div class="product-image">
+                                    <img src="${productImage}" 
+                                         class="product-image-large" 
+                                         alt="${escapeHtml(item.item_name)}"
+                                         onerror="this.src='${placeholderImage}'">
+                                </div>
+                                <div class="product-title-info">
+                                    <h3>${escapeHtml(item.item_name)}</h3>
+                                    <div class="product-code">
+                                        <i class="bi bi-upc-scan"></i> ${escapeHtml(item.item_code || 'N/A')}
+                                    </div>
+                                    <span class="stock-badge ${stockBadgeClass}">
+                                        ${stockIcon} ${stockStatus}
+                                    </span>
+                                </div>
+                            </div>
+                            
+                            <div class="info-section">
+                                <div class="section-title">
+                                    <i class="bi bi-info-circle"></i> Item Information
+                                </div>
+                                <table class="info-table">
+                                    <tr><td>Category</td><td>${escapeHtml(item.category || 'N/A')}</td></tr>
+                                    <tr><td>Unit Type</td><td>${escapeHtml(item.unit_type || 'piece')}</td></tr>
+                                    <tr><td>Unit Price</td><td class="fw-bold text-success">₱${parseFloat(item.unit_price || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</td></tr>
+                                    <tr><td>Stock Quantity</td><td>${Number(stockQty).toLocaleString()} pcs</td></tr>
+                                    <tr><td>Reorder Level</td><td>${Number(reorderLevel).toLocaleString()} pcs</td></tr>
+                                    <tr><td>Branch</td><td>${escapeHtml(item.branch_name || (item.branch_id ? 'Branch ' + item.branch_id : 'All Branches'))}</td></tr>
+                                </table>
+                            </div>
+                            
+                            <div class="info-section">
+                                <div class="section-title">
+                                    <i class="bi bi-file-text"></i> Description
+                                </div>
+                                <div class="description-text">
+                                    ${escapeHtml(item.description || 'No description available for this item.')}
+                                </div>
+                            </div>
+                            
+                            <div class="timestamp-section">
+                                <div><i class="bi bi-calendar3"></i> Created: ${item.created_at ? new Date(item.created_at).toLocaleString() : 'N/A'}</div>
+                                <div><i class="bi bi-pencil-square"></i> Last Updated: ${item.updated_at ? new Date(item.updated_at).toLocaleString() : 'N/A'}</div>
+                            </div>
                         `;
+                        
                     } else {
-                        details.innerHTML = '<p class="text-danger">Failed to load item details.</p>';
+                        details.innerHTML = `
+                            <div class="error-box">
+                                <i class="bi bi-exclamation-triangle"></i>
+                                <p>Failed to load item details.</p>
+                                <p class="text-muted small">${escapeHtml(data.message || 'Item not found')}</p>
+                            </div>
+                        `;
                     }
                 })
                 .catch(error => {
                     console.error('Error loading item details:', error);
-                    details.innerHTML = '<p class="text-danger">Error loading item details.</p>';
+                    details.innerHTML = `
+                        <div class="error-box">
+                            <i class="bi bi-bug"></i>
+                            <p>Error loading item details.</p>
+                            <p class="text-muted small">Please try again or contact support.</p>
+                        </div>
+                    `;
                 });
         }
 
@@ -1353,17 +1807,59 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
             return div.innerHTML;
         }
 
+        // Add mobile card structure after rendering (only for mobile view)
+        function addMobileCardStructure() {
+            if (window.innerWidth <= 768) {
+                const rows = document.querySelectorAll('#itemsTableBody tr');
+                rows.forEach(row => {
+                    // Check if already has mobile structure
+                    if (row.querySelector('.mobile-card-left')) return;
+                    
+                    // Get data from attributes
+                    const itemName = row.getAttribute('data-item-name') || '';
+                    const category = row.getAttribute('data-category') || '';
+                    const price = row.getAttribute('data-price') || '';
+                    const quantity = row.getAttribute('data-quantity') || '';
+                    const statusText = row.getAttribute('data-status') || '';
+                    const statusClass = row.getAttribute('data-status-class') || 'bg-secondary';
+                    
+                    // Clear row content
+                    row.innerHTML = '';
+                    
+                    // Create left side content
+                    const leftDiv = document.createElement('div');
+                    leftDiv.className = 'mobile-card-left';
+                    leftDiv.innerHTML = `
+                        <div class="mobile-item-name">${escapeHtml(itemName)}</div>
+                        <div class="mobile-category">${escapeHtml(category)}</div>
+                        <div class="mobile-price-qty">
+                            <span class="mobile-price">${escapeHtml(price)}</span>
+                            <span class="mobile-quantity">Qty: ${escapeHtml(quantity)}</span>
+                        </div>
+                        <div class="mobile-status">
+                            <span class="badge ${statusClass}">${escapeHtml(statusText)}</span>
+                        </div>
+                    `;
+                    
+                    // Create right side action (click indicator)
+                    const rightDiv = document.createElement('div');
+                    rightDiv.className = 'mobile-action';
+                    rightDiv.innerHTML = `<i class="bi bi-chevron-right"></i>`;
+                    
+                    row.appendChild(leftDiv);
+                    row.appendChild(rightDiv);
+                });
+            }
+        }
+
         // Initialize when page loads
         document.addEventListener('DOMContentLoaded', function() {
-            console.log("Items Management page loaded!");
-            
-            // Initialize sidebar
             initializeSidebar();
-            
-            // Initialize mobile navigation
             initMobileNav();
             
-            // Setup mobile toggle button
+            // Add mobile card structure after initial load
+            addMobileCardStructure();
+            
             const mobileToggleBtn = document.getElementById('mobileToggleBtn');
             if (mobileToggleBtn) {
                 mobileToggleBtn.addEventListener('click', function(e) {
@@ -1372,7 +1868,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 });
             }
             
-            // Setup desktop toggle button
             const desktopToggleBtn = document.getElementById('desktopToggleBtn');
             if (desktopToggleBtn) {
                 desktopToggleBtn.addEventListener('click', function(e) {
@@ -1381,7 +1876,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 });
             }
             
-            // Add click listeners to sidebar links to close on mobile
             document.querySelectorAll('.sidebar .nav-link').forEach(link => {
                 link.addEventListener('click', function() {
                     if (window.innerWidth <= 992) {
@@ -1390,7 +1884,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 });
             });
             
-            // Close sidebar when clicking outside on mobile
             document.addEventListener('click', function(event) {
                 const sidebar = document.getElementById('sidebar');
                 const mobileBtn = document.getElementById('mobileToggleBtn');
@@ -1405,25 +1898,24 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 }
             });
 
-            // Add resize event listener
             window.addEventListener('resize', function() {
                 handleSidebarResize();
                 initMobileNav();
+                // Re-apply mobile card structure on resize if mobile
+                if (window.innerWidth <= 768) {
+                    addMobileCardStructure();
+                }
             });
         });
 
-        // Keyboard shortcuts
         document.addEventListener('keydown', function(e) {
-            // Ctrl + B to toggle sidebar (desktop only)
             if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
                 e.preventDefault();
                 toggleSidebar();
             }
-            // Escape to close sidebar on mobile
             else if (e.key === 'Escape' && window.innerWidth <= 992) {
                 closeMobileSidebar();
             }
-            // Escape to close modal
             else if (e.key === 'Escape') {
                 const profileModal = document.getElementById('profileModal');
                 if (profileModal.classList.contains('show')) {
@@ -1436,83 +1928,47 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
             }
         });
 
-        // ================= FILTER TOGGLE FUNCTIONS =================
-// Toggle filter section visibility with localStorage
-function toggleFilter(filterType) {
-    const contentId = filterType + 'FilterContent';
-    const iconId = filterType + 'FilterIcon';
-    
-    const content = document.getElementById(contentId);
-    const icon = document.getElementById(iconId);
-    
-    if (content && icon) {
-        if (content.classList.contains('collapsed')) {
-            // Show filter
-            content.classList.remove('collapsed');
-            icon.style.transform = 'rotate(0deg)';
-            localStorage.setItem(filterType + 'FilterHidden', 'false');
-        } else {
-            // Hide filter
-            content.classList.add('collapsed');
-            icon.style.transform = 'rotate(-90deg)';
-            localStorage.setItem(filterType + 'FilterHidden', 'true');
-        }
-    }
-}
-
-// ================= FILTER TOGGLE FUNCTIONS =================
-// Toggle filter section visibility with localStorage
-function toggleFilter(filterType) {
-    const contentId = filterType + 'FilterContent';
-    const iconId = filterType + 'FilterIcon';
-    
-    const content = document.getElementById(contentId);
-    const icon = document.getElementById(iconId);
-    
-    if (content && icon) {
-        if (content.classList.contains('collapsed')) {
-            // Show filter
-            content.classList.remove('collapsed');
-            icon.style.transform = 'rotate(0deg)';
-            localStorage.setItem(filterType + 'FilterHidden', 'false');
-        } else {
-            // Hide filter
-            content.classList.add('collapsed');
-            icon.style.transform = 'rotate(-90deg)';
-            localStorage.setItem(filterType + 'FilterHidden', 'true');
-        }
-    }
-}
-
-// Initialize filter states on page load - DEFAULT CLOSED
-function initFilterStates() {
-    const filterTypes = ['sales', 'branch', 'items', 'driver', 'trip'];
-    
-    filterTypes.forEach(type => {
-        const contentId = type + 'FilterContent';
-        const iconId = type + 'FilterIcon';
-        
-        const content = document.getElementById(contentId);
-        const icon = document.getElementById(iconId);
-        
-        if (content && icon) {
-            // DEFAULT: CLOSED sa simula
-            content.classList.add('collapsed');
-            icon.style.transform = 'rotate(-90deg)';
+        function toggleFilter(filterType) {
+            const contentId = filterType + 'FilterContent';
+            const iconId = filterType + 'FilterIcon';
             
-            // Save sa localStorage na closed para consistent
-            localStorage.setItem(type + 'FilterHidden', 'true');
+            const content = document.getElementById(contentId);
+            const icon = document.getElementById(iconId);
+            
+            if (content && icon) {
+                if (content.classList.contains('collapsed')) {
+                    content.classList.remove('collapsed');
+                    icon.style.transform = 'rotate(0deg)';
+                    localStorage.setItem(filterType + 'FilterHidden', 'false');
+                } else {
+                    content.classList.add('collapsed');
+                    icon.style.transform = 'rotate(-90deg)';
+                    localStorage.setItem(filterType + 'FilterHidden', 'true');
+                }
+            }
         }
-    });
-}
 
-// Call this sa loob ng DOMContentLoaded
-document.addEventListener('DOMContentLoaded', function() {
-    // ... existing code ...
-    
-    // Initialize filter states - lahat closed
-    initFilterStates();
-});
+        function initFilterStates() {
+            const filterTypes = ['sales', 'branch', 'items', 'driver', 'trip'];
+            
+            filterTypes.forEach(type => {
+                const contentId = type + 'FilterContent';
+                const iconId = type + 'FilterIcon';
+                
+                const content = document.getElementById(contentId);
+                const icon = document.getElementById(iconId);
+                
+                if (content && icon) {
+                    content.classList.add('collapsed');
+                    icon.style.transform = 'rotate(-90deg)';
+                    localStorage.setItem(type + 'FilterHidden', 'true');
+                }
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            initFilterStates();
+        });
     </script>
 </body>
 </html>

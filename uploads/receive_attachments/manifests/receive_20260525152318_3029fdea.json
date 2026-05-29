@@ -1,0 +1,32 @@
+{
+    "manifest_id": "receive_20260525152318_3029fdea",
+    "source": "supplier",
+    "supplier_id": 1,
+    "supplier_name": "Jill Anuran",
+    "po_number": "PO-RCV-20260525152318",
+    "reference_type": "purchase_order",
+    "reference_id": 29,
+    "receive_date": "2026-05-25",
+    "receive_memo": "",
+    "created_at": "2026-05-25 15:23:18",
+    "created_by": 2,
+    "branch_id": 1,
+    "transaction_ids": [
+        284
+    ],
+    "attachments": [],
+    "items": [
+        {
+            "item_id": 112,
+            "item_name": "Palm molive",
+            "item_code": "Palm molive",
+            "item_description": "Palm molive",
+            "category": "General",
+            "uom": "Piece",
+            "qty": 10,
+            "unit_price": 10,
+            "unit_cost": 10,
+            "total_cost": 100
+        }
+    ]
+}

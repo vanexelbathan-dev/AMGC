@@ -75,87 +75,109 @@
 /* ========================================
    Table Styles
    ======================================== */
-.pick-list-table {
+#pickListTable {
     width: 100%;
     border-collapse: collapse;
     margin-bottom: 20px;
 }
 
-.pick-list-table thead th {
+#pickListTable thead th {
     background-color: #f8f9fa;
     font-weight: 600;
     font-size: 13px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
     color: #495057;
-    padding: 14px 12px;
+    padding: 12px 8px;
     border-bottom: 2px solid #dee2e6;
-    white-space: nowrap;
     vertical-align: middle;
     text-align: left;
+    white-space: nowrap;
 }
 
-.pick-list-table tbody td {
-    padding: 14px 12px;
+#pickListTable tbody td {
+    padding: 10px 8px;
     vertical-align: middle;
     border-bottom: 1px solid #e9ecef;
     font-size: 13px;
 }
 
-.pick-list-table tbody tr:hover {
+#pickListTable tbody tr:hover {
     background-color: #f8f9fa;
+    cursor: pointer;
 }
 
-/* Column widths */
-.col-so {
-    width: 10%;
+/* Specific column widths - gamitin ang min-width para hindi maputol */
+#pickListTable .col-so {
+    min-width: 140px;
 }
 
-.col-branch {
-    width: 8%;
+#pickListTable .col-item-code {
+    min-width: 90px;
 }
 
-.col-item-code {
-    width: 8%;
+#pickListTable .col-item-name {
+    min-width: 180px;
 }
 
-.col-item-name {
-    width: 12%;
-}
-
-.col-to-pick {
-    width: 6%;
+#pickListTable .col-unit {
+    min-width: 70px;
     text-align: center;
 }
 
-.col-picked {
-    width: 6%;
+#pickListTable .col-to-pick {
+    min-width: 70px;
     text-align: center;
 }
 
-.col-location {
-    width: 15%;
-}
-
-.col-status {
-    width: 8%;
-}
-
-.col-encoded {
-    width: 8%;
-}
-
-.col-encoded-by {
-    width: 10%;
-}
-
-.col-encoded-at {
-    width: 12%;
-}
-
-.col-actions {
-    width: 12%;
+#pickListTable .col-picked {
+    min-width: 70px;
     text-align: center;
+}
+
+#pickListTable .col-status {
+    min-width: 100px;
+}
+
+/* Kung may branch column */
+#pickListTable .col-branch {
+    min-width: 100px;
+}
+
+/* Para hindi mag-wrap ang text sa mga column na dapat compact */
+#pickListTable .col-unit,
+#pickListTable .col-to-pick,
+#pickListTable .col-picked {
+    white-space: nowrap;
+    text-align: center;
+}
+
+/* Para sa item name - pwedeng mag-wrap */
+#pickListTable .col-item-name {
+    white-space: normal;
+    word-break: break-word;
+}
+
+/* Para sa SO number at customer name */
+#pickListTable .col-so strong {
+    display: block;
+    font-size: 13px;
+}
+
+#pickListTable .col-so small {
+    font-size: 11px;
+    display: block;
+    color: #6c757d;
+}
+
+/* Stock indicator */
+.stock-indicator {
+    font-size: 10px;
+    padding: 2px 6px;
+    border-radius: 12px;
+    display: inline-block;
+    margin-left: 6px;
+    white-space: nowrap;
 }
 
 /* ========================================
@@ -401,6 +423,23 @@
     border-radius: 4px;
     border: 1px solid #ced4da;
     padding: 6px 12px;
+}
+
+/* Fix Select2 dropdown inside modal */
+.select2-container--open {
+    z-index: 9999 !important;
+}
+
+.select2-dropdown {
+    z-index: 9999 !important;
+}
+
+.modal {
+    overflow: visible !important;
+}
+
+.modal-body {
+    overflow: visible !important;
 }
 
 /* ========================================

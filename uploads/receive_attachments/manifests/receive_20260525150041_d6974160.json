@@ -1,0 +1,33 @@
+{
+    "manifest_id": "receive_20260525150041_d6974160",
+    "source": "supplier",
+    "supplier_id": 4,
+    "supplier_name": "Van",
+    "po_number": "PO-RCV-20260525150041",
+    "reference_type": "purchase_order",
+    "reference_id": 18,
+    "receive_date": "2026-05-25",
+    "encoded_date": "2026-05-25",
+    "receive_memo": "",
+    "created_at": "2026-05-25 15:00:41",
+    "created_by": 2,
+    "branch_id": 1,
+    "transaction_ids": [
+        273
+    ],
+    "attachments": [],
+    "items": [
+        {
+            "item_id": 6,
+            "item_name": "1 liter Oil",
+            "item_code": "ITEM006",
+            "item_description": "1 liter Oil",
+            "category": "Oil",
+            "uom": "Piece",
+            "qty": 10,
+            "unit_price": 100,
+            "unit_cost": 100,
+            "total_cost": 1000
+        }
+    ]
+}

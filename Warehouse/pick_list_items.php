@@ -459,6 +459,88 @@ function getPickStatusText($status) {
     };
 }
 
+// Helper function to get product image HTML
+function getProductImageHtml($item_id, $item_name, $size = 'small') {
+    global $conn;
+    
+    // First check item_images table
+    $image_query = "SELECT image_path FROM item_images WHERE item_id = ? AND is_primary = 1 ORDER BY image_order LIMIT 1";
+    $img_stmt = $conn->prepare($image_query);
+    $img_stmt->bind_param("i", $item_id);
+    $img_stmt->execute();
+    $img_result = $img_stmt->get_result();
+    
+    if ($img_result && $img_row = $img_result->fetch_assoc()) {
+        $image_path = $img_row['image_path'];
+        $img_stmt->close();
+        
+        // Check if the path is a URL or local path
+        if (strpos($image_path, 'http') === 0) {
+            $image_url = $image_path;
+        } else {
+            $image_url = '../' . ltrim($image_path, './');
+        }
+        
+        if ($size == 'small') {
+            return '<img src="' . htmlspecialchars($image_url) . '" alt="' . htmlspecialchars($item_name) . '" class="product-thumb" style="width: 40px; height: 40px; object-fit: cover; border-radius: 8px;" onerror="this.src=\'../Pictures/no-image.png\'">';
+        } else {
+            return '<img src="' . htmlspecialchars($image_url) . '" alt="' . htmlspecialchars($item_name) . '" class="product-image" style="width: 60px; height: 60px; object-fit: cover; border-radius: 8px;" onerror="this.src=\'../Pictures/no-image.png\'">';
+        }
+    }
+    $img_stmt->close();
+    
+    // Check product_images table as fallback
+    $image_query2 = "SELECT image_path FROM product_images WHERE item_id = ? AND is_primary = 1 ORDER BY image_order LIMIT 1";
+    $img_stmt2 = $conn->prepare($image_query2);
+    $img_stmt2->bind_param("i", $item_id);
+    $img_stmt2->execute();
+    $img_result2 = $img_stmt2->get_result();
+    
+    if ($img_result2 && $img_row2 = $img_result2->fetch_assoc()) {
+        $image_path = $img_row2['image_path'];
+        $img_stmt2->close();
+        
+        if (strpos($image_path, 'http') === 0) {
+            $image_url = $image_path;
+        } else {
+            $image_url = '../' . ltrim($image_path, './');
+        }
+        
+        if ($size == 'small') {
+            return '<img src="' . htmlspecialchars($image_url) . '" alt="' . htmlspecialchars($item_name) . '" class="product-thumb" style="width: 40px; height: 40px; object-fit: cover; border-radius: 8px;" onerror="this.src=\'../Pictures/no-image.png\'">';
+        } else {
+            return '<img src="' . htmlspecialchars($image_url) . '" alt="' . htmlspecialchars($item_name) . '" class="product-image" style="width: 60px; height: 60px; object-fit: cover; border-radius: 8px;" onerror="this.src=\'../Pictures/no-image.png\'">';
+        }
+    }
+    $img_stmt2->close();
+    
+    // Check items table for product_image_url
+    $item_query = "SELECT product_image_url FROM items WHERE item_id = ?";
+    $item_stmt = $conn->prepare($item_query);
+    $item_stmt->bind_param("i", $item_id);
+    $item_stmt->execute();
+    $item_result = $item_stmt->get_result();
+    
+    if ($item_result && $item_row = $item_result->fetch_assoc() && !empty($item_row['product_image_url'])) {
+        $image_url = $item_row['product_image_url'];
+        $item_stmt->close();
+        
+        if ($size == 'small') {
+            return '<img src="' . htmlspecialchars($image_url) . '" alt="' . htmlspecialchars($item_name) . '" class="product-thumb" style="width: 40px; height: 40px; object-fit: cover; border-radius: 8px;" onerror="this.src=\'../Pictures/no-image.png\'">';
+        } else {
+            return '<img src="' . htmlspecialchars($image_url) . '" alt="' . htmlspecialchars($item_name) . '" class="product-image" style="width: 60px; height: 60px; object-fit: cover; border-radius: 8px;" onerror="this.src=\'../Pictures/no-image.png\'">';
+        }
+    }
+    $item_stmt->close();
+    
+    // Return placeholder if no image found
+    if ($size == 'small') {
+        return '<div class="product-thumb-placeholder" style="width: 40px; height: 40px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-content: center;"><i class="bi bi-image text-muted"></i></div>';
+    } else {
+        return '<div class="product-image-placeholder" style="width: 60px; height: 60px; background: #f0f0f0; border-radius: 8px; display: flex; align-items: center; justify-center;"><i class="bi bi-image text-muted" style="font-size: 24px;"></i></div>';
+    }
+}
+
 // Helper function to format location (clean version)
 function formatLocation($row) {
     $output = '';
@@ -485,6 +567,75 @@ function formatLocation($row) {
     
     return $output;
 }
+
+// Get pick list statistics - filtered by branch and category
+// Determine branch filter condition
+$branch_condition = "";
+if ($items_branch_column_exists && !$view_all_branches) {
+    $branch_condition = "AND i.branch_id = " . $user_branch_id;
+}
+
+// Determine category filter condition
+$category_condition = "";
+if (empty($user_category)) {
+    // If no category assigned, show nothing
+    $category_condition = "AND 1=0";
+} else {
+    $category_condition = "AND i.category = '" . $conn->real_escape_string($user_category) . "'";
+}
+
+$stats = [];
+
+// Total items query with branch and category filter
+$total_items_query = "SELECT COUNT(*) as count 
+                     FROM pick_list_items pli
+                     JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
+                     JOIN items i ON pli.item_id = i.item_id
+                     WHERE 1=1 $branch_condition $category_condition";
+$result = $conn->query($total_items_query);
+$stats['total_items'] = $result->fetch_assoc()['count'] ?? 0;
+
+// Picked items query with branch and category filter
+$picked_query = "SELECT COUNT(*) as count 
+                FROM pick_list_items pli
+                JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
+                JOIN items i ON pli.item_id = i.item_id
+                WHERE pli.quantity_picked >= pli.quantity_to_pick $branch_condition $category_condition";
+$result = $conn->query($picked_query);
+$stats['picked'] = $result->fetch_assoc()['count'] ?? 0;
+
+// Pending items query with branch and category filter
+$pending_query = "SELECT COUNT(*) as count 
+                 FROM pick_list_items pli
+                 JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
+                 JOIN items i ON pli.item_id = i.item_id
+                 WHERE (pli.quantity_picked = 0 OR pli.quantity_picked < pli.quantity_to_pick) $branch_condition $category_condition";
+$result = $conn->query($pending_query);
+$stats['pending'] = $result->fetch_assoc()['count'] ?? 0;
+
+// Completed Today query - pick lists completed today (REPLACED Total Value)
+$completed_today_query = "SELECT COUNT(*) as count 
+                         FROM pick_lists pl
+                         WHERE pl.pick_status = 'completed' 
+                         AND DATE(pl.updated_at) = CURDATE()";
+
+// Add branch filter
+if (!$view_all_branches && $user_branch_id > 0) {
+    $completed_today_query .= " AND pl.branch_id = " . $user_branch_id;
+}
+
+// Add category filter via items table
+if (!empty($user_category)) {
+    $completed_today_query .= " AND EXISTS (
+        SELECT 1 FROM pick_list_items pli 
+        JOIN items i ON pli.item_id = i.item_id 
+        WHERE pli.pick_list_id = pl.pick_list_id 
+        AND i.category = '" . $conn->real_escape_string($user_category) . "'
+    )";
+}
+
+$result = $conn->query($completed_today_query);
+$stats['completed_today'] = $result->fetch_assoc()['count'] ?? 0;
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -607,6 +758,7 @@ function formatLocation($row) {
             letter-spacing: 0.5px;
             background-color: #f8f9fa;
             white-space: nowrap;
+            text-align: center;
         }
         
         .table td {
@@ -665,7 +817,12 @@ function formatLocation($row) {
             border: 4px solid var(--light-green);
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
         }
-
+        .btn-print{
+            color: #388e3c;
+            background-color: #e8f5e9;
+            border-color: #537b2f;
+        }
+        
         #profileModal .modal-content {
             border: none;
             border-radius: 20px;
@@ -762,6 +919,59 @@ function formatLocation($row) {
         .search-input {
             padding-left: 35px !important;
             width: 100%;
+        }
+
+        /* Product Image Styling */
+        .product-info-cell {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            min-width: 200px;
+        }
+        
+        .product-thumb {
+            width: 40px;
+            height: 40px;
+            object-fit: cover;
+            border-radius: 8px;
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            transition: transform 0.2s;
+        }
+        
+        .product-thumb:hover {
+            transform: scale(1.5);
+            cursor: pointer;
+            z-index: 10;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        
+        .product-details {
+            flex: 1;
+        }
+        
+        .product-name {
+            font-weight: 600;
+            font-size: 13px;
+            color: #2c3e50;
+            margin-bottom: 2px;
+        }
+        
+        .product-code {
+            font-size: 11px;
+            color: #6c757d;
+        }
+        
+        /* Pick list number styling */
+        .picklist-number {
+            font-weight: 600;
+            font-size: 13px;
+            color: #2c3e50;
+        }
+        
+        .picklist-badge {
+            font-size: 10px;
+            padding: 3px 8px;
         }
 
         /* ================= PRINT STYLES - OPTIMIZED FOR PICK LIST ITEM DETAILS ================= */
@@ -935,68 +1145,8 @@ function formatLocation($row) {
             </div>
 
             <?php
-            // Get pick list statistics - filtered by branch and category
-            // Determine branch filter condition - same logic as currentinventory.php
-            $branch_condition = "";
-            if ($items_branch_column_exists && !$view_all_branches) {
-                $branch_condition = "AND i.branch_id = " . $user_branch_id;
-            }
-            
-            // Determine category filter condition
-            $category_condition = "";
-            if (empty($user_category)) {
-                // If no category assigned, show nothing
-                $category_condition = "AND 1=0";
-            } else {
-                $category_condition = "AND i.category = '" . $conn->real_escape_string($user_category) . "'";
-            }
-            
-            $stats = [];
-            
-            // Total items query with branch and category filter
-            $total_items_query = "SELECT COUNT(*) as count 
-                                 FROM pick_list_items pli
-                                 JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
-                                 JOIN items i ON pli.item_id = i.item_id
-                                 WHERE 1=1 $branch_condition $category_condition";
-            $result = $conn->query($total_items_query);
-            $stats['total_items'] = $result->fetch_assoc()['count'] ?? 0;
-            
-            // Picked items query with branch and category filter
-            $picked_query = "SELECT COUNT(*) as count 
-                            FROM pick_list_items pli
-                            JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
-                            JOIN items i ON pli.item_id = i.item_id
-                            WHERE pli.quantity_picked >= pli.quantity_to_pick $branch_condition $category_condition";
-            $result = $conn->query($picked_query);
-            $stats['picked'] = $result->fetch_assoc()['count'] ?? 0;
-            
-            // Pending items query with branch and category filter
-            $pending_query = "SELECT COUNT(*) as count 
-                             FROM pick_list_items pli
-                             JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
-                             JOIN items i ON pli.item_id = i.item_id
-                             WHERE pli.quantity_picked = 0 $branch_condition $category_condition";
-            $result = $conn->query($pending_query);
-            $stats['pending'] = $result->fetch_assoc()['count'] ?? 0;
-            
-            // Total value query with branch and category filter
-            $check_price = $conn->query("SHOW COLUMNS FROM items LIKE 'unit_price'");
-            if ($check_price && $check_price->num_rows > 0) {
-                $value_query = "SELECT SUM(pli.quantity_to_pick * i.unit_price) as total_value 
-                               FROM pick_list_items pli
-                               JOIN pick_lists pl ON pli.pick_list_id = pl.pick_list_id
-                               JOIN items i ON pli.item_id = i.item_id
-                               WHERE 1=1 $branch_condition $category_condition";
-                $result = $conn->query($value_query);
-                $total_value = $result->fetch_assoc()['total_value'] ?? 0;
-            } else {
-                $total_value = 0;
-            }
-            ?>
-
-            <!-- Success/Error Messages -->
-            <?php if (isset($success_message)): ?>
+            // Display success/error messages
+            if (isset($success_message)): ?>
                 <div class="alert alert-success alert-dismissible fade show" role="alert">
                     <?php echo $success_message; ?>
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
@@ -1010,148 +1160,147 @@ function formatLocation($row) {
                 </div>
             <?php endif; ?>
 
-           <!-- Stats Cards -->
-<div class="row stat-card-row g-1 g-sm-2">
-    <!-- Card 1 - Total Items -->
-    <div class="col">
-        <div class="stat-card inventory">
-            <i class="bi bi-clipboard-check"></i>
-            <div class="stat-content">
-                <div class="stat-value"><?php echo $stats['total_items']; ?></div>
-                <div class="stat-label">Total Items</div>
-            </div>
-        </div>
-    </div>
+            <!-- Stats Cards - 4 Cards (Total Value replaced by Completed Today) -->
+            <div class="row stat-card-row g-1 g-sm-2 mb-4">
+                <!-- Card 1 - Total Items -->
+                <div class="col-12 col-sm-6 col-lg-3">
+                    <div class="stat-card inventory">
+                        <i class="bi bi-clipboard-check"></i>
+                        <div class="stat-content">
+                            <div class="stat-value"><?php echo $stats['total_items']; ?></div>
+                            <div class="stat-label">Total Items</div>
+                        </div>
+                    </div>
+                </div>
 
-    <!-- Card 2 - Picked -->
-    <div class="col">
-        <div class="stat-card sales">
-            <i class="bi bi-check-circle"></i>
-            <div class="stat-content">
-                <div class="stat-value"><?php echo $stats['picked']; ?></div>
-                <div class="stat-label">Picked</div>
-            </div>
-        </div>
-    </div>
+                <!-- Card 2 - Picked -->
+                <div class="col-12 col-sm-6 col-lg-3">
+                    <div class="stat-card sales">
+                        <i class="bi bi-check-circle"></i>
+                        <div class="stat-content">
+                            <div class="stat-value"><?php echo $stats['picked']; ?></div>
+                            <div class="stat-label">Picked</div>
+                        </div>
+                    </div>
+                </div>
 
-    <!-- Card 3 - Pending Pickup -->
-    <div class="col">
-        <div class="stat-card pending">
-            <i class="bi bi-hourglass-split"></i>
-            <div class="stat-content">
-                <div class="stat-value"><?php echo $stats['pending']; ?></div>
-                <div class="stat-label">Pending Pickup</div>
-            </div>
-        </div>
-    </div>
+                <!-- Card 3 - Pending Pickup -->
+                <div class="col-12 col-sm-6 col-lg-3">
+                    <div class="stat-card pending">
+                        <i class="bi bi-hourglass-split"></i>
+                        <div class="stat-content">
+                            <div class="stat-value"><?php echo $stats['pending']; ?></div>
+                            <div class="stat-label">Pending Pickup</div>
+                        </div>
+                    </div>
+                </div>
 
-    <!-- Card 4 - Total Value -->
-    <div class="col">
-        <div class="stat-card delivery">
-            <i class="bi bi-currency-exchange"></i>
-            <div class="stat-content">
-                <div class="stat-value">₱<?php echo number_format($total_value, 0); ?></div>
-                <div class="stat-label">Total Value</div>
-            </div>
-        </div>
-    </div>
-</div>
-<!-- FILTER SECTION - PICK LISTS (Consistent with global design) -->
-<div class="form-card mb-4">
-    <div class="filter-header">
-        <h5>
-            <i class="bi bi-funnel"></i> Filter Pick Lists
-        </h5>
-        <button class="filter-toggle-btn" type="button" id="picklistFilterToggle" aria-expanded="false">
-            <i class="bi bi-chevron-down" id="picklistFilterIcon"></i>
-        </button>
-    </div>
-    
-    <div class="filter-content collapsed" id="picklistFilterContent">
-        <div class="row g-3">
-            <!-- Search Field -->
-            <div class="col-12 col-md-5">
-                <label class="form-label">
-                    <i class="bi bi-search"></i> Search
-                </label>
-                <div class="search-wrapper">
-                    <input type="text" class="form-control search-input" id="searchInput" placeholder="Search pick list or item...">
+                <!-- Card 4 - Completed Today (instead of Total Value) -->
+                <div class="col-12 col-sm-6 col-lg-3">
+                    <div class="stat-card approved">
+                        <i class="bi bi-calendar-check"></i>
+                        <div class="stat-content">
+                            <div class="stat-value"><?php echo $stats['completed_today']; ?></div>
+                            <div class="stat-label">Completed Today</div>
+                        </div>
+                    </div>
                 </div>
             </div>
-            
-            <!-- Status Filter -->
-            <div class="col-12 col-md-3">
-                <label class="form-label">
-                    <i class="bi bi-flag"></i> Order Status
-                </label>
-                <select class="form-select" id="statusFilter">
-                    <option value="">All Order Status</option>
-                    <option value="pending">Pending</option>
-                    <option value="confirmed">Confirmed</option>
-                    <option value="processing">Processing</option>
-                    <option value="ready">Ready for Delivery</option>
-                    <option value="delivered">Delivered</option>
-                    <option value="cancelled">Cancelled</option>
-                </select>
+
+            <!-- FILTER SECTION - PICK LISTS -->
+            <div class="form-card mb-4">
+                <div class="filter-header">
+                    <h5>
+                        <i class="bi bi-funnel"></i> Filter Pick Lists
+                    </h5>
+                    <button class="filter-toggle-btn" type="button" id="picklistFilterToggle" aria-expanded="false">
+                        <i class="bi bi-chevron-down" id="picklistFilterIcon"></i>
+                    </button>
+                </div>
+                
+                <div class="filter-content collapsed" id="picklistFilterContent">
+                    <div class="row g-3">
+                        <!-- Search Field -->
+                        <div class="col-12 col-md-5">
+                            <label class="form-label">
+                                <i class="bi bi-search"></i> Search
+                            </label>
+                            <div class="search-wrapper">
+                                <input type="text" class="form-control search-input" id="searchInput" placeholder="Search pick list, item name, or item code...">
+                            </div>
+                        </div>
+                        
+                        <!-- Status Filter -->
+                        <div class="col-12 col-md-3">
+                            <label class="form-label">
+                                <i class="bi bi-flag"></i> Order Status
+                            </label>
+                            <select class="form-select" id="statusFilter">
+                                <option value="">All Order Status</option>
+                                <option value="pending">Pending</option>
+                                <option value="confirmed">Confirmed</option>
+                                <option value="processing">Processing</option>
+                                <option value="ready">Ready for Delivery</option>
+                                <option value="delivered">Delivered</option>
+                                <option value="cancelled">Cancelled</option>
+                            </select>
+                        </div>
+                        
+                        <!-- Driver Filter -->
+                        <div class="col-12 col-md-4">
+                            <label class="form-label">
+                                <i class="bi bi-truck"></i> Driver
+                            </label>
+                            <select class="form-select" id="driverFilter">
+                                <option value="">All Drivers</option>
+                                <?php
+                                // Get all drivers from current branch
+                                $drivers_filter_query = "SELECT driver_id, driver_name, vehicle_plate_number 
+                                                        FROM drivers 
+                                                        WHERE status = 'active'";
+                                
+                                if (!$view_all_branches && $user_branch_id > 0) {
+                                    $drivers_filter_query .= " AND branch_id = ?";
+                                    $driver_stmt = $conn->prepare($drivers_filter_query . " ORDER BY driver_name");
+                                    $driver_stmt->bind_param("i", $user_branch_id);
+                                } else {
+                                    $drivers_filter_query .= " ORDER BY driver_name";
+                                    $driver_stmt = $conn->prepare($drivers_filter_query);
+                                }
+                                
+                                $driver_stmt->execute();
+                                $drivers_result = $driver_stmt->get_result();
+                                
+                                if ($drivers_result->num_rows > 0) {
+                                    while($driver = $drivers_result->fetch_assoc()) {
+                                        $vehicle_info = !empty($driver['vehicle_plate_number']) ? ' - ' . $driver['vehicle_plate_number'] : '';
+                                        echo '<option value="' . $driver['driver_id'] . '">' . 
+                                             htmlspecialchars($driver['driver_name'] . $vehicle_info) . '</option>';
+                                    }
+                                } else {
+                                    echo '<option value="" disabled>No drivers available</option>';
+                                }
+                                $driver_stmt->close();
+                                ?>
+                            </select>
+                        </div>
+                    </div>
+                </div>
             </div>
-            
-            <!-- Driver Filter -->
-            <div class="col-12 col-md-2">
-                <label class="form-label">
-                    <i class="bi bi-truck"></i> Driver
-                </label>
-                <select class="form-select" id="driverFilter">
-                    <option value="">All Drivers</option>
-                    <?php
-                    // Get all drivers from current branch
-                    $drivers_filter_query = "SELECT driver_id, driver_name, vehicle_plate_number 
-                                            FROM drivers 
-                                            WHERE status = 'active'";
-                    
-                    if (!$view_all_branches && $user_branch_id > 0) {
-                        $drivers_filter_query .= " AND branch_id = ?";
-                        $driver_stmt = $conn->prepare($drivers_filter_query . " ORDER BY driver_name");
-                        $driver_stmt->bind_param("i", $user_branch_id);
-                    } else {
-                        $drivers_filter_query .= " ORDER BY driver_name";
-                        $driver_stmt = $conn->prepare($drivers_filter_query);
-                    }
-                    
-                    $driver_stmt->execute();
-                    $drivers_result = $driver_stmt->get_result();
-                    
-                    if ($drivers_result->num_rows > 0) {
-                        while($driver = $drivers_result->fetch_assoc()) {
-                            $vehicle_info = !empty($driver['vehicle_plate_number']) ? ' - ' . $driver['vehicle_plate_number'] : '';
-                            echo '<option value="' . $driver['driver_id'] . '">' . 
-                                 htmlspecialchars($driver['driver_name'] . $vehicle_info) . '</option>';
-                        }
-                    } else {
-                        echo '<option value="" disabled>No drivers available</option>';
-                    }
-                    $driver_stmt->close();
-                    ?>
-                </select>
-            </div>
-        </div>
-    </div>
-</div>
 
             <!-- Clean Pick List Items Table -->
             <div class="card">
                 <div class="table-container">
                     <table class="table custom-table compact-table">
-                        <thead>
+                        <thead> 
                             <tr>
-                                <th>Pick List</th>
-                                <th>Item</th>
+                                <th class="text-center">Item</th>
+                                <th class="text-center">Pick List</th>
                                 <th class="text-center">To Pick</th>
                                 <th class="text-center">Picked</th>
-                                <th>Assigned Driver</th>
-                                <th>Delivery Location</th>
-                                <th>Order Status</th>
+                                <th class="text-center">Order Status</th>
                                 <?php if ($view_all_branches): ?>
-                                    <th>Branch</th>
+                                    <th class="text-center">Branch</th>
                                 <?php endif; ?>
                                 <th class="text-center">Actions</th>
                             </tr>
@@ -1159,7 +1308,7 @@ function formatLocation($row) {
                         <tbody>
                             <?php
                             // Get pick list items with all necessary data
-                            // Determine branch filter condition - same logic as currentinventory.php
+                            // Determine branch filter condition
                             $main_branch_condition = "";
                             if ($items_branch_column_exists && !$view_all_branches) {
                                 $main_branch_condition = "AND i.branch_id = " . $user_branch_id;
@@ -1230,6 +1379,7 @@ function formatLocation($row) {
                                 while($row = $result->fetch_assoc()) {
                                     $has_coordinates = !empty($row['customer_latitude']) && !empty($row['customer_longitude']);
                                     $has_address = !empty($row['customer_address']);
+                                    $product_image = getProductImageHtml($row['item_id'], $row['item_name'], 'small');
                                     
                                     // Add status group header when status changes
                                     $status_group = '';
@@ -1240,45 +1390,38 @@ function formatLocation($row) {
                                     }
                                     
                                     ?>
-                                    <tr data-order-status="<?php echo $row['order_status'] ?? ''; ?>"
+                                    <tr data-pick-list-id="<?php echo $row['pick_list_id']; ?>"
+                                        data-so-id="<?php echo $row['so_id']; ?>"
+                                        data-order-status="<?php echo $row['order_status'] ?? ''; ?>"
                                         data-driver-id="<?php echo $row['driver_id'] ?? ''; ?>"
                                         data-location-type="<?php 
                                             if ($has_coordinates) echo 'coordinates';
                                             elseif ($has_address) echo 'address';
                                             else echo 'none';
                                         ?>">
-                                        <td>
-                                            <span class="fw-semibold"><?php echo htmlspecialchars($row['pick_list_number']); ?></span>
-                                            <?php if (!empty($row['pick_list_status'])): ?>
-                                                <br><small class="badge <?php echo getPickStatusBadge($row['pick_list_status']); ?>" style="font-size: 10px;">
-                                                    <?php echo getPickStatusText($row['pick_list_status']); ?>
-                                                </small>
-                                            <?php endif; ?>
+                                        <td class="text-center">
+                                            <div class="product-info-cell">
+                                                <?php echo $product_image; ?>
+                                                <div class="product-details">
+                                                    <div class="product-name"><?php echo htmlspecialchars($row['item_name']); ?></div>
+                                                    <div class="product-code"><?php echo htmlspecialchars($row['item_code']); ?></div>
+                                                </div>
+                                            </div>
                                         </td>
-                                        <td>
-                                            <div class="fw-semibold"><?php echo htmlspecialchars($row['item_name']); ?></div>
-                                            <small class="text-muted"><?php echo htmlspecialchars($row['item_code']); ?></small>
-                                            <?php if (!empty($row['notes'])): ?>
-                                                <br><small class="text-info"><i class="bi bi-info-circle"></i> <?php echo htmlspecialchars(substr($row['notes'], 0, 30)) . (strlen($row['notes']) > 30 ? '...' : ''); ?></small>
-                                            <?php endif; ?>
+                                        <td class="text-center">
+                                            <div>
+                                                <span class="picklist-number"><?php echo htmlspecialchars($row['pick_list_number']); ?></span>
+                                                <?php if (!empty($row['pick_list_status'])): ?>
+                                                    <br><span class="badge <?php echo getPickStatusBadge($row['pick_list_status']); ?> picklist-badge">
+                                                        <?php echo getPickStatusText($row['pick_list_status']); ?>
+                                                    </span>
+                                                <?php endif; ?>
+                                            </div>
                                         </td>
+                                       
                                         <td class="text-center"><?php echo number_format($row['quantity_to_pick']); ?></td>
                                         <td class="text-center"><?php echo number_format($row['quantity_picked']); ?></td>
-                                        <td>
-                                            <?php if (!empty($row['driver_name'])): ?>
-                                                    <?php echo htmlspecialchars($row['driver_name']); ?>
-                                                </span>
-                                                <?php if (!empty($row['vehicle_plate_number'])): ?>
-                                                    <br><small class="text-muted"><?php echo htmlspecialchars($row['vehicle_plate_number']); ?></small>
-                                                <?php endif; ?>
-                                            <?php else: ?>
-                                                <span class="text-muted">—</span>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td style="max-width: 250px;">
-                                            <?php echo formatLocation($row); ?>
-                                        </td>
-                                        <td>
+                                        <td class="text-center">
                                             <?php if (!empty($row['order_status'])): ?>
                                                 <span class="order-status-badge <?php echo getOrderStatusBadge($row['order_status']); ?>">
                                                     <?php echo getOrderStatusText($row['order_status']); ?>
@@ -1288,7 +1431,7 @@ function formatLocation($row) {
                                             <?php endif; ?>
                                         </td>
                                         <?php if ($view_all_branches): ?>
-                                            <td>
+                                            <td class="text-center">
                                                 <span class="badge bg-info text-dark"><?php echo htmlspecialchars($row['branch_name']); ?></span>
                                             </td>
                                         <?php endif; ?>
@@ -1319,7 +1462,7 @@ function formatLocation($row) {
                                     <?php
                                 }
                             } else {
-                                $colspan = $view_all_branches ? 9 : 8;
+                                $colspan = $view_all_branches ? 7 : 6;
                                 echo '<tr><td colspan="' . $colspan . '" class="text-center py-5 text-muted">';
                                 echo '<i class="bi bi-inbox fs-1 d-block mb-3"></i>';
                                 echo '<p>No pick list items found</p>';
@@ -1539,7 +1682,7 @@ function formatLocation($row) {
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label class="form-label">Sales Order</label>
-                                <select class="form-select" name="so_id" required>
+                                <select class="form-select" name="so_id" required id="soSelectForPickList">
                                     <option value="">Select Sales Order</option>
                                     <?php
                                     $sales_orders_query = "SELECT so.so_id, so.so_number, c.customer_name
@@ -1796,6 +1939,79 @@ function formatLocation($row) {
         const logoBase64 = '<?php echo $logo_base64; ?>';
         let currentPickItemId = null;
         let currentPickItemData = null;
+
+        // ================= AUTO-OPEN FUNCTIONALITY FROM DASHBOARD =================
+        // Check if we need to auto-open a pick list creation for a specific sales order
+        const autoOpenSoId = sessionStorage.getItem('auto_open_so');
+        
+        if (autoOpenSoId) {
+            // Clear the stored ID immediately to prevent reopening on refresh
+            sessionStorage.removeItem('auto_open_so');
+            
+            // Wait for page to fully load
+            document.addEventListener('DOMContentLoaded', function() {
+                setTimeout(function() {
+                    // First, check if there's already a pick list for this SO
+                    const existingPickListRows = document.querySelectorAll(`tr[data-so-id="${autoOpenSoId}"]`);
+                    
+                    if (existingPickListRows.length > 0) {
+                        // Pick list already exists, show the update modal instead
+                        Swal.fire({
+                            title: 'Please Wait',
+                            text: 'Opening the update form...',
+                            icon: 'info',
+                            timer: 2000,
+                            showConfirmButton: false
+                        }).then(() => {
+                            // Find the edit button for the first item in this pick list
+                            const firstRow = existingPickListRows[0];
+                            const editButton = firstRow.querySelector('.btn-action.btn-edit');
+                            if (editButton) {
+                                editButton.click();
+                            } else {
+                                // If no edit button, just scroll to the row
+                                firstRow.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                firstRow.style.backgroundColor = '#fff3cd';
+                                setTimeout(() => {
+                                    firstRow.style.backgroundColor = '';
+                                }, 3000);
+                            }
+                        });
+                    } else {
+                        // No pick list exists, open the create pick list modal
+                        Swal.fire({
+                            title: 'Create Pick List',
+                            text: 'Opening create pick list form for this order...',
+                            icon: 'info',
+                            timer: 1500,
+                            showConfirmButton: false
+                        }).then(() => {
+                            // Open the create pick list modal
+                            const createModal = new bootstrap.Modal(document.getElementById('createPickListModal'));
+                            createModal.show();
+                            
+                            // Select the specific sales order in the dropdown
+                            const soSelect = document.getElementById('soSelectForPickList');
+                            if (soSelect) {
+                                soSelect.value = autoOpenSoId;
+                                // Trigger change event to update any dependent fields
+                                const event = new Event('change', { bubbles: true });
+                                soSelect.dispatchEvent(event);
+                            }
+                            
+                            // Highlight the selected option
+                            Swal.fire({
+                                title: 'Ready',
+                                text: 'You can now create the pick list for this order.',
+                                icon: 'success',
+                                timer: 2000,
+                                showConfirmButton: false
+                            });
+                        });
+                    }
+                }, 1000);
+            });
+        }
 
         // ================= SIDEBAR FUNCTIONS =================
         function toggleSidebar() {
@@ -2442,7 +2658,7 @@ function formatLocation($row) {
                         <div class="section-title">Pick Details</div>
                         <table>
                             <thead>
-                                <tr>
+                                32r
                                     <th>To Pick</th>
                                     <th>Picked</th>
                                     <th>Remaining</th>
@@ -2878,110 +3094,110 @@ function formatLocation($row) {
 
        // ================= PICKLIST FILTER FUNCTIONS =================
 
-// Update filter count badge
-function updatePicklistFilterCount() {
-    const search = document.getElementById('searchInput')?.value || '';
-    const status = document.getElementById('statusFilter')?.value || '';
-    const driver = document.getElementById('driverFilter')?.value || '';
-    
-    let count = 0;
-    if (search.trim() !== '') count++;
-    if (status && status !== '') count++;
-    if (driver && driver !== '') count++;
-    
-    const filterCount = document.getElementById('picklistFilterCount');
-    if (filterCount) {
-        filterCount.textContent = count;
-        filterCount.style.display = count > 0 ? 'inline-block' : 'none';
-    }
-}
-
-// Toggle filter visibility
-function togglePicklistFilter() {
-    const content = document.getElementById('picklistFilterContent');
-    const icon = document.getElementById('picklistFilterIcon');
-    const toggleBtn = document.getElementById('picklistFilterToggle');
-    
-    if (content && icon && toggleBtn) {
-        const isExpanded = toggleBtn.getAttribute('aria-expanded') === 'true';
-        
-        if (isExpanded) {
-            // Collapse
-            content.classList.add('collapsed');
-            toggleBtn.setAttribute('aria-expanded', 'false');
-            icon.style.transform = 'rotate(0deg)';
-            localStorage.setItem('picklistFilterHidden', 'true');
-        } else {
-            // Expand
-            content.classList.remove('collapsed');
-            toggleBtn.setAttribute('aria-expanded', 'true');
-            icon.style.transform = 'rotate(180deg)';
-            localStorage.setItem('picklistFilterHidden', 'false');
+        // Update filter count badge
+        function updatePicklistFilterCount() {
+            const search = document.getElementById('searchInput')?.value || '';
+            const status = document.getElementById('statusFilter')?.value || '';
+            const driver = document.getElementById('driverFilter')?.value || '';
+            
+            let count = 0;
+            if (search.trim() !== '') count++;
+            if (status && status !== '') count++;
+            if (driver && driver !== '') count++;
+            
+            const filterCount = document.getElementById('picklistFilterCount');
+            if (filterCount) {
+                filterCount.textContent = count;
+                filterCount.style.display = count > 0 ? 'inline-block' : 'none';
+            }
         }
-    }
-}
 
-// Apply filters
-function applyFilters() {
-    const search = document.getElementById('searchInput')?.value || '';
-    const status = document.getElementById('statusFilter')?.value || '';
-    const driver = document.getElementById('driverFilter')?.value || '';
-    
-    const params = new URLSearchParams();
-    if (search) params.append('search', search);
-    if (status) params.append('status', status);
-    if (driver) params.append('driver', driver);
-    
-    window.location.href = 'sales_reports.php?' + params.toString();
-}
+        // Toggle filter visibility
+        function togglePicklistFilter() {
+            const content = document.getElementById('picklistFilterContent');
+            const icon = document.getElementById('picklistFilterIcon');
+            const toggleBtn = document.getElementById('picklistFilterToggle');
+            
+            if (content && icon && toggleBtn) {
+                const isExpanded = toggleBtn.getAttribute('aria-expanded') === 'true';
+                
+                if (isExpanded) {
+                    // Collapse
+                    content.classList.add('collapsed');
+                    toggleBtn.setAttribute('aria-expanded', 'false');
+                    icon.style.transform = 'rotate(0deg)';
+                    localStorage.setItem('picklistFilterHidden', 'true');
+                } else {
+                    // Expand
+                    content.classList.remove('collapsed');
+                    toggleBtn.setAttribute('aria-expanded', 'true');
+                    icon.style.transform = 'rotate(180deg)';
+                    localStorage.setItem('picklistFilterHidden', 'false');
+                }
+            }
+        }
 
-// Clear filters
-function clearFilters() {
-    document.getElementById('searchInput') && (document.getElementById('searchInput').value = '');
-    document.getElementById('statusFilter') && (document.getElementById('statusFilter').value = '');
-    document.getElementById('driverFilter') && (document.getElementById('driverFilter').value = '');
-    
-    updatePicklistFilterCount();
-    applyFilters();
-}
+        // Apply filters
+        function applyFilters() {
+            const search = document.getElementById('searchInput')?.value || '';
+            const status = document.getElementById('statusFilter')?.value || '';
+            const driver = document.getElementById('driverFilter')?.value || '';
+            
+            const params = new URLSearchParams();
+            if (search) params.append('search', search);
+            if (status) params.append('status', status);
+            if (driver) params.append('driver', driver);
+            
+            window.location.href = 'sales_reports.php?' + params.toString();
+        }
 
-// Initialize filter state - ALWAYS CLOSED ON PAGE LOAD
-function initPicklistFilterState() {
-    const content = document.getElementById('picklistFilterContent');
-    const icon = document.getElementById('picklistFilterIcon');
-    const toggleBtn = document.getElementById('picklistFilterToggle');
-    
-    if (content && icon && toggleBtn) {
-        // ALWAYS START CLOSED - ignore localStorage on initial load
-        content.classList.add('collapsed');
-        toggleBtn.setAttribute('aria-expanded', 'false');
-        icon.style.transform = 'rotate(0deg)';
-        
-        // Reset localStorage to 'true' para consistent
-        localStorage.setItem('picklistFilterHidden', 'true');
-    }
-    
-    updatePicklistFilterCount();
-}
+        // Clear filters
+        function clearFilters() {
+            document.getElementById('searchInput') && (document.getElementById('searchInput').value = '');
+            document.getElementById('statusFilter') && (document.getElementById('statusFilter').value = '');
+            document.getElementById('driverFilter') && (document.getElementById('driverFilter').value = '');
+            
+            updatePicklistFilterCount();
+            applyFilters();
+        }
 
-// Add event listeners
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize picklist filter - ALWAYS CLOSED
-    initPicklistFilterState();
-    
-    // Toggle button
-    document.getElementById('picklistFilterToggle')?.addEventListener('click', togglePicklistFilter);
-    
-    // Update count on changes
-    document.getElementById('searchInput')?.addEventListener('input', updatePicklistFilterCount);
-    document.getElementById('statusFilter')?.addEventListener('change', updatePicklistFilterCount);
-    document.getElementById('driverFilter')?.addEventListener('change', updatePicklistFilterCount);
-    
-    // Enter key on search
-    document.getElementById('searchInput')?.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') applyFilters();
-    });
-});
+        // Initialize filter state - ALWAYS CLOSED ON PAGE LOAD
+        function initPicklistFilterState() {
+            const content = document.getElementById('picklistFilterContent');
+            const icon = document.getElementById('picklistFilterIcon');
+            const toggleBtn = document.getElementById('picklistFilterToggle');
+            
+            if (content && icon && toggleBtn) {
+                // ALWAYS START CLOSED - ignore localStorage on initial load
+                content.classList.add('collapsed');
+                toggleBtn.setAttribute('aria-expanded', 'false');
+                icon.style.transform = 'rotate(0deg)';
+                
+                // Reset localStorage to 'true' para consistent
+                localStorage.setItem('picklistFilterHidden', 'true');
+            }
+            
+            updatePicklistFilterCount();
+        }
+
+        // Add event listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            // Initialize picklist filter - ALWAYS CLOSED
+            initPicklistFilterState();
+            
+            // Toggle button
+            document.getElementById('picklistFilterToggle')?.addEventListener('click', togglePicklistFilter);
+            
+            // Update count on changes
+            document.getElementById('searchInput')?.addEventListener('input', updatePicklistFilterCount);
+            document.getElementById('statusFilter')?.addEventListener('change', updatePicklistFilterCount);
+            document.getElementById('driverFilter')?.addEventListener('change', updatePicklistFilterCount);
+            
+            // Enter key on search
+            document.getElementById('searchInput')?.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') applyFilters();
+            });
+        });
     </script>
 </body>
 </html>

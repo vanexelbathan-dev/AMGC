@@ -1,0 +1,32 @@
+{
+    "manifest_id": "receive_20260523064447_b6449919",
+    "source": "production",
+    "supplier_id": null,
+    "supplier_name": "",
+    "po_number": "",
+    "reference_type": "production",
+    "reference_id": 0,
+    "receive_date": "2026-05-23",
+    "receive_memo": "",
+    "created_at": "2026-05-23 06:44:47",
+    "created_by": 50,
+    "branch_id": 12,
+    "transaction_ids": [
+        235
+    ],
+    "attachments": [],
+    "items": [
+        {
+            "item_id": 169,
+            "item_name": "PALM 57.5",
+            "item_code": "P57.5",
+            "item_description": "PALM 57.5",
+            "category": "Oil",
+            "uom": "DOZEN",
+            "qty": 250,
+            "unit_price": 338.36,
+            "unit_cost": 338.36,
+            "total_cost": 84590
+        }
+    ]
+}

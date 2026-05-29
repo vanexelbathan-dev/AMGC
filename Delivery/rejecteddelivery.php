@@ -571,6 +571,12 @@ try {
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="driver_collections.php">
+                            <i class="bi bi-cash-stack"></i>
+                            <span class="nav-text">Collections</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link active" href="rejecteddelivery.php">
                             <i class="bi bi-exclamation-circle"></i>
                             <span class="nav-text">Rejected Delivery</span>

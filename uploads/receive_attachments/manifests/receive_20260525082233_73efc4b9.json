@@ -1,0 +1,32 @@
+{
+    "manifest_id": "receive_20260525082233_73efc4b9",
+    "source": "supplier",
+    "supplier_id": 4,
+    "supplier_name": "Van",
+    "po_number": "PO-RCV-20260525082233",
+    "reference_type": "purchase_order",
+    "reference_id": 15,
+    "receive_date": "2026-05-05",
+    "receive_memo": "",
+    "created_at": "2026-05-25 08:22:33",
+    "created_by": 2,
+    "branch_id": 1,
+    "transaction_ids": [
+        269
+    ],
+    "attachments": [],
+    "items": [
+        {
+            "item_id": 44,
+            "item_name": "Royal",
+            "item_code": "ITEM012",
+            "item_description": "softdrinks",
+            "category": "General",
+            "uom": "Piece",
+            "qty": 99.99,
+            "unit_price": 20,
+            "unit_cost": 20,
+            "total_cost": 1999.8
+        }
+    ]
+}

@@ -1,0 +1,32 @@
+{
+    "manifest_id": "receive_20260525062929_425e2a9b",
+    "source": "supplier",
+    "supplier_id": 3,
+    "supplier_name": "Ross",
+    "po_number": "PO-RCV-20260525062929",
+    "reference_type": "purchase_order",
+    "reference_id": 12,
+    "receive_date": "2026-05-25",
+    "receive_memo": "",
+    "created_at": "2026-05-25 06:29:29",
+    "created_by": 2,
+    "branch_id": 1,
+    "transaction_ids": [
+        267
+    ],
+    "attachments": [],
+    "items": [
+        {
+            "item_id": 44,
+            "item_name": "Royal",
+            "item_code": "ITEM012",
+            "item_description": "softdrinks",
+            "category": "General",
+            "uom": "Piece",
+            "qty": 500,
+            "unit_price": 20,
+            "unit_cost": 20,
+            "total_cost": 10000
+        }
+    ]
+}

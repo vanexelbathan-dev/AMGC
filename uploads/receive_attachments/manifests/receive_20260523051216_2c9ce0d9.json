@@ -1,0 +1,32 @@
+{
+    "manifest_id": "receive_20260523051216_2c9ce0d9",
+    "source": "production",
+    "supplier_id": null,
+    "supplier_name": "",
+    "po_number": "",
+    "reference_type": "production",
+    "reference_id": 0,
+    "receive_date": "2026-05-23",
+    "receive_memo": "",
+    "created_at": "2026-05-23 05:12:16",
+    "created_by": 50,
+    "branch_id": 12,
+    "transaction_ids": [
+        212
+    ],
+    "attachments": [],
+    "items": [
+        {
+            "item_id": 181,
+            "item_name": "PALM CONTAINER 17KLS",
+            "item_code": "P17",
+            "item_description": "PALM CONTAINER 17KLS",
+            "category": "Oil",
+            "uom": "CONTAINER",
+            "qty": 5,
+            "unit_price": 1443.2,
+            "unit_cost": 1443.2,
+            "total_cost": 7216
+        }
+    ]
+}

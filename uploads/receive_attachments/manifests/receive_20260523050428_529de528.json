@@ -1,0 +1,32 @@
+{
+    "manifest_id": "receive_20260523050428_529de528",
+    "source": "production",
+    "supplier_id": null,
+    "supplier_name": "",
+    "po_number": "",
+    "reference_type": "production",
+    "reference_id": 0,
+    "receive_date": "2026-05-23",
+    "receive_memo": "",
+    "created_at": "2026-05-23 05:04:28",
+    "created_by": 50,
+    "branch_id": 12,
+    "transaction_ids": [
+        202
+    ],
+    "attachments": [],
+    "items": [
+        {
+            "item_id": 168,
+            "item_name": "PALM 53",
+            "item_code": "P53",
+            "item_description": "PALM 53",
+            "category": "Oil",
+            "uom": "DOZEN",
+            "qty": 200,
+            "unit_price": 361.97,
+            "unit_cost": 361.97,
+            "total_cost": 72394
+        }
+    ]
+}

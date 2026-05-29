@@ -1,0 +1,32 @@
+{
+    "manifest_id": "receive_20260523051021_2a0f9ee1",
+    "source": "production",
+    "supplier_id": null,
+    "supplier_name": "",
+    "po_number": "",
+    "reference_type": "production",
+    "reference_id": 0,
+    "receive_date": "2026-05-23",
+    "receive_memo": "",
+    "created_at": "2026-05-23 05:10:21",
+    "created_by": 50,
+    "branch_id": 12,
+    "transaction_ids": [
+        209
+    ],
+    "attachments": [],
+    "items": [
+        {
+            "item_id": 179,
+            "item_name": "PALM 56",
+            "item_code": "P56 (CITIMART)",
+            "item_description": "PALM 56",
+            "category": "Oil",
+            "uom": "DOZEN",
+            "qty": 1000,
+            "unit_price": 345.17,
+            "unit_cost": 345.17,
+            "total_cost": 345170
+        }
+    ]
+}

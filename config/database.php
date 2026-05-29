@@ -4,11 +4,9 @@ define('DB_HOST', 'localhost');
 define('DB_USER', 'root'); 
 define('DB_PASSWORD', ''); 
 define('DB_NAME', 'amgc_inventory_system'); 
-define('DB_PORT', 3306); 
-define('DB_CHARSET', 'utf8mb4');
 
 // CONNECT DATABASE
-$conn = new mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT);
+$conn = new mysqli(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME);
 
 // Check connection
 if ($conn->connect_error) {
@@ -16,7 +14,7 @@ if ($conn->connect_error) {
 }
 
 // Set charset
-$conn->set_charset(DB_CHARSET);
+$conn->set_charset("utf8mb4");
 $conn->query("SET time_zone = '+08:00'");
 
 // Enable MySQLi error reporting

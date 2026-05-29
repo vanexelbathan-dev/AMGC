@@ -1,0 +1,45 @@
+{
+    "manifest_id": "receive_20260525153206_63b65f2b",
+    "source": "supplier",
+    "supplier_id": 3,
+    "supplier_name": "Ross",
+    "po_number": "PO-RCV-20260525153206",
+    "reference_type": "purchase_order",
+    "reference_id": 34,
+    "receive_date": "2026-05-25",
+    "receive_memo": "",
+    "created_at": "2026-05-25 15:32:06",
+    "created_by": 2,
+    "branch_id": 1,
+    "transaction_ids": [
+        289,
+        290
+    ],
+    "attachments": [],
+    "items": [
+        {
+            "item_id": 10,
+            "item_name": "Holcim",
+            "item_code": "ITEM010",
+            "item_description": "high-performance, durable building material designed for diverse construction applications, ranging from infrastructure to residential projects",
+            "category": "Cement",
+            "uom": "Bag",
+            "qty": 1,
+            "unit_price": 350,
+            "unit_cost": 350,
+            "total_cost": 350
+        },
+        {
+            "item_id": 44,
+            "item_name": "Royal",
+            "item_code": "ITEM012",
+            "item_description": "softdrinks",
+            "category": "General",
+            "uom": "Piece",
+            "qty": 50,
+            "unit_price": 20,
+            "unit_cost": 20,
+            "total_cost": 1000
+        }
+    ]
+}

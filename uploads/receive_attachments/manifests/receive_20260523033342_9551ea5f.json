@@ -1,0 +1,30 @@
+{
+    "manifest_id": "receive_20260523033342_9551ea5f",
+    "source": "production",
+    "supplier_id": null,
+    "supplier_name": "",
+    "po_number": "",
+    "reference_type": "production",
+    "reference_id": 0,
+    "receive_date": "2026-05-23",
+    "receive_memo": "",
+    "created_at": "2026-05-23 03:33:42",
+    "created_by": 50,
+    "branch_id": 12,
+    "transaction_ids": [
+        0
+    ],
+    "attachments": [],
+    "items": [
+        {
+            "item_id": 170,
+            "item_name": "PALM 1.5x7",
+            "item_code": "P1.5x7",
+            "item_description": "PALM 1.5x7",
+            "category": "Oil",
+            "uom": "BUNDLE",
+            "qty": 52,
+            "unit_price": 892.25
+        }
+    ]
+}

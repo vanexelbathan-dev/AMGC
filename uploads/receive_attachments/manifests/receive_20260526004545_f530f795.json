@@ -1,0 +1,33 @@
+{
+    "manifest_id": "receive_20260526004545_f530f795",
+    "source": "supplier",
+    "supplier_id": 4,
+    "supplier_name": "Van",
+    "po_number": "PO-RCV-20260526004545",
+    "reference_type": "purchase_order",
+    "reference_id": 39,
+    "receive_date": "2026-05-01",
+    "encoded_date": "2026-05-26",
+    "receive_memo": "",
+    "created_at": "2026-05-26 00:45:45",
+    "created_by": 2,
+    "branch_id": 1,
+    "transaction_ids": [
+        295
+    ],
+    "attachments": [],
+    "items": [
+        {
+            "item_id": 166,
+            "item_name": "KAHIT ANO",
+            "item_code": "ITEM015",
+            "item_description": "KAHIT ANO",
+            "category": "General",
+            "uom": "Piece",
+            "qty": 120,
+            "unit_price": 20,
+            "unit_cost": 20,
+            "total_cost": 2400
+        }
+    ]
+}

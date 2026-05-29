@@ -104,6 +104,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
                 'branch_id' => $row['branch_id'],
                 'type' => 'Sales Order',
                 'description' => 'Sales Order #' . $row['so_number'] . ' - ' . ($row['customer_name'] ?? 'Unknown Customer'),
+                'customer_name' => $row['customer_name'] ?? 'Unknown Customer',
                 'amount' => $row['total_amount'],
                 'date' => $row['order_date'],
                 'status' => $row['order_status']
@@ -149,6 +150,7 @@ if (isset($_GET['ajax']) && $_GET['ajax'] == 1) {
                 'branch_id' => $row['branch_id'],
                 'type' => 'Purchase Order',
                 'description' => 'Purchase Order #' . $row['po_number'] . ($row['supplier_name'] ? ' - ' . $row['supplier_name'] : ''),
+                'customer_name' => $row['supplier_name'] ?? 'Unknown Supplier',
                 'amount' => $row['total_amount'],
                 'date' => $row['order_date'],
                 'status' => $row['po_status']
@@ -179,7 +181,6 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
     try {
         switch ($source) {
             case 'sales_orders':
-                // Get main Sales Order details
                 $sql = "SELECT so.*, b.branch_name, c.customer_name, c.address, c.phone_number,
                         CONCAT(u.first_name, ' ', u.last_name) as created_by_name
                         FROM sales_orders so
@@ -196,20 +197,16 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                 $result = $stmt->get_result();
                 
                 if ($row = $result->fetch_assoc()) {
-                    // Get Sales Order Items (line_total is the actual column name)
                     $items_sql = "SELECT soi.*, i.item_name, i.item_code, i.category
                                  FROM sales_order_items soi
                                  LEFT JOIN items i ON soi.item_id = i.item_id
                                  WHERE soi.so_id = ?";
                     $items_stmt = $conn->prepare($items_sql);
+                    $items = [];
                     if ($items_stmt) {
                         $items_stmt->bind_param("i", $id);
                         $items_stmt->execute();
                         $items_result = $items_stmt->get_result();
-                    }
-                    
-                    $items = [];
-                    if (isset($items_result)) {
                         while ($item = $items_result->fetch_assoc()) {
                             $items[] = [
                                 'item_name' => $item['item_name'] ?? 'Unknown Item',
@@ -222,9 +219,10 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         }
                     }
                     
-                    // Get related Pick Lists
                     $pick_lists = [];
                     $pick_sql = "SELECT pl.*, d.driver_name,
+                                pl.picked_at,
+                                pl.verified_at,
                                 CONCAT(u1.first_name, ' ', u1.last_name) as picked_by_name,
                                 CONCAT(u2.first_name, ' ', u2.last_name) as verified_by_name
                                 FROM pick_lists pl
@@ -240,7 +238,6 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         $pick_result = $pick_stmt->get_result();
                         
                         while ($pick = $pick_result->fetch_assoc()) {
-                            // Get Pick List Items (quantity_to_pick is the actual column)
                             $pick_items_sql = "SELECT pli.*, i.item_name, i.item_code
                                              FROM pick_list_items pli
                                              LEFT JOIN items i ON pli.item_id = i.item_id
@@ -267,19 +264,21 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                                 'pick_list_number' => $pick['pick_list_number'],
                                 'status' => $pick['pick_status'],
                                 'created_at' => $pick['created_at'],
-                                'pick_date' => $pick['pick_date'],
+                                'picked_at' => $pick['picked_at'],
+                                'verified_at' => $pick['verified_at'],
                                 'driver_name' => $pick['driver_name'] ?? 'Unassigned',
-                                'picked_by' => $pick['picked_by_name'] ?? 'N/A',
-                                'verified_by' => $pick['verified_by_name'] ?? 'N/A',
+                                'picked_by_name' => $pick['picked_by_name'] ?? 'N/A',
+                                'verified_by_name' => $pick['verified_by_name'] ?? 'N/A',
                                 'items' => $pick_items
                             ];
                         }
                     }
                     
-                    // Get related Invoices (no created_by column, status not invoice_status, no paid_at)
                     $invoices = [];
-                    $inv_sql = "SELECT i.*
+                    $inv_sql = "SELECT i.*,
+                                CONCAT(u.first_name, ' ', u.last_name) as paid_by_name
                                FROM invoices i
+                               LEFT JOIN users u ON i.paid_by = u.user_id
                                WHERE i.so_id = ?
                                ORDER BY i.created_at DESC";
                     $inv_stmt = $conn->prepare($inv_sql);
@@ -296,19 +295,21 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                                 'status' => $inv['status'],
                                 'created_at' => $inv['created_at'],
                                 'due_date' => $inv['due_date'] ?? null,
-                                'paid_at' => null,
-                                'created_by' => 'System'
+                                'paid_at' => $inv['paid_at'],
+                                'paid_by_name' => $inv['paid_by_name'] ?? 'System'
                             ];
                         }
                     }
                     
-                    // Get related Trip Tickets (no vehicles table, use driver plate; start_time/end_time not departure/arrival)
                     $trip_tickets = [];
                     $trip_sql = "SELECT tt.*, d.driver_name, d.vehicle_plate_number,
-                               CONCAT(u.first_name, ' ', u.last_name) as created_by_name
+                                tt.assigned_at,
+                                CONCAT(u1.first_name, ' ', u1.last_name) as assigned_by_name,
+                                CONCAT(u2.first_name, ' ', u2.last_name) as created_by_name
                                FROM trip_tickets tt
                                LEFT JOIN drivers d ON tt.driver_id = d.driver_id
-                               LEFT JOIN users u ON tt.created_by = u.user_id
+                               LEFT JOIN users u1 ON tt.assigned_by = u1.user_id
+                               LEFT JOIN users u2 ON tt.created_by = u2.user_id
                                WHERE tt.so_id = ?
                                ORDER BY tt.created_at DESC";
                     $trip_stmt = $conn->prepare($trip_sql);
@@ -326,12 +327,14 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                                 'departure_time' => $trip['start_time'] ?? $trip['trip_date'],
                                 'arrival_time' => $trip['end_time'],
                                 'status' => $trip['trip_status'],
-                                'route' => $trip['remarks'] ?? 'N/A'
+                                'route' => $trip['remarks'] ?? 'N/A',
+                                'assigned_at' => $trip['assigned_at'],
+                                'assigned_by_name' => $trip['assigned_by_name'] ?? 'System',
+                                'created_by_name' => $trip['created_by_name'] ?? 'System'
                             ];
                         }
                     }
                     
-                    // Get Delivery Status (no delivery_number, delivered_at=delivery_date, signed_by, remarks)
                     $delivery = null;
                     $del_sql = "SELECT d.*, dr.driver_name
                               FROM deliveries d
@@ -351,16 +354,12 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                                 'status' => $del_row['delivery_status'],
                                 'delivered_at' => $del_row['delivery_date'],
                                 'received_by' => $del_row['signed_by'] ?? $del_row['driver_name'] ?? 'N/A',
-                                'recipient_signature' => null,
                                 'delivery_notes' => $del_row['remarks'] ?? ''
                             ];
                         }
                     }
                     
-                    // Build complete transaction history
                     $history = [];
-                    
-                    // Order Creation
                     $history[] = [
                         'timestamp' => $row['created_at'] ?? $row['order_date'],
                         'action' => 'Order Created',
@@ -368,92 +367,129 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         'details' => 'Sales order created'
                     ];
                     
-                    // Status change to confirmed/processing (use updated_at as approximation)
-                    if (in_array($row['order_status'], ['confirmed', 'processing', 'ready', 'delivered'])) {
-                        $history[] = [
-                            'timestamp' => $row['updated_at'] ?? $row['order_date'],
-                            'action' => 'Order Confirmed',
-                            'user' => $row['created_by_name'] ?? 'System',
-                            'details' => 'Sales order confirmed for processing'
-                        ];
-                    }
-                    
-                    // Pick List Creation
                     foreach ($pick_lists as $pick) {
                         $history[] = [
                             'timestamp' => $pick['created_at'],
                             'action' => 'Pick List Created',
-                            'user' => $pick['picked_by'],
+                            'user' => $pick['picked_by_name'] !== 'N/A' ? $pick['picked_by_name'] : 'System',
                             'details' => 'Pick List #' . $pick['pick_list_number'] . ' created'
                         ];
-                        
-                        if ($pick['pick_date'] && $pick['status'] === 'completed') {
+                    }
+                    
+                    foreach ($pick_lists as $pick) {
+                        if (!empty($pick['picked_at'])) {
                             $history[] = [
-                                'timestamp' => $pick['pick_date'],
+                                'timestamp' => $pick['picked_at'],
                                 'action' => 'Items Picked',
-                                'user' => $pick['picked_by'],
-                                'details' => 'Items picked and verified'
+                                'user' => $pick['picked_by_name'] ?? 'N/A',
+                                'details' => 'Items picked from warehouse'
                             ];
                         }
                     }
                     
-                    // Invoice Creation
+                    foreach ($pick_lists as $pick) {
+                        if (!empty($pick['verified_at'])) {
+                            $history[] = [
+                                'timestamp' => $pick['verified_at'],
+                                'action' => 'Items Verified',
+                                'user' => $pick['verified_by_name'] ?? 'N/A',
+                                'details' => 'Items verified by ' . ($pick['verified_by_name'] ?? 'N/A')
+                            ];
+                        }
+                    }
+                    
                     foreach ($invoices as $inv) {
                         $history[] = [
                             'timestamp' => $inv['created_at'],
                             'action' => 'Invoice Generated',
-                            'user' => $inv['created_by'],
+                            'user' => 'System',
                             'details' => 'Invoice #' . $inv['invoice_number'] . ' generated for P' . number_format($inv['amount'], 2)
                         ];
                     }
                     
-                    // Trip Assignment
                     foreach ($trip_tickets as $trip) {
-                        $trip_time = $trip['departure_time'] ?? $trip['arrival_time'];
-                        if ($trip_time) {
+                        if (!empty($trip['assigned_at'])) {
                             $history[] = [
-                                'timestamp' => $trip_time,
+                                'timestamp' => $trip['assigned_at'],
                                 'action' => 'Trip Assigned',
-                                'user' => 'System',
+                                'user' => $trip['assigned_by_name'] ?? 'System',
                                 'details' => 'Trip #' . $trip['trip_number'] . ' assigned to driver ' . $trip['driver_name']
                             ];
                         }
-                        
-                        if ($trip['arrival_time']) {
+                    }
+                    
+                    foreach ($trip_tickets as $trip) {
+                        if (!empty($trip['departure_time'])) {
+                            $history[] = [
+                                'timestamp' => $trip['departure_time'],
+                                'action' => 'Trip Started',
+                                'user' => $trip['driver_name'],
+                                'details' => 'Driver departed for delivery'
+                            ];
+                        }
+                    }
+                    
+                    foreach ($invoices as $inv) {
+                        if (!empty($inv['paid_at'])) {
+                            $history[] = [
+                                'timestamp' => $inv['paid_at'],
+                                'action' => 'Invoice Paid',
+                                'user' => $inv['paid_by_name'] ?? 'System',
+                                'details' => 'Invoice #' . $inv['invoice_number'] . ' marked as paid'
+                            ];
+                        }
+                    }
+                    
+                    if ($delivery && !empty($delivery['delivered_at'])) {
+                        $history[] = [
+                            'timestamp' => $delivery['delivered_at'],
+                            'action' => 'Order Delivered',
+                            'user' => $delivery['received_by'],
+                            'details' => 'Order delivered - signed by ' . $delivery['received_by']
+                        ];
+                    }
+                    
+                    foreach ($trip_tickets as $trip) {
+                        if (!empty($trip['arrival_time'])) {
                             $history[] = [
                                 'timestamp' => $trip['arrival_time'],
                                 'action' => 'Trip Completed',
-                                'user' => 'System',
-                                'details' => 'Trip #' . $trip['trip_number'] . ' completed'
+                                'user' => $trip['driver_name'],
+                                'details' => 'Driver returned from delivery'
                             ];
                         }
                     }
                     
-                    // Delivery
-                    if ($delivery) {
-                        if ($delivery['delivered_at']) {
-                            $history[] = [
-                                'timestamp' => $delivery['delivered_at'],
-                                'action' => 'Order Delivered',
-                                'user' => $delivery['received_by'],
-                                'details' => 'Order delivered - signed by ' . $delivery['received_by']
-                            ];
-                        }
-                        if ($delivery['status'] === 'rejected') {
-                            $history[] = [
-                                'timestamp' => $delivery['delivered_at'] ?? date('Y-m-d H:i:s'),
-                                'action' => 'Delivery Rejected',
-                                'user' => $delivery['received_by'],
-                                'details' => 'Delivery was rejected'
-                            ];
-                        }
+                    if ($delivery && $delivery['status'] === 'rejected') {
+                        $history[] = [
+                            'timestamp' => $delivery['delivered_at'] ?? date('Y-m-d H:i:s'),
+                            'action' => 'Delivery Rejected',
+                            'user' => $delivery['received_by'],
+                            'details' => 'Delivery was rejected'
+                        ];
                     }
                     
-                    // Sort history by timestamp
-                    usort($history, function($a, $b) {
-                        $timeA = strtotime($a['timestamp'] ?? '0');
-                        $timeB = strtotime($b['timestamp'] ?? '0');
-                        return $timeA - $timeB;
+                    $orderMap = [
+                        'Order Created' => 1,
+                        'Pick List Created' => 2,
+                        'Items Picked' => 3,
+                        'Items Verified' => 4,
+                        'Invoice Generated' => 5,
+                        'Trip Assigned' => 6,
+                        'Trip Started' => 7,
+                        'Invoice Paid' => 8,
+                        'Order Delivered' => 9,
+                        'Trip Completed' => 10,
+                        'Delivery Rejected' => 11,
+                    ];
+                    
+                    usort($history, function($a, $b) use ($orderMap) {
+                        $seqA = $orderMap[$a['action']] ?? 999;
+                        $seqB = $orderMap[$b['action']] ?? 999;
+                        if ($seqA != $seqB) {
+                            return $seqA - $seqB;
+                        }
+                        return strtotime($a['timestamp'] ?? '0') - strtotime($b['timestamp'] ?? '0');
                     });
                     
                     $record = [
@@ -484,7 +520,6 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                 break;
 
             case 'purchase_orders':
-                // Get main Purchase Order details
                 $sql = "SELECT po.*, b.branch_name,
                         CONCAT(u.first_name, ' ', u.last_name) as created_by_name
                         FROM purchase_orders po
@@ -500,7 +535,6 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                 $result = $stmt->get_result();
                 
                 if ($row = $result->fetch_assoc()) {
-                    // Get PO Items
                     $items_sql = "SELECT poi.*, i.item_name, i.item_code, i.category
                                  FROM purchase_order_items poi
                                  LEFT JOIN items i ON poi.item_id = i.item_id
@@ -523,7 +557,6 @@ if (isset($_GET['ajax_details']) && isset($_GET['id']) && isset($_GET['source'])
                         }
                     }
 
-                    // Build transaction history
                     $history = [];
                     $history[] = [
                         'timestamp' => $row['created_at'] ?? $row['order_date'],
@@ -637,7 +670,7 @@ if (empty($user_initials)) {
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
     <title>Global - Branch Records</title>
     <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
@@ -830,7 +863,371 @@ if (empty($user_initials)) {
             color: #dc3545;
         }
 
-        /* ===== Responsive ===== */
+        /* ===== DESKTOP VIEW - Clickable Row Styles ===== */
+        .custom-table tbody tr {
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        
+        .custom-table tbody tr:hover {
+            background-color: #f8fafc;
+        }
+        
+        /* No action column needed */
+
+        /* ===== MOBILE VIEW - Card style ===== */
+        @media (max-width: 768px) {
+            .custom-table thead {
+                display: none;
+            }
+            .custom-table,
+            .custom-table tbody,
+            .custom-table tr,
+            .custom-table td {
+                display: block;
+                width: 100%;
+            }
+            .custom-table tbody tr {
+                background: white;
+                border-radius: 12px;
+                margin-bottom: 10px;
+                padding: 14px;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+                border: 1px solid #e9ecef;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                cursor: pointer;
+            }
+            
+            /* Hide original table cells in mobile */
+            .custom-table tbody tr td {
+                display: none;
+            }
+            
+            /* Left side content - stacked */
+            .custom-table tbody tr .mobile-card-left {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                gap: 6px;
+            }
+            
+            /* Branch name - green, bold */
+            .mobile-branch {
+                font-size: clamp(0.85rem, 3.5vw, 1rem);
+                font-weight: 600;
+                color: #047857;
+                margin-bottom: 2px;
+            }
+            
+            /* PO/SO Number - medium weight */
+            .mobile-order-number {
+                font-size: clamp(0.9rem, 3.8vw, 1.05rem);
+                font-weight: 600;
+                color: #212529;
+            }
+            
+            /* Customer/Supplier Name - normal */
+            .mobile-customer-name {
+                font-size: clamp(0.8rem, 3.2vw, 0.95rem);
+                color: #6c757d;
+                margin-bottom: 4px;
+            }
+            
+            /* Status badge */
+            .mobile-status {
+                display: inline-block;
+                margin-top: 4px;
+            }
+            .mobile-status .status-badge {
+                font-size: 0.7rem;
+                padding: 4px 10px;
+                display: inline-block;
+            }
+            
+            /* Right side - Action icon (click indicator) */
+            .mobile-action {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin-left: 12px;
+                color: #0d6efd;
+                font-size: 1.2rem;
+            }
+        }
+
+        /* ===== FILTER REPORTS & DROPDOWN - RESPONSIVE CSS ===== */
+
+        /* Form Card - Base */
+        .form-card {
+            background: white;
+            border-radius: clamp(14px, 3vw, 20px);
+            padding: clamp(0.8rem, 3vw, 1.5rem);
+            box-shadow: 0 8px 20px -5px rgba(4, 120, 87, 0.12);
+            border: 1px solid rgba(68, 211, 78, 0.2);
+            margin-bottom: clamp(1rem, 2vw, 1.5rem);
+            transition: all 0.3s ease;
+            width: 100%;
+        }
+
+        /* Card Header */
+        .form-card h5 {
+            color: #047857;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: clamp(1rem, 4vw, 1.3rem);
+            margin-bottom: clamp(0.5rem, 2vw, 1rem);
+            padding-bottom: clamp(0.3rem, 1.5vw, 0.5rem);
+            border-bottom: 2px solid rgba(68, 211, 78, 0.2);
+            width: 100%;
+        }
+
+        .form-card h5 i {
+            color: #047857;
+            background: rgba(68, 211, 78, 0.1);
+            padding: clamp(0.3rem, 1.5vw, 0.5rem);
+            border-radius: clamp(6px, 2vw, 10px);
+            font-size: clamp(0.9rem, 3.5vw, 1.2rem);
+        }
+
+        /* Form Labels */
+        .form-label {
+            font-weight: 600;
+            color: #1e293b;
+            margin-bottom: clamp(0.2rem, 1vw, 0.4rem);
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            font-size: clamp(0.75rem, 3vw, 0.9rem);
+        }
+
+        .form-label i {
+            color: #047857;
+            font-size: clamp(0.8rem, 3.5vw, 1rem);
+        }
+
+        /* FORM CONTROLS */
+        .form-select, 
+        .form-control {
+            border: 2px solid #e5e7eb;
+            border-radius: clamp(6px, 2vw, 10px);
+            padding: clamp(0.35rem, 2vw, 0.7rem) clamp(0.7rem, 3vw, 1rem);
+            font-size: clamp(0.75rem, 3.5vw, 0.95rem);
+            height: auto;
+            min-height: clamp(32px, 7vw, 42px);
+            width: 100%;
+            background-color: white;
+            transition: all 0.2s ease;
+            line-height: 1.4;
+            box-sizing: border-box;
+        }
+
+        .form-select {
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23047857' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right clamp(0.5rem, 2vw, 0.75rem) center;
+            background-size: clamp(10px, 2.5vw, 14px) clamp(8px, 2vw, 12px);
+            padding-right: clamp(1.8rem, 6vw, 2.2rem);
+            appearance: none;
+        }
+
+        .form-select:focus, 
+        .form-control:focus {
+            border-color: #047857;
+            box-shadow: 0 0 0 3px rgba(68, 211, 78, 0.15);
+            outline: none;
+        }
+
+        /* Responsive Grid */
+        .form-card .row {
+            display: flex;
+            flex-wrap: wrap;
+            margin-right: -0.5rem;
+            margin-left: -0.5rem;
+        }
+
+        .form-card .row > [class*="col-"] {
+            padding-right: 0.5rem;
+            padding-left: 0.5rem;
+            margin-bottom: 1rem;
+        }
+
+        /* MOBILE FILTER */
+        @media (max-width: 767px) {
+            .form-card .row > .col-12,
+            .form-card .row > .col-sm-6,
+            .form-card .row > .col-md-3 {
+                flex: 0 0 100% !important;
+                max-width: 100% !important;
+            }
+            
+            .form-card {
+                padding: 1rem;
+                margin-bottom: 1rem;
+            }
+            
+            .form-card h5 {
+                font-size: 1.1rem;
+                margin-bottom: 0.8rem;
+            }
+            
+            .filter-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                width: 100%;
+            }
+            
+            .filter-toggle-btn {
+                background: transparent;
+                border: none;
+                color: #047857;
+                cursor: pointer;
+                padding: 0.25rem 0.5rem;
+                font-size: 1.2rem;
+            }
+            
+            .filter-content.collapsed {
+                display: none;
+            }
+            
+            .form-label {
+                font-size: 0.8rem;
+                margin-bottom: 0.2rem;
+            }
+            
+            .form-select, 
+            .form-control {
+                font-size: 0.8rem;
+                padding: 0.35rem 0.6rem;
+                min-height: 36px;
+            }
+        }
+
+        @media (min-width: 768px) {
+            .form-card .row > .col-md-3 {
+                flex: 0 0 25%;
+                max-width: 25%;
+            }
+        }
+
+        /* Stat Cards - Original Design */
+        .stat-card-row {
+            margin-bottom: 1.5rem !important;
+        }
+        
+        .stat-card {
+            background: white;
+            border-radius: 16px;
+            padding: 1rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+            height: 100%;
+            border-left: 4px solid;
+        }
+        
+        .stat-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+        
+        .stat-label {
+            font-size: 0.75rem;
+            color: #6c757d;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        @media (max-width: 768px) {
+            .stat-card-row {
+                margin-bottom: 1rem !important;
+            }
+            .stat-card {
+                padding: 0.75rem;
+            }
+            .stat-card i {
+                font-size: 1.5rem;
+            }
+            .stat-value {
+                font-size: 1.2rem;
+            }
+            .stat-label {
+                font-size: 0.65rem;
+            }
+        }
+
+        /* Filter Toggle Button */
+        .filter-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+        }
+        
+        .filter-toggle-btn {
+            background: none;
+            border: none;
+            font-size: 1.2rem;
+            color: #047857;
+            cursor: pointer;
+            padding: 0 8px;
+            transition: transform 0.3s ease;
+        }
+        
+        .filter-toggle-btn:hover {
+            color: #44D34E;
+        }
+        
+        .filter-content {
+            transition: all 0.3s ease;
+        }
+        
+        .filter-content.collapsed {
+            display: none;
+        }
+        
+        
+        .custom-table {
+            width: 100%;
+            margin-bottom: 0;
+        }
+        
+        .custom-table th {
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: #64748b;
+            padding: 0.75rem;
+            border-bottom: 2px solid #e9ecef;
+        }
+        
+        .custom-table td {
+            padding: 0.75rem;
+            vertical-align: middle;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        
+        @media (max-width: 768px) {
+            .data-table {
+                padding: 0.75rem;
+            }
+            .table-header h5 {
+                font-size: 1rem;
+            }
+            .table-container {
+                overflow-x: visible;
+            }
+        }
+
+        /* Responsive Modal */
         @media(max-width:991px){
             .m-layout { flex-direction:column; }
             .m-left { border-right:none; border-bottom:1px solid #e2e8f0; }
@@ -850,230 +1247,6 @@ if (empty($user_initials)) {
         @media(max-width:480px){
             .m-info { grid-template-columns:1fr; }
         }
- /* ===== FILTER REPORTS & DROPDOWN - FIXED RESPONSIVE CSS ===== */
-
-/* Form Card - Base */
-.form-card {
-    background: white;
-    border-radius: clamp(14px, 3vw, 20px);
-    padding: clamp(0.8rem, 3vw, 1.5rem);
-    box-shadow: 0 8px 20px -5px rgba(4, 120, 87, 0.12);
-    border: 1px solid rgba(68, 211, 78, 0.2);
-    margin-bottom: clamp(1rem, 2vw, 1.5rem);
-    transition: all 0.3s ease;
-    width: 100%;
-}
-
-/* Card Header */
-.form-card h5 {
-    color: var(--dark-green);
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: clamp(1rem, 4vw, 1.3rem);
-    margin-bottom: clamp(0.5rem, 2vw, 1rem);
-    padding-bottom: clamp(0.3rem, 1.5vw, 0.5rem);
-    border-bottom: 2px solid rgba(68, 211, 78, 0.2);
-    width: 100%;
-}
-
-.form-card h5 i {
-    color: var(--primary-green);
-    background: rgba(68, 211, 78, 0.1);
-    padding: clamp(0.3rem, 1.5vw, 0.5rem);
-    border-radius: clamp(6px, 2vw, 10px);
-    font-size: clamp(0.9rem, 3.5vw, 1.2rem);
-}
-
-/* Form Labels */
-.form-label {
-    font-weight: 600;
-    color: var(--dark-color);
-    margin-bottom: clamp(0.2rem, 1vw, 0.4rem);
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    font-size: clamp(0.75rem, 3vw, 0.9rem);
-}
-
-.form-label i {
-    color: var(--primary-green);
-    font-size: clamp(0.8rem, 3.5vw, 1rem);
-}
-
-/* FORM CONTROLS - UNIFIED (SELECT & INPUT) */
-.form-select, 
-.form-control {
-    border: 2px solid #e5e7eb;
-    border-radius: clamp(6px, 2vw, 10px);
-    padding: clamp(0.35rem, 2vw, 0.7rem) clamp(0.7rem, 3vw, 1rem);
-    font-size: clamp(0.75rem, 3.5vw, 0.95rem);
-    height: auto;
-    min-height: clamp(32px, 7vw, 42px);
-    width: 100%;
-    background-color: white;
-    transition: all 0.2s ease;
-    line-height: 1.4;
-    box-sizing: border-box;
-}
-
-/* SELECT SPECIFIC - WITH CUSTOM ARROW */
-.form-select {
-    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23047857' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
-    background-repeat: no-repeat;
-    background-position: right clamp(0.5rem, 2vw, 0.75rem) center;
-    background-size: clamp(10px, 2.5vw, 14px) clamp(8px, 2vw, 12px);
-    padding-right: clamp(1.8rem, 6vw, 2.2rem);
-    appearance: none;
-    -webkit-appearance: none;
-    -moz-appearance: none;
-}
-
-/* INPUT SPECIFIC */
-.form-control {
-    padding-right: clamp(0.7rem, 3vw, 1rem);
-}
-
-/* Focus States */
-.form-select:focus, 
-.form-control:focus {
-    border-color: var(--primary-green);
-    box-shadow: 0 0 0 3px rgba(68, 211, 78, 0.15);
-    outline: none;
-}
-
-/* Hover States */
-.form-select:hover, 
-.form-control:hover {
-    border-color: var(--primary-green);
-    background-color: rgba(68, 211, 78, 0.02);
-}
-
-/* Calendar Icon */
-input[type="date"]::-webkit-calendar-picker-indicator,
-input[type="month"]::-webkit-calendar-picker-indicator {
-    width: clamp(14px, 3.5vw, 18px);
-    height: clamp(14px, 3.5vw, 18px);
-    padding: clamp(1px, 0.5vw, 3px);
-    cursor: pointer;
-    opacity: 0.6;
-    transition: all 0.2s ease;
-}
-
-input[type="date"]::-webkit-calendar-picker-indicator:hover,
-input[type="month"]::-webkit-calendar-picker-indicator:hover {
-    opacity: 1;
-    background: rgba(68, 211, 78, 0.1);
-    transform: scale(1.1);
-}
-
-/* ===== RESPONSIVE GRID - FIXED VERSION ===== */
-
-/* Remove conflicting row styles */
-.form-card .row {
-    display: flex;
-    flex-wrap: wrap;
-    margin-right: -0.5rem;
-    margin-left: -0.5rem;
-}
-
-.form-card .row > [class*="col-"] {
-    padding-right: 0.5rem;
-    padding-left: 0.5rem;
-    margin-bottom: 1rem;
-}
-
-/* Gutter spacing */
-.g-3 {
-    --bs-gutter-x: 1rem;
-    --bs-gutter-y: 1rem;
-}
-
-/* ===== MOBILE (below 768px) - 2 COLUMNS ===== */
-@media (max-width: 767px) {
-    /* Force 2 columns sa mobile */
-    .form-card .row > .col-12,
-    .form-card .row > .col-sm-6,
-    .form-card .row > .col-md-3 {
-        flex: 0 0 50% !important;
-        max-width: 50% !important;
-    }
-    
-    /* Adjust spacing */
-    .form-card {
-        padding: 1rem;
-    }
-    
-    .form-card h5 {
-        font-size: 1.1rem;
-        margin-bottom: 0.8rem;
-    }
-    
-    .form-label {
-        font-size: 0.8rem;
-        margin-bottom: 0.2rem;
-    }
-    
-    .form-select, 
-    .form-control {
-        font-size: 0.8rem;
-        padding: 0.35rem 0.6rem;
-        min-height: 36px;
-    }
-}
-
-/* ===== TABLET TO DESKTOP (768px and up) - 4 COLUMNS ===== */
-@media (min-width: 768px) {
-    .form-card .row > .col-md-3 {
-        flex: 0 0 25%;
-        max-width: 25%;
-    }
-}
-
-/* ===== EXTRA SMALL (below 400px) ===== */
-@media (max-width: 399px) {
-    .form-card {
-        padding: 0.7rem;
-    }
-    
-    .form-card h5 {
-        font-size: 1rem;
-    }
-    
-    .form-label {
-        font-size: 0.7rem;
-    }
-    
-    .form-select, 
-    .form-control {
-        font-size: 0.7rem;
-        padding: 0.25rem 0.5rem;
-        min-height: 32px;
-    }
-}
-
-/* ===== DROPDOWN OPTIONS ===== */
-.form-select option {
-    font-size: inherit;
-    padding: clamp(0.2rem, 1vw, 0.4rem);
-}
-
-/* ===== ANIMATION ===== */
-.form-card {
-    animation: fadeInUp 0.3s ease-out;
-}
-
-@keyframes fadeInUp {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
     </style>
 </head>
 <body>
@@ -1094,6 +1267,12 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
             <div class="sidebar-menu">
                 <ul class="nav flex-column">
                     <li class="nav-item">
+                        <a class="nav-link" href="dashboard.php">
+                            <i class="bi bi-speedometer2"></i>
+                            <span class="nav-text">Dashboard</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="sales_reports.php">
                             <i class="bi bi-graph-up"></i>
                             <span class="nav-text">Sales Reports</span>
@@ -1111,6 +1290,12 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                             <span class="nav-text">All Items</span>
                         </a>
                     </li>
+                    <li class="nav-item">
+    					<a class="nav-link" href="location_verification.php">
+        					<i class="bi bi-geo-alt-fill"></i>
+        					<span class="nav-text">Location Verification</span>
+    					</a>
+					</li>
                     <li class="nav-item">
                         <a class="nav-link" href="drivers.php">
                             <i class="bi bi-people"></i>
@@ -1160,101 +1345,102 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                     </div>
                 </div>
                 
-               <div class="row stat-card-row g-1 g-sm-2">
-    <!-- Card 1 - Total Records -->
-    <div class="col">
-        <div class="stat-card total">
-            <i class="bi bi-file-text"></i>
-            <div class="stat-content">
-                <div class="stat-value" id="totalRecords"><?php echo number_format($total_records); ?></div>
-                <div class="stat-label">Total Records</div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Card 2 - Total Transactions -->
-    <div class="col">
-        <div class="stat-card sales">
-            <i class="bi bi-cash-stack"></i>
-            <div class="stat-content">
-                <div class="stat-value" id="totalTransactions">₱<?php echo number_format($total_transactions, 2); ?></div>
-                <div class="stat-label">Total Transactions</div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Card 3 - Active Branches -->
-    <div class="col">
-        <div class="stat-card complete">
-            <i class="bi bi-building"></i>
-            <div class="stat-content">
-                <div class="stat-value" id="activeBranches"><?php echo number_format($active_branches); ?></div>
-                <div class="stat-label">Active Branches</div>
-            </div>
-        </div>
-    </div>
-</div>
-               <!-- FILTER SECTION - BRANCH RECORDS -->
-<div class="row g-3 mb-4">
-    <div class="col-12">
-        <div class="form-card">
-            <div class="filter-header">
-                <h5 class="mb-0">
-                    <i class="bi bi-funnel"></i> Filter Records
-                </h5>
-                <button class="filter-toggle-btn" id="toggleBranchFilter" onclick="toggleFilter('branch')" title="Toggle Filter">
-                    <i class="bi bi-chevron-down" id="branchFilterIcon"></i>
-                </button>
-            </div>
-            <div class="filter-content" id="branchFilterContent">
-                <div class="row mt-3 g-3">
-                    <!-- Branch Filter -->
-                    <div class="col-12 col-sm-6 col-md-3">
-                        <label class="form-label">
-                            <i class="bi bi-building"></i> Branch
-                        </label>
-                        <select class="form-select" id="branchFilter" onchange="loadRecords()">
-                            <option value="">All Branches</option>
-                            <?php foreach ($branches as $branch): ?>
-                                <option value="<?php echo $branch['branch_id']; ?>">
-                                    <?php echo htmlspecialchars($branch['branch_name']); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
+                <div class="row stat-card-row g-1 g-sm-2">
+                    <!-- Card 1 - Total Records -->
+                    <div class="col">
+                        <div class="stat-card total">
+                            <i class="bi bi-file-text"></i>
+                            <div class="stat-content">
+                                <div class="stat-value" id="totalRecords"><?php echo number_format($total_records); ?></div>
+                                <div class="stat-label">Total Records</div>
+                            </div>
+                        </div>
                     </div>
                     
-                    <!-- Record Type Filter -->
-                    <div class="col-12 col-sm-6 col-md-3">
-                        <label class="form-label">
-                            <i class="bi bi-tags"></i> Record Type
-                        </label>
-                        <select class="form-select" id="recordTypeFilter" onchange="loadRecords()">
-                            <option value="">All Types</option>
-                            <option value="sales_order">Sales Order</option>
-                            <option value="purchase_order">Purchase Order</option>
-                        </select>
+                    <!-- Card 2 - Total Transactions -->
+                    <div class="col">
+                        <div class="stat-card sales">
+                            <i class="bi bi-cash-stack"></i>
+                            <div class="stat-content">
+                                <div class="stat-value" id="totalTransactions">₱<?php echo number_format($total_transactions, 2); ?></div>
+                                <div class="stat-label">Total Transactions</div>
+                            </div>
+                        </div>
                     </div>
                     
-                    <!-- Date From -->
-                    <div class="col-12 col-sm-6 col-md-3">
-                        <label class="form-label">
-                            <i class="bi bi-calendar"></i> Date From
-                        </label>
-                        <input type="date" class="form-control" id="dateFromFilter" value="<?php echo $date_from; ?>" onchange="loadRecords()">
-                    </div>
-                    
-                    <!-- Date To -->
-                    <div class="col-12 col-sm-6 col-md-3">
-                        <label class="form-label">
-                            <i class="bi bi-calendar-check"></i> Date To
-                        </label>
-                        <input type="date" class="form-control" id="dateToFilter" value="<?php echo $date_to; ?>" onchange="loadRecords()">
+                    <!-- Card 3 - Active Branches -->
+                    <div class="col">
+                        <div class="stat-card complete">
+                            <i class="bi bi-building"></i>
+                            <div class="stat-content">
+                                <div class="stat-value" id="activeBranches"><?php echo number_format($active_branches); ?></div>
+                                <div class="stat-label">Active Branches</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </div>
-        </div>
-    </div>
-</div>
+                
+                <!-- FILTER SECTION - BRANCH RECORDS -->
+                <div class="row g-3 mb-4">
+                    <div class="col-12">
+                        <div class="form-card">
+                            <div class="filter-header">
+                                <h5 class="mb-0">
+                                    <i class="bi bi-funnel"></i> Filter Records
+                                </h5>
+                                <button class="filter-toggle-btn" id="toggleBranchFilter" onclick="toggleFilter('branch')" title="Toggle Filter">
+                                    <i class="bi bi-chevron-down" id="branchFilterIcon"></i>
+                                </button>
+                            </div>
+                            <div class="filter-content" id="branchFilterContent">
+                                <div class="row mt-3 g-3">
+                                    <!-- Branch Filter -->
+                                    <div class="col-12 col-sm-6 col-md-3">
+                                        <label class="form-label">
+                                            <i class="bi bi-building"></i> Branch
+                                        </label>
+                                        <select class="form-select" id="branchFilter" onchange="loadRecords()">
+                                            <option value="">All Branches</option>
+                                            <?php foreach ($branches as $branch): ?>
+                                                <option value="<?php echo $branch['branch_id']; ?>">
+                                                    <?php echo htmlspecialchars($branch['branch_name']); ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    
+                                    <!-- Record Type Filter -->
+                                    <div class="col-12 col-sm-6 col-md-3">
+                                        <label class="form-label">
+                                            <i class="bi bi-tags"></i> Record Type
+                                        </label>
+                                        <select class="form-select" id="recordTypeFilter" onchange="loadRecords()">
+                                            <option value="">All Types</option>
+                                            <option value="sales_order">Sales Order</option>
+                                            <option value="purchase_order">Purchase Order</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <!-- Date From -->
+                                    <div class="col-12 col-sm-6 col-md-3">
+                                        <label class="form-label">
+                                            <i class="bi bi-calendar"></i> Date From
+                                        </label>
+                                        <input type="date" class="form-control" id="dateFromFilter" value="<?php echo $date_from; ?>" onchange="loadRecords()">
+                                    </div>
+                                    
+                                    <!-- Date To -->
+                                    <div class="col-12 col-sm-6 col-md-3">
+                                        <label class="form-label">
+                                            <i class="bi bi-calendar-check"></i> Date To
+                                        </label>
+                                        <input type="date" class="form-control" id="dateToFilter" value="<?php echo $date_to; ?>" onchange="loadRecords()">
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
                 <div class="data-table">
                     <div class="table-header">
@@ -1271,7 +1457,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                                     <th>Amount</th>
                                     <th>Date</th>
                                     <th>Status</th>
-                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="recordsTable">
@@ -1557,7 +1742,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
             if (isMobile) {
                 mobileNav.style.display = 'block';
                 
-                // Set active state based on current page (excluding logout)
                 const currentPage = window.location.pathname.split('/').pop();
                 const navLinks = mobileNav.querySelectorAll('.nav-link:not(.logout-btn)');
                 
@@ -1580,19 +1764,17 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
         }
 
         function confirmLogout() {
-            // Close the modal first
             const modal = bootstrap.Modal.getInstance(document.getElementById('profileModal'));
             if (modal) {
                 modal.hide();
             }
             
-            // Show confirmation dialog
             Swal.fire({
                 title: 'Are you sure?',
                 text: 'You will be logged out of the system',
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonColor: '#dc3545',
+                confirmButtonColor: '#07d826',
                 cancelButtonColor: '#6c757d',
                 confirmButtonText: 'Yes, logout'
             }).then((result) => {
@@ -1603,7 +1785,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
             });
         }
 
-        // Original logout function for sidebar
         function logout() {
             Swal.fire({
                 title: 'Are you sure?',
@@ -1661,8 +1842,8 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 let statusClass = '';
                 let statusText = record.status;
                 
-                const completed = ['completed', 'delivered', 'approved', 'received'];
-                const pending = ['pending', 'draft', 'planned', 'open', 'processing'];
+                const completed = ['completed', 'delivered', 'approved', 'received', 'paid'];
+                const pending = ['pending', 'draft', 'planned', 'open', 'processing', 'in-transit', 'partial'];
                 const cancelled = ['cancelled', 'rejected'];
                 
                 if (completed.includes(record.status)) {
@@ -1673,27 +1854,63 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                     statusClass = 'status-cancelled';
                 }
                 
+                const formattedAmount = parseFloat(record.amount || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+                const orderNumber = record.record_number;
+                const customerName = record.customer_name || (record.type === 'Sales Order' ? 'Customer' : 'Supplier');
+                
                 return `
-                    <tr>
+                    <tr data-id="${record.id}" data-source="${record.source}" data-branch="${escapeHtml(record.branch)}" data-order="${escapeHtml(orderNumber)}" data-customer="${escapeHtml(customerName)}" data-status="${escapeHtml(statusText)}" onclick="viewTransactionFromRow(this)">
                         <td style="display: none;">${record.id}</td>
                         <td><strong>${escapeHtml(record.branch)}</strong></td>
                         <td><span class="badge bg-info">${escapeHtml(record.type)}</span></td>
                         <td>${escapeHtml(record.description)}</td>
-                        <td>₱${parseFloat(record.amount || 0).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ',')}</td>
+                        <td>₱${formattedAmount}</td>
                         <td>${new Date(record.date).toLocaleDateString()}</td>
-                        <td>
-                            <span class="status-badge ${statusClass}">
-                                ${escapeHtml(statusText)}
-                            </span>
-                        </td>
-                        <td>
-                            <button class="btn-action btn-view" onclick="viewTransaction(${record.id}, '${record.source}')" title="View Full Transaction Details">
-                                <i class="bi bi-eye"></i>
-                            </button>
-                        </td>
+                        <td><span class="status-badge ${statusClass}">${escapeHtml(statusText)}</span></td>
                     </tr>
                 `;
             }).join('');
+            
+            // Add mobile card structure after rendering (only if mobile)
+            if (window.innerWidth <= 768) {
+                addMobileCardStructure();
+            }
+        }
+        
+        // Function to add mobile card structure (only for mobile view)
+        function addMobileCardStructure() {
+            const rows = document.querySelectorAll('#recordsTable tr');
+            rows.forEach(row => {
+                // Check if already has mobile structure
+                if (row.querySelector('.mobile-card-left')) return;
+                
+                // Get data from attributes
+                const branch = row.getAttribute('data-branch') || '';
+                const orderNumber = row.getAttribute('data-order') || '';
+                const customerName = row.getAttribute('data-customer') || '';
+                const statusHtml = row.cells[6]?.innerHTML || '';
+                
+                // Clear row content
+                row.innerHTML = '';
+                
+                // Create left side content
+                const leftDiv = document.createElement('div');
+                leftDiv.className = 'mobile-card-left';
+                leftDiv.innerHTML = `
+                    <div class="mobile-branch">${escapeHtml(branch)}</div>
+                    <div class="mobile-order-number">${escapeHtml(orderNumber)}</div>
+                    <div class="mobile-customer-name">${escapeHtml(customerName)}</div>
+                    <div class="mobile-status">${statusHtml}</div>
+                `;
+                
+                // Create right side action (click indicator icon)
+                const rightDiv = document.createElement('div');
+                rightDiv.className = 'mobile-action';
+                rightDiv.innerHTML = `<i class="bi bi-chevron-right"></i>`;
+                
+                row.appendChild(leftDiv);
+                row.appendChild(rightDiv);
+            });
         }
 
         function escapeHtml(text) {
@@ -1718,6 +1935,14 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 });
             } catch (e) {
                 return 'N/A';
+            }
+        }
+
+        function viewTransactionFromRow(row) {
+            const id = row.getAttribute('data-id');
+            const source = row.getAttribute('data-source');
+            if (id && source) {
+                viewTransaction(id, source);
             }
         }
 
@@ -1755,17 +1980,18 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
         function displayFullTransaction(record) {
             const el = document.getElementById('recordDetails');
 
-            // helpers
             function pill(status) {
                 if (!status) return '';
-                const s = status.toLowerCase();
+                const s = status.toString().trim().toLowerCase();
+                
                 let c = 'gray';
                 if (['completed','delivered','approved','received','paid'].includes(s)) c = 'green';
                 else if (['pending','draft','planned','open','processing','in_transit'].includes(s)) c = 'yellow';
                 else if (['cancelled','rejected'].includes(s)) c = 'red';
+                
                 return `<span class="s-pill ${c}">${escapeHtml(status)}</span>`;
             }
-            function peso(v) { const n = parseFloat(v||0); return 'P' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
+            function peso(v) { const n = parseFloat(v||0); return '₱' + n.toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g,','); }
 
             const itemCount   = (record.items||[]).length;
             const pickCount   = (record.pick_lists||[]).length;
@@ -1774,8 +2000,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
             const hasDel      = !!record.delivery;
             const histCount   = (record.history||[]).length;
 
-            /* ---- LEFT: Details ---- */
-            // Customer
             let leftHtml = `
                 <div class="m-section-title"><i class="bi bi-person"></i> Customer / Supplier</div>
                 <div class="m-card"><div class="m-card-body">
@@ -1786,7 +2010,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                     </div>
                 </div></div>`;
 
-            // Order
             leftHtml += `
                 <div class="m-section-title"><i class="bi bi-file-earmark-text"></i> Order Details</div>
                 <div class="m-card"><div class="m-card-body">
@@ -1799,7 +2022,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                     </div>
                 </div></div>`;
 
-            // Items
             if (itemCount > 0) {
                 leftHtml += `
                     <div class="m-section-title"><i class="bi bi-box-seam"></i> Items (${itemCount})</div>
@@ -1819,7 +2041,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                     </div></div></div>`;
             }
 
-            // Pick Lists
             if (pickCount > 0) {
                 leftHtml += `<div class="m-section-title"><i class="bi bi-clipboard-check"></i> Pick Lists (${pickCount})</div>`;
                 record.pick_lists.forEach(pl => {
@@ -1828,8 +2049,8 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                         <div class="m-card-body">
                             <div class="m-info" style="margin-bottom:10px">
                                 <div><div class="m-info-lbl">Driver</div><div class="m-info-val">${escapeHtml(pl.driver_name)}</div></div>
-                                <div><div class="m-info-lbl">Picked By</div><div class="m-info-val">${escapeHtml(pl.picked_by)}</div></div>
-                                <div><div class="m-info-lbl">Verified By</div><div class="m-info-val">${escapeHtml(pl.verified_by)}</div></div>
+                                <div><div class="m-info-lbl">Picked By</div><div class="m-info-val">${escapeHtml(pl.picked_by_name)}</div></div>
+                                <div><div class="m-info-lbl">Verified By</div><div class="m-info-val">${escapeHtml(pl.verified_by_name)}</div></div>
                                 <div><div class="m-info-lbl">Pick Date</div><div class="m-info-val">${pl.pick_date?formatDateTime(pl.pick_date):'N/A'}</div></div>
                             </div>
                             ${(pl.items||[]).length?`<div style="overflow-x:auto"><table class="m-tbl">
@@ -1840,7 +2061,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 });
             }
 
-            // Invoices
             if (invCount > 0) {
                 leftHtml += `
                     <div class="m-section-title"><i class="bi bi-receipt"></i> Invoices (${invCount})</div>
@@ -1858,7 +2078,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                     </div></div></div>`;
             }
 
-            // Trip Tickets
             if (tripCount > 0) {
                 leftHtml += `<div class="m-section-title"><i class="bi bi-truck"></i> Trip Tickets (${tripCount})</div>`;
                 record.trip_tickets.forEach(t => {
@@ -1874,7 +2093,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 });
             }
 
-            // Delivery
             if (hasDel) {
                 const d = record.delivery;
                 leftHtml += `
@@ -1889,20 +2107,20 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                         </div></div></div>`;
             }
 
-            /* ---- RIGHT: Transaction History Timeline ---- */
             let rightHtml = `<div class="m-section-title" style="margin-top:0"><i class="bi bi-clock-history"></i> Transaction History</div>`;
             if (histCount > 0) {
                 rightHtml += `<ul class="tl">${record.history.map(ev => {
                     let dot = 'gray';
                     const a = ev.action;
                     if (a.includes('Created'))  dot = 'blue';
-                    else if (a.includes('Confirmed')||a.includes('Approved')) dot = 'cyan';
-                    else if (a.includes('Pick')||a.includes('Picked')) dot = 'cyan';
-                    else if (a.includes('Invoice')||a.includes('Payment')) dot = 'green';
+                    else if (a.includes('Pick'))  dot = 'cyan';
+                    else if (a.includes('Verified'))  dot = 'cyan';
+                    else if (a.includes('Invoice')||a.includes('Paid')) dot = 'green';
                     else if (a.includes('Trip')||a.includes('Assigned')) dot = 'yellow';
+                    else if (a.includes('Started')) dot = 'yellow';
                     else if (a.includes('Delivered')) dot = 'green';
                     else if (a.includes('Rejected')) dot = 'red';
-                    else if (a.includes('Submitted')) dot = 'blue';
+                    else if (a.includes('Completed')) dot = 'green';
                     return `<li class="tl-item">
                         <div class="tl-dot ${dot}"></div>
                         <div class="tl-action">${escapeHtml(ev.action)}</div>
@@ -1917,7 +2135,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 rightHtml += `<div class="m-empty"><i class="bi bi-clock"></i><p>No history recorded yet.</p></div>`;
             }
 
-            /* ---- Assemble ---- */
             el.innerHTML = `
                 <div class="m-summary">
                     <div class="m-summary-item"><div class="m-summary-lbl">${escapeHtml(record.type)}</div><div class="m-summary-val" style="font-weight:700">${escapeHtml(record.record_number)}</div></div>
@@ -1977,12 +2194,18 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
             window.addEventListener('resize', function() {
                 handleSidebarResize();
                 initMobileNav();
+                // Re-apply mobile card structure on resize if mobile
+                if (window.innerWidth <= 768) {
+                    const rows = document.querySelectorAll('#recordsTable tr');
+                    if (rows.length > 0 && !rows[0].querySelector('.mobile-card-left')) {
+                        addMobileCardStructure();
+                    }
+                }
             });
             
             loadRecords();
         });
 
-        // Keyboard shortcuts
         document.addEventListener('keydown', function(e) {
             if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
                 e.preventDefault();
@@ -2000,83 +2223,38 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
             }
         });
 
-        // ================= FILTER TOGGLE FUNCTIONS =================
-// Toggle filter section visibility with localStorage
-function toggleFilter(filterType) {
-    const contentId = filterType + 'FilterContent';
-    const iconId = filterType + 'FilterIcon';
-    
-    const content = document.getElementById(contentId);
-    const icon = document.getElementById(iconId);
-    
-    if (content && icon) {
-        if (content.classList.contains('collapsed')) {
-            // Show filter
-            content.classList.remove('collapsed');
-            icon.style.transform = 'rotate(0deg)';
-            localStorage.setItem(filterType + 'FilterHidden', 'false');
-        } else {
-            // Hide filter
-            content.classList.add('collapsed');
-            icon.style.transform = 'rotate(-90deg)';
-            localStorage.setItem(filterType + 'FilterHidden', 'true');
-        }
-    }
-}
-
-// ================= FILTER TOGGLE FUNCTIONS =================
-// Toggle filter section visibility with localStorage
-function toggleFilter(filterType) {
-    const contentId = filterType + 'FilterContent';
-    const iconId = filterType + 'FilterIcon';
-    
-    const content = document.getElementById(contentId);
-    const icon = document.getElementById(iconId);
-    
-    if (content && icon) {
-        if (content.classList.contains('collapsed')) {
-            // Show filter
-            content.classList.remove('collapsed');
-            icon.style.transform = 'rotate(0deg)';
-            localStorage.setItem(filterType + 'FilterHidden', 'false');
-        } else {
-            // Hide filter
-            content.classList.add('collapsed');
-            icon.style.transform = 'rotate(-90deg)';
-            localStorage.setItem(filterType + 'FilterHidden', 'true');
-        }
-    }
-}
-
-// Initialize filter states on page load - DEFAULT CLOSED
-function initFilterStates() {
-    const filterTypes = ['sales', 'branch', 'items', 'driver', 'trip'];
-    
-    filterTypes.forEach(type => {
-        const contentId = type + 'FilterContent';
-        const iconId = type + 'FilterIcon';
-        
-        const content = document.getElementById(contentId);
-        const icon = document.getElementById(iconId);
-        
-        if (content && icon) {
-            // DEFAULT: CLOSED sa simula
-            content.classList.add('collapsed');
-            icon.style.transform = 'rotate(-90deg)';
+        function toggleFilter(filterType) {
+            const content = document.getElementById(filterType + 'FilterContent');
+            const icon = document.getElementById(filterType + 'FilterIcon');
             
-            // Save sa localStorage na closed para consistent
-            localStorage.setItem(type + 'FilterHidden', 'true');
+            if (content && icon) {
+                if (content.style.display === 'none') {
+                    content.style.display = 'block';
+                    icon.style.transform = 'rotate(0deg)';
+                } else {
+                    content.style.display = 'none';
+                    icon.style.transform = 'rotate(-90deg)';
+                }
+            }
         }
-    });
-}
 
-// Call this sa loob ng DOMContentLoaded
-document.addEventListener('DOMContentLoaded', function() {
-    // ... existing code ...
-    
-    // Initialize filter states - lahat closed
-    initFilterStates();
-});
+        function initFilterStates() {
+            const filterTypes = ['branch'];
+            
+            filterTypes.forEach(type => {
+                const content = document.getElementById(type + 'FilterContent');
+                const icon = document.getElementById(type + 'FilterIcon');
+                
+                if (content && icon) {
+                    content.style.display = 'none';
+                    icon.style.transform = 'rotate(-90deg)';
+                }
+            });
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            initFilterStates();
+        });
     </script>
 </body>
 </html>

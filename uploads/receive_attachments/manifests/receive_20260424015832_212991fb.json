@@ -1,0 +1,28 @@
+{
+    "manifest_id": "receive_20260424015832_212991fb",
+    "source": "rmr",
+    "supplier_id": null,
+    "supplier_name": "",
+    "po_number": "RMR-10",
+    "reference_type": "rmr",
+    "reference_id": 10,
+    "receive_date": "2026-04-24",
+    "created_at": "2026-04-24 01:58:32",
+    "created_by": 2,
+    "branch_id": 1,
+    "transaction_ids": [
+        0
+    ],
+    "attachments": [],
+    "items": [
+        {
+            "item_id": 10,
+            "item_name": "Holcim",
+            "item_code": "ITEM010",
+            "item_description": "high-performance, durable building material designed for diverse construction applications, ranging from infrastructure to residential projects",
+            "uom": "Bag",
+            "qty": 20,
+            "unit_price": 350
+        }
+    ]
+}

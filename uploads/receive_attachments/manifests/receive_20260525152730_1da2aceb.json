@@ -1,0 +1,33 @@
+{
+    "manifest_id": "receive_20260525152730_1da2aceb",
+    "source": "supplier",
+    "supplier_id": 3,
+    "supplier_name": "Ross",
+    "po_number": "PO-RCV-20260525152730",
+    "reference_type": "purchase_order",
+    "reference_id": 32,
+    "receive_date": "2026-05-01",
+    "encoded_date": "2026-05-25",
+    "receive_memo": "",
+    "created_at": "2026-05-25 15:27:30",
+    "created_by": 2,
+    "branch_id": 1,
+    "transaction_ids": [
+        287
+    ],
+    "attachments": [],
+    "items": [
+        {
+            "item_id": 184,
+            "item_name": "AquaFlask",
+            "item_code": "AQF",
+            "item_description": "AquaFlask",
+            "category": "General",
+            "uom": "Bundle",
+            "qty": 10,
+            "unit_price": 600,
+            "unit_cost": 600,
+            "total_cost": 6000
+        }
+    ]
+}

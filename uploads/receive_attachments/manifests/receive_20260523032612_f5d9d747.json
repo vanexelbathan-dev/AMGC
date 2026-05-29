@@ -1,0 +1,162 @@
+{
+    "manifest_id": "receive_20260523032612_f5d9d747",
+    "source": "production",
+    "supplier_id": null,
+    "supplier_name": "",
+    "po_number": "",
+    "reference_type": "production",
+    "reference_id": 0,
+    "receive_date": "2026-05-23",
+    "receive_memo": "",
+    "created_at": "2026-05-23 03:26:12",
+    "created_by": 50,
+    "branch_id": 12,
+    "transaction_ids": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+    ],
+    "attachments": [],
+    "items": [
+        {
+            "item_id": 170,
+            "item_name": "PALM 1.5x7",
+            "item_code": "P1.5x7",
+            "item_description": "PALM 1.5x7",
+            "category": "Oil",
+            "uom": "BUNDLE",
+            "qty": 52,
+            "unit_price": 892.25
+        },
+        {
+            "item_id": 181,
+            "item_name": "PALM CONTAINER 17KLS",
+            "item_code": "P17",
+            "item_description": "PALM CONTAINER 17KLS",
+            "category": "Oil",
+            "uom": "CONTAINER",
+            "qty": 30,
+            "unit_price": 1451.7
+        },
+        {
+            "item_id": 169,
+            "item_name": "PALM 57.5",
+            "item_code": "P57.5",
+            "item_description": "PALM 57.5",
+            "category": "Oil",
+            "uom": "DOZEN",
+            "qty": 600,
+            "unit_price": 338.36
+        },
+        {
+            "item_id": 170,
+            "item_name": "PALM 1.5x7",
+            "item_code": "P1.5x7",
+            "item_description": "PALM 1.5x7",
+            "category": "Oil",
+            "uom": "BUNDLE",
+            "qty": 129,
+            "unit_price": 873.53
+        },
+        {
+            "item_id": 181,
+            "item_name": "PALM CONTAINER 17KLS",
+            "item_code": "P17",
+            "item_description": "PALM CONTAINER 17KLS",
+            "category": "Oil",
+            "uom": "CONTAINER",
+            "qty": 10,
+            "unit_price": 1451.7
+        },
+        {
+            "item_id": 179,
+            "item_name": "PALM 56",
+            "item_code": "P56 (CITIMART)",
+            "item_description": "PALM 56",
+            "category": "Oil",
+            "uom": "DOZEN",
+            "qty": 1000,
+            "unit_price": 345.17
+        },
+        {
+            "item_id": 169,
+            "item_name": "PALM 57.5",
+            "item_code": "P57.5",
+            "item_description": "PALM 57.5",
+            "category": "Oil",
+            "uom": "DOZEN",
+            "qty": 250,
+            "unit_price": 338.36
+        },
+        {
+            "item_id": 167,
+            "item_name": "PALM 62.5",
+            "item_code": "P62.5",
+            "item_description": "PALM 62.5",
+            "category": "Oil",
+            "uom": "DOZEN",
+            "qty": 250,
+            "unit_price": 312.83
+        },
+        {
+            "item_id": 168,
+            "item_name": "PALM 53",
+            "item_code": "P53",
+            "item_description": "PALM 53",
+            "category": "Oil",
+            "uom": "DOZEN",
+            "qty": 200,
+            "unit_price": 361.97
+        },
+        {
+            "item_id": 172,
+            "item_name": "PALM 1.3x7",
+            "item_code": "P1.3x7",
+            "item_description": "PALM 1.3x7",
+            "category": "Oil",
+            "uom": "BUNDLE",
+            "qty": 100,
+            "unit_price": 796.66
+        },
+        {
+            "item_id": 181,
+            "item_name": "PALM CONTAINER 17KLS",
+            "item_code": "P17",
+            "item_description": "PALM CONTAINER 17KLS",
+            "category": "Oil",
+            "uom": "CONTAINER",
+            "qty": 5,
+            "unit_price": 1443.2
+        },
+        {
+            "item_id": 181,
+            "item_name": "PALM CONTAINER 17KLS",
+            "item_code": "P17",
+            "item_description": "PALM CONTAINER 17KLS",
+            "category": "Oil",
+            "uom": "CONTAINER",
+            "qty": 2,
+            "unit_price": 1443.2
+        },
+        {
+            "item_id": 179,
+            "item_name": "PALM 56",
+            "item_code": "P56 (CITIMART)",
+            "item_description": "PALM 56",
+            "category": "Oil",
+            "uom": "DOZEN",
+            "qty": 500,
+            "unit_price": 343.36
+        }
+    ]
+}

@@ -15,6 +15,118 @@ $user_role = $_SESSION['role'] ?? 'delivery';
 $branch_id = $_SESSION['branch_id'] ?? 0;
 $driver_id = $_SESSION['driver_id'] ?? 0;
 
+
+function normalize_uploaded_files($file_input) {
+    $files = [];
+    if (!isset($file_input['name'])) {
+        return $files;
+    }
+
+    if (is_array($file_input['name'])) {
+        $count = count($file_input['name']);
+        for ($i = 0; $i < $count; $i++) {
+            if ($file_input['error'][$i] === UPLOAD_ERR_NO_FILE) {
+                continue;
+            }
+            $files[] = [
+                'name' => $file_input['name'][$i],
+                'type' => $file_input['type'][$i],
+                'tmp_name' => $file_input['tmp_name'][$i],
+                'error' => $file_input['error'][$i],
+                'size' => $file_input['size'][$i]
+            ];
+        }
+    } else {
+        if ($file_input['error'] !== UPLOAD_ERR_NO_FILE) {
+            $files[] = $file_input;
+        }
+    }
+
+    return $files;
+}
+
+function save_delivery_payment_attachments($conn, $delivery_id, $so_id, $uploaded_by) {
+    $uploaded_files = normalize_uploaded_files($_FILES['payment_attachments'] ?? []);
+
+    if (count($uploaded_files) === 0) {
+        throw new Exception("Payment attachment is required for check and online transfer payments.");
+    }
+
+    $upload_dir = '../uploads/deliveries/';
+    if (!file_exists($upload_dir)) {
+        mkdir($upload_dir, 0777, true);
+    }
+
+    $year_month = date('Y-m');
+    $upload_subdir = $upload_dir . $year_month . '/';
+    if (!file_exists($upload_subdir)) {
+        mkdir($upload_subdir, 0777, true);
+    }
+
+    $allowed_extensions = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf'];
+    $allowed_types = [
+        'image/jpeg',
+        'image/jpg',
+        'image/png',
+        'image/gif',
+        'image/webp',
+        'application/pdf'
+    ];
+
+    $insert_query = "INSERT INTO delivery_attachments
+                     (delivery_id, so_id, file_name, file_path, file_type, file_size, uploaded_by, created_at)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, NOW())";
+    $insert_stmt = $conn->prepare($insert_query);
+    if (!$insert_stmt) {
+        throw new Exception("Failed to prepare attachment insert: " . $conn->error);
+    }
+
+    foreach ($uploaded_files as $file) {
+        if ($file['error'] !== UPLOAD_ERR_OK) {
+            throw new Exception("Attachment upload failed. Error code: " . $file['error']);
+        }
+
+        if ($file['size'] > 10 * 1024 * 1024) {
+            throw new Exception("Attachment file is too large. Maximum size is 10MB.");
+        }
+
+        $original_name = basename($file['name']);
+        $extension = strtolower(pathinfo($original_name, PATHINFO_EXTENSION));
+        $file_type = $file['type'] ?: 'application/octet-stream';
+
+        if (!in_array($extension, $allowed_extensions, true) || !in_array($file_type, $allowed_types, true)) {
+            throw new Exception("Invalid attachment type. Only JPG, PNG, GIF, WEBP and PDF files are allowed.");
+        }
+
+        $safe_name_only = preg_replace('/[^A-Za-z0-9._-]/', '_', pathinfo($original_name, PATHINFO_FILENAME));
+        $safe_filename = 'payment_' . $delivery_id . '_' . time() . '_' . uniqid() . '_' . $safe_name_only . '.' . $extension;
+        $target_file = $upload_subdir . $safe_filename;
+        $db_file_path = 'uploads/deliveries/' . $year_month . '/' . $safe_filename;
+
+        if (!move_uploaded_file($file['tmp_name'], $target_file)) {
+            throw new Exception("Failed to move uploaded attachment to uploads/deliveries folder.");
+        }
+
+        $file_size = (int) $file['size'];
+        $insert_stmt->bind_param(
+            "iisssii",
+            $delivery_id,
+            $so_id,
+            $original_name,
+            $db_file_path,
+            $file_type,
+            $file_size,
+            $uploaded_by
+        );
+
+        if (!$insert_stmt->execute()) {
+            throw new Exception("Failed to save delivery attachment: " . $insert_stmt->error);
+        }
+    }
+
+    $insert_stmt->close();
+}
+
 // If user is delivery role but no driver_id in session, try to get it
 if ($user_role == 'delivery' && $driver_id == 0) {
     $driver_query = "SELECT driver_id FROM users WHERE user_id = ? AND driver_id IS NOT NULL";
@@ -35,6 +147,10 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $delivery_id = isset($_POST['delivery_id']) ? intval($_POST['delivery_id']) : 0;
         $so_id = isset($_POST['so_id']) ? intval($_POST['so_id']) : 0;
         $branch_id_post = isset($_POST['branch_id']) ? intval($_POST['branch_id']) : $branch_id;
+        
+        // Check if payment was collected (toggle switch)
+        $collect_payment = isset($_POST['collect_payment']) && $_POST['collect_payment'] == '1';
+        $payment_method = $_POST['payment_method'] ?? 'cash';
         
         if (!$delivery_id || !$so_id) {
             throw new Exception("Missing delivery ID or order ID");
@@ -146,18 +262,27 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         if ($remarks) {
             $completion_notes .= "Remarks: " . $remarks . "\n";
         }
+        
+        // Add payment collection note if payment was collected
+        if ($collect_payment) {
+            $payment_amount = isset($_POST['payment_amount']) ? floatval($_POST['payment_amount']) : 0;
+            $payment_method = $_POST['payment_method'] ?? 'cash';
+            $completion_notes .= "\n[PAYMENT COLLECTED] Method: " . strtoupper($payment_method) . ", Amount: ₱" . number_format($payment_amount, 2) . "\n";
+        }
+        
         $completion_notes .= str_repeat("=", 50);
         
-        // UPDATE the existing delivery record with delivered status
+        // UPDATE the existing delivery record with delivered status AND save proof_delivery_photo
         $query = "UPDATE deliveries SET 
                   delivery_status = 'delivered', 
                   delivery_date = ?, 
                   signed_by = ?, 
+                  proof_delivery_photo = ?,
                   remarks = CONCAT(IFNULL(remarks, ''), ?),
                   updated_at = NOW() 
                   WHERE delivery_id = ?";
         $stmt = $conn->prepare($query);
-        $stmt->bind_param('sssi', $delivery_date, $signed_by, $completion_notes, $delivery_id);
+        $stmt->bind_param('ssssi', $delivery_date, $signed_by, $photo_filename, $completion_notes, $delivery_id);
         if (!$stmt->execute()) {
             throw new Exception("Failed to update delivery: " . $stmt->error);
         }
@@ -194,12 +319,128 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $update_tt_stmt->close();
         }
         
-        // Update invoice status to paid
-        $update_invoice_query = "UPDATE invoices SET status = 'paid', updated_at = NOW() WHERE so_id = ?";
-        $update_invoice_stmt = $conn->prepare($update_invoice_query);
-        $update_invoice_stmt->bind_param("i", $so_id);
-        $update_invoice_stmt->execute();
-        $update_invoice_stmt->close();
+        // ===== PAYMENT HANDLING - ONLY IF COLLECT_PAYMENT IS CHECKED =====
+        if ($collect_payment && isset($_POST['payment_amount']) && floatval($_POST['payment_amount']) > 0) {
+            $payment_amount = floatval($_POST['payment_amount']);
+            $payment_method = $_POST['payment_method'] ?? $payment_method;
+            
+            // Get invoice_id for this sales order
+            $invoice_query = "SELECT invoice_id FROM invoices WHERE so_id = ?";
+            $invoice_stmt = $conn->prepare($invoice_query);
+            $invoice_stmt->bind_param("i", $so_id);
+            $invoice_stmt->execute();
+            $invoice_result = $invoice_stmt->get_result();
+            $invoice_row = $invoice_result->fetch_assoc();
+            $invoice_id = $invoice_row['invoice_id'] ?? null;
+            $invoice_stmt->close();
+            
+            if ($invoice_id) {
+                // Get customer_id from sales_orders
+                $cust_query = "SELECT customer_id FROM sales_orders WHERE so_id = ?";
+                $cust_stmt = $conn->prepare($cust_query);
+                $cust_stmt->bind_param("i", $so_id);
+                $cust_stmt->execute();
+                $cust_result = $cust_stmt->get_result();
+                $customer_id = null;
+                if ($cust_row = $cust_result->fetch_assoc()) {
+                    $customer_id = $cust_row['customer_id'];
+                }
+                $cust_stmt->close();
+                
+                if ($customer_id) {
+                    // Insert payment record
+                    $payment_query = "INSERT INTO payments 
+                                     (invoice_id, customer_id, payment_method, amount, payment_date, created_by, status";
+                    
+                    $payment_values = " VALUES (?, ?, ?, ?, NOW(), ?, 'completed'";
+                    $params = [$invoice_id, $customer_id, $payment_method, $payment_amount, $user_id];
+                    $types = "iisdi";
+                    
+                    // Add payment method specific fields
+                    if ($payment_method == 'cash') {
+                        $cash_tendered = isset($_POST['cash_tendered']) ? floatval($_POST['cash_tendered']) : $payment_amount;
+                        $cash_change = $cash_tendered - $payment_amount;
+                        if ($cash_change < 0) $cash_change = 0;
+                        
+                        $payment_query .= ", cash_tendered, cash_change)";
+                        $payment_values .= ", ?, ?)";
+                        $params[] = $cash_tendered;
+                        $params[] = $cash_change;
+                        $types .= "dd";
+                        
+                    } elseif ($payment_method == 'check') {
+                        $check_number = trim($_POST['check_number'] ?? '');
+                        $check_date = trim($_POST['check_date'] ?? '');
+                        $bank_name = trim($_POST['bank_name'] ?? '');
+                        $bank_branch = trim($_POST['bank_branch'] ?? '');
+                        $reference_number = $check_number;
+                        
+                        $payment_query .= ", reference_number, check_number, check_date, bank_name, bank_branch)";
+                        $payment_values .= ", ?, ?, ?, ?, ?)";
+                        $params[] = $reference_number;
+                        $params[] = $check_number;
+                        $params[] = $check_date;
+                        $params[] = $bank_name;
+                        $params[] = $bank_branch;
+                        $types .= "sssss";
+                        
+                    } elseif ($payment_method == 'online_transfer') {
+                        $reference_number = trim($_POST['reference_number'] ?? '');
+                        $bank_wallet_id = (int)($_POST['bank_wallet_id'] ?? 0);
+                        if ($reference_number === '' || $bank_wallet_id <= 0) {
+                            throw new Exception("Reference number and online transfer sub account are required.");
+                        }
+
+                        $bank_wallet = null;
+                        $online_stmt = $conn->prepare("SELECT b.bank_name, COALESCE(pb.bank_name, '') AS parent_bank_name
+                                                       FROM banks b
+                                                       LEFT JOIN banks pb ON pb.bank_id = b.parent_bank_id
+                                                       INNER JOIN bank_payment_methods bpm ON bpm.bank_id = b.bank_id AND bpm.payment_method = 'online_transfer'
+                                                       WHERE b.bank_id = ? AND b.status = 'active' AND b.parent_bank_id IS NOT NULL LIMIT 1");
+                        if ($online_stmt) {
+                            $online_stmt->bind_param("i", $bank_wallet_id);
+                            $online_stmt->execute();
+                            $online_row = $online_stmt->get_result()->fetch_assoc();
+                            $online_stmt->close();
+                            if ($online_row) {
+                                $bank_wallet = trim(($online_row['parent_bank_name'] ? $online_row['parent_bank_name'] . ' / ' : '') . $online_row['bank_name']);
+                            }
+                        }
+                        if (!$bank_wallet) {
+                            throw new Exception("Please select a registered online transfer sub account.");
+                        }
+
+                        $payment_query .= ", reference_number, bank_name)";
+                        $payment_values .= ", ?, ?)";
+                        $params[] = $reference_number;
+                        $params[] = $bank_wallet;
+                        $types .= "ss";
+                    }                    
+                    $payment_query .= $payment_values;
+                    
+                    $payment_stmt = $conn->prepare($payment_query);
+                    if ($payment_stmt) {
+                        $payment_stmt->bind_param($types, ...$params);
+                        $payment_stmt->execute();
+                        $payment_stmt->close();
+                        
+                        // Update invoice status to paid
+                        $update_invoice_paid = "UPDATE invoices SET status = 'paid', paid_at = NOW(), paid_by = ? WHERE invoice_id = ?";
+                        $update_paid_stmt = $conn->prepare($update_invoice_paid);
+                        $update_paid_stmt->bind_param("ii", $user_id, $invoice_id);
+                        $update_paid_stmt->execute();
+                        $update_paid_stmt->close();
+                    }
+                }
+            }
+        }
+        // ===== END OF PAYMENT HANDLING =====
+        // NOTE: If collect_payment is NOT checked, invoice remains as 'pending' (not paid)
+
+        // Save multiple payment attachments for CHECK and ONLINE TRANSFER only
+        if ($collect_payment && in_array($payment_method, ['check', 'online_transfer'], true)) {
+            save_delivery_payment_attachments($conn, $delivery_id, $so_id, $user_id);
+        }
         
         // Update inventory - reduce quantity for delivered items
         $items_query = "SELECT soi.item_id, soi.quantity_ordered 
@@ -211,21 +452,40 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $items_result = $items_stmt->get_result();
         
         while ($item = $items_result->fetch_assoc()) {
-            // Update inventory for the branch
-            $inventory_query = "UPDATE inventory 
-                               SET quantity_on_hand = quantity_on_hand - ?,
-                                   quantity_reserved = quantity_reserved - ?,
-                                   updated_at = NOW()
-                               WHERE branch_id = ? AND item_id = ?";
-            $inventory_stmt = $conn->prepare($inventory_query);
-            $inventory_stmt->bind_param("iiii", 
-                $item['quantity_ordered'], 
-                $item['quantity_ordered'], 
-                $branch_id_post, 
-                $item['item_id']
-            );
-            $inventory_stmt->execute();
-            $inventory_stmt->close();
+            // Check if inventory record exists
+            $check_inventory = "SELECT inventory_id FROM inventory WHERE branch_id = ? AND item_id = ?";
+            $check_stmt = $conn->prepare($check_inventory);
+            $check_stmt->bind_param("ii", $branch_id_post, $item['item_id']);
+            $check_stmt->execute();
+            $check_result = $check_stmt->get_result();
+            
+            if ($check_result->num_rows > 0) {
+                // Update existing inventory
+                $inventory_query = "UPDATE inventory 
+                                   SET quantity_on_hand = quantity_on_hand - ?,
+                                       quantity_reserved = quantity_reserved - ?,
+                                       updated_at = NOW()
+                                   WHERE branch_id = ? AND item_id = ?";
+                $inventory_stmt = $conn->prepare($inventory_query);
+                $inventory_stmt->bind_param("iiii", 
+                    $item['quantity_ordered'], 
+                    $item['quantity_ordered'], 
+                    $branch_id_post, 
+                    $item['item_id']
+                );
+                $inventory_stmt->execute();
+                $inventory_stmt->close();
+            } else {
+                // Insert new inventory record with negative quantity (since it's being deducted)
+                $inventory_query = "INSERT INTO inventory (branch_id, item_id, quantity_on_hand, quantity_reserved, updated_at)
+                                   VALUES (?, ?, ?, ?, NOW())";
+                $inventory_stmt = $conn->prepare($inventory_query);
+                $neg_quantity = -$item['quantity_ordered'];
+                $inventory_stmt->bind_param("iiii", $branch_id_post, $item['item_id'], $neg_quantity, $neg_quantity);
+                $inventory_stmt->execute();
+                $inventory_stmt->close();
+            }
+            $check_stmt->close();
             
             // Record inventory transaction
             $trans_query = "INSERT INTO inventory_transactions 
@@ -247,7 +507,11 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $conn->commit();
         
         // Redirect back with success message
-        $_SESSION['success_message'] = 'Delivery completed successfully! Inventory and trip status have been updated.';
+        if ($collect_payment) {
+            $_SESSION['success_message'] = 'Delivery completed successfully! Payment has been recorded.';
+        } else {
+            $_SESSION['success_message'] = 'Delivery completed successfully! Invoice will be processed separately.';
+        }
         
         // Redirect based on role
         if ($user_role == 'delivery') {

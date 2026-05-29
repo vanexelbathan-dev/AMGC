@@ -1,0 +1,4 @@
+[21-Apr-2026 05:40:35 UTC] PHP Warning:  Undefined variable $user_initials in /home/u905138329/domains/amgc.site/public_html/AMGC/BranchAdmin/collections.php on line 416
+[21-Apr-2026 05:40:35 UTC] PHP Warning:  Undefined variable $user_initials in /home/u905138329/domains/amgc.site/public_html/AMGC/BranchAdmin/collections.php on line 579
+[21-Apr-2026 05:40:35 UTC] PHP Warning:  Undefined variable $branch_name in /home/u905138329/domains/amgc.site/public_html/AMGC/BranchAdmin/collections.php on line 579
+[21-Apr-2026 05:40:35 UTC] PHP Deprecated:  htmlspecialchars(): Passing null to parameter #1 ($string) of type string is deprecated in /home/u905138329/domains/amgc.site/public_html/AMGC/BranchAdmin/collections.php on line 579

@@ -14,6 +14,87 @@ if (!isset($_SESSION['user_id'])) {
 $user_branch_id = $_SESSION['branch_id'] ?? 0;
 $view_all_branches = $_SESSION['view_all_branches'] ?? false;
 
+// Function to get all product images for an item
+function getItemImages($conn, $item_id) {
+    $images = [];
+    
+    // Check item_images table first
+    $image_query = "SELECT image_id, image_path, is_primary, image_order 
+                    FROM item_images 
+                    WHERE item_id = ? 
+                    ORDER BY is_primary DESC, image_order ASC";
+    $img_stmt = $conn->prepare($image_query);
+    $img_stmt->bind_param("i", $item_id);
+    $img_stmt->execute();
+    $img_result = $img_stmt->get_result();
+    
+    if ($img_result && $img_result->num_rows > 0) {
+        while ($img_row = $img_result->fetch_assoc()) {
+            $image_path = $img_row['image_path'];
+            if (strpos($image_path, 'http') === 0) {
+                $image_url = $image_path;
+            } else {
+                $image_url = '../' . ltrim($image_path, './');
+            }
+            $images[] = [
+                'url' => $image_url,
+                'is_primary' => $img_row['is_primary'],
+                'order' => $img_row['image_order']
+            ];
+        }
+        $img_stmt->close();
+        return $images;
+    }
+    $img_stmt->close();
+    
+    // Check product_images table as fallback
+    $image_query2 = "SELECT image_id, image_path, is_primary, image_order 
+                     FROM product_images 
+                     WHERE item_id = ? 
+                     ORDER BY is_primary DESC, image_order ASC";
+    $img_stmt2 = $conn->prepare($image_query2);
+    $img_stmt2->bind_param("i", $item_id);
+    $img_stmt2->execute();
+    $img_result2 = $img_stmt2->get_result();
+    
+    if ($img_result2 && $img_result2->num_rows > 0) {
+        while ($img_row2 = $img_result2->fetch_assoc()) {
+            $image_path = $img_row2['image_path'];
+            if (strpos($image_path, 'http') === 0) {
+                $image_url = $image_path;
+            } else {
+                $image_url = '../' . ltrim($image_path, './');
+            }
+            $images[] = [
+                'url' => $image_url,
+                'is_primary' => $img_row2['is_primary'],
+                'order' => $img_row2['image_order']
+            ];
+        }
+        $img_stmt2->close();
+        return $images;
+    }
+    $img_stmt2->close();
+    
+    // Check items table for product_image_url
+    $item_query = "SELECT product_image_url FROM items WHERE item_id = ?";
+    $item_stmt = $conn->prepare($item_query);
+    $item_stmt->bind_param("i", $item_id);
+    $item_stmt->execute();
+    $item_result = $item_stmt->get_result();
+    
+    if ($item_result && $item_row = $item_result->fetch_assoc() && !empty($item_row['product_image_url'])) {
+        $images[] = [
+            'url' => $item_row['product_image_url'],
+            'is_primary' => 1,
+            'order' => 0
+        ];
+    }
+    $item_stmt->close();
+    
+    return $images;
+}
+
 if (isset($_GET['pick_item_id'])) {
     $pick_item_id = intval($_GET['pick_item_id']);
     
@@ -36,6 +117,7 @@ if (isset($_GET['pick_item_id'])) {
                      i.price_inner_pack,
                      i.price_box,
                      i.price_carton,
+                     i.product_image_url,
                      b.branch_name, 
                      so.so_number, 
                      so.order_status,
@@ -74,6 +156,9 @@ if (isset($_GET['pick_item_id'])) {
             echo '<div class="alert alert-danger">You do not have permission to view this item. This item belongs to a different branch.</div>';
             exit();
         }
+        
+        // Get all images for this item
+        $item_images = getItemImages($conn, $row['item_id']);
         
         // Format location data for display
         $location_display = '';
@@ -202,13 +287,43 @@ if (isset($_GET['pick_item_id'])) {
         </div>
         
         <div class="row">
-            <!-- Item Information Column -->
+            <!-- Item Information Column with Image -->
             <div class="col-md-6">
                 <div class="card mb-3">
                     <div class="card-header">
                         <h6 class="mb-0"><i class="bi bi-box me-2"></i>Item Information</h6>
                     </div>
-                    <div class="card-body py-2">
+                    <div class="card-body">
+                        <!-- Product Images Gallery -->
+                        <?php if (!empty($item_images)): ?>
+                        <div class="product-gallery mb-3">
+                            <div class="gallery-title mb-2">
+                                <small class="text-muted"><i class="bi bi-images"></i> Product Images (<?php echo count($item_images); ?>)</small>
+                            </div>
+                            <div class="gallery-container">
+                                <?php foreach ($item_images as $index => $img): ?>
+                                <div class="gallery-item <?php echo $img['is_primary'] ? 'primary' : ''; ?>" 
+                                     onclick="openImageModal('<?php echo htmlspecialchars($img['url']); ?>', '<?php echo htmlspecialchars($row['item_name']); ?>', <?php echo $index; ?>, <?php echo count($item_images); ?>)">
+                                    <img src="<?php echo htmlspecialchars($img['url']); ?>" 
+                                         alt="<?php echo htmlspecialchars($row['item_name']); ?>" 
+                                         class="gallery-thumb"
+                                         onerror="this.src='../Pictures/no-image.png'">
+                                    <?php if ($img['is_primary']): ?>
+                                    <span class="primary-badge">Primary</span>
+                                    <?php endif; ?>
+                                </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+                        <?php else: ?>
+                        <div class="product-image-placeholder mb-3 text-center">
+                            <div class="placeholder-icon" style="width: 100%; height: 120px; background: #f8f9fa; border-radius: 8px; display: flex; align-items: center; justify-content: center; border: 1px dashed #dee2e6;">
+                                <i class="bi bi-image text-muted" style="font-size: 48px;"></i>
+                            </div>
+                            <small class="text-muted">No product image available</small>
+                        </div>
+                        <?php endif; ?>
+                        
                         <table class="table table-sm table-borderless mb-0">
                             <tr>
                                 <td width="40%"><strong>Pick List:</strong></td>
@@ -220,7 +335,7 @@ if (isset($_GET['pick_item_id'])) {
                             </tr>
                             <tr>
                                 <td><strong>Item Name:</strong></td>
-                                <td><?php echo htmlspecialchars($row['item_name']); ?></td>
+                                <td><strong><?php echo htmlspecialchars($row['item_name']); ?></strong></td>
                             </tr>
                             <tr>
                                 <td><strong>Unit Type:</strong></td>
@@ -484,8 +599,6 @@ if (isset($_GET['pick_item_id'])) {
             </div>
         </div>
         
-
-        
         <style>
             .card {
                 border-radius: 8px;
@@ -586,6 +699,162 @@ if (isset($_GET['pick_item_id'])) {
                 line-height: 1.2;
             }
             
+            /* Product Gallery Styles */
+            .product-gallery {
+                background: #f8f9fa;
+                border-radius: 8px;
+                padding: 10px;
+                border: 1px solid #e9ecef;
+            }
+            
+            .gallery-title {
+                font-size: 12px;
+            }
+            
+            .gallery-container {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+            }
+            
+            .gallery-item {
+                position: relative;
+                width: 70px;
+                height: 70px;
+                border-radius: 8px;
+                overflow: hidden;
+                cursor: pointer;
+                border: 2px solid #dee2e6;
+                transition: all 0.2s ease;
+            }
+            
+            .gallery-item:hover {
+                transform: scale(1.05);
+                border-color: #198754;
+                box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            }
+            
+            .gallery-item.primary {
+                border-color: #ffc107;
+            }
+            
+            .gallery-thumb {
+                width: 100%;
+                height: 100%;
+                object-fit: cover;
+            }
+            
+            .primary-badge {
+                position: absolute;
+                bottom: 0;
+                left: 0;
+                right: 0;
+                background: rgba(255, 193, 7, 0.9);
+                color: #000;
+                font-size: 8px;
+                text-align: center;
+                padding: 2px;
+                font-weight: 600;
+            }
+            
+            /* Image Modal Styles */
+            .image-modal-overlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0,0,0,0.9);
+                z-index: 9999;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+            }
+            
+            .image-modal-content {
+                max-width: 90vw;
+                max-height: 90vh;
+                position: relative;
+            }
+            
+            .image-modal-img {
+                max-width: 90vw;
+                max-height: 85vh;
+                object-fit: contain;
+                border-radius: 8px;
+            }
+            
+            .image-modal-close {
+                position: absolute;
+                top: -40px;
+                right: 0;
+                background: none;
+                border: none;
+                color: white;
+                font-size: 30px;
+                cursor: pointer;
+                padding: 5px 10px;
+            }
+            
+            .image-modal-close:hover {
+                color: #ffc107;
+            }
+            
+            .image-modal-nav {
+                position: absolute;
+                top: 50%;
+                transform: translateY(-50%);
+                background: rgba(0,0,0,0.5);
+                border: none;
+                color: white;
+                font-size: 40px;
+                padding: 10px 15px;
+                cursor: pointer;
+                border-radius: 50%;
+                transition: all 0.2s;
+            }
+            
+            .image-modal-nav:hover {
+                background: rgba(0,0,0,0.8);
+                color: #ffc107;
+            }
+            
+            .image-modal-prev {
+                left: -60px;
+            }
+            
+            .image-modal-next {
+                right: -60px;
+            }
+            
+            .image-modal-counter {
+                position: absolute;
+                bottom: -35px;
+                left: 0;
+                right: 0;
+                text-align: center;
+                color: white;
+                font-size: 14px;
+            }
+            
+            @media (max-width: 768px) {
+                .image-modal-prev {
+                    left: -40px;
+                    font-size: 30px;
+                    padding: 5px 10px;
+                }
+                .image-modal-next {
+                    right: -40px;
+                    font-size: 30px;
+                    padding: 5px 10px;
+                }
+                .gallery-item {
+                    width: 55px;
+                    height: 55px;
+                }
+            }
+            
             /* Mobile responsiveness */
             @media (max-width: 576px) {
                 .stat-value-responsive {
@@ -600,7 +869,104 @@ if (isset($_GET['pick_item_id'])) {
             }
         </style>
         
+        <!-- Image Modal for Fullscreen View -->
+        <div id="imageModal" class="image-modal-overlay" style="display: none;" onclick="closeImageModal(event)">
+            <div class="image-modal-content" onclick="event.stopPropagation()">
+                <button class="image-modal-close" onclick="closeImageModal()">&times;</button>
+                <button class="image-modal-nav image-modal-prev" onclick="prevImage(event)">&#10094;</button>
+                <img id="modalImage" class="image-modal-img" src="" alt="">
+                <button class="image-modal-nav image-modal-next" onclick="nextImage(event)">&#10095;</button>
+                <div id="imageCounter" class="image-modal-counter"></div>
+            </div>
+        </div>
+        
         <script>
+        // Image gallery variables
+        let currentImages = [];
+        let currentImageIndex = 0;
+        
+        // Function to open image modal
+        function openImageModal(imageUrl, itemName, index, total) {
+            currentImages = <?php echo json_encode($item_images); ?>;
+            currentImageIndex = index;
+            
+            const modal = document.getElementById('imageModal');
+            const modalImg = document.getElementById('modalImage');
+            const counter = document.getElementById('imageCounter');
+            
+            modalImg.src = imageUrl;
+            modalImg.alt = itemName;
+            counter.textContent = (index + 1) + ' of ' + total;
+            modal.style.display = 'flex';
+            
+            // Prevent body scrolling
+            document.body.style.overflow = 'hidden';
+        }
+        
+        // Function to close image modal
+        function closeImageModal(event) {
+            if (event && event.target !== event.currentTarget && event.target.className !== 'image-modal-close') {
+                return;
+            }
+            const modal = document.getElementById('imageModal');
+            modal.style.display = 'none';
+            document.body.style.overflow = '';
+        }
+        
+        // Function to navigate to previous image
+        function prevImage(event) {
+            event.stopPropagation();
+            if (currentImages.length === 0) return;
+            
+            currentImageIndex--;
+            if (currentImageIndex < 0) {
+                currentImageIndex = currentImages.length - 1;
+            }
+            
+            const modalImg = document.getElementById('modalImage');
+            const counter = document.getElementById('imageCounter');
+            
+            modalImg.src = currentImages[currentImageIndex].url;
+            counter.textContent = (currentImageIndex + 1) + ' of ' + currentImages.length;
+        }
+        
+        // Function to navigate to next image
+        function nextImage(event) {
+            event.stopPropagation();
+            if (currentImages.length === 0) return;
+            
+            currentImageIndex++;
+            if (currentImageIndex >= currentImages.length) {
+                currentImageIndex = 0;
+            }
+            
+            const modalImg = document.getElementById('modalImage');
+            const counter = document.getElementById('imageCounter');
+            
+            modalImg.src = currentImages[currentImageIndex].url;
+            counter.textContent = (currentImageIndex + 1) + ' of ' + currentImages.length;
+        }
+        
+        // Close modal on Escape key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                const modal = document.getElementById('imageModal');
+                if (modal && modal.style.display === 'flex') {
+                    closeImageModal();
+                }
+            } else if (e.key === 'ArrowLeft') {
+                const modal = document.getElementById('imageModal');
+                if (modal && modal.style.display === 'flex') {
+                    prevImage(e);
+                }
+            } else if (e.key === 'ArrowRight') {
+                const modal = document.getElementById('imageModal');
+                if (modal && modal.style.display === 'flex') {
+                    nextImage(e);
+                }
+            }
+        });
+        
         // Function to set update pick item values
         function setUpdatePickItem(pickItemId, quantityToPick, quantityPicked) {
             // Close the view modal

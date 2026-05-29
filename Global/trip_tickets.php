@@ -431,7 +431,7 @@ $default_date = isset($_GET['date']) ? $_GET['date'] : '';
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
     <title>Global - Trip Tickets</title>
     <link rel="icon" type="image/png" href="../Pictures/favicon-96x96.png" sizes="96x96" />
     <link rel="icon" type="image/svg+xml" href="../Pictures/favicon.svg" />
@@ -456,6 +456,31 @@ $default_date = isset($_GET['date']) ? $_GET['date'] : '';
         .text-start {
             text-align: left !important;
         }
+        
+        /* Clickable row styling */
+        .clickable-row {
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        
+        .clickable-row:hover {
+            background-color: rgba(68, 211, 78, 0.08) !important;
+        }
+        
+        /* Desktop table header centering */
+        @media (min-width: 769px) {
+            .custom-table th,
+            .custom-table td {
+                text-align: center;
+                vertical-align: middle;
+            }
+            
+            .custom-table th:first-child,
+            .custom-table td:first-child {
+                text-align: left;
+            }
+        }
+        
         /* Mobile Profile Modal Styles */
         .user-avatar-large {
             width: 100px;
@@ -548,230 +573,364 @@ $default_date = isset($_GET['date']) ? $_GET['date'] : '';
         .mobile-nav .nav-link.logout-btn:hover i {
             color: #dc3545;
         }
+        
         /* ===== FILTER REPORTS & DROPDOWN - GAYA SA BRANCH RECORDS ===== */
 
-/* Form Card - Base */
-.form-card {
-    background: white;
-    border-radius: clamp(14px, 3vw, 20px);
-    padding: clamp(0.8rem, 3vw, 1.5rem);
-    box-shadow: 0 8px 20px -5px rgba(4, 120, 87, 0.12);
-    border: 1px solid rgba(68, 211, 78, 0.2);
-    margin-bottom: clamp(1rem, 2vw, 1.5rem);
-    transition: all 0.3s ease;
-    width: 100%;
-}
+        /* Form Card - Base */
+        .form-card {
+            background: white;
+            border-radius: clamp(14px, 3vw, 20px);
+            padding: clamp(0.8rem, 3vw, 1.5rem);
+            box-shadow: 0 8px 20px -5px rgba(4, 120, 87, 0.12);
+            border: 1px solid rgba(68, 211, 78, 0.2);
+            margin-bottom: clamp(1rem, 2vw, 1.5rem);
+            transition: all 0.3s ease;
+            width: 100%;
+        }
 
-/* Card Header */
-.form-card h5 {
-    color: var(--dark-green);
-    font-weight: 700;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: clamp(1rem, 4vw, 1.3rem);
-    margin-bottom: clamp(0.5rem, 2vw, 1rem);
-    padding-bottom: clamp(0.3rem, 1.5vw, 0.5rem);
-    border-bottom: 2px solid rgba(68, 211, 78, 0.2);
-    width: 100%;
-}
+        /* Filter Header with Toggle */
+        .filter-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+        }
 
-.form-card h5 i {
-    color: var(--primary-green);
-    background: rgba(68, 211, 78, 0.1);
-    padding: clamp(0.3rem, 1.5vw, 0.5rem);
-    border-radius: clamp(6px, 2vw, 10px);
-    font-size: clamp(0.9rem, 3.5vw, 1.2rem);
-}
+        .filter-toggle-btn {
+            background: none;
+            border: none;
+            font-size: 1.2rem;
+            color: #047857;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: all 0.2s ease;
+            cursor: pointer;
+        }
 
-/* Form Labels */
-.form-label {
-    font-weight: 600;
-    color: var(--dark-color);
-    margin-bottom: clamp(0.2rem, 1vw, 0.4rem);
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    font-size: clamp(0.75rem, 3vw, 0.9rem);
-}
+        .filter-toggle-btn:hover {
+            background: rgba(68, 211, 78, 0.1);
+        }
 
-.form-label i {
-    color: var(--primary-green);
-    font-size: clamp(0.8rem, 3.5vw, 1rem);
-}
+        .filter-toggle-btn i {
+            transition: transform 0.3s ease;
+        }
 
-/* FORM CONTROLS - UNIFIED (SELECT & INPUT) */
-.form-select, 
-.form-control {
-    border: 2px solid #e5e7eb;
-    border-radius: clamp(6px, 2vw, 10px);
-    padding: clamp(0.35rem, 2vw, 0.7rem) clamp(0.7rem, 3vw, 1rem);
-    font-size: clamp(0.75rem, 3.5vw, 0.95rem);
-    height: auto;
-    min-height: clamp(32px, 7vw, 42px);
-    width: 100%;
-    background-color: white;
-    transition: all 0.2s ease;
-    line-height: 1.4;
-    box-sizing: border-box;
-}
+        .filter-content {
+            transition: all 0.3s ease;
+            overflow: hidden;
+        }
 
-/* SELECT SPECIFIC - WITH CUSTOM ARROW */
-.form-select {
-    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23047857' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
-    background-repeat: no-repeat;
-    background-position: right clamp(0.5rem, 2vw, 0.75rem) center;
-    background-size: clamp(10px, 2.5vw, 14px) clamp(8px, 2vw, 12px);
-    padding-right: clamp(1.8rem, 6vw, 2.2rem);
-    appearance: none;
-    -webkit-appearance: none;
-    -moz-appearance: none;
-}
+        .filter-content.collapsed {
+            display: none;
+        }
 
-/* INPUT SPECIFIC */
-.form-control {
-    padding-right: clamp(0.7rem, 3vw, 1rem);
-}
+        /* Card Header */
+        .form-card h5 {
+            color: var(--dark-green);
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: clamp(1rem, 4vw, 1.3rem);
+            margin-bottom: 0;
+            padding-bottom: 0;
+            border-bottom: none;
+            width: 100%;
+        }
 
-/* Focus States */
-.form-select:focus, 
-.form-control:focus {
-    border-color: var(--primary-green);
-    box-shadow: 0 0 0 3px rgba(68, 211, 78, 0.15);
-    outline: none;
-}
+        .form-card h5 i {
+            color: var(--primary-green);
+            background: rgba(68, 211, 78, 0.1);
+            padding: clamp(0.3rem, 1.5vw, 0.5rem);
+            border-radius: clamp(6px, 2vw, 10px);
+            font-size: clamp(0.9rem, 3.5vw, 1.2rem);
+        }
 
-/* Hover States */
-.form-select:hover, 
-.form-control:hover {
-    border-color: var(--primary-green);
-    background-color: rgba(68, 211, 78, 0.02);
-}
+        /* Form Labels */
+        .form-label {
+            font-weight: 600;
+            color: var(--dark-color);
+            margin-bottom: clamp(0.2rem, 1vw, 0.4rem);
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            font-size: clamp(0.75rem, 3vw, 0.9rem);
+        }
 
-/* Calendar Icon */
-input[type="date"]::-webkit-calendar-picker-indicator,
-input[type="month"]::-webkit-calendar-picker-indicator {
-    width: clamp(14px, 3.5vw, 18px);
-    height: clamp(14px, 3.5vw, 18px);
-    padding: clamp(1px, 0.5vw, 3px);
-    cursor: pointer;
-    opacity: 0.6;
-    transition: all 0.2s ease;
-}
+        .form-label i {
+            color: var(--primary-green);
+            font-size: clamp(0.8rem, 3.5vw, 1rem);
+        }
 
-input[type="date"]::-webkit-calendar-picker-indicator:hover,
-input[type="month"]::-webkit-calendar-picker-indicator:hover {
-    opacity: 1;
-    background: rgba(68, 211, 78, 0.1);
-    transform: scale(1.1);
-}
+        /* FORM CONTROLS - UNIFIED (SELECT & INPUT) */
+        .form-select, 
+        .form-control {
+            border: 2px solid #e5e7eb;
+            border-radius: clamp(6px, 2vw, 10px);
+            padding: clamp(0.35rem, 2vw, 0.7rem) clamp(0.7rem, 3vw, 1rem);
+            font-size: clamp(0.75rem, 3.5vw, 0.95rem);
+            height: auto;
+            min-height: clamp(32px, 7vw, 42px);
+            width: 100%;
+            background-color: white;
+            transition: all 0.2s ease;
+            line-height: 1.4;
+            box-sizing: border-box;
+        }
 
-/* ===== RESPONSIVE GRID - FIXED VERSION ===== */
+        /* SELECT SPECIFIC - WITH CUSTOM ARROW */
+        .form-select {
+            background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23047857' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+            background-repeat: no-repeat;
+            background-position: right clamp(0.5rem, 2vw, 0.75rem) center;
+            background-size: clamp(10px, 2.5vw, 14px) clamp(8px, 2vw, 12px);
+            padding-right: clamp(1.8rem, 6vw, 2.2rem);
+            appearance: none;
+            -webkit-appearance: none;
+            -moz-appearance: none;
+        }
 
-/* Remove conflicting row styles */
-.form-card .row {
-    display: flex;
-    flex-wrap: wrap;
-    margin-right: -0.5rem;
-    margin-left: -0.5rem;
-}
+        /* INPUT SPECIFIC */
+        .form-control {
+            padding-right: clamp(0.7rem, 3vw, 1rem);
+        }
 
-.form-card .row > [class*="col-"] {
-    padding-right: 0.5rem;
-    padding-left: 0.5rem;
-    margin-bottom: 1rem;
-}
+        /* Focus States */
+        .form-select:focus, 
+        .form-control:focus {
+            border-color: var(--primary-green);
+            box-shadow: 0 0 0 3px rgba(68, 211, 78, 0.15);
+            outline: none;
+        }
 
-/* Gutter spacing */
-.g-3 {
-    --bs-gutter-x: 1rem;
-    --bs-gutter-y: 1rem;
-}
+        /* Hover States */
+        .form-select:hover, 
+        .form-control:hover {
+            border-color: var(--primary-green);
+            background-color: rgba(68, 211, 78, 0.02);
+        }
 
-/* ===== MOBILE (below 768px) - 2 COLUMNS ===== */
-@media (max-width: 767px) {
-    /* Force 2 columns sa mobile */
-    .form-card .row > .col-12,
-    .form-card .row > .col-sm-6,
-    .form-card .row > .col-md-3 {
-        flex: 0 0 50% !important;
-        max-width: 50% !important;
-    }
-    
-    /* Adjust spacing */
-    .form-card {
-        padding: 1rem;
-    }
-    
-    .form-card h5 {
-        font-size: 1.1rem;
-        margin-bottom: 0.8rem;
-    }
-    
-    .form-label {
-        font-size: 0.8rem;
-        margin-bottom: 0.2rem;
-    }
-    
-    .form-select, 
-    .form-control {
-        font-size: 0.8rem;
-        padding: 0.35rem 0.6rem;
-        min-height: 36px;
-    }
-}
+        /* Calendar Icon */
+        input[type="date"]::-webkit-calendar-picker-indicator,
+        input[type="month"]::-webkit-calendar-picker-indicator {
+            width: clamp(14px, 3.5vw, 18px);
+            height: clamp(14px, 3.5vw, 18px);
+            padding: clamp(1px, 0.5vw, 3px);
+            cursor: pointer;
+            opacity: 0.6;
+            transition: all 0.2s ease;
+        }
 
-/* ===== TABLET TO DESKTOP (768px and up) - 4 COLUMNS ===== */
-@media (min-width: 768px) {
-    .form-card .row > .col-md-3 {
-        flex: 0 0 25%;
-        max-width: 25%;
-    }
-}
+        input[type="date"]::-webkit-calendar-picker-indicator:hover,
+        input[type="month"]::-webkit-calendar-picker-indicator:hover {
+            opacity: 1;
+            background: rgba(68, 211, 78, 0.1);
+            transform: scale(1.1);
+        }
 
-/* ===== EXTRA SMALL (below 400px) ===== */
-@media (max-width: 399px) {
-    .form-card {
-        padding: 0.7rem;
-    }
-    
-    .form-card h5 {
-        font-size: 1rem;
-    }
-    
-    .form-label {
-        font-size: 0.7rem;
-    }
-    
-    .form-select, 
-    .form-control {
-        font-size: 0.7rem;
-        padding: 0.25rem 0.5rem;
-        min-height: 32px;
-    }
-}
+        /* ===== RESPONSIVE GRID - FIXED VERSION ===== */
 
-/* ===== DROPDOWN OPTIONS ===== */
-.form-select option {
-    font-size: inherit;
-    padding: clamp(0.2rem, 1vw, 0.4rem);
-}
+        /* Remove conflicting row styles */
+        .form-card .row {
+            display: flex;
+            flex-wrap: wrap;
+            margin-right: -0.5rem;
+            margin-left: -0.5rem;
+        }
 
-/* ===== ANIMATION ===== */
-.form-card {
-    animation: fadeInUp 0.3s ease-out;
-}
+        .form-card .row > [class*="col-"] {
+            padding-right: 0.5rem;
+            padding-left: 0.5rem;
+            margin-bottom: 1rem;
+        }
 
-@keyframes fadeInUp {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
+        /* Gutter spacing */
+        .g-3 {
+            --bs-gutter-x: 1rem;
+            --bs-gutter-y: 1rem;
+        }
+
+        /* ===== MOBILE (below 768px) - 2 COLUMNS ===== */
+        @media (max-width: 767px) {
+            /* Force 2 columns sa mobile */
+            .form-card .row > .col-12,
+            .form-card .row > .col-sm-6,
+            .form-card .row > .col-md-3 {
+                flex: 0 0 50% !important;
+                max-width: 50% !important;
+            }
+            
+            /* Adjust spacing */
+            .form-card {
+                padding: 1rem;
+            }
+            
+            .form-card h5 {
+                font-size: 1.1rem;
+                margin-bottom: 0;
+            }
+            
+            .form-label {
+                font-size: 0.8rem;
+                margin-bottom: 0.2rem;
+            }
+            
+            .form-select, 
+            .form-control {
+                font-size: 0.8rem;
+                padding: 0.35rem 0.6rem;
+                min-height: 36px;
+            }
+        }
+
+        /* ===== TABLET TO DESKTOP (768px and up) - 4 COLUMNS ===== */
+        @media (min-width: 768px) {
+            .form-card .row > .col-md-3 {
+                flex: 0 0 25%;
+                max-width: 25%;
+            }
+        }
+
+        /* ===== EXTRA SMALL (below 400px) ===== */
+        @media (max-width: 399px) {
+            .form-card {
+                padding: 0.7rem;
+            }
+            
+            .form-card h5 {
+                font-size: 1rem;
+            }
+            
+            .form-label {
+                font-size: 0.7rem;
+            }
+            
+            .form-select, 
+            .form-control {
+                font-size: 0.7rem;
+                padding: 0.25rem 0.5rem;
+                min-height: 32px;
+            }
+        }
+
+        /* ===== DROPDOWN OPTIONS ===== */
+        .form-select option {
+            font-size: inherit;
+            padding: clamp(0.2rem, 1vw, 0.4rem);
+        }
+
+        /* ===== ANIMATION ===== */
+        .form-card {
+            animation: fadeInUp 0.3s ease-out;
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        /* ===== MOBILE TRIP CARD STYLES ===== */
+        @media (max-width: 768px) {
+            .custom-table thead {
+                display: none;
+            }
+            .custom-table, .custom-table tbody, .custom-table tr, .custom-table td {
+                display: block;
+                width: 100%;
+            }
+            .custom-table tbody tr {
+                background: white;
+                border-radius: 12px;
+                margin-bottom: 10px;
+                padding: 12px;
+                box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+                border: 1px solid #e9ecef;
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+            }
+            .custom-table tbody tr td {
+                display: none;
+            }
+            
+            .custom-table tbody tr .mobile-card-left {
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+            }
+            .mobile-trip-number {
+                font-size: 0.9rem;
+                font-weight: 700;
+                color: #047857;
+            }
+            .mobile-driver {
+                font-size: 0.8rem;
+                color: #374151;
+            }
+            .mobile-driver i {
+                font-size: 0.7rem;
+                margin-right: 4px;
+                color: #6c757d;
+            }
+            .mobile-origin {
+                font-size: 0.7rem;
+                color: #6c757d;
+            }
+            .mobile-origin i {
+                font-size: 0.65rem;
+                margin-right: 4px;
+            }
+            .mobile-status {
+                margin-top: 2px;
+            }
+            .mobile-status .badge {
+                font-size: 0.65rem;
+                padding: 3px 8px;
+            }
+            
+            .mobile-action {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                gap: 6px;
+                margin-left: 12px;
+            }
+            .mobile-action .btn-action {
+                width: 32px;
+                height: 32px;
+                font-size: 0.9rem;
+            }
+        }
+        
+        @media (max-width: 480px) {
+            .mobile-trip-number {
+                font-size: 0.85rem;
+            }
+            .mobile-driver {
+                font-size: 0.75rem;
+            }
+            .mobile-origin {
+                font-size: 0.65rem;
+            }
+            .mobile-action .btn-action {
+                width: 28px;
+                height: 28px;
+                font-size: 0.8rem;
+            }
+        }
     </style>
 </head>
 <body>
@@ -792,6 +951,12 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
             <div class="sidebar-menu">
                 <ul class="nav flex-column">
                     <li class="nav-item">
+                        <a class="nav-link" href="dashboard.php">
+                            <i class="bi bi-speedometer2"></i>
+                            <span class="nav-text">Dashboard</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="sales_reports.php">
                             <i class="bi bi-graph-up"></i>
                             <span class="nav-text">Sales Reports</span>
@@ -807,6 +972,12 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                         <a class="nav-link" href="all_items.php">
                             <i class="bi bi-box"></i>
                             <span class="nav-text">All Items</span>
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="location_verification.php">
+                            <i class="bi bi-geo-alt-fill"></i>
+                            <span class="nav-text">Location Verification</span>
                         </a>
                     </li>
                     <li class="nav-item">
@@ -859,119 +1030,120 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                     </div>
                 </div>
 
-              <div class="row stat-card-row g-1 g-sm-2 mb-4">
-    <!-- Card 1 - Total Trips -->
-    <div class="col">
-        <div class="stat-card total">
-            <i class="bi bi-truck"></i>
-            <div class="stat-content">
-                <div class="stat-value" id="totalTrips">0</div>
-                <div class="stat-label">Total Trips</div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Card 2 - Completed -->
-    <div class="col">
-        <div class="stat-card sales">
-            <i class="bi bi-check-circle"></i>
-            <div class="stat-content">
-                <div class="stat-value" id="completedTrips">0</div>
-                <div class="stat-label">Completed</div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Card 3 - In Progress -->
-    <div class="col">
-        <div class="stat-card complete">
-            <i class="bi bi-gear"></i>
-            <div class="stat-content">
-                <div class="stat-value" id="inProgressTrips">0</div>
-                <div class="stat-label">In Progress</div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Card 4 - Delayed -->
-    <div class="col">
-        <div class="stat-card total">
-            <i class="bi bi-exclamation-triangle"></i>
-            <div class="stat-content">
-                <div class="stat-value" id="delayedTrips">0</div>
-                <div class="stat-label">Delayed</div>
-            </div>
-        </div>
-    </div>
-</div>
-               <!-- FILTER SECTION - TRIP TICKETS -->
-<div class="row g-3 mb-4">
-    <div class="col-12">
-        <div class="form-card">
-            <div class="filter-header">
-                <h5 class="mb-0">
-                    <i class="bi bi-funnel"></i> Filter Trip Tickets
-                </h5>
-                <button class="filter-toggle-btn" id="toggleTripFilter" onclick="toggleFilter('trip')" title="Toggle Filter">
-                    <i class="bi bi-chevron-down" id="tripFilterIcon"></i>
-                </button>
-            </div>
-            <div class="filter-content" id="tripFilterContent">
-                <div class="row mt-3 g-3">
-                    <!-- Status Filter -->
-                    <div class="col-12 col-sm-6 col-md-3">
-                        <label class="form-label">
-                            <i class="bi bi-flag"></i> Status
-                        </label>
-                        <select class="form-select" id="statusFilter" onchange="loadTrips()">
-                            <option value="">All Status</option>
-                            <option value="planned">Planned</option>
-                            <option value="in-progress">In Progress</option>
-                            <option value="completed">Completed</option>
-                            <option value="delayed">Delayed</option>
-                            <option value="cancelled">Cancelled</option>
-                        </select>
+                <div class="row stat-card-row g-1 g-sm-2 mb-4">
+                    <!-- Card 1 - Total Trips -->
+                    <div class="col">
+                        <div class="stat-card total">
+                            <i class="bi bi-truck"></i>
+                            <div class="stat-content">
+                                <div class="stat-value" id="totalTrips">0</div>
+                                <div class="stat-label">Total Trips</div>
+                            </div>
+                        </div>
                     </div>
                     
-                    <!-- Origin/Branch Filter -->
-                    <div class="col-12 col-sm-6 col-md-3">
-                        <label class="form-label">
-                            <i class="bi bi-building"></i> Origin/Branch
-                        </label>
-                        <select class="form-select" id="originFilter" onchange="loadTrips()">
-                            <option value="">All Origins</option>
-                            <?php foreach ($branches as $branch): ?>
-                                <option value="<?php echo $branch['branch_id']; ?>">
-                                    <?php echo htmlspecialchars($branch['branch_name']); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
+                    <!-- Card 2 - Completed -->
+                    <div class="col">
+                        <div class="stat-card sales">
+                            <i class="bi bi-check-circle"></i>
+                            <div class="stat-content">
+                                <div class="stat-value" id="completedTrips">0</div>
+                                <div class="stat-label">Completed</div>
+                            </div>
+                        </div>
                     </div>
                     
-                    <!-- Trip Date Filter -->
-                    <div class="col-12 col-sm-6 col-md-3">
-                        <label class="form-label">
-                            <i class="bi bi-calendar"></i> Trip Date
-                        </label>
-                        <input type="date" class="form-control" id="dateFilter" value="<?php echo $default_date; ?>" placeholder="Select date" onchange="loadTrips()">
+                    <!-- Card 3 - In Progress -->
+                    <div class="col">
+                        <div class="stat-card complete">
+                            <i class="bi bi-gear"></i>
+                            <div class="stat-content">
+                                <div class="stat-value" id="inProgressTrips">0</div>
+                                <div class="stat-label">In Progress</div>
+                            </div>
+                        </div>
                     </div>
                     
-                    <!-- Sort By Filter -->
-                    <div class="col-12 col-sm-6 col-md-3">
-                        <label class="form-label">
-                            <i class="bi bi-sort-down"></i> Sort By
-                        </label>
-                        <select class="form-select" id="sortFilter" onchange="loadTrips()">
-                            <option value="date">Date (Newest First)</option>
-                            <option value="status">Status</option>
-                            <option value="driver">Driver Name</option>
-                        </select>
+                    <!-- Card 4 - Delayed -->
+                    <div class="col">
+                        <div class="stat-card total">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            <div class="stat-content">
+                                <div class="stat-value" id="delayedTrips">0</div>
+                                <div class="stat-label">Delayed</div>
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </div>
-        </div>
-    </div>
-</div>
+                
+                <!-- FILTER SECTION - TRIP TICKETS -->
+                <div class="row g-3 mb-4">
+                    <div class="col-12">
+                        <div class="form-card">
+                            <div class="filter-header">
+                                <h5 class="mb-0">
+                                    <i class="bi bi-funnel"></i> Filter Trip Tickets
+                                </h5>
+                                <button class="filter-toggle-btn" id="toggleTripFilter" onclick="toggleFilter('trip')" title="Toggle Filter">
+                                    <i class="bi bi-chevron-down" id="tripFilterIcon"></i>
+                                </button>
+                            </div>
+                            <div class="filter-content" id="tripFilterContent">
+                                <div class="row mt-3 g-3">
+                                    <!-- Status Filter -->
+                                    <div class="col-12 col-sm-6 col-md-3">
+                                        <label class="form-label">
+                                            <i class="bi bi-flag"></i> Status
+                                        </label>
+                                        <select class="form-select" id="statusFilter" onchange="loadTrips()">
+                                            <option value="">All Status</option>
+                                            <option value="planned">Planned</option>
+                                            <option value="in-progress">In Progress</option>
+                                            <option value="completed">Completed</option>
+                                            <option value="delayed">Delayed</option>
+                                            <option value="cancelled">Cancelled</option>
+                                        </select>
+                                    </div>
+                                    
+                                    <!-- Origin/Branch Filter -->
+                                    <div class="col-12 col-sm-6 col-md-3">
+                                        <label class="form-label">
+                                            <i class="bi bi-building"></i> Origin/Branch
+                                        </label>
+                                        <select class="form-select" id="originFilter" onchange="loadTrips()">
+                                            <option value="">All Origins</option>
+                                            <?php foreach ($branches as $branch): ?>
+                                                <option value="<?php echo $branch['branch_id']; ?>">
+                                                    <?php echo htmlspecialchars($branch['branch_name']); ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                    
+                                    <!-- Trip Date Filter -->
+                                    <div class="col-12 col-sm-6 col-md-3">
+                                        <label class="form-label">
+                                            <i class="bi bi-calendar"></i> Trip Date
+                                        </label>
+                                        <input type="date" class="form-control" id="dateFilter" value="<?php echo $default_date; ?>" placeholder="Select date" onchange="loadTrips()">
+                                    </div>
+                                    
+                                    <!-- Sort By Filter -->
+                                    <div class="col-12 col-sm-6 col-md-3">
+                                        <label class="form-label">
+                                            <i class="bi bi-sort-down"></i> Sort By
+                                        </label>
+                                        <select class="form-select" id="sortFilter" onchange="loadTrips()">
+                                            <option value="date">Date (Newest First)</option>
+                                            <option value="status">Status</option>
+                                            <option value="driver">Driver Name</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
                 <div class="data-table">
                     <div class="table-header">
@@ -990,12 +1162,11 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                                     <th>Status</th>
                                     <th>Stops</th>
                                     <th>Delivered</th>
-                                    <th>Actions</th>
                                 </tr>
                             </thead>
                             <tbody id="tripsTable">
                                 <tr>
-                                    <td colspan="10" class="text-center py-4">
+                                    <td colspan="9" class="text-center py-4">
                                         <div class="spinner-border text-primary" role="status">
                                             <span class="visually-hidden">Loading...</span>
                                         </div>
@@ -1259,7 +1430,7 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 text: 'You will be logged out of the system',
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonColor: '#dc3545',
+                confirmButtonColor: '#07d826',
                 cancelButtonColor: '#6c757d',
                 confirmButtonText: 'Yes, logout'
             }).then((result) => {
@@ -1289,10 +1460,13 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
         }
 
         // ================= TRIP FUNCTIONS =================
+        // Store trip data for mobile view
+        let tripsData = [];
+        
         // Load trips
         async function loadTrips() {
             const tbody = document.getElementById('tripsTable');
-            tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading trips...</p></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4"><div class="spinner-border text-primary" role="status"><span class="visually-hidden">Loading...</span></div><p class="mt-2">Loading trips...</p></td></tr>';
             
             try {
                 const status = document.getElementById('statusFilter').value;
@@ -1312,12 +1486,13 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 const data = await response.json();
                 
                 if (data.success) {
-                    displayTrips(data.trips || []);
+                    tripsData = data.trips || [];
+                    displayTrips(tripsData);
                     updateTripStats(data.stats || {});
                 }
             } catch (error) {
                 console.error('Error loading trips:', error);
-                tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4 text-danger">Error loading trips</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4 text-danger">Error loading trips</td></tr>';
             }
         }
 
@@ -1325,11 +1500,12 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
             const tbody = document.getElementById('tripsTable');
             
             if (trips.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4">No trips found</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4">No trips found</td></tr>';
                 return;
             }
 
-            tbody.innerHTML = trips.map(trip => {
+            // Store original HTML in data attributes for each row (for desktop view)
+            const rowsHtml = trips.map(trip => {
                 let statusBadge = 'bg-info';
                 let statusText = trip.status;
                 if (trip.status === 'completed') {
@@ -1350,28 +1526,123 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 }
 
                 return `
-                <tr>
+                <tr class="clickable-row" 
+                    data-trip-id="${trip.trip_id}"
+                    data-trip-number="${escapeHtml(trip.trip_number)}"
+                    data-driver-name="${escapeHtml(trip.driver_name)}"
+                    data-origin="${escapeHtml(trip.origin)}"
+                    data-status="${trip.status}"
+                    data-status-text="${statusText}"
+                    data-status-badge="${statusBadge}"
+                    onclick="viewTrip(${trip.trip_id})">
                     <td><strong>${escapeHtml(trip.trip_number)}</strong></td>
                     <td>${escapeHtml(trip.driver_name)}</td>
                     <td>${escapeHtml(trip.origin)}</td>
                     <td>${escapeHtml(trip.destination)}</td>
                     <td class="text-end">${trip.item_count}</td>
                     <td>${escapeHtml(trip.departure)}</td>
-                    <td>
-                        <span class="badge ${statusBadge}">
-                            ${statusText}
-                        </span>
-                    </td>
+                    <td><span class="badge ${statusBadge}">${statusText}</span></td>
                     <td class="text-end">${trip.total_stops || 0}</td>
                     <td class="text-end">${trip.total_delivered || 0}</td>
-                    <td>
-                        <button class="btn-action btn-view" onclick="viewTrip(${trip.trip_id})">
-                            <i class="bi bi-eye"></i>
-                        </button>
-                    </td>
                 </tr>
             `;
             }).join('');
+            
+            tbody.innerHTML = rowsHtml;
+            
+            // Apply mobile card structure if needed
+            if (window.innerWidth <= 768) {
+                addMobileCardStructure();
+            }
+        }
+
+        function addMobileCardStructure() {
+            const rows = document.querySelectorAll('#tripsTable tr.clickable-row');
+            rows.forEach(row => {
+                // Skip if already has mobile structure
+                if (row.querySelector('.mobile-card-left')) return;
+                
+                // Store original HTML in data attribute if not already stored
+                if (!row.hasAttribute('data-original-html')) {
+                    const originalCells = [];
+                    const cells = row.querySelectorAll('td');
+                    cells.forEach(cell => {
+                        originalCells.push(cell.innerHTML);
+                    });
+                    row.setAttribute('data-original-html', JSON.stringify(originalCells));
+                }
+                
+                const tripNumber = row.getAttribute('data-trip-number') || '';
+                const driverName = row.getAttribute('data-driver-name') || '';
+                const origin = row.getAttribute('data-origin') || '';
+                const statusText = row.getAttribute('data-status-text') || '';
+                const statusBadge = row.getAttribute('data-status-badge') || 'bg-info';
+                
+                // Clear existing content
+                row.innerHTML = '';
+                
+                // Create left div for card content
+                const leftDiv = document.createElement('div');
+                leftDiv.className = 'mobile-card-left';
+                leftDiv.innerHTML = `
+                    <div class="mobile-trip-number"><i class="bi bi-ticket-perforated me-1"></i>${escapeHtml(tripNumber)}</div>
+                    <div class="mobile-driver"><i class="bi bi-person"></i>${escapeHtml(driverName)}</div>
+                    <div class="mobile-origin"><i class="bi bi-building"></i>${escapeHtml(origin)}</div>
+                    <div class="mobile-status"><span class="badge ${statusBadge}">${escapeHtml(statusText)}</span></div>
+                `;
+                
+                // Create right div for chevron indicator
+                const rightDiv = document.createElement('div');
+                rightDiv.className = 'mobile-action';
+                rightDiv.innerHTML = '<i class="bi bi-chevron-right" style="font-size: 1.2rem; color: #047857;"></i>';
+                
+                row.appendChild(leftDiv);
+                row.appendChild(rightDiv);
+            });
+        }
+
+        function removeMobileCardStructure() {
+            const rows = document.querySelectorAll('#tripsTable tr.clickable-row');
+            rows.forEach(row => {
+                if (row.hasAttribute('data-original-html')) {
+                    const originalCells = JSON.parse(row.getAttribute('data-original-html'));
+                    const cells = row.querySelectorAll('td');
+                    if (cells.length === 0) {
+                        // Restore original structure
+                        const newRow = document.createElement('tr');
+                        newRow.className = row.className;
+                        // Copy all data attributes
+                        Array.from(row.attributes).forEach(attr => {
+                            if (attr.name !== 'class') {
+                                newRow.setAttribute(attr.name, attr.value);
+                            }
+                        });
+                        
+                        // Re-add onclick
+                        const tripId = row.getAttribute('data-trip-id');
+                        if (tripId) {
+                            newRow.setAttribute('onclick', `viewTrip(${tripId})`);
+                        }
+                        
+                        // Create cells
+                        for (let i = 0; i < originalCells.length; i++) {
+                            const td = document.createElement('td');
+                            td.innerHTML = originalCells[i];
+                            newRow.appendChild(td);
+                        }
+                        
+                        row.parentNode.replaceChild(newRow, row);
+                    }
+                }
+            });
+        }
+
+        function handleResponsiveLayout() {
+            if (window.innerWidth <= 768) {
+                addMobileCardStructure();
+            } else {
+                removeMobileCardStructure();
+            }
         }
 
         function updateTripStats(stats) {
@@ -1510,10 +1781,57 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
             return div.innerHTML;
         }
 
+        // ================= FILTER TOGGLE FUNCTIONS =================
+        function toggleFilter(filterType) {
+            const contentId = filterType + 'FilterContent';
+            const iconId = filterType + 'FilterIcon';
+            
+            const content = document.getElementById(contentId);
+            const icon = document.getElementById(iconId);
+            
+            if (content && icon) {
+                if (content.classList.contains('collapsed')) {
+                    content.classList.remove('collapsed');
+                    icon.style.transform = 'rotate(0deg)';
+                    localStorage.setItem(filterType + 'FilterHidden', 'false');
+                } else {
+                    content.classList.add('collapsed');
+                    icon.style.transform = 'rotate(-90deg)';
+                    localStorage.setItem(filterType + 'FilterHidden', 'true');
+                }
+            }
+        }
+
+        function initFilterStates() {
+            const filterTypes = ['trip'];
+            
+            filterTypes.forEach(type => {
+                const contentId = type + 'FilterContent';
+                const iconId = type + 'FilterIcon';
+                
+                const content = document.getElementById(contentId);
+                const icon = document.getElementById(iconId);
+                
+                if (content && icon) {
+                    // Check localStorage for saved state, default to closed
+                    const isHidden = localStorage.getItem(type + 'FilterHidden');
+                    if (isHidden === 'false') {
+                        content.classList.remove('collapsed');
+                        icon.style.transform = 'rotate(0deg)';
+                    } else {
+                        content.classList.add('collapsed');
+                        icon.style.transform = 'rotate(-90deg)';
+                        localStorage.setItem(type + 'FilterHidden', 'true');
+                    }
+                }
+            });
+        }
+
         // ================= INITIALIZATION =================
         document.addEventListener('DOMContentLoaded', function() {
             initializeSidebar();
             initMobileNav();
+            initFilterStates();
             
             const mobileToggleBtn = document.getElementById('mobileToggleBtn');
             if (mobileToggleBtn) {
@@ -1553,9 +1871,17 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 }
             });
 
+            // Handle responsive layout on load and resize
+            handleResponsiveLayout();
+            
+            let resizeTimer;
             window.addEventListener('resize', function() {
-                handleSidebarResize();
-                initMobileNav();
+                clearTimeout(resizeTimer);
+                resizeTimer = setTimeout(() => {
+                    handleSidebarResize();
+                    initMobileNav();
+                    handleResponsiveLayout();
+                }, 150);
             });
             
             // Load trips on page load
@@ -1586,84 +1912,6 @@ input[type="month"]::-webkit-calendar-picker-indicator:hover {
                 loadTrips();
             }
         });
-
-        // ================= FILTER TOGGLE FUNCTIONS =================
-// Toggle filter section visibility with localStorage
-function toggleFilter(filterType) {
-    const contentId = filterType + 'FilterContent';
-    const iconId = filterType + 'FilterIcon';
-    
-    const content = document.getElementById(contentId);
-    const icon = document.getElementById(iconId);
-    
-    if (content && icon) {
-        if (content.classList.contains('collapsed')) {
-            // Show filter
-            content.classList.remove('collapsed');
-            icon.style.transform = 'rotate(0deg)';
-            localStorage.setItem(filterType + 'FilterHidden', 'false');
-        } else {
-            // Hide filter
-            content.classList.add('collapsed');
-            icon.style.transform = 'rotate(-90deg)';
-            localStorage.setItem(filterType + 'FilterHidden', 'true');
-        }
-    }
-}
-
-// ================= FILTER TOGGLE FUNCTIONS =================
-// Toggle filter section visibility with localStorage
-function toggleFilter(filterType) {
-    const contentId = filterType + 'FilterContent';
-    const iconId = filterType + 'FilterIcon';
-    
-    const content = document.getElementById(contentId);
-    const icon = document.getElementById(iconId);
-    
-    if (content && icon) {
-        if (content.classList.contains('collapsed')) {
-            // Show filter
-            content.classList.remove('collapsed');
-            icon.style.transform = 'rotate(0deg)';
-            localStorage.setItem(filterType + 'FilterHidden', 'false');
-        } else {
-            // Hide filter
-            content.classList.add('collapsed');
-            icon.style.transform = 'rotate(-90deg)';
-            localStorage.setItem(filterType + 'FilterHidden', 'true');
-        }
-    }
-}
-
-// Initialize filter states on page load - DEFAULT CLOSED
-function initFilterStates() {
-    const filterTypes = ['sales', 'branch', 'items', 'driver', 'trip'];
-    
-    filterTypes.forEach(type => {
-        const contentId = type + 'FilterContent';
-        const iconId = type + 'FilterIcon';
-        
-        const content = document.getElementById(contentId);
-        const icon = document.getElementById(iconId);
-        
-        if (content && icon) {
-            // DEFAULT: CLOSED sa simula
-            content.classList.add('collapsed');
-            icon.style.transform = 'rotate(-90deg)';
-            
-            // Save sa localStorage na closed para consistent
-            localStorage.setItem(type + 'FilterHidden', 'true');
-        }
-    });
-}
-
-// Call this sa loob ng DOMContentLoaded
-document.addEventListener('DOMContentLoaded', function() {
-    // ... existing code ...
-    
-    // Initialize filter states - lahat closed
-    initFilterStates();
-});
     </script>
 </body>
 </html>

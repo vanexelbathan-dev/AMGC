@@ -1,0 +1,32 @@
+{
+    "manifest_id": "receive_20260525151708_0bc9eaf5",
+    "source": "supplier",
+    "supplier_id": 1,
+    "supplier_name": "Jill Anuran",
+    "po_number": "PO-RCV-20260525151708",
+    "reference_type": "purchase_order",
+    "reference_id": 26,
+    "receive_date": "2026-05-25",
+    "receive_memo": "",
+    "created_at": "2026-05-25 15:17:08",
+    "created_by": 2,
+    "branch_id": 1,
+    "transaction_ids": [
+        281
+    ],
+    "attachments": [],
+    "items": [
+        {
+            "item_id": 8,
+            "item_name": "Coke Mismo",
+            "item_code": "ITEM008",
+            "item_description": "Coke Mismo",
+            "category": "General",
+            "uom": "Bundle",
+            "qty": 100,
+            "unit_price": 20,
+            "unit_cost": 20,
+            "total_cost": 2000
+        }
+    ]
+}

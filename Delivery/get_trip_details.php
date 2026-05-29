@@ -128,15 +128,8 @@ if (isset($_GET['trip_id'])) {
         ?>
         
         <style>
-            /* Hide scrollbar for the entire page */
-            html, body {
-                overflow: hidden;
-                height: 100%;
-                margin: 0;
-                padding: 0;
-            }
-            
-            /* Allow scrolling on the main container but hide scrollbar */
+            /* No global html/body overflow: hidden - Bootstrap handles modal body scrolling */
+            /* Allow scrolling on the modal body but hide scrollbar */
             .modal-body {
                 overflow-y: auto;
                 scrollbar-width: none; /* Firefox */
@@ -586,12 +579,12 @@ if (isset($_GET['trip_id'])) {
                     <div class="col-md-6">
                         <h6><i class="bi bi-ticket-perforated me-2"></i>Trip Information</h6>
                         <table class="table table-sm table-borderless">
-                            <tr>
+                             <tr>
                                 <td class="info-label">Ticket Number:</td>
                                 <td class="info-value"><span class="badge bg-light text-dark fs-6 p-2"><?php echo htmlspecialchars($row['trip_number']); ?></span></td>
-                            </tr>
+                             </tr>
                             <?php if ($has_picklist): ?>
-                            <tr>
+                             <tr>
                                 <td class="info-label">Pick List:</td>
                                 <td class="info-value">
                                     <span class="badge bg-light text-dark"><?php echo htmlspecialchars($row['pick_list_number']); ?></span>
@@ -599,27 +592,27 @@ if (isset($_GET['trip_id'])) {
                                         <br><small class="text-muted">Status: <?php echo ucfirst($row['pick_status']); ?></small>
                                     <?php endif; ?>
                                 </td>
-                            </tr>
+                             </tr>
                             <?php endif; ?>
-                            <tr>
+                             <tr>
                                 <td class="info-label">Status:</td>
                                 <td class="info-value"><span class="badge bg-<?php echo $status_badge; ?> p-2"><?php echo ucfirst(str_replace('-', ' ', $row['trip_status'])); ?></span></td>
-                            </tr>
-                            <tr>
+                             </tr>
+                             <tr>
                                 <td class="info-label">Trip Date:</td>
                                 <td class="info-value"><?php echo $trip_date; ?></td>
-                            </tr>
-                            <tr>
+                             </tr>
+                             <tr>
                                 <td class="info-label">Delivery Count:</td>
                                 <td class="info-value"><?php echo $row['delivery_count'] ?? 0; ?> stop(s)</td>
-                            </tr>
-                        </table>
+                             </tr>
+                         </table>
                     </div>
                     
                     <div class="col-md-6">
                         <h6><i class="bi bi-truck me-2"></i>Driver & Vehicle</h6>
                         <table class="table table-sm table-borderless">
-                            <tr>
+                             <tr>
                                 <td class="info-label">Driver:</td>
                                 <td class="info-value">
                                     <?php if (!empty($row['driver_name'])): ?>
@@ -630,24 +623,24 @@ if (isset($_GET['trip_id'])) {
                                         N/A
                                     <?php endif; ?>
                                 </td>
-                            </tr>
-                            <tr>
+                             </tr>
+                             <tr>
                                 <td class="info-label">License:</td>
                                 <td class="info-value"><?php echo htmlspecialchars($row['license_number'] ?? 'N/A'); ?></td>
-                            </tr>
-                            <tr>
+                             </tr>
+                             <tr>
                                 <td class="info-label">Contact:</td>
                                 <td class="info-value"><?php echo htmlspecialchars($row['contact_number'] ?? 'N/A'); ?></td>
-                            </tr>
-                            <tr>
+                             </tr>
+                             <tr>
                                 <td class="info-label">Vehicle Type:</td>
                                 <td class="info-value"><?php echo htmlspecialchars($row['vehicle_type'] ?? 'N/A'); ?></td>
-                            </tr>
-                            <tr>
+                             </tr>
+                             <tr>
                                 <td class="info-label">Plate Number:</td>
                                 <td class="info-value"><?php echo htmlspecialchars($row['vehicle_plate_number'] ?? 'N/A'); ?></td>
-                            </tr>
-                        </table>
+                             </tr>
+                         </table>
                     </div>
                 </div>
             </div>
@@ -658,33 +651,33 @@ if (isset($_GET['trip_id'])) {
                     <div class="col-md-6">
                         <h6><i class="bi bi-building me-2"></i>Branch Information</h6>
                         <table class="table table-sm table-borderless">
-                            <tr>
+                             <tr>
                                 <td class="info-label">Branch:</td>
                                 <td class="info-value"><?php echo htmlspecialchars($row['branch_name'] ?? 'N/A'); ?></td>
-                            </tr>
-                            <tr>
+                             </tr>
+                             <tr>
                                 <td class="info-label">Branch ID:</td>
                                 <td class="info-value"><?php echo $row['branch_id']; ?></td>
-                            </tr>
-                        </table>
+                             </tr>
+                         </table>
                     </div>
                     
                     <div class="col-md-6">
                         <h6><i class="bi bi-clock-history me-2"></i>Timestamps</h6>
                         <table class="table table-sm table-borderless">
-                            <tr>
+                             <tr>
                                 <td class="info-label">Created By:</td>
                                 <td class="info-value"><?php echo htmlspecialchars($row['first_name'] . ' ' . $row['last_name']); ?></td>
-                            </tr>
-                            <tr>
+                             </tr>
+                             <tr>
                                 <td class="info-label">Created At:</td>
                                 <td class="info-value"><?php echo $created_date; ?></td>
-                            </tr>
-                            <tr>
+                             </tr>
+                             <tr>
                                 <td class="info-label">Last Updated:</td>
                                 <td class="info-value"><?php echo $updated_date; ?></td>
-                            </tr>
-                        </table>
+                             </tr>
+                         </table>
                     </div>
                 </div>
             </div>
@@ -696,28 +689,28 @@ if (isset($_GET['trip_id'])) {
                 <div class="row">
                     <div class="col-md-6">
                         <table class="table table-sm table-borderless">
-                            <tr>
+                             <tr>
                                 <td class="info-label">Customer:</td>
                                 <td class="info-value"><?php echo htmlspecialchars($row['customer_name']); ?></td>
-                            </tr>
-                            <tr>
+                             </tr>
+                             <tr>
                                 <td class="info-label">Contact Person:</td>
                                 <td class="info-value"><?php echo htmlspecialchars($row['contact_person'] ?? 'N/A'); ?></td>
-                            </tr>
-                            <tr>
+                             </tr>
+                             <tr>
                                 <td class="info-label">Phone:</td>
                                 <td class="info-value"><?php echo htmlspecialchars($row['phone_number'] ?? 'N/A'); ?></td>
-                            </tr>
-                        </table>
+                             </tr>
+                         </table>
                     </div>
                     <div class="col-md-6">
                         <table class="table table-sm table-borderless">
-                            <tr>
+                             <tr>
                                 <td class="info-label">Address:</td>
                                 <td class="info-value"><?php echo htmlspecialchars($row['address'] . ', ' . $row['city']); ?></td>
-                            </tr>
+                             </tr>
                             <?php if (!empty($row['latitude']) && !empty($row['longitude'])): ?>
-                            <tr>
+                             <tr>
                                 <td class="info-label">Coordinates:</td>
                                 <td class="info-value">
                                     <?php echo number_format($row['latitude'], 6); ?>, <?php echo number_format($row['longitude'], 6); ?>
@@ -727,13 +720,13 @@ if (isset($_GET['trip_id'])) {
                                         <i class="bi bi-geo-alt-fill"></i> View Map
                                     </a>
                                 </td>
-                            </tr>
+                             </tr>
                             <?php endif; ?>
-                            <tr>
+                             <tr>
                                 <td class="info-label">Sales Order:</td>
                                 <td class="info-value"><?php echo htmlspecialchars($row['so_number'] ?? 'N/A'); ?></td>
-                            </tr>
-                        </table>
+                             </tr>
+                         </table>
                     </div>
                 </div>
             </div>

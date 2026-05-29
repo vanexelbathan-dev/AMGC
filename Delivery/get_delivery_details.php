@@ -118,15 +118,8 @@ switch ($delivery['delivery_status']) {
 ?>
 
 <style>
-    /* Hide scrollbar for the entire page */
-    html, body {
-        overflow: hidden;
-        height: 100%;
-        margin: 0;
-        padding: 0;
-    }
-    
-    /* Allow scrolling on the main container but hide scrollbar */
+    /* No global html/body overflow: hidden - Bootstrap handles modal body scrolling */
+    /* Allow scrolling on the container but hide scrollbar */
     .delivery-details-container {
         overflow-y: auto;
         scrollbar-width: none; /* Firefox */

@@ -1,0 +1,32 @@
+{
+    "manifest_id": "receive_20260525152452_7f009803",
+    "source": "supplier",
+    "supplier_id": 4,
+    "supplier_name": "Van",
+    "po_number": "PO-RCV-20260525152452",
+    "reference_type": "purchase_order",
+    "reference_id": 31,
+    "receive_date": "2026-05-25",
+    "receive_memo": "",
+    "created_at": "2026-05-25 15:24:52",
+    "created_by": 2,
+    "branch_id": 1,
+    "transaction_ids": [
+        286
+    ],
+    "attachments": [],
+    "items": [
+        {
+            "item_id": 5,
+            "item_name": "Product E",
+            "item_code": "ITEM005",
+            "item_description": "Product E",
+            "category": "General",
+            "uom": "Piece",
+            "qty": 10,
+            "unit_price": 30,
+            "unit_cost": 30,
+            "total_cost": 300
+        }
+    ]
+}
