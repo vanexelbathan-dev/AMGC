@@ -894,51 +894,1457 @@ foreach ($collected_records as $cr) {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-        :root{--green:#047857;--bright:#44D34E;--dark:#052A47}
-        body{background:#f4f6f9;font-family:Segoe UI,sans-serif}
+        :root{--green: #047857;--bright: #44D34E;--dark: #052A47}
         .main-content{margin-left:260px;padding:20px}
-        .navbar-top{display:flex;align-items:center;gap:1rem;justify-content:space-between;margin-bottom:24px;background:#fff;padding:14px 20px;border-radius:16px;box-shadow:0 1px 3px rgba(0,0,0,.05)}
-        .page-title h2{margin:0;color:var(--dark);font-weight:800;font-size:1.35rem}.page-title p{margin:.25rem 0 0;color:#6b7280;font-size:.9rem}
         .mobile-toggle-btn{display:none;border:none;background:transparent;color:var(--dark);font-size:1.6rem}
-        .stat-card{background:linear-gradient(135deg,#047857,#059669);border-radius:14px;padding:1rem;min-height:110px;color:#fff;box-shadow:0 4px 10px rgba(0,0,0,.08);display:flex;gap:.75rem;align-items:flex-start}
-        .stat-icon{font-size:1.6rem}.stat-value{font-size:1.35rem;font-weight:800}.stat-label{font-size:.78rem}
-        .card-box{background:#fff;border-radius:14px;box-shadow:0 2px 8px rgba(0,0,0,.05);border:1px solid #edf2f7;overflow:hidden}
-        .table thead th{background:#047857!important;color:#fff!important;font-size:.75rem;text-transform:uppercase;letter-spacing:.4px;padding:12px;white-space:nowrap}
-        .table tbody td{padding:12px;vertical-align:middle;font-size:.85rem;border-bottom:1px solid #eef2f7}
-        .invoice-pill{display:inline-block;background:#ecfdf5;color:#047857;border:1px solid #047857;border-radius:999px;padding:.25rem .6rem;font-weight:800;font-size:.76rem}
-        .btn-collect{background:linear-gradient(135deg,#047857,#44D34E);color:#fff;border:none;border-radius:999px;padding:.45rem .95rem;font-weight:700;font-size:.78rem}
-        .btn-collect:hover{color:#fff;opacity:.95}
-        .btn-return-invoice{background:#052A47;color:#fff;border:none;border-radius:999px;padding:.45rem .95rem;font-weight:700;font-size:.78rem}
-        .btn-return-invoice:hover{color:#fff;opacity:.95}
-        .action-buttons{display:flex;align-items:center;gap:.35rem;flex-wrap:nowrap;white-space:nowrap}
-        .action-buttons .btn-collect,.action-buttons .btn-return-invoice{display:inline-flex;align-items:center;justify-content:center;min-width:92px}
-        .btn-remit-all{background:linear-gradient(135deg,#f59e0b,#d97706);color:#fff;border:none;border-radius:999px;padding:.6rem 1.5rem;font-weight:700;font-size:.85rem}
-        .btn-remit-all:hover{color:#fff;opacity:.95}
-        .btn-delete{background:#dc2626;color:#fff;border:none;border-radius:999px;padding:.25rem .7rem;font-size:.7rem}
-        .btn-delete:hover{background:#b91c1c}
-        .badge-collected{background:#fff7ed;color:#c2410c;border:1px solid #fed7aa}
-        .badge-soft-danger{background:#fef2f2;color:#dc2626;border:1px solid #fecaca}
-        .badge-soft-warning{background:#fff7ed;color:#c2410c;border:1px solid #fed7aa}
-        .badge-soft-success{background:#ecfdf5;color:#047857;border:1px solid #a7f3d0}
-        .payment-method-option{cursor:pointer;padding:12px;border:2px solid #e9ecef;border-radius:12px;text-align:center;height:100%}
-        .payment-method-option.active,.payment-method-option:hover{border-color:#047857;background:#e8f5e9}
-        .payment-method-option i{font-size:1.5rem;display:block;margin-bottom:.4rem}
-        .empty-state{text-align:center;padding:3rem 1rem;color:#64748b}.empty-state i{font-size:2.5rem;color:#cbd5e1}
-        .collected-header{background:#fff8e1;border-bottom:2px solid #f59e0b}
-        .collected-card{background:#fff8e1;transition:all 0.2s}
-        .collected-card:hover{background:#fffbeb}
-        .clickable-assigned-row{cursor:pointer}
-        .clickable-assigned-row:hover{background:#f8fafc}
-        .ticket-detail-card{background:#f8fafc;border:1px solid #e5e7eb;border-radius:14px;padding:14px;margin-bottom:12px}
-        .ticket-detail-label{font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:#64748b;font-weight:800;margin-bottom:4px}
-        .ticket-detail-value{font-size:.95rem;color:#0f172a;font-weight:700}
-        .ticket-rejection-box{background:#fff1f2;border:1px solid #fecdd3;color:#9f1239;border-radius:14px;padding:14px;white-space:pre-wrap}
 
-        .btn-print-report{background:linear-gradient(135deg,#047857,#44D34E);color:#fff;border:none;border-radius:999px;padding:.6rem 1.25rem;font-weight:800;font-size:.85rem;box-shadow:0 3px 8px rgba(4,120,87,.18);white-space:nowrap}
-        .btn-print-report:hover{color:#fff;opacity:.95}
+        /* Remove old conflicting styles if any */
+.stat-card {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08) !important;
+    min-height: auto !important;
+    height: auto !important;
+    padding: 0.8rem !important;
+    transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+    cursor: default !important;
+}
+
+/* Gradient backgrounds for each stat type */
+.stat-card.assigned {
+    background: linear-gradient(135deg, #047857, #059669) !important;
+}
+
+.stat-card.tocollect {
+    background: linear-gradient(135deg, #047857, #059669) !important;
+}
+
+.stat-card.overdue {
+    background: linear-gradient(135deg, #047857, #059669) !important;
+}
+
+.stat-card.pending-remit {
+    background: linear-gradient(135deg, #047857, #059669) !important;
+}
+
+/* Force text colors to white */
+.stat-card .stat-value,
+.stat-card .stat-label,
+.stat-card .stat-content,
+.stat-card small,
+.stat-card small i,
+.stat-card .badge {
+    color: white !important;
+}
+
+/* Remove any white background from stat-content or other children */
+.stat-card .stat-content,
+.stat-card .stat-icon {
+    background: transparent !important;
+}
+
+/* ===== MOBILE: SQUARE CARDS WITH CENTERED ICON ===== */
+@media (max-width: 991px) {
+    .stat-card {
+        aspect-ratio: 1 / 1 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        align-items: center !important;
+        text-align: center !important;
+        padding: 0.5rem !important;
+    }
+    
+    /* Force icon to be centered */
+    .stat-card i,
+    .stat-card .stat-icon {
+        display: block !important;
+        text-align: center !important;
+        margin: 0 auto 0.3rem auto !important;
+        font-size: 1.6rem !important;
+        width: auto !important;
+        float: none !important;
+        position: static !important;
+        left: auto !important;
+        right: auto !important;
+        top: auto !important;
+        bottom: auto !important;
+    }
+    
+    .stat-card .stat-value {
+        display: block !important;
+        text-align: center !important;
+        font-size: 1.2rem !important;
+        font-weight: bold !important;
+        line-height: 1.2 !important;
+        margin: 0.2rem 0 !important;
+        width: 100% !important;
+    }
+    
+    .stat-card .stat-label {
+        display: block !important;
+        text-align: center !important;
+        font-size: 0.7rem !important;
+        font-weight: 500 !important;
+        width: 100% !important;
+    }
+    
+    .stat-card small {
+        display: none !important;
+    }
+    
+    /* Badge styling for mobile */
+    .stat-card .badge {
+        display: inline-block !important;
+        font-size: 0.5rem !important;
+        padding: 0.2rem 0.4rem !important;
+        margin-top: 0.2rem !important;
+        text-align: center !important;
+    }
+}
+
+/* ===== DESKTOP: HORIZONTAL LAYOUT ===== */
+@media (min-width: 992px) {
+    .stat-card {
+        align-items: flex-start !important;
+        text-align: left !important;
+        padding: 1rem !important;
+        aspect-ratio: auto !important;
+        min-height: 120px !important;
+        max-height: 130px !important;
+        display: flex !important;
+        flex-direction: row !important;
+        justify-content: flex-start !important;
+    }
+    
+    .stat-card i,
+    .stat-card .stat-icon {
+        align-self: flex-start !important;
+        margin: 0 0.75rem 0 0 !important;
+        font-size: 1.6rem !important;
+        display: inline-block !important;
+        text-align: left !important;
+    }
+    
+    .stat-card .stat-content {
+        display: flex !important;
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        text-align: left !important;
+        flex: 1 !important;
+    }
+    
+    .stat-card .stat-value {
+        align-self: flex-start !important;
+        margin: 0 0 0.05rem 0 !important;
+        font-size: 1.4rem !important;
+        line-height: 1.2 !important;
+        text-align: left !important;
+    }
+    
+    .stat-card .stat-label {
+        align-self: flex-start !important;
+        margin-top: 0.1rem !important;
+        font-size: 0.75rem !important;
+        font-weight: 500 !important;
+        text-align: left !important;
+    }
+    
+    .stat-card small {
+        align-self: flex-start !important;
+        margin-top: 0.2rem !important;
+        display: block !important;
+        font-size: 0.65rem !important;
+        opacity: 0.9 !important;
+        text-align: left !important;
+    }
+}
+
+/* ===== TABLET (768px - 991px) ===== */
+@media (min-width: 768px) and (max-width: 991px) {
+    .stat-card i,
+    .stat-card .stat-icon {
+        font-size: 1.4rem !important;
+        margin-bottom: 0.25rem !important;
+    }
+    
+    .stat-card .stat-value {
+        font-size: 1rem !important;
+    }
+    
+    .stat-card .stat-label {
+        font-size: 0.6rem !important;
+    }
+}
+
+/* ===== EXTRA SMALL MOBILE (below 400px) ===== */
+@media (max-width: 399px) {
+    .stat-card {
+        padding: 0.3rem !important;
+    }
+    
+    .stat-card i,
+    .stat-card .stat-icon {
+        font-size: 1.2rem !important;
+        margin-bottom: 0.2rem !important;
+    }
+    
+    .stat-card .stat-value {
+        font-size: 0.9rem !important;
+    }
+    
+    .stat-card .stat-label {
+        font-size: 0.55rem !important;
+    }
+}
+
+/* ===== LANDSCAPE MODE ===== */
+@media (max-height: 500px) and (orientation: landscape) {
+    .stat-card {
+        aspect-ratio: auto !important;
+        min-height: 55px !important;
+        max-height: 70px !important;
+        padding: 0.3rem !important;
+        flex-direction: row !important;
+        align-items: center !important;
+    }
+    
+    .stat-card i,
+    .stat-card .stat-icon {
+        font-size: 1rem !important;
+        margin: 0 0.5rem 0 0 !important;
+    }
+    
+    .stat-card .stat-value {
+        font-size: 0.75rem !important;
+    }
+    
+    .stat-card .stat-label {
+        font-size: 0.5rem !important;
+    }
+    
+    .stat-card small {
+        display: none !important;
+    }
+}
+
+/* Row styling for stat cards */
+.stat-card-row {
+    margin-bottom: 1.5rem;
+}
+
+/* Hover effect for stat cards */
+.stat-card:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 6px 15px rgba(0, 0, 0, 0.15) !important;
+}
+/* ===== IMPROVED MOBILE TEXT RESPONSIVENESS ===== */
+@media (max-width: 991px) {
+    .stat-card {
+        aspect-ratio: 1 / 1 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        align-items: center !important;
+        text-align: center !important;
+        padding: 0.5rem !important;
+    }
+    
+    /* Force icon to be centered */
+    .stat-card i,
+    .stat-card .stat-icon {
+        display: block !important;
+        text-align: center !important;
+        margin: 0 auto 0.3rem auto !important;
+        font-size: 1.6rem !important;
+        width: auto !important;
+        float: none !important;
+        position: static !important;
+        left: auto !important;
+        right: auto !important;
+        top: auto !important;
+        bottom: auto !important;
+    }
+    
+    .stat-card .stat-value {
+        display: block !important;
+        text-align: center !important;
+        font-size: 1rem !important; /* Reduced from 1.2rem */
+        font-weight: bold !important;
+        line-height: 1.2 !important;
+        margin: 0.2rem 0 !important;
+        width: 100% !important;
+        word-break: break-word !important; /* Para mag-break ang mahabang numbers */
+        overflow-wrap: break-word !important;
+    }
+    
+    .stat-card .stat-label {
+        display: block !important;
+        text-align: center !important;
+        font-size: 0.65rem !important; /* Reduced from 0.7rem */
+        font-weight: 500 !important;
+        width: 100% !important;
+        word-break: break-word !important;
+        white-space: normal !important; /* Para mag-wrap ang text */
+        line-height: 1.3 !important;
+    }
+    
+    /* Hide the branch name on mobile to save space */
+    .stat-card small {
+        display: none !important;
+    }
+}
+
+/* For extra small devices (phones below 576px) */
+@media (max-width: 576px) {
+    .stat-card {
+        padding: 0.3rem !important;
+    }
+    
+    .stat-card i,
+    .stat-card .stat-icon {
+        font-size: 1.3rem !important;
+        margin-bottom: 0.2rem !important;
+    }
+    
+    .stat-card .stat-value {
+        font-size: 0.85rem !important; /* Smaller font for very small screens */
+    }
+    
+    .stat-card .stat-label {
+        font-size: 0.55rem !important;
+    }
+}
+
+/* For very small devices (below 400px) */
+@media (max-width: 399px) {
+    .stat-card {
+        padding: 0.25rem !important;
+    }
+    
+    .stat-card i,
+    .stat-card .stat-icon {
+        font-size: 1.1rem !important;
+        margin-bottom: 0.15rem !important;
+    }
+    
+    .stat-card .stat-value {
+        font-size: 0.75rem !important;
+    }
+    
+    .stat-card .stat-label {
+        font-size: 0.5rem !important;
+    }
+}
+
+/* Para sa 2-line text sa label (e.g., "Total Orders" -> pwedeng mag-break) */
+.stat-card .stat-label {
+    display: -webkit-box !important;
+    -webkit-line-clamp: 2 !important;
+    -webkit-box-orient: vertical !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+}
+
+        .card-box {
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .05);
+    border: 1px solid #edf2f7;
+    overflow: hidden;
+}
+.invoice-pill {
+    display: inline-block;
+    background: #ecfdf5;
+    color: #047857;
+    border: 1px solid #047857;
+    border-radius: 999px;
+    padding: .25rem .6rem;
+    font-family:monospace;
+    font-weight: 600;
+    font-size: .76rem;
+}
+
+.btn-collect {
+    background: linear-gradient(135deg, #047857, #44D34E);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: .45rem .95rem;
+    font-weight: 700;
+    font-size: .78rem;
+}
+
+.btn-collect:hover {
+    color: #fff;
+    opacity: .95;
+}
+
+.btn-return-invoice {
+    background: #052A47;
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: .45rem .95rem;
+    font-weight: 700;
+    font-size: .78rem;
+}
+
+.btn-return-invoice:hover {
+    color: #fff;
+    opacity: .95;
+}
+
+.action-buttons {
+    display: flex;
+    align-items: center;
+    gap: .35rem;
+    flex-wrap: nowrap;
+    white-space: nowrap;
+}
+
+.action-buttons .btn-collect,
+.action-buttons .btn-return-invoice {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 92px;
+}
+
+.btn-remit-all {
+    background: linear-gradient(135deg, #047857, #44D34E);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: .6rem 1.5rem;
+    font-weight: 700;
+    font-size: .85rem;
+}
+
+.btn-remit-all:hover {
+    color: #fff;
+    opacity: .95;
+}
+
+.btn-delete {
+    background: #dc2626;
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: .25rem .7rem;
+    font-size: .7rem;
+}
+
+.btn-delete:hover {
+    background: #b91c1c;
+}
+
+.badge-collected {
+    background: #fff7ed;
+    color: #c2410c;
+    border: 1px solid #fed7aa;
+}
+
+.badge-soft-danger {
+    background: #fef2f2;
+    color: #dc2626;
+    border: 1px solid #fecaca;
+}
+
+.badge-soft-warning {
+    background: #fff7ed;
+    color: #c2410c;
+    border: 1px solid #fed7aa;
+}
+
+.badge-soft-success {
+    background: #ecfdf5;
+    color: #047857;
+    border: 1px solid #a7f3d0;
+}
+
+.payment-method-option {
+    cursor: pointer;
+    padding: 12px;
+    border: 2px solid #e9ecef;
+    border-radius: 12px;
+    text-align: center;
+    height: 100%;
+}
+
+.payment-method-option.active,
+.payment-method-option:hover {
+    border-color: #047857;
+    background: #e8f5e9;
+}
+
+.payment-method-option i {
+    font-size: 1.5rem;
+    display: block;
+    margin-bottom: .4rem;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 3rem 1rem;
+    color: #64748b;
+}
+
+.empty-state i {
+    font-size: 2.5rem;
+    color: #cbd5e1;
+}
+
+.collected-header {
+    background: #f8fafc;
+    border-bottom: 2px solid rgb(214, 214, 214);
+}
+
+.collected-card {
+    background: #fff8e1;
+    transition: all 0.2s;
+}
+
+.collected-card:hover {
+    background: #fffbeb;
+}
+
+.clickable-assigned-row {
+    cursor: pointer;
+}
+
+.clickable-assigned-row:hover {
+    background: #f8fafc;
+}
+
+.ticket-detail-card {
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    padding: 14px;
+    margin-bottom: 12px;
+}
+
+.ticket-detail-label {
+    font-size: .72rem;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+    color: #64748b;
+    font-weight: 800;
+    margin-bottom: 4px;
+}
+
+.ticket-detail-value {
+    font-size: .95rem;
+    color: #0f172a;
+    font-weight: 700;
+}
+
+.ticket-rejection-box {
+    background: #fff1f2;
+    border: 1px solid #fecdd3;
+    color: #9f1239;
+    border-radius: 14px;
+    padding: 14px;
+    white-space: pre-wrap;
+}
+
+@media (max-width: 992px) {
+    .sidebar {
+        transform: translateX(-100%);
+    }
+    .sidebar.active {
+        transform: translateX(0);
+    }
+    .main-content {
+        margin-left: 0;
+        padding: 14px;
+    }
+    .mobile-toggle-btn {
+        display: block;
+    }
+}
+
+@media (max-width: 768px) {
+    .table {
+        min-width: 880px;
+    }
+    .stat-card {
+        aspect-ratio: 1/1;
+        min-height: auto;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: .55rem;
+    }
+    .stat-value {
+        font-size: 1rem;
+    }
+    .stat-label {
+        font-size: .62rem;
+    }
+    .btn-remit-all {
+        width: 100%;
+        margin-bottom: 10px;
+    }
+}
+
+.mobile-nav {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: #fff;
+    box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.1);
+    padding: 8px 12px;
+    z-index: 1000;
+    display: none;
+}
+
+.mobile-nav .nav {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.mobile-nav .nav-item {
+    flex: 1;
+    text-align: center;
+}
+
+.mobile-nav .nav-link {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 6px 4px;
+    color: #6c757d;
+    text-decoration: none;
+    font-size: 0.72rem;
+}
+
+.mobile-nav .nav-link i {
+    font-size: 1.25rem;
+    margin-bottom: 4px;
+}
+
+.mobile-nav .nav-link.active {
+    color: #047857;
+}
+
+.dropdown-more {
+    position: relative;
+}
+
+.more-dropdown {
+    position: absolute;
+    bottom: 100%;
+    right: 0;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    min-width: 190px;
+    display: none;
+    margin-bottom: 8px;
+    z-index: 1100;
+}
+
+.more-dropdown.show {
+    display: block;
+}
+
+.more-dropdown .dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    color: #333;
+    text-decoration: none;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 0.85rem;
+}
+
+.more-dropdown .dropdown-item:last-child {
+    border-bottom: none;
+}
+
+.more-dropdown .dropdown-item:hover {
+    background: #f5f5f5;
+}
+
+@media (max-width: 992px) {
+    .mobile-nav {
+        display: block;
+    }
+    body {
+        padding-bottom: 76px;
+    }
+}
+/* ===== ASSIGNED COLLECTIONS CARDS (katulad ng customer.php) ===== */
+.assigned-cards-container {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+}
+
+/* Desktop: 2-3 columns */
+@media (min-width: 992px) {
+    .assigned-cards-container {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1rem;
+    }
+}
+
+@media (min-width: 1200px) {
+    .assigned-cards-container {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+/* Tablet: 2 columns */
+@media (min-width: 768px) and (max-width: 991px) {
+    .assigned-cards-container {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.875rem;
+    }
+}
+
+.collected-header {
+    background: #f8fafc !important;
+    border-bottom: 2px solid #e5e7eb !important;
+    padding: 0.75rem 1rem !important;
+}
+
+.collected-header h6 {
+    color: #1f2937 !important;
+    font-size: 1rem !important;
+    font-weight: 600 !important;
+    margin-bottom: 0 !important;
+}
+
+.collected-header h6 i {
+    color: #047857 !important;
+    font-size: 1rem !important;
+}
+
+.collected-header .text-muted {
+    color: #6b7280 !important;
+    font-size: 0.75rem !important;
+}
+
+.card-header {
+    background: #048964 !important;
+    color: white !important;
+    border-bottom: none !important;
+    padding: 1rem 1.25rem !important;
+    border-radius: 12px 12px 0 0 !important;
+    border: none !important;
+}
+
+.card-header h5 {
+    color: white !important;
+    font-weight: 600 !important;
+    margin: 0 !important;
+    display: flex;
+    align-items: center;
+}
+
+.card-header i {
+    color: white !important;
+    margin-right: 8px;
+}
+
+/* Collection Card styling */
+.collection-card {
+    background: white;
+    border-radius: 12px;
+    padding: 0.875rem 1rem;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    transition: all 0.2s ease;
+    border: 1px solid #e5e7eb;
+    cursor: pointer;
+}
+
+.collection-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    transform: translateY(-1px);
+}
+
+/* Card top row */
+.card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.invoice-code {
+    font-size: 0.7rem;
+    font-weight: 800;
+    color: #059669;
+    font-family: monospace;
+    background: #ecfdf5;
+    padding: 0.2rem 0.5rem;
+    border-radius: 9px;
+    letter-spacing: 0.3px;
+    border: 1px solid #059669;
+}
+
+.status-badge {
+    padding: 0.2rem 0.5rem;
+    border-radius: 20px;
+    font-size: 0.65rem;
+    font-weight: 600;
+}
+
+.status-pending {
+    background: #fed7aa;
+    color: #92400e;
+}
+
+.status-overdue {
+    background: #fee2e2;
+    color: #991b1b;
+}
+
+.status-due-today {
+    background: #d1fae5;
+    color: #065f46;
+}
+
+/* Customer name */
+.customer-name {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #1f2937;
+    margin-bottom: 0.5rem;
+}
+
+.customer-phone {
+    display: block;
+    font-size: 0.7rem;
+    font-weight: normal;
+    color: #6c757d;
+    margin-top: 0.2rem;
+}
+
+/* Invoice details */
+.invoice-details {
+    display: flex;
+    gap: 1rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.7rem;
+}
+
+.detail-item {
+    display: flex;
+    flex-direction: column;
+}
+
+.detail-label {
+    color: #9ca3af;
+    font-size: 0.6rem;
+    text-transform: uppercase;
+}
+
+.detail-value {
+    font-weight: 500;
+    color: #4b5563;
+}
+
+/* Amount section */
+.amount-section {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+    padding: 0.5rem 0;
+    border-top: 1px solid #f0f0f0;
+    border-bottom: 1px solid #f0f0f0;
+}
+
+.amount-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.amount-label {
+    font-size: 0.6rem;
+    color: #9ca3af;
+    text-transform: uppercase;
+}
+
+.amount-value {
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+/* Card action buttons */
+.card-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+}
+
+.btn-collect-card {
+    background: linear-gradient(135deg, #047857, #44D34E);
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: 0.3rem 0.8rem;
+    font-weight: 600;
+    font-size: 0.7rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-collect-card:hover {
+    opacity: 0.95;
+    transform: translateY(-1px);
+}
+
+.btn-return-card {
+    background: #052A47;
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: 0.3rem 0.8rem;
+    font-weight: 600;
+    font-size: 0.7rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-return-card:hover {
+    opacity: 0.95;
+    transform: translateY(-1px);
+}
+
+/* Mobile adjustments */
+@media (max-width: 576px) {
+    .collection-card {
+        padding: 0.75rem;
+    }
+    
+    .amount-section {
+        flex-direction: row !important;
+        justify-content: space-between !important;
+        align-items: center !important;
+        gap: 0 !important;
+    }
+
+    .amount-item {
+        flex: 1 !important;
+        flex-direction: column !important;
+        align-items: center !important;
+        text-align: center !important;
+        min-width: 0 !important;
+    }
+
+    .amount-label {
+        font-size: 0.55rem !important;
+        white-space: nowrap !important;
+    }
+
+    .amount-value {
+        font-size: 0.72rem !important;
+        white-space: nowrap !important;
+    }
+    
+    .card-actions {
+        margin-top: 0.5rem;
+        padding-top: 0.5rem;
+        border-top: 1px solid #f0f0f0;
+    }
+    
+    .btn-collect-card, .btn-return-card {
+        flex: 1;
+        text-align: center;
+        padding: 0.4rem;
+    }
+}
+
+/* Empty state */
+.empty-state {
+    text-align: center;
+    padding: 2rem;
+    color: #6b7280;
+    grid-column: 1 / -1;
+}
+
+.empty-state i {
+    font-size: 2.5rem;
+    margin-bottom: 0.75rem;
+    display: block;
+}
 
 
-/* Simple black & white print report area */
+
+/* ===== DRIVER COLLECTIONS CARD FORMAT FIX - MATCH SALES COLLECTIONS ===== */
+.assigned-cards-container {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 0.75rem !important;
+    padding: 0.5rem 0 !important;
+}
+@media (min-width: 992px) {
+    .assigned-cards-container { grid-template-columns: repeat(2, 1fr) !important; gap: 1rem !important; }
+}
+@media (min-width: 1200px) {
+    .assigned-cards-container { grid-template-columns: repeat(3, 1fr) !important; }
+}
+@media (min-width: 768px) and (max-width: 991px) {
+    .assigned-cards-container { grid-template-columns: repeat(2, 1fr) !important; gap: 0.875rem !important; }
+}
+.collection-card {
+    background: #fff !important;
+    border-radius: 12px !important;
+    padding: 0.875rem 1rem !important;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08) !important;
+    border: 1px solid #e5e7eb !important;
+    transition: all .2s ease !important;
+    cursor: pointer !important;
+}
+.collection-card:hover {
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
+    transform: translateY(-1px) !important;
+}
+.collection-card .card-top {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    margin-bottom: .5rem !important;
+}
+.collection-card .invoice-code {
+    font-size: .7rem !important;
+    font-weight: 800 !important;
+    color: #059669 !important;
+    font-family: monospace !important;
+    background: #ecfdf5 !important;
+    padding: .2rem .5rem !important;
+    border-radius: 9px !important;
+    letter-spacing: .3px !important;
+}
+.collection-card .customer-name {
+    font-size: 1rem !important;
+    font-weight: 700 !important;
+    color: #1f2937 !important;
+    margin-bottom: .5rem !important;
+}
+.collection-card .customer-phone {
+    display: block !important;
+    font-size: .7rem !important;
+    font-weight: normal !important;
+    color: #6c757d !important;
+    margin-top: .2rem !important;
+}
+.collection-card .invoice-details {
+    display: flex !important;
+    gap: 1rem !important;
+    margin-bottom: .75rem !important;
+    font-size: .7rem !important;
+}
+.collection-card .detail-item {
+    display: flex !important;
+    flex-direction: column !important;
+    background: transparent !important;
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    min-height: 0 !important;
+    flex: unset !important;
+    align-items: flex-start !important;
+}
+.collection-card .detail-label {
+    color: #9ca3af !important;
+    font-size: .6rem !important;
+    text-transform: uppercase !important;
+    font-weight: 700 !important;
+    letter-spacing: 0 !important;
+    margin: 0 !important;
+}
+.collection-card .detail-value {
+    font-weight: 500 !important;
+    color: #4b5563 !important;
+    font-size: inherit !important;
+    background: transparent !important;
+    border-left: none !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+}
+.collection-card .amount-section {
+    display: flex !important;
+    justify-content: space-between !important;
+    margin-bottom: .75rem !important;
+    padding: .5rem 0 !important;
+    border-top: 1px solid #f0f0f0 !important;
+    border-bottom: 1px solid #f0f0f0 !important;
+    gap: 0 !important;
+}
+.collection-card .amount-item {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    background: transparent !important;
+    border: none !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+}
+.collection-card .amount-label {
+    font-size: .6rem !important;
+    color: #9ca3af !important;
+    text-transform: uppercase !important;
+}
+.collection-card .amount-value {
+    font-size: .8rem !important;
+    font-weight: 600 !important;
+}
+.collection-card .card-actions {
+    display: flex !important;
+    gap: .5rem !important;
+    justify-content: flex-end !important;
+    border: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+}
+
+.collected-cards-container {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.5rem;
+    max-height: 380px;
+    overflow-y: auto;
+    padding: 0.2rem;
+}
+
+/* Desktop: 2 columns */
+@media (min-width: 768px) {
+    .collected-cards-container {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+/* Desktop large: 3 columns */
+@media (min-width: 1200px) {
+    .collected-cards-container {
+        grid-template-columns: repeat(3, 1fr);
+    }
+}
+
+/* Scrollbar */
+.collected-cards-container::-webkit-scrollbar {
+    width: 4px;
+}
+
+.collected-cards-container::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+.collected-cards-container::-webkit-scrollbar-thumb {
+    background: #047857;
+    border-radius: 3px;
+}
+
+.collected-record-card .collected-value {
+    font-size: 0.65rem;
+    color: #1f2937;
+    font-weight: 500;
+    text-align: right;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    margin: 0;
+}
+
+.collected-record-card .collected-amount {
+    color: #047857;
+    font-weight: 700;
+    font-size: 0.7rem;
+}
+
+/* Collected Record Card - EXTRA COMPACT */
+.collected-record-card {
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 0.35rem;
+    transition: all 0.2s ease;
+    display: flex;
+    flex-direction: column;
+}
+
+.collected-record-card:hover {
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+    transform: translateY(-1px);
+    border-color: #d1fae5;
+}
+
+/* Card Header - EXTRA COMPACT */
+.collected-record-card .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.3rem;
+    padding-bottom: 0.2rem;
+    border-bottom: 1px solid #e5e7eb;
+    background: transparent;
+}
+
+.collected-record-card .invoice-info {
+    display: flex;
+    gap: 0.3rem;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.collected-record-card .invoice-pill {
+    background: #ecfdf5;
+    color: #047857;
+    border: 1px solid #047857;
+    padding: 0.1rem 0.4rem;
+    border-radius: 999px;
+    font-size: 0.6rem;
+    font-weight: 600;
+    font-family: monospace;
+}
+
+/* Payment Badges - EXTRA COMPACT */
+.collected-record-card .payment-badge {
+    padding: 0.1rem 0.4rem;
+    border-radius: 999px;
+    font-size: 0.55rem;
+    font-weight: 600;
+    display: inline-block;
+}
+
+.collected-record-card .payment-cash {
+    background: #d1fae5 !important;
+    color: #065f46 !important;
+    border: 1px solid #a7f3d0 !important;
+}
+
+.collected-record-card .payment-check {
+    background: #e0e7ff !important;
+    color: #3730a3 !important;
+    border: 1px solid #c7d2fe !important;
+}
+
+.collected-record-card .payment-online_transfer {
+    background: #fce7f3 !important;
+    color: #be185d !important;
+    border: 1px solid #fbcfe8 !important;
+}
+
+/* Card Body */
+.collected-record-card .card-body {
+    margin-top: 0;
+    padding: 0;
+    flex: 1;
+}
+
+/* Customer Info - EXTRA COMPACT */
+.collected-record-card .customer-info {
+    margin-bottom: 0.3rem;
+}
+
+.collected-record-card .customer-name {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #1f2937;
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.collected-record-card .customer-name i {
+    color: #047857;
+    font-size: 0.7rem;
+}
+
+/* Collection Details - EXTRA COMPACT */
+.collected-record-card .collection-details {
+    background: #f8fafc;
+    border-radius: 6px;
+    padding: 0.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.collected-record-card .detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+
+.collected-record-card .detail-label {
+    font-size: 0.5rem;
+    text-transform: uppercase;
+    color: #6b7280;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    margin: 0;
+    padding: 0;
+}
+
+.collected-record-card .detail-value {
+    font-size: 0.65rem;
+    color: #1f2937;
+    font-weight: 500;
+    text-align: right;
+    margin: 0;
+    padding: 0;
+}
+
+.collected-record-card .detail-value.amount {
+    font-weight: 700;
+    color: #047857;
+    font-size: 0.7rem;
+}
+
+/* Remove divider lines to save height */
+.collected-record-card .detail-row:not(:last-child) {
+    padding-bottom: 0.1rem;
+    border-bottom: none;
+}
+
+/* Card Footer - EXTRA COMPACT */
+.collected-record-card .card-footer {
+    margin-top: 0.3rem;
+    padding-top: 0.2rem;
+    border-top: 1px solid #e5e7eb;
+    display: flex;
+    justify-content: flex-end;
+    background: white;
+}
+
+/* Delete Button - EXTRA COMPACT */
+.collected-record-card .btn-delete-card {
+    background: transparent;
+    border: 1px solid #fecaca;
+    border-radius: 5px;
+    padding: 0.15rem 0.5rem;
+    font-size: 0.6rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    color: #dc2626;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    width: auto;
+    min-width: 55px;
+}
+
+.collected-record-card .btn-delete-card:hover {
+    background: #dc2626;
+    border-color: #dc2626;
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(220, 38, 38, 0.3);
+}
+
+.collected-record-card .btn-delete-card:hover i {
+    color: white;
+}
+
+.collected-record-card .btn-delete-card i {
+    font-size: 0.6rem;
+    color: #dc2626;
+    transition: color 0.2s ease;
+}
+
+/* Mobile Responsive - Cards only */
+@media (max-width: 576px) {
+    .collected-cards-container {
+        max-height: 350px;
+        gap: 0.4rem;
+        padding: 0.2rem;
+    }
+    
+    .collected-record-card {
+        padding: 0.3rem;
+    }
+    
+    .collected-record-card .customer-name {
+        font-size: 0.7rem;
+    }
+    
+    .collected-record-card .detail-label {
+        font-size: 0.45rem;
+    }
+    
+    .collected-record-card .detail-value {
+        font-size: 0.6rem;
+    }
+    
+    .collected-record-card .detail-value.amount {
+        font-size: 0.65rem;
+    }
+    
+    .collected-record-card .card-footer {
+        margin-top: 0.25rem;
+        padding-top: 0.15rem;
+    }
+    
+    .collected-record-card .btn-delete-card {
+        min-width: 50px;
+        padding: 0.12rem 0.4rem;
+        font-size: 0.55rem;
+    }
+    
+    .collected-record-card .btn-delete-card i {
+        font-size: 0.55rem;
+    }
+}
+
+/* Extra small devices (below 400px) - Cards only */
+@media (max-width: 400px) {
+    .collected-record-card .btn-delete-card {
+        min-width: 45px;
+        padding: 0.1rem 0.35rem;
+        font-size: 0.5rem;
+    }
+    
+    .collected-record-card .btn-delete-card i {
+        font-size: 0.5rem;
+    }
+}
+
+/* Empty state */
+.collected-cards-container:empty::before {
+    content: "No collected records to display";
+    display: block;
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 2rem;
+    color: #6b7280;
+}
+
+.btn-print-report {
+    background: #047857;
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    padding: .6rem 1.25rem;
+    font-size: .85rem;
+    box-shadow: 0 3px 8px rgba(4, 120, 87, .18);
+    white-space: nowrap;
+}
+
+.btn-print-report:hover {
+    color: #fff;
+    opacity: .95;
+}
+
+/* Simple in-page print report area */
 .print-only-area{display:none;}
 @media print{
     body *{visibility:hidden!important;}
@@ -951,36 +2357,65 @@ foreach ($collected_records as $cr) {
     .plain-report-meta td{padding:3px 4px;border:none;}
     .plain-report-summary{font-size:12px;margin:8px 0 10px 0;color:#000;}
     .plain-report-table{width:100%;border-collapse:collapse;font-size:11px;color:#000;}
-    .plain-report-table th,.plain-report-table td{border:1px solid #000;padding:6px 7px;text-align:left;vertical-align:top;background:#fff!important;color:#000!important;}
-    .plain-report-table th{font-weight:700;}
+    .plain-report-table th,.plain-report-table td{border:1px solid #000;padding:6px 7px;text-align:left;vertical-align:top;}
+    .plain-report-table th{background:#fff!important;color:#000!important;font-weight:700;}
     .plain-report-table tfoot th{font-weight:700;}
     @page{size:auto;margin:16mm;}
 }
-        @media(max-width:992px){
-            .sidebar{transform:translateX(-100%)}
-            .sidebar.active{transform:translateX(0)}
-            .main-content{margin-left:0;padding:14px}
-            .mobile-toggle-btn{display:block}
-        }
-        @media(max-width:768px){
-            .table{min-width:880px}
-            .stat-card{aspect-ratio:1/1;min-height:auto;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:.55rem}
-            .stat-value{font-size:1rem}.stat-label{font-size:.62rem}
-            .btn-remit-all{width:100%;margin-bottom:10px}
-        }
-        .mobile-nav{position:fixed;bottom:0;left:0;right:0;background:#fff;box-shadow:0 -2px 10px rgba(0,0,0,0.1);padding:8px 12px;z-index:1000;display:none}
-        .mobile-nav .nav{display:flex;justify-content:space-around;align-items:center;margin:0;padding:0;list-style:none}
-        .mobile-nav .nav-item{flex:1;text-align:center}
-        .mobile-nav .nav-link{display:flex;flex-direction:column;align-items:center;padding:6px 4px;color:#6c757d;text-decoration:none;font-size:0.72rem}
-        .mobile-nav .nav-link i{font-size:1.25rem;margin-bottom:4px}
-        .mobile-nav .nav-link.active{color:#047857}
-        .dropdown-more{position:relative}
-        .more-dropdown{position:absolute;bottom:100%;right:0;background:white;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,0.15);min-width:190px;display:none;margin-bottom:8px;z-index:1100}
-        .more-dropdown.show{display:block}
-        .more-dropdown .dropdown-item{display:flex;align-items:center;gap:12px;padding:12px 16px;color:#333;text-decoration:none;border-bottom:1px solid #f0f0f0;font-size:0.85rem}
-        .more-dropdown .dropdown-item:last-child{border-bottom:none}
-        .more-dropdown .dropdown-item:hover{background:#f5f5f5}
-        @media(max-width:992px){.mobile-nav{display:block}body{padding-bottom:76px}}
+.custom-alert-success {
+    background: rgba(16, 185, 129, 0.15) !important;
+    border: 1px solid rgba(16, 185, 129, 0.35);
+    border-radius: 8px;
+    padding: 0.65rem 1rem;
+    margin: 0.75rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    box-shadow: none;
+}
+
+.custom-alert-success .alert-icon-wrapper i {
+    font-size: 0.95rem;
+    color: #047857;
+}
+
+.custom-alert-success .alert-message {
+    flex: 1;
+    min-width: 0;
+}
+
+.custom-alert-success .alert-text {
+    font-size: 0.82rem;
+    color: #047857 !important;
+    line-height: 1.3;
+    margin: 0;
+}
+
+.custom-alert-success .alert-text strong {
+    color: #047857;
+    font-weight: 800;
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    font-size: 0.82rem;
+}
+
+.custom-alert-success .alert-remit-hint {
+    display: none;
+}
+
+@media (max-width: 768px) {
+    .custom-alert-success {
+        padding: 0.6rem 0.85rem;
+        margin: 0.6rem 0.5rem;
+        gap: 0.55rem;
+        border-radius: 8px;
+    }
+
+    .custom-alert-success .alert-text {
+        font-size: 0.78rem;
+    }
+}
     </style>
 </head>
 <body>
@@ -1032,7 +2467,6 @@ foreach ($collected_records as $cr) {
                     </li>
                 </ul>
             </div>
-            <hr class="sidebar-divider">
             <div class="sidebar-footer">
                 <div class="user-profile-sidebar">
                     <div class="user-avatar-sidebar"><?php echo $user_initials; ?></div>
@@ -1052,7 +2486,7 @@ foreach ($collected_records as $cr) {
         <div class="navbar-top">
             <button class="mobile-toggle-btn" id="mobileToggleBtn"><i class="bi bi-list"></i></button>
             <div class="page-title flex-grow-1">
-                <h2><i class="bi bi-cash-stack me-2"></i>Driver Collections</h2>
+                <h2>Driver Collections</h2>
                 <p>Record customer collections assigned to you, then remit them for Branch Admin approval</p>
             </div>
             <button type="button" class="btn-print-report" onclick="openMyCollectionReportPrintModal()">
@@ -1061,61 +2495,119 @@ foreach ($collected_records as $cr) {
         </div>
 
         <!-- Stats Cards -->
-        <div class="row g-2 mb-4">
-            <div class="col"><div class="stat-card"><i class="bi bi-clipboard-check stat-icon"></i><div><div class="stat-value"><?php echo count($rows); ?></div><div class="stat-label">Assigned</div></div></div></div>
-            <div class="col"><div class="stat-card"><i class="bi bi-wallet2 stat-icon"></i><div><div class="stat-value"><?php echo money($total_due); ?></div><div class="stat-label">To Collect</div></div></div></div>
-            <div class="col"><div class="stat-card"><i class="bi bi-exclamation-circle stat-icon"></i><div><div class="stat-value"><?php echo $overdue_count; ?></div><div class="stat-label">Overdue</div></div></div></div>
-            <div class="col"><div class="stat-card"><i class="bi bi-send-check stat-icon"></i><div><div class="stat-value"><?php echo money($pending_remit_total); ?></div><div class="stat-label">Pending Remit</div></div></div></div>
+<div class="row stat-card-row g-2 mb-4 no-print">
+    <div class="col">
+        <div class="stat-card assigned">
+            <i class="bi bi-clipboard-check stat-icon"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo count($rows); ?></div>
+                <div class="stat-label">Assigned</div>
+            </div>
         </div>
+    </div>
+    <div class="col">
+        <div class="stat-card tocollect">
+            <i class="bi bi-wallet2 stat-icon"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo money($total_due); ?></div>
+                <div class="stat-label">To Collect</div>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="stat-card overdue">
+            <i class="bi bi-exclamation-circle stat-icon"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo $overdue_count; ?></div>
+                <div class="stat-label">Overdue</div>
+            </div>
+        </div>
+    </div>
+    <div class="col">
+        <div class="stat-card pending-remit">
+            <i class="bi bi-send-check stat-icon"></i>
+            <div class="stat-content">
+                <div class="stat-value"><?php echo money($pending_remit_total); ?></div>
+                <div class="stat-label">Pending Remit</div>
+            </div>
+        </div>
+    </div>
+</div>
 
-        <!-- Collected Records Section (Need to Remit) - WITH REMIT ALL BUTTON -->
-        <?php if (!empty($collected_records)): ?>
-        <div class="card-box mb-4">
-            <div class="collected-header p-3 d-flex justify-content-between align-items-center flex-wrap">
-                <div>
-                    <h6 class="mb-0"><i class="bi bi-clock-history me-2 text-warning"></i>Collected - Ready to Remit</h6>
-                    <small class="text-muted"><?php echo count($collected_records); ?> record(s) | Total: <?php echo money($pending_remit_total); ?></small>
+        <!-- Collected Records Section (Need to Remit) - CARD DESIGN -->
+<?php if (!empty($collected_records)): ?>
+<div class="card-box mb-4">
+    <div class="collected-header p-3 d-flex justify-content-between align-items-center flex-wrap">
+        <div>
+            <h6 class="mb-0"><i class="bi bi-clock-history me-2 remit-icon"></i>Collected - Ready to Remit</h6>
+            <small class="text-muted"><?php echo count($collected_records); ?> record(s) | Total: <?php echo money($pending_remit_total); ?></small>
+        </div>
+        <button class="btn-remit-all mt-2 mt-sm-0" id="remitAllBtn" onclick="remitAllCollections()">
+            <i class="bi bi-send me-2"></i>REMIT ALL (<?php echo count($collected_records); ?>)
+        </button>
+    </div>
+    
+    <!-- Collected Records Cards Container -->
+    <div class="collected-cards-container p-3">
+        <?php foreach ($collected_records as $cr): ?>
+        <div class="collected-record-card" data-record-id="<?php echo $cr['record_id']; ?>">
+            <div class="card-header d-flex justify-content-between align-items-start">
+                <div class="invoice-info">
+                    <span class="invoice-pill"><?php echo esc($cr['invoice_number']); ?></span>
                 </div>
-                <button class="btn-remit-all mt-2 mt-sm-0" id="remitAllBtn" onclick="remitAllCollections()">
-                    <i class="bi bi-send me-2"></i>REMIT ALL (<?php echo count($collected_records); ?>)
+                <!-- Payment badge nasa pwesto ng delete button -->
+                <span class="payment-badge payment-<?php echo $cr['payment_method']; ?>">
+                    <?php echo ucfirst(str_replace('_', ' ', $cr['payment_method'])); ?>
+                </span>
+            </div>
+            
+            <div class="card-body">
+                <div class="customer-info">
+                    <div class="customer-name">
+                        <i class="bi bi-person-circle"></i>
+                        <?php echo esc($cr['customer_name']); ?>
+                    </div>
+                </div>
+                
+                <div class="collection-details">
+                    <div class="detail-row">
+                        <div class="detail-label">Amount Collected</div>
+                        <div class="collected-value collected-amount"><?php echo money($cr['amount']); ?></div>
+                    </div>
+                    <div class="detail-row">
+                        <div class="detail-label">Collection Date</div>
+                        <div class="collected-value"><?php echo date('M d, Y h:i A', strtotime($cr['collection_date'])); ?></div>
+                    </div>
+                    <?php if (!empty($cr['reference_number'])): ?>
+                    <div class="detail-row">
+                        <div class="detail-label">Reference No.</div>
+                        <div class="detail-value"><?php echo esc($cr['reference_number']); ?></div>
+                    </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+            
+            <!-- Delete button sa right bottom -->
+            <div class="card-footer">
+                <button class="btn-delete-card" onclick="deleteCollectionRecord(<?php echo $cr['record_id']; ?>)">
+                    <i class="bi bi-trash"></i> Delete
                 </button>
             </div>
-            <div class="table-responsive">
-                <table class="table table-sm mb-0">
-                    <thead>
-                        <tr style="background: #fffbeb;">
-                            <th>Invoice</th>
-                            <th>Customer</th>
-                            <th>Amount</th>
-                            <th>Method</th>
-                            <th>Collected Date</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <?php foreach ($collected_records as $cr): ?>
-                        <tr>
-                            <td><span class="invoice-pill"><?php echo esc($cr['invoice_number']); ?></span></td>
-                            <td><?php echo esc($cr['customer_name']); ?></td>
-                            <td class="text-danger fw-bold"><?php echo money($cr['amount']); ?></td>
-                            <td><span class="badge bg-info"><?php echo ucfirst(str_replace('_', ' ', $cr['payment_method'])); ?></span></td>
-                            <td><?php echo date('M d, Y h:i A', strtotime($cr['collection_date'])); ?></td>
-                            <td>
-                                <button class="btn-delete" onclick="deleteCollectionRecord(<?php echo $cr['record_id']; ?>)">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            </td>
-                        </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
-            </div>
-            <div class="alert alert-warning m-3 small">
-                <i class="bi bi-info-circle me-1"></i>
-                Click <strong>REMIT ALL</strong> to submit all collected records to Branch Admin for approval.
-            </div>
         </div>
-        <?php endif; ?>
+        <?php endforeach; ?>
+    </div>
+    
+    <!-- IMPROVED RESPONSIVE ALERT - HINDI NAKA-FIT -->
+<div class="custom-alert-success">
+    <div class="alert-icon-wrapper">
+        <i class="bi bi-info-circle-fill"></i>
+    </div>
+    <div class="alert-message">
+        <span class="alert-text">Click <strong>REMIT ALL</strong> to submit all collected records to Branch Admin for approval.</span>
+    </div>
+</div>
+</div>
+<?php endif; ?>
 
         <!-- Filters -->
         <div class="card-box p-3 mb-4">
@@ -1132,92 +2624,116 @@ foreach ($collected_records as $cr) {
             </div>
         </div>
 
-        <!-- Assigned Collections Table -->
-        <div class="card-box">
-            <div class="table-responsive">
-                <table class="table align-middle mb-0">
-                    <thead>
-                        <tr>
-                            <th>Invoice</th>
-                            <th>Customer</th>
-                            <th>SO No.</th>
-                            <th>Due Date</th>
-                            <th>Original</th>
-                            <th>Paid</th>
-                            <th>To Pay</th>
-                            <th>Status</th>
-                            <th>Action</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tableBody">
-                    <?php if (count($rows) > 0): ?>
-                        <?php foreach ($rows as $row): ?>
-                            <?php
-                                $due = !empty($row['due_date']) ? date('Y-m-d', strtotime($row['due_date'])) : '';
-                                $statusKey = 'pending';
-                                $badge = 'badge-soft-warning';
-                                $statusText = 'Pending';
-                                if ($due && $due < $today) { $statusKey = 'overdue'; $badge = 'badge-soft-danger'; $statusText = 'Overdue'; }
-                                elseif ($due && $due === $today) { $statusKey = 'due_today'; $badge = 'badge-soft-success'; $statusText = 'Due Today'; }
-                                $search = strtolower(($row['invoice_number'] ?? '').' '.($row['customer_name'] ?? '').' '.($row['so_number'] ?? ''));
-                                $hasCollectedRecord = ($row['has_collected_record'] ?? 0) > 0;
-                                $hasRemittedRecord = ($row['has_remitted_record'] ?? 0) > 0;
-                                $collectedAmount = (float)($row['collected_amount'] ?? 0);
-                                $payload = [
-                                    'invoice_id' => (int)$row['invoice_id'],
-                                    'invoice_number' => $row['invoice_number'] ?? '',
-                                    'customer_name' => $row['customer_name'] ?? '',
-                                    'total_amount' => (float)$row['total_amount'],
-                                    'paid_amount' => (float)$row['paid_amount'],
-                                    'balance_amount' => (float)$row['balance_amount'],
-                                    'assigned_by_name' => $row['assigned_by_name'] ?? 'Branch Admin',
-                                    'collection_date' => $row['collection_date'] ?? '',
-                                    'rejected_return_reason' => $row['rejected_return_reason'] ?? '',
-                                    'admin_rejection_reason' => $row['admin_rejection_reason'] ?? '',
-                                    'rejected_return_date' => $row['rejected_return_date'] ?? ''
-                                ];
-                            ?>
-                            <tr class="data-row clickable-assigned-row" data-search="<?php echo esc($search); ?>" data-status="<?php echo esc($statusKey); ?>" onclick='openAssignedTicketDetails(<?php echo json_encode($payload, JSON_HEX_APOS | JSON_HEX_QUOT); ?>)'>
-                                <td><span class="invoice-pill"><?php echo esc($row['invoice_number']); ?></span></td>
-                                <td><strong><?php echo esc($row['customer_name']); ?></strong><?php if(!empty($row['phone_number'])): ?><div class="small text-muted"><?php echo esc($row['phone_number']); ?></div><?php endif; ?></td>
-                                <td><?php echo !empty($row['so_number']) ? esc($row['so_number']) : '—'; ?></td>
-                                <td><?php echo $due ? esc(date('M d, Y', strtotime($due))) : '—'; ?></td>
-                                <td><?php echo money($row['total_amount']); ?></td>
-                                <td><?php echo money($row['paid_amount']); ?></td>
-                                <td><strong class="text-danger"><?php echo money($row['balance_amount']); ?></strong></td>
-                                <td><span class="badge rounded-pill <?php echo $badge; ?>"><?php echo esc($statusText); ?></span></td>
-                                <td>
-                                    <div class="action-buttons" onclick="event.stopPropagation()">
-                                        <?php if ($hasRemittedRecord): ?>
-                                            <button class="btn-collect" disabled style="background:#94a3b8; cursor:not-allowed;" title="Remitted and waiting for Branch Admin approval">
-                                                <i class="bi bi-check-circle me-1"></i>Remitted
-                                            </button>
-                                        <?php elseif ($hasCollectedRecord): ?>
-                                            <button class="btn-collect" disabled style="background:#94a3b8; cursor:not-allowed;" title="Already collected, click REMIT ALL above">
-                                                <i class="bi bi-check-circle me-1"></i>Collected
-                                            </button>
-                                        <?php else: ?>
-                                            <button class="btn-collect" onclick='openCollectModal(<?php echo json_encode($payload, JSON_HEX_APOS | JSON_HEX_QUOT); ?>)'>
-                                                <i class="bi bi-cash me-1"></i>Collect
-                                            </button>
-                                            <button class="btn-return-invoice" onclick='openReturnInvoiceModal(<?php echo json_encode($payload, JSON_HEX_APOS | JSON_HEX_QUOT); ?>)' title="Return this invoice ticket to Branch Admin">
-                                                <i class="bi bi-arrow-return-left me-1"></i>Return
-                                            </button>
-                                        <?php endif; ?>
-                                    </div>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    <?php else: ?>
-                        <tr><td colspan="9"><div class="empty-state"><i class="bi bi-inbox"></i><h6>No assigned collections</h6><p class="mb-0">Assignments will appear here once Branch Admin assigns collections to your driver account.</p></div></td></td>
+        <!-- Assigned Collections Cards (katulad ng customer.php) -->
+<div class="assigned-cards-container" id="assignedCardsContainer">
+    <?php if (count($rows) > 0): ?>
+        <?php foreach ($rows as $row): ?>
+            <?php
+                $due = !empty($row['due_date']) ? date('Y-m-d', strtotime($row['due_date'])) : '';
+                $statusKey = 'pending';
+                $badgeClass = 'status-pending';
+                $statusText = 'Pending';
+                if ($due && $due < $today) { 
+                    $statusKey = 'overdue'; 
+                    $badgeClass = 'status-overdue'; 
+                    $statusText = 'Overdue'; 
+                } elseif ($due && $due === $today) { 
+                    $statusKey = 'due_today'; 
+                    $badgeClass = 'status-due-today'; 
+                    $statusText = 'Due Today'; 
+                }
+                $hasCollectedRecord = ($row['has_collected_record'] ?? 0) > 0;
+                $hasRemittedRecord = ($row['has_remitted_record'] ?? 0) > 0;
+                $payload = [
+                    'invoice_id' => (int)$row['invoice_id'],
+                    'invoice_number' => $row['invoice_number'] ?? '',
+                    'customer_name' => $row['customer_name'] ?? '',
+                    'total_amount' => (float)$row['total_amount'],
+                    'paid_amount' => (float)$row['paid_amount'],
+                    'balance_amount' => (float)$row['balance_amount'],
+                    'assigned_by_name' => $row['assigned_by_name'] ?? 'Branch Admin',
+                    'collection_date' => $row['collection_date'] ?? '',
+                    'rejected_return_reason' => $row['rejected_return_reason'] ?? '',
+                    'admin_rejection_reason' => $row['admin_rejection_reason'] ?? '',
+                    'rejected_return_date' => $row['rejected_return_date'] ?? ''
+                ];
+            ?>
+            <div class="collection-card" data-status="<?php echo esc($statusKey); ?>" onclick='openAssignedTicketDetails(<?php echo json_encode($payload, JSON_HEX_APOS | JSON_HEX_QUOT); ?>)'>
+                <div class="card-top">
+                    <span class="invoice-code"><?php echo esc($row['invoice_number']); ?></span>
+                    <span class="status-badge <?php echo $badgeClass; ?>"><?php echo $statusText; ?></span>
+                </div>
+                
+                <div class="customer-name">
+                    <?php echo esc($row['customer_name']); ?>
+                    <?php if(!empty($row['phone_number'])): ?>
+                        <small class="customer-phone"><?php echo esc($row['phone_number']); ?></small>
                     <?php endif; ?>
-                    </tbody>
-                </table>
+                </div>
+                
+                <div class="invoice-details">
+                    <div class="detail-item">
+                        <span class="detail-label">SO No.</span>
+                        <span class="detail-value"><?php echo !empty($row['so_number']) ? esc($row['so_number']) : '—'; ?></span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Due Date</span>
+                        <span class="detail-value"><?php echo $due ? esc(date('M d, Y', strtotime($due))) : '—'; ?></span>
+                    </div>
+                </div>
+                
+                <div class="amount-section">
+                    <div class="amount-item">
+                        <span class="amount-label">Original</span>
+                        <span class="amount-value"><?php echo money($row['total_amount']); ?></span>
+                    </div>
+                    <div class="amount-item">
+                        <span class="amount-label">Paid</span>
+                        <span class="amount-value"><?php echo money($row['paid_amount']); ?></span>
+                    </div>
+                    <div class="amount-item">
+                        <span class="amount-label">To Pay</span>
+                        <span class="amount-value text-danger fw-bold"><?php echo money($row['balance_amount']); ?></span>
+                    </div>
+                </div>
+                
+                <div class="card-actions" onclick="event.stopPropagation()">
+                    <?php if ($hasRemittedRecord): ?>
+                        <button class="btn-collect-card" disabled style="background:#94a3b8; cursor:not-allowed;" title="Remitted and waiting for Branch Admin approval">
+                            <i class="bi bi-check-circle me-1"></i>Remitted
+                        </button>
+                    <?php elseif ($hasCollectedRecord): ?>
+                        <button class="btn-collect-card" disabled style="background:#94a3b8; cursor:not-allowed;" title="Already collected, click REMIT ALL above">
+                            <i class="bi bi-check-circle me-1"></i>Collected
+                        </button>
+                    <?php else: ?>
+                        <button class="btn-collect-card" onclick='openCollectModal(<?php echo json_encode($payload, JSON_HEX_APOS | JSON_HEX_QUOT); ?>)'>
+                            <i class="bi bi-cash me-1"></i>Collect
+                        </button>
+                        <button class="btn-return-card" onclick='openReturnInvoiceModal(<?php echo json_encode($payload, JSON_HEX_APOS | JSON_HEX_QUOT); ?>)' title="Return this invoice ticket to Branch Admin">
+                            <i class="bi bi-arrow-return-left me-1"></i>Return
+                        </button>
+                    <?php endif; ?>
+                </div>
             </div>
+        <?php endforeach; ?>
+    <?php else: ?>
+        <div class="empty-state">
+            <i class="bi bi-inbox"></i>
+            <h6>No assigned collections</h6>
+            <p class="mb-0">Assignments will appear here once Branch Admin assigns collections to you.</p>
         </div>
+    <?php endif; ?>
+</div>
     </div>
 </div>
 
+
+
+<!-- Hidden printable area for Collection Report -->
+<div class="print-only-area" id="collectionReportPrintable">
+    <div id="collectionReportPreviewContent"></div>
+</div>
 
 <!-- Collection Report Print Filter Modal -->
 <div class="modal fade" id="collectionReportPrintModal" tabindex="-1" aria-hidden="true">
@@ -1410,10 +2926,57 @@ foreach ($collected_records as $cr) {
         <li class="nav-item"><a class="nav-link" href="fordelivery.php"><i class="bi bi-truck"></i><span>Delivery</span></a></li>
         <li class="nav-item"><a class="nav-link" href="trip_tickets.php"><i class="bi bi-ticket-perforated"></i><span>Tickets</span></a></li>
         <li class="nav-item"><a class="nav-link active" href="driver_collections.php"><i class="bi bi-cash-stack"></i><span>Collect</span></a></li>
+                <li class="nav-item">
+                <a class="nav-link" href="vehicle.php">
+                    <i class="bi bi-car-front"></i>
+                    <span>Vehicle</span>
+                </a>
+            </li>
         <li class="nav-item"><a class="nav-link" href="rejecteddelivery.php"><i class="bi bi-exclamation-circle"></i><span>Rejected</span></a></li>
         <li class="nav-item"><a class="nav-link logout-btn" href="#" onclick="logout(); return false;"><i class="bi bi-box-arrow-right"></i><span>Logout</span></a></li>
     </ul>
 </div>
+
+<!-- Mobile Profile/Logout Modal -->
+    <div class="modal fade" id="profileModal" tabindex="-1" aria-labelledby="profileModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="profileModalLabel">
+                        <i class="bi bi-person-circle me-2"></i>User Profile
+                    </h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <!-- User Avatar -->
+                    <div class="user-avatar-large mb-3">
+                        <?php echo $user_initials; ?>
+                    </div>
+                    
+                    <!-- User Name -->
+                    <h4 class="mb-1"><?php echo htmlspecialchars($user_name); ?></h4>
+                    
+                    <!-- User Role -->
+                    <p class="text-muted mb-3">
+                        <span class="badge bg-success"><?php echo ucfirst($user_role); ?></span>
+                    </p>
+                    
+                    <!-- Branch Info (if applicable) -->
+                    <?php if (!$view_all_branches && $branch_id > 0): ?>
+                    <div class="branch-info mb-3">
+                        <i class="bi bi-building me-1"></i>
+                        <span><?php echo htmlspecialchars($branch_name); ?></span>
+                    </div>
+                    <?php endif; ?>
+                    
+                    <!-- Logout Button -->
+                    <button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()">
+                        <i class="bi bi-box-arrow-right me-2"></i>Logout
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
 
 <div class="sidebar-overlay" id="sidebarOverlay" style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:1040;display:none"></div>
 
@@ -1879,14 +3442,34 @@ function toggleMoreDropdown(event){
 }
 
 function filterRows(){
-    const q=(document.getElementById('searchInput').value||'').toLowerCase().trim();
-    const s=document.getElementById('statusFilter').value;
-    document.querySelectorAll('.data-row').forEach(row=>{
-        let show=true;
-        if(q && !(row.dataset.search||'').includes(q))show=false;
-        if(s && row.dataset.status!==s)show=false;
-        row.style.display=show?'':'none';
+    const q = (document.getElementById('searchInput').value || '').toLowerCase().trim();
+    const s = document.getElementById('statusFilter').value;
+    const cards = document.querySelectorAll('.collection-card');
+    let visibleCount = 0;
+    
+    cards.forEach(card => {
+        let show = true;
+        const cardText = card.dataset.search || '';
+        const cardStatus = card.dataset.status || '';
+        
+        if (q && !cardText.includes(q)) show = false;
+        if (s && cardStatus !== s) show = false;
+        
+        card.style.display = show ? '' : 'none';
+        if (show) visibleCount++;
     });
+    
+    // Show empty state if no results
+    const container = document.getElementById('assignedCardsContainer');
+    const existingEmpty = container.querySelector('.empty-state:not(.permanent)');
+    if (visibleCount === 0 && !existingEmpty && <?php echo count($rows); ?> > 0) {
+        const emptyDiv = document.createElement('div');
+        emptyDiv.className = 'empty-state';
+        emptyDiv.innerHTML = '<i class="bi bi-search"></i><p>No matching collections found</p>';
+        container.appendChild(emptyDiv);
+    } else if (visibleCount > 0 && existingEmpty) {
+        existingEmpty.remove();
+    }
 }
 
 document.addEventListener('DOMContentLoaded',()=>{
@@ -1924,6 +3507,37 @@ document.addEventListener('DOMContentLoaded',()=>{
         }
     });
 });
+
+// Show profile modal function
+function showProfileModal() {
+    const profileModal = new bootstrap.Modal(document.getElementById('profileModal'));
+    profileModal.show();
+}
+
+// Confirm logout before proceeding
+function confirmLogout() {
+    Swal.fire({
+        title: 'Logout?',
+        text: 'Are you sure you want to logout?',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#047857',
+        cancelButtonColor: '#64748b',
+        confirmButtonText: 'Yes, logout'
+    }).then((result) => {
+        if (result.isConfirmed) {
+            window.location.href = '../logout.php';
+        }
+    });
+}
+
+// Close profile modal (optional)
+function closeProfileModal() {
+    const profileModal = bootstrap.Modal.getInstance(document.getElementById('profileModal'));
+    if (profileModal) {
+        profileModal.hide();
+    }
+}
 </script>
 </body>
 </html>

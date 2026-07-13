@@ -2,6 +2,18 @@
 require_once '../config/database.php';
 require_once '../config/session_handler.php';
 
+if (function_exists('requireLogin')) {
+    requireLogin();
+}
+
+$current_role = strtolower(trim((string)($_SESSION['role'] ?? '')));
+$allowed_branch_dashboard_roles = ['branch_admin', 'admin', 'super_duper_admin'];
+
+if (!in_array($current_role, $allowed_branch_dashboard_roles, true)) {
+    header('Location: ../POS/posdashboard.php');
+    exit;
+}
+
 $user_id = $_SESSION['user_id'] ?? 0;
 $user_name = isset($_SESSION['first_name']) ? trim($_SESSION['first_name'] . ' ' . ($_SESSION['last_name'] ?? '')) : 'Branch Admin';
 $user_role = $_SESSION['role'] ?? 'branch_admin';
@@ -16,6 +28,37 @@ foreach (explode(' ', trim($user_name)) as $part) {
 }
 if ($user_initials === '') {
     $user_initials = 'BA';
+}
+
+$task_badge_count = 0;
+
+if (isset($conn) && !empty($_SESSION['user_id'])) {
+    $uid = (int) $_SESSION['user_id'];
+
+    $taskBadgeStmt = $conn->prepare("
+        SELECT COUNT(DISTINCT t.task_id) AS total
+        FROM user_tasks t
+        INNER JOIN user_task_assignees a
+            ON a.task_id = t.task_id
+        WHERE a.user_id = ?
+          AND a.assignee_status NOT IN ('completed', 'cancelled')
+          AND NOW() >= DATE_SUB(
+              t.due_datetime,
+              INTERVAL COALESCE(t.reminder_days, 0) DAY
+          )
+    ");
+
+    if ($taskBadgeStmt) {
+        $taskBadgeStmt->bind_param('i', $uid);
+        $taskBadgeStmt->execute();
+
+        $taskBadgeResult = $taskBadgeStmt->get_result();
+        $taskBadgeRow = $taskBadgeResult->fetch_assoc();
+
+        $task_badge_count = (int) ($taskBadgeRow['total'] ?? 0);
+
+        $taskBadgeStmt->close();
+    }
 }
 
 function tableExists(mysqli $conn, string $table): bool {
@@ -1134,6 +1177,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'gener
             padding: .5rem .8rem;
         }
 
+
+        .switch-pos-btn {
+            font-size: .84rem;
+            padding: .5rem .8rem;
+        }
+
         .stat-card {
             padding: .85rem;
         }
@@ -1223,6 +1272,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'gener
 
     .header-date-pill i {
         font-size: 1.05rem;
+    }
+
+
+    .switch-pos-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: .5rem;
+        padding: .6rem 1rem;
+        border-radius: 999px;
+        background: linear-gradient(135deg, #047857 0%, #10b981 100%);
+        color: #ffffff !important;
+        text-decoration: none;
+        cursor: pointer;
+        font-family: inherit;
+        font-size: .92rem;
+        font-weight: 500;
+        white-space: nowrap;
+        box-shadow: 0 6px 16px rgba(4, 120, 87, .18);
+        border: 1px solid rgba(255, 255, 255, .18);
+        transition: transform .18s ease, opacity .18s ease, box-shadow .18s ease;
+    }
+
+    .switch-pos-btn:hover {
+        color: #ffffff !important;
+        opacity: .96;
+        transform: translateY(-1px);
+        box-shadow: 0 8px 20px rgba(4, 120, 87, .22);
+    }
+
+    .switch-pos-btn i {
+        font-size: 1rem;
     }
 
     .custom-date-group {
@@ -2440,262 +2521,412 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'gener
         font-size: 0.75rem;
     }
 }
+/* Parent */
+.sidebar .nav-link{
+    position:relative;
+}
+.sidebar-parent-icon {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+}
+
+.task-parent-badge {
+    position: absolute;
+    top: -10px;
+    right: -3px;
+
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+
+    border-radius: 999px;
+    background: #ef4444;
+    color: #fff;
+
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    z-index: 30;
+    pointer-events: none;
+    box-sizing: border-box;
+}
+
+/* Badge sa Tasks child kapag open ang dropdown */
+.task-child-badge {
+    margin-left: auto;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: #ef4444;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    display: none;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Closed dropdown: parent badge visible */
+.employees-dropdown .task-parent-badge {
+    display: inline-flex;
+}
+
+/* Open dropdown: parent badge hidden */
+.employees-dropdown.employees-menu-open .task-parent-badge {
+    display: none;
+}
+
+/* Open dropdown: Tasks badge visible */
+.employees-dropdown.employees-menu-open .task-child-badge {
+    display: inline-flex;
+}
+
+/* Allow badge to extend outside icon */
+.employees-dropdown > .nav-link,
+.sidebar-parent-icon {
+    overflow: visible !important;
+}
 </style>
 </head>
 <body>
 <div id="appPage">
-    <!-- Sidebar -->
-    <div class="sidebar" id="sidebar">
-        <div class="sidebar-header">
-            <h3>
-                <button class="desktop-toggle-btn" id="desktopToggleBtn">
-                    <i class="bi bi-list" id="toggleIcon"></i>
-                </button>
+<!-- Sidebar -->
+<div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+        <h3>
+            <button class="desktop-toggle-btn" id="desktopToggleBtn">
+                <i class="bi bi-list" id="toggleIcon"></i>
+            </button>
 
-                <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon">
+            <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon">
 
-                <span class="nav-text">Branch Admin</span>
-            </h3>
-        </div>
+            <span class="nav-text">Branch Admin</span>
+        </h3>
+    </div>
 
-        <div class="sidebar-content">
-            <div class="sidebar-menu">
-                <ul class="nav flex-column">
-                                <li class="nav-item">
-                                    <a class="nav-link active" href="branchdashboard.php">
-                                        <i class="bi bi-speedometer2"></i>
-                                        <span class="nav-text">Dashboard</span>
-                                    </a>
-                                </li>
-                    <!-- Warehouse Dropdown -->
-                    <li class="nav-item dropdown-nav">
-                        <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'warehouseMenu')">
-                            <i class="bi bi-shop"></i>
-                            <span class="nav-text">Warehouse</span>
-                            <i class="bi bi-chevron-down dropdown-arrow"></i>
-                        </a>
-                    
-                        <div class="collapse" id="warehouseMenu">
-                            <ul class="nav flex-column ps-4">
-                                <li class="nav-item">
-                                    <a class="nav-link" href="current_inventory.php">
-                                        <i class="bi bi-bar-chart-line"></i>
-                                        <span class="nav-text">Current Inventory</span>
-                                    </a>
-                                </li>
+    <div class="sidebar-content">
+        <div class="sidebar-menu">
+            <ul class="nav flex-column">
+                <!-- Dashboard -->
+                <li class="nav-item">
+                    <a class="nav-link active" href="branchdashboard.php">
+                        <i class="bi bi-speedometer2"></i>
+                        <span class="nav-text">Dashboard</span>
+                    </a>
+                </li>
+                
+                <!-- Vendor Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'supplierMenu')">
+                        <i class="bi bi-building"></i>
+                        <span class="nav-text">Vendor</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
 
-                                <li class="nav-item">
-                                    <a class="nav-link" href="bad_orders.php">
-                                        <i class="bi bi-recycle"></i>
-                                        <span class="nav-text">Bad Orders</span>
-                                    </a>
-                                </li>
+                    <div class="collapse" id="supplierMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="purchase_order.php">
+                                    <i class="bi bi-file-earmark-text"></i>
+                                    <span class="nav-text">Enter Bills</span>
+                                </a>
+                            </li>
 
-                                <li class="nav-item">
-                                    <a class="nav-link" href="pick_list_items.php">
-                                        <i class="bi bi-list-check"></i>
-                                        <span class="nav-text">Pick List Items</span>
-                                    </a>
-                                </li>
-                                <li class="nav-item">
-                                    <a class="nav-link" href="warehouses.php">
+                            <li class="nav-item">
+                                <a class="nav-link" href="paybills.php">
+                                    <i class="bi bi-currency-dollar"></i>
+                                    <span class="nav-text">Pay Bills</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="supplier.php">
                                     <i class="bi bi-shop"></i>
-                                    <span class="nav-text">Warehouses</span></a>
-                                </li>
-                            </ul>
-                        </div>
-                    </li>
+                                    <span class="nav-text">Vendor List</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
 
-                    <!-- Supplier Dropdown -->
-                    <li class="nav-item dropdown-nav">
-                        <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'supplierMenu')">
-                            <i class="bi bi-building"></i>
-                            <span class="nav-text">Supplier</span>
-                            <i class="bi bi-chevron-down dropdown-arrow"></i>
-                        </a>
+                <!-- Customer Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'customerMenu')">
+                        <i class="bi bi-people-fill"></i>
+                        <span class="nav-text">Customers</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
 
-                        <div class="collapse" id="supplierMenu">
-                            <ul class="nav flex-column ps-4">
-                                <li class="nav-item">
-                                    <a class="nav-link" href="purchase_order.php">
-                                        <i class="bi bi-box"></i>
-                                        <span class="nav-text">Receive Inventory</span>
-                                    </a>
-                                </li>
+                    <div class="collapse" id="customerMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="orderproduct.php">
+                                    <i class="bi bi-receipt"></i>
+                                    <span class="nav-text">Create Invoice</span>
+                                </a>
+                            </li>
 
-                                <li class="nav-item">
-                                    <a class="nav-link" href="supplier.php">
-                                        <i class="bi bi-people"></i>
-                                        <span class="nav-text">Supplier List</span>
-                                    </a>
-                                </li>
-                            </ul>
-                        </div>
-                    </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="collections.php">
+                                    <i class="bi bi-cash-stack"></i>
+                                    <span class="nav-text">Receive Payment</span>
+                                </a>
+                            </li>
 
-                    <!-- Customer Dropdown -->
-                    <li class="nav-item dropdown-nav">
-                        <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'customerMenu')">
-                            <i class="bi bi-people"></i>
-                            <span class="nav-text">Customer</span>
-                            <i class="bi bi-chevron-down dropdown-arrow"></i>
-                        </a>
+                            <li class="nav-item">
+                                <a class="nav-link" href="customer_list.php">
+                                    <i class="bi bi-person-badge"></i>
+                                    <span class="nav-text">Customer List</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
 
-                        <div class="collapse" id="customerMenu">
-                            <ul class="nav flex-column ps-4">
-                                <li class="nav-item">
-                                    <a class="nav-link" href="customer_list.php">
-                                        <i class="bi bi-person-badge"></i>
-                                        <span class="nav-text">Customer List</span>
-                                    </a>
-                                </li>
+                <!-- Employees Dropdown -->
+<li class="nav-item dropdown-nav employees-dropdown">
+    <a class="nav-link"
+       href="#"
+       onclick="toggleSidebarDropdown(event, 'employeesMenu')">
 
-                                <li class="nav-item">
-                                    <a class="nav-link" href="approve_credit_requests.php">
-                                        <i class="bi bi-pencil-square"></i>
-                                        <span class="nav-text">Approve Credit Request</span>
-                                    </a>
-                                </li>
+        <span class="sidebar-parent-icon">
+            <i class="bi bi-briefcase"></i>
 
-                                <li class="nav-item">
-                                    <a class="nav-link" href="sales_order.php">
-                                        <i class="bi bi-cart"></i>
-                                        <span class="nav-text">Sales Order</span>
-                                    </a>
-                                </li>
+            <?php if ($task_badge_count > 0): ?>
+                <span class="task-parent-badge">
+                    <?= $task_badge_count ?>
+                </span>
+            <?php endif; ?>
+        </span>
 
-                                <li class="nav-item">
-                                    <a class="nav-link" href="collections.php">
-                                        <i class="bi bi-cash-stack"></i>
-                                        <span class="nav-text">Collections</span>
-                                    </a>
-                                </li>
-                            </ul>
-                        </div>
-                    </li>
-
-                    <!-- Delivery Dropdown -->
-                    <li class="nav-item dropdown-nav">
-                        <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'deliveryMenu')">
-                            <i class="bi bi-truck"></i>
-                            <span class="nav-text">Delivery</span>
-                            <i class="bi bi-chevron-down dropdown-arrow"></i>
-                        </a>
-
-                        <div class="collapse" id="deliveryMenu">
-                            <ul class="nav flex-column ps-4">
-                                <li class="nav-item">
-                                    <a class="nav-link" href="trip_tickets.php">
-                                        <i class="bi bi-ticket-perforated"></i>
-                                        <span class="nav-text">Trip Tickets</span>
-                                    </a>
-                                </li>
-                            </ul>
-                        </div>
-                    </li>
-
-                    <!-- Banking Dropdown -->
-                    <li class="nav-item dropdown-nav">
-                        <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'bankingMenu')">
-                            <i class="bi bi-bank2"></i>
-                            <span class="nav-text">Banking</span>
-                            <i class="bi bi-chevron-down dropdown-arrow"></i>
-                        </a>
-
-                        <div class="collapse" id="bankingMenu">
-                            <ul class="nav flex-column ps-4">
-                                <li class="nav-item">
-                                    <a class="nav-link" href="deposit.php">
-                                        <i class="bi bi-arrow-down-circle"></i>
-                                        <span class="nav-text">Deposit</span>
-                                    </a>
-                                </li>
-
-                                <li class="nav-item">
-                                    <a class="nav-link" href="Withdrawal.php">
-                                        <i class="bi bi-arrow-up-circle"></i>
-                                        <span class="nav-text">Withdrawal</span>
-                                    </a>
-                                </li>
-
-                                <li class="nav-item">
-                                    <a class="nav-link" href="bank_statement.php">
-                                        <i class="bi bi-receipt"></i>
-                                        <span class="nav-text">Bank Statement</span>
-                                    </a>
-                                </li>
-
-                                <li class="nav-item">
-                                    <a class="nav-link" href="expenses.php">
-                                        <i class="bi bi-cash-stack"></i>
-                                        <span class="nav-text">Expenses</span>
-                                    </a>
-                                </li>
-                            </ul>
-                        </div>
-                    </li>
-                    
-                    <!-- Shared Services Dropdown -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'sharedServicesMenu')">
-        <i class="bi bi-grid-3x3-gap"></i>
-        <span class="nav-text">Shared Services</span>
+        <span class="nav-text">Employees</span>
         <i class="bi bi-chevron-down dropdown-arrow"></i>
     </a>
-    <div class="collapse" id="sharedServicesMenu">
+
+    <div class="collapse" id="employeesMenu">
         <ul class="nav flex-column ps-4">
             <li class="nav-item">
-                <a class="nav-link" href="motorpool.php">
-                    <i class="bi bi-truck"></i>
-                    <span class="nav-text">Motorpool</span>
+                <a class="nav-link" href="employeelist.php">
+                    <i class="bi bi-person-badge"></i>
+                    <span class="nav-text">Employee List</span>
                 </a>
             </li>
+
             <li class="nav-item">
-                <a class="nav-link" href="central_warehouse.php">
-                    <i class="bi bi-box-seam"></i>
-                    <span class="nav-text">Central Warehouse</span>
+                <a class="nav-link" href="employee.php">
+                    <i class="bi bi-clock-history"></i>
+                    <span class="nav-text">Enter Time</span>
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="tasks.php">
+                    <i class="bi bi-calendar-check"></i>
+                    <span class="nav-text">Tasks</span>
+
+                    <?php if ($task_badge_count > 0): ?>
+                        <span class="task-child-badge">
+                            <?= $task_badge_count ?>
+                        </span>
+                    <?php endif; ?>
                 </a>
             </li>
         </ul>
     </div>
 </li>
 
-                    <!-- Users -->
-                    <li class="nav-item">
-                        <a class="nav-link" href="drivers.php">
-                            <i class="bi bi-people-fill"></i>
-                            <span class="nav-text">Users</span>
-                        </a>
-                    </li>
-                    
+                <!-- Banking Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'bankingMenu')">
+                        <i class="bi bi-bank2"></i>
+                        <span class="nav-text">Banking</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
 
-                </ul>
-            </div>
-        </div>
+                    <div class="collapse" id="bankingMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="deposit.php">
+                                    <i class="bi bi-bank"></i>
+                                    <span class="nav-text">Record Deposit</span>
+                                </a>
+                            </li>
 
-        <div class="sidebar-footer">
-            <div class="user-profile-sidebar">
-                <div class="user-avatar-sidebar">
-                    <?php echo htmlspecialchars($user_initials); ?>
-                </div>
+                            <li class="nav-item">
+                                <a class="nav-link" href="Withdrawal.php">
+                                    <i class="bi bi-journal-check"></i>
+                                    <span class="nav-text">Write Checks</span>
+                                </a>
+                            </li>
+                            
+                            <li class="nav-item active">
+                                <a class="nav-link" href="transferfunds.php">
+                                    <i class="bi bi-arrow-left-right"></i>
+                                    <span class="nav-text">Transfer Funds</span>
+                                </a>
+                            </li>
+                            
+                            <li class="nav-item" hidden>
+                                <a class="nav-link" href="bank_statement.php">
+                                    <i class="bi bi-receipt"></i>
+                                    <span class="nav-text">Bank Statement</span>
+                                </a>
+                            </li>
 
-                <div class="user-details-sidebar">
-                    <span class="user-name-sidebar">
-                        <?php echo htmlspecialchars($user_name); ?>
-                    </span>
+                            <li class="nav-item" hidden>
+                                <a class="nav-link" href="expenses.php">
+                                    <i class="bi bi-cash-stack"></i>
+                                    <span class="nav-text">Expenses</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
 
-                    <span class="user-role-sidebar">
-                        <?php echo htmlspecialchars(ucfirst($user_role)); ?>
-                    </span>
-                </div>
-            </div>
+                <!-- Company Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'warehouseMenu')">
+                        <i class="bi bi-building"></i>
+                        <span class="nav-text">Company</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
 
-            <button class="logout-btn-sidebar" onclick="logout()">
-                <i class="bi bi-box-arrow-right"></i>
-                <span class="logout-text">Logout</span>
-            </button>
+                    <div class="collapse" id="warehouseMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="current_inventory.php">
+                                    <i class="bi bi-box"></i>
+                                    <span class="nav-text">Items</span>
+                                </a>
+                            </li>
+                            
+                             <li class="nav-item">
+                                <a class="nav-link" href="fixed_assets.php">
+                                    <i class="bi bi-building"></i>
+                                    <span class="nav-text">Fixed Assets</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="warehouses.php">
+                                    <i class="bi bi-shop"></i>
+                                    <span class="nav-text">Warehouses</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="chartofaccounts.php">
+                                    <i class="bi bi-graph-up"></i>
+                                    <span class="nav-text">Chart of Accounts</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item" hidden>
+                                <a class="nav-link" href="trip_tickets.php">
+                                    <i class="bi bi-ticket-perforated"></i>
+                                    <span class="nav-text">Trip Tickets</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="motorpool.php">
+                                    <i class="bi bi-truck"></i>
+                                    <span class="nav-text">Motorpool</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="central_warehouse.php">
+                                    <i class="bi bi-box-seam"></i>
+                                    <span class="nav-text">Central Warehouse</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="drivers.php">
+                                    <i class="bi bi-people-fill"></i>
+                                    <span class="nav-text">Users</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+                <!-- Accounting Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'accountingMenu')">
+                        <i class="bi bi-graph-up"></i>
+                        <span class="nav-text">Accounting</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="accountingMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="journal_entries.php">
+                                    <i class="bi bi-journal"></i>
+                                    <span class="nav-text">Journal Entries</span>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="batch_transaction.php">
+                                    <i class="bi bi-collection"></i>
+                                    <span class="nav-text">Batch Transaction</span>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="item_adjustment.php">
+                                    <i class="bi bi-sliders"></i>
+                                    <span class="nav-text">Item Adjusment</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="it_request.php">
+                        <i class="bi bi-headset"></i>
+                        <span class="nav-text">IT Requests</span>
+                    </a>
+                </li>
+            </ul>
         </div>
     </div>
+
+    <div class="sidebar-footer">
+        <div class="user-profile-sidebar">
+            <div class="user-avatar-sidebar">
+                <?php echo htmlspecialchars($user_initials); ?>
+            </div>
+
+            <div class="user-details-sidebar">
+                <span class="user-name-sidebar">
+                    <?php echo htmlspecialchars($user_name); ?>
+                </span>
+
+                <span class="user-role-sidebar">
+                    <?php echo htmlspecialchars(ucfirst($user_role)); ?>
+                </span>
+            </div>
+        </div>
+
+        <button class="logout-btn-sidebar" onclick="logout()">
+            <i class="bi bi-box-arrow-right"></i>
+            <span class="logout-text">Logout</span>
+        </button>
+    </div>
+</div>
 
     <div class="main-content" id="mainContent">
         <div class="navbar-top">
@@ -2704,7 +2935,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'gener
                 <h2>Dashboard</h2>
                 <p>Sales, COGS, gross profit, expenses, and net profit summary</p>
             </div>
-            <span class="period-pill header-date-pill"><i class="bi bi-calendar3"></i><?php echo htmlspecialchars($period_label); ?></span>
+            <button type="button" class="switch-pos-btn" onclick="confirmSwitchToPOS()" title="Switch to POS">
+                <i class="bi bi-arrow-left-right"></i>
+                <span>Switch to POS</span>
+            </button>
         </div>
 
         <?php if (!$has_sales_orders || !$has_payments || !$has_bank_transactions): ?>
@@ -3404,6 +3638,7 @@ function toggleSidebarDropdown(event, targetId) {
             });
             
             if (target) target.classList.add('show');
+            updateEmployeesTaskBadge();
             if (arrow) arrow.style.transform = 'translateY(-50%) rotate(180deg)';
         }, 50);
         return;
@@ -3429,6 +3664,7 @@ function toggleSidebarDropdown(event, targetId) {
         if (target) target.classList.add('show');
         if (arrow) arrow.style.transform = 'translateY(-50%) rotate(180deg)';
     }
+    updateEmployeesTaskBadge();
 }
 
 // ========== LOGOUT FUNCTION ==========
@@ -4572,6 +4808,36 @@ document.getElementById('generateReportModal').addEventListener('show.bs.modal',
 });
 
 
+function confirmSwitchToPOS() {
+    Swal.fire({
+        title: 'Switch to POS?',
+        text: 'You will be redirected to the POS dashboard.',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#047857',
+        cancelButtonColor: '#6c757d',
+        confirmButtonText: 'Yes, switch',
+        cancelButtonText: 'Cancel',
+        allowOutsideClick: true
+    }).then((result) => {
+        if (!result.isConfirmed) {
+            return;
+        }
+
+        Swal.fire({
+            title: 'Switching to POS...',
+            text: 'Please wait.',
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            didOpen: () => Swal.showLoading()
+        });
+
+        setTimeout(() => {
+            window.location.href = '../POS/posdashboard.php';
+        }, 350);
+    });
+}
+
 function showProfileModal() { 
     cleanupModalBackdrops();
     new bootstrap.Modal(document.getElementById('profileModal')).show(); 
@@ -4697,7 +4963,59 @@ document.addEventListener('DOMContentLoaded', function() {
             closeAllMobileDropdowns();
         }
     });
+    
+    document.addEventListener('DOMContentLoaded', function () {
+    updateEmployeesTaskBadge();
 });
+
+});
+
+document.addEventListener('DOMContentLoaded', function () {
+    const sidebar = document.querySelector('.sidebar-content');
+    const activeLink = document.querySelector('.sidebar .nav-link.active');
+
+    if (!sidebar || !activeLink) return;
+
+    // Open parent dropdown if collapsed
+    const collapse = activeLink.closest('.collapse');
+    if (collapse) {
+        collapse.classList.add('show');
+
+        const trigger = document.querySelector(
+            `[onclick*="${collapse.id}"]`
+        );
+
+        if (trigger) {
+            trigger.setAttribute('aria-expanded', 'true');
+
+            const arrow = trigger.querySelector('.dropdown-arrow');
+            if (arrow) {
+                arrow.style.transform = 'rotate(180deg)';
+            }
+        }
+    }
+
+    // Smooth scroll to active menu
+    setTimeout(() => {
+        activeLink.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center'
+        });
+    }, 200);
+});
+
+function updateEmployeesTaskBadge() {
+    const employeesMenu = document.getElementById('employeesMenu');
+    const employeesDropdown = employeesMenu?.closest('.employees-dropdown');
+
+    if (!employeesMenu || !employeesDropdown) return;
+
+    employeesDropdown.classList.toggle(
+        'employees-menu-open',
+        employeesMenu.classList.contains('show')
+    );
+}
 </script>
+    <?php require_once __DIR__ . '/../config/task_login_alert.php'; ?>
 </body>
 </html>

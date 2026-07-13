@@ -1,0 +1,33 @@
+{
+    "manifest_id": "receive_20260604084131_b0a52c0d",
+    "source": "supplier",
+    "supplier_id": 5,
+    "supplier_name": "Andrei",
+    "po_number": "PO-RCV-20260604084130",
+    "reference_type": "purchase_order",
+    "reference_id": 40,
+    "receive_date": "2026-06-04",
+    "encoded_date": "2026-06-04",
+    "receive_memo": "dnhjrtjhjft",
+    "created_at": "2026-06-04 08:41:30",
+    "created_by": 2,
+    "branch_id": 1,
+    "transaction_ids": [
+        296
+    ],
+    "attachments": [],
+    "items": [
+        {
+            "item_id": 9,
+            "item_name": "Mountain Dew",
+            "item_code": "ITEM009",
+            "item_description": "Mountain Dew",
+            "category": "General",
+            "uom": "Piece",
+            "qty": 50,
+            "unit_price": 21,
+            "unit_cost": 21,
+            "total_cost": 1050
+        }
+    ]
+}

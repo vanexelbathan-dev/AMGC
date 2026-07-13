@@ -1,0 +1,33 @@
+{
+    "manifest_id": "receive_20260604122526_1c719c2a",
+    "source": "supplier",
+    "supplier_id": 5,
+    "supplier_name": "Andrei",
+    "po_number": "PO-RCV-20260604122526",
+    "reference_type": "purchase_order",
+    "reference_id": 62,
+    "receive_date": "2026-06-04",
+    "encoded_date": "2026-06-04",
+    "receive_memo": "",
+    "created_at": "2026-06-04 12:25:26",
+    "created_by": 2,
+    "branch_id": 1,
+    "transaction_ids": [
+        318
+    ],
+    "attachments": [],
+    "items": [
+        {
+            "item_id": 10,
+            "item_name": "Holcim",
+            "item_code": "ITEM010",
+            "item_description": "high - performance, durable building material designed for diverse construction applications, ranging from infrastructure to residential projects",
+            "category": "Cement",
+            "uom": "Bag",
+            "qty": 1,
+            "unit_price": 350,
+            "unit_cost": 350,
+            "total_cost": 350
+        }
+    ]
+}

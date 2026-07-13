@@ -7259,3 +7259,131 @@
 [29-May-2026 10:42:45 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882129101374, lng: 121.03613482435
 [29-May-2026 10:42:45 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882129101374, lng: 121.03613482435
 [29-May-2026 10:42:45 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882129101374, lng: 121.03613482435
+[30-May-2026 01:59:08 Europe/Berlin] GPS action: get_shift_status, driver_id: 1, lat: , lng: 
+[30-May-2026 01:59:11 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882255710332, lng: 121.03609379203
+[30-May-2026 01:59:11 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882255710332, lng: 121.03609379203
+[30-May-2026 01:59:11 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882255710332, lng: 121.03609379203
+[30-May-2026 01:59:11 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882255710332, lng: 121.03609379203
+[30-May-2026 03:41:43 Europe/Berlin] GPS action: get_shift_status, driver_id: 1, lat: , lng: 
+[30-May-2026 03:41:49 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882123083274, lng: 121.03612205124
+[30-May-2026 03:41:49 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882123083274, lng: 121.03612205124
+[30-May-2026 03:41:49 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882123083274, lng: 121.03612205124
+[30-May-2026 03:41:49 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882123083274, lng: 121.03612205124
+[30-May-2026 07:41:17 Europe/Berlin] GPS action: get_shift_status, driver_id: 1, lat: , lng: 
+[30-May-2026 07:41:17 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882471489637, lng: 121.03605568755
+[30-May-2026 07:41:17 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882471489637, lng: 121.03605568755
+[30-May-2026 07:41:17 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882471489637, lng: 121.03605568755
+[30-May-2026 07:41:18 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882471489637, lng: 121.03605568755
+[30-May-2026 07:41:27 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882237084836, lng: 121.03612157393
+[30-May-2026 07:41:43 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882192786902, lng: 121.03611582973
+[30-May-2026 07:42:48 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882137656187, lng: 121.03613310612
+[30-May-2026 07:44:16 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882208130149, lng: 121.03610748862
+[30-May-2026 07:45:20 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882204543213, lng: 121.03611800089
+[30-May-2026 07:46:09 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882204543213, lng: 121.03611800089
+[30-May-2026 07:49:27 Europe/Berlin] GPS action: get_shift_status, driver_id: 1, lat: , lng: 
+[30-May-2026 07:49:27 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 07:49:27 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 07:49:27 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 07:49:28 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 07:50:12 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882122120634, lng: 121.03614670495
+[30-May-2026 07:50:37 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882087148686, lng: 121.03615790292
+[30-May-2026 07:50:51 Europe/Berlin] GPS action: get_shift_status, driver_id: 1, lat: , lng: 
+[30-May-2026 07:50:51 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882087148686, lng: 121.03615790292
+[30-May-2026 07:50:51 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882087148686, lng: 121.03615790292
+[30-May-2026 07:50:51 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882087148686, lng: 121.03615790292
+[30-May-2026 07:50:51 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882087148686, lng: 121.03615790292
+[30-May-2026 07:51:02 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882059767139, lng: 121.03616367798
+[30-May-2026 07:51:55 Europe/Berlin] GPS action: get_shift_status, driver_id: 1, lat: , lng: 
+[30-May-2026 07:51:56 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882091726164, lng: 121.03614572412
+[30-May-2026 07:51:56 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882091726164, lng: 121.03614572412
+[30-May-2026 07:51:56 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882091726164, lng: 121.03614572412
+[30-May-2026 07:51:56 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882091726164, lng: 121.03614572412
+[30-May-2026 07:53:02 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882137656187, lng: 121.03613310612
+[30-May-2026 07:54:57 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882155529817, lng: 121.03615008511
+[30-May-2026 07:55:13 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882137408971, lng: 121.03614008071
+[30-May-2026 08:07:19 Europe/Berlin] GPS action: get_shift_status, driver_id: 1, lat: , lng: 
+[30-May-2026 08:07:22 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 08:07:22 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 08:07:22 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 08:07:22 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 08:07:45 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 08:07:58 Europe/Berlin] GPS action: get_shift_status, driver_id: 1, lat: , lng: 
+[30-May-2026 08:07:59 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 08:07:59 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 08:07:59 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 08:08:02 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 08:08:10 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 08:08:12 Europe/Berlin] GPS action: get_shift_status, driver_id: 1, lat: , lng: 
+[30-May-2026 08:08:12 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 08:08:12 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 08:08:12 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 08:08:12 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 08:08:16 Europe/Berlin] GPS action: get_shift_status, driver_id: 1, lat: , lng: 
+[30-May-2026 08:08:16 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 08:08:16 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 08:08:16 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 08:08:16 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 08:08:23 Europe/Berlin] GPS action: get_shift_status, driver_id: 1, lat: , lng: 
+[30-May-2026 08:08:23 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 08:08:23 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 08:08:23 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 08:08:23 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 08:41:29 Europe/Berlin] GPS action: get_shift_status, driver_id: 1, lat: , lng: 
+[30-May-2026 08:41:31 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882184646476, lng: 121.03610496551
+[30-May-2026 08:41:31 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882184646476, lng: 121.03610496551
+[30-May-2026 08:41:31 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882184646476, lng: 121.03610496551
+[30-May-2026 08:41:31 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882184646476, lng: 121.03610496551
+[30-May-2026 08:42:13 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882129182398, lng: 121.03612516857
+[30-May-2026 08:42:23 Europe/Berlin] GPS action: get_shift_status, driver_id: 1, lat: , lng: 
+[30-May-2026 08:42:23 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882129182398, lng: 121.03612516857
+[30-May-2026 08:42:23 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882129182398, lng: 121.03612516857
+[30-May-2026 08:42:23 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882129182398, lng: 121.03612516857
+[30-May-2026 08:42:56 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882129182398, lng: 121.03612516857
+[30-May-2026 08:44:04 Europe/Berlin] GPS action: get_shift_status, driver_id: 1, lat: , lng: 
+[30-May-2026 08:44:04 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882129182398, lng: 121.03612516857
+[30-May-2026 08:44:04 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882129182398, lng: 121.03612516857
+[30-May-2026 08:44:04 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882129182398, lng: 121.03612516857
+[30-May-2026 08:44:04 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882129182398, lng: 121.03612516857
+[30-May-2026 08:50:52 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882313318418, lng: 121.03605241157
+[30-May-2026 08:50:59 Europe/Berlin] GPS action: get_shift_status, driver_id: 1, lat: , lng: 
+[30-May-2026 08:50:59 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882313318418, lng: 121.03605241157
+[30-May-2026 08:50:59 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882313318418, lng: 121.03605241157
+[30-May-2026 08:50:59 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882313318418, lng: 121.03605241157
+[30-May-2026 08:50:59 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882313318418, lng: 121.03605241157
+[30-May-2026 08:52:30 Europe/Berlin] GPS action: get_shift_status, driver_id: 1, lat: , lng: 
+[30-May-2026 08:52:31 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882313318418, lng: 121.03605241157
+[30-May-2026 08:52:31 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882313318418, lng: 121.03605241157
+[30-May-2026 08:52:31 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882313318418, lng: 121.03605241157
+[30-May-2026 08:52:31 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882313318418, lng: 121.03605241157
+[30-May-2026 08:53:03 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882313318418, lng: 121.03605241157
+[30-May-2026 08:53:12 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882313318418, lng: 121.03605241157
+[30-May-2026 08:53:44 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88217692242, lng: 121.03610101766
+[30-May-2026 08:55:41 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882313318418, lng: 121.03605241157
+[30-May-2026 08:59:14 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882484192189, lng: 121.03602060911
+[30-May-2026 09:05:01 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882313318418, lng: 121.03605241157
+[30-May-2026 09:06:05 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 09:06:15 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[30-May-2026 09:08:36 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882446179581, lng: 121.03605439786
+[02-Jun-2026 02:05:08 Europe/Berlin] GPS action: get_shift_status, driver_id: 1, lat: , lng: 
+[02-Jun-2026 02:05:12 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[02-Jun-2026 02:05:12 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[02-Jun-2026 02:05:12 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[02-Jun-2026 02:05:12 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508
+[02-Jun-2026 03:38:56 Europe/Berlin] GPS action: get_shift_status, driver_id: 1, lat: , lng: 
+[02-Jun-2026 03:41:15 Europe/Berlin] GPS action: get_shift_status, driver_id: 1, lat: , lng: 
+[02-Jun-2026 03:43:17 Europe/Berlin] GPS action: get_shift_status, driver_id: 1, lat: , lng: 
+[02-Jun-2026 03:43:20 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882301108983, lng: 121.03607128409
+[02-Jun-2026 03:43:20 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882301108983, lng: 121.03607128409
+[02-Jun-2026 03:43:20 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882301108983, lng: 121.03607128409
+[02-Jun-2026 03:43:20 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882301108983, lng: 121.03607128409
+[09-Jun-2026 02:50:07 Europe/Berlin] GPS action: get_shift_status, driver_id: 1, lat: , lng: 
+[09-Jun-2026 02:50:09 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882123083274, lng: 121.03612205124
+[09-Jun-2026 02:50:09 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882123083274, lng: 121.03612205124
+[09-Jun-2026 02:50:09 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882123083274, lng: 121.03612205124
+[09-Jun-2026 02:50:09 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882123083274, lng: 121.03612205124
+[09-Jun-2026 02:50:15 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.882123083274, lng: 121.03612205124
+[09-Jun-2026 03:00:16 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88208504563, lng: 121.03614538371
+[09-Jun-2026 03:00:29 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88208504563, lng: 121.03614538371
+[09-Jun-2026 03:00:34 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88208504563, lng: 121.03614538371
+[09-Jun-2026 03:00:40 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88208504563, lng: 121.03614538371
+[09-Jun-2026 03:09:29 Europe/Berlin] GPS action: update_location, driver_id: 1, lat: 13.88220009298, lng: 121.03609529508

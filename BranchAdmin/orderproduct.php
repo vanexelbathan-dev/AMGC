@@ -21,10 +21,42 @@ $user_role = isset($_SESSION['role']) ? $_SESSION['role'] : 'branch_admin';
 $branch_id = $_SESSION['branch_id'] ?? 0;
 $view_all_branches = $_SESSION['view_all_branches'] ?? false;
 
+$task_badge_count = 0;
+
+if (isset($conn) && !empty($_SESSION['user_id'])) {
+    $uid = (int) $_SESSION['user_id'];
+
+    $taskBadgeStmt = $conn->prepare("
+        SELECT COUNT(DISTINCT t.task_id) AS total
+        FROM user_tasks t
+        INNER JOIN user_task_assignees a
+            ON a.task_id = t.task_id
+        WHERE a.user_id = ?
+          AND a.assignee_status NOT IN ('completed', 'cancelled')
+          AND NOW() >= DATE_SUB(
+              t.due_datetime,
+              INTERVAL COALESCE(t.reminder_days, 0) DAY
+          )
+    ");
+
+    if ($taskBadgeStmt) {
+        $taskBadgeStmt->bind_param('i', $uid);
+        $taskBadgeStmt->execute();
+
+        $taskBadgeResult = $taskBadgeStmt->get_result();
+        $taskBadgeRow = $taskBadgeResult->fetch_assoc();
+
+        $task_badge_count = (int) ($taskBadgeRow['total'] ?? 0);
+
+        $taskBadgeStmt->close();
+    }
+}
+
 // Get customer ID and name from URL parameters
 $pre_selected_customer_id = isset($_GET['customer_id']) ? (int)$_GET['customer_id'] : 0;
 $pre_selected_customer_name = isset($_GET['customer_name']) ? htmlspecialchars($_GET['customer_name']) : '';
-$is_customer_locked = ($pre_selected_customer_id > 0); 
+$lock_customer_from_url = isset($_GET['lock_customer']) && (string)$_GET['lock_customer'] === '1';
+$is_customer_locked = ($pre_selected_customer_id > 0 && $lock_customer_from_url); 
 
 // Get branch name for display
 $branch_name = 'All Branches';
@@ -98,6 +130,12 @@ amgcAddColumnIfMissing($conn, 'unit_types', 'uom_initial', 'uom_initial VARCHAR(
 // ===== SI / TAX DETAILS SAFETY =====
 amgcAddColumnIfMissing($conn, 'sales_orders', 'si_number', 'si_number VARCHAR(50) DEFAULT NULL AFTER so_number');
 amgcAddColumnIfMissing($conn, 'sales_orders', 'document_type', "document_type ENUM('SO','SI') NOT NULL DEFAULT 'SO' AFTER si_number");
+amgcAddColumnIfMissing($conn, 'sales_orders', 'billing_type', "billing_type ENUM('invoice','credit') NOT NULL DEFAULT 'invoice' AFTER document_type");
+amgcAddColumnIfMissing($conn, 'sales_orders', 'is_recurring', 'is_recurring TINYINT(1) NOT NULL DEFAULT 0 AFTER billing_type');
+amgcAddColumnIfMissing($conn, 'sales_orders', 'recurring_every', 'recurring_every INT(11) DEFAULT NULL AFTER is_recurring');
+amgcAddColumnIfMissing($conn, 'sales_orders', 'recurring_period', "recurring_period ENUM('day','week','month','year') DEFAULT NULL AFTER recurring_every");
+amgcAddColumnIfMissing($conn, 'sales_orders', 'recurring_until', 'recurring_until DATE DEFAULT NULL AFTER recurring_period');
+amgcAddColumnIfMissing($conn, 'sales_orders', 'recurrence_group', 'recurrence_group VARCHAR(64) DEFAULT NULL AFTER recurring_until');
 amgcAddColumnIfMissing($conn, 'sales_orders', 'atw_no', 'atw_no VARCHAR(50) DEFAULT NULL AFTER document_type');
 amgcAddColumnIfMissing($conn, 'sales_orders', 'gatepass_no', 'gatepass_no VARCHAR(50) DEFAULT NULL AFTER atw_no');
 amgcAddColumnIfMissing($conn, 'sales_orders', 'registered_business_name', 'registered_business_name VARCHAR(255) DEFAULT NULL AFTER gatepass_no');
@@ -111,6 +149,9 @@ amgcAddColumnIfMissing($conn, 'payments', 'si_number', 'si_number VARCHAR(50) DE
 amgcAddColumnIfMissing($conn, 'payments', 'registered_business_name', 'registered_business_name VARCHAR(255) DEFAULT NULL AFTER si_number');
 amgcAddColumnIfMissing($conn, 'payments', 'tin', 'tin VARCHAR(50) DEFAULT NULL AFTER registered_business_name');
 amgcAddColumnIfMissing($conn, 'payments', 'business_address', 'business_address TEXT DEFAULT NULL AFTER tin');
+amgcAddColumnIfMissing($conn, 'sales_orders', 'si_attachments', 'si_attachments LONGTEXT DEFAULT NULL AFTER business_address');
+amgcAddColumnIfMissing($conn, 'invoices', 'si_attachments', 'si_attachments LONGTEXT DEFAULT NULL AFTER business_address');
+amgcAddColumnIfMissing($conn, 'payments', 'si_attachments', 'si_attachments LONGTEXT DEFAULT NULL AFTER business_address');
 
 // ===== BEYOND CREDIT LIMIT APPROVAL SAFETY =====
 amgcAddColumnIfMissing($conn, 'sales_orders', 'beyond_credit_limit_allowed', 'beyond_credit_limit_allowed TINYINT(1) NOT NULL DEFAULT 0 AFTER business_address');
@@ -132,11 +173,233 @@ amgcAddColumnIfMissing($conn, 'sales_orders', 'outstanding_balance_snapshot', 'o
 
 
 
+
+// ===== RECURRING INVOICE TASK SCHEDULE HELPERS =====
+// Uses the same user_tasks / user_task_assignees structure used by tasks.php.
+function amgcOrderProductEnsureTaskScheduleTables($conn) {
+    $conn->query("CREATE TABLE IF NOT EXISTS `user_tasks` (
+        `task_id` INT NOT NULL AUTO_INCREMENT,
+        `branch_id` INT DEFAULT NULL,
+        `created_by` INT NOT NULL,
+        `title` VARCHAR(255) NOT NULL,
+        `description` TEXT DEFAULT NULL,
+        `task_date` DATE NOT NULL,
+        `task_time` TIME NOT NULL,
+        `due_datetime` DATETIME NOT NULL,
+        `reminder_days` INT NOT NULL DEFAULT 1,
+        `status` ENUM('pending','in_progress','completed','cancelled') NOT NULL DEFAULT 'pending',
+        `priority` ENUM('low','normal','high','urgent') NOT NULL DEFAULT 'normal',
+        `is_recurring` TINYINT(1) NOT NULL DEFAULT 0,
+        `recurrence_interval` INT DEFAULT NULL,
+        `recurrence_unit` ENUM('day','week','month','year') DEFAULT NULL,
+        `recurrence_until` DATE DEFAULT NULL,
+        `recurrence_group` VARCHAR(64) DEFAULT NULL,
+        `source_type` VARCHAR(50) DEFAULT NULL,
+        `source_id` INT DEFAULT NULL,
+        `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (`task_id`),
+        KEY `idx_tasks_branch_due` (`branch_id`,`due_datetime`),
+        KEY `idx_tasks_status` (`status`),
+        KEY `idx_tasks_created_by` (`created_by`),
+        KEY `idx_tasks_source` (`source_type`,`source_id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS `user_task_assignees` (
+        `id` INT NOT NULL AUTO_INCREMENT,
+        `task_id` INT NOT NULL,
+        `user_id` INT NOT NULL,
+        `notify_seen` TINYINT(1) NOT NULL DEFAULT 0,
+        `seen_at` DATETIME DEFAULT NULL,
+        `assignee_status` ENUM('pending','in_progress','completed','cancelled') NOT NULL DEFAULT 'pending',
+        `assignee_note` TEXT DEFAULT NULL,
+        `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        `updated_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (`id`),
+        UNIQUE KEY `uniq_task_user` (`task_id`,`user_id`),
+        KEY `idx_assignee_user` (`user_id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+    $taskColumns = [
+        'priority' => "ENUM('low','normal','high','urgent') NOT NULL DEFAULT 'normal' AFTER `status`",
+        'is_recurring' => "TINYINT(1) NOT NULL DEFAULT 0 AFTER `priority`",
+        'recurrence_interval' => "INT DEFAULT NULL AFTER `is_recurring`",
+        'recurrence_unit' => "ENUM('day','week','month','year') DEFAULT NULL AFTER `recurrence_interval`",
+        'recurrence_until' => "DATE DEFAULT NULL AFTER `recurrence_unit`",
+        'recurrence_group' => "VARCHAR(64) DEFAULT NULL AFTER `recurrence_until`",
+        'source_type' => "VARCHAR(50) DEFAULT NULL AFTER `recurrence_group`",
+        'source_id' => "INT DEFAULT NULL AFTER `source_type`"
+    ];
+    foreach ($taskColumns as $column => $definition) {
+        if (!amgcColumnExists($conn, 'user_tasks', $column)) {
+            @$conn->query("ALTER TABLE `user_tasks` ADD COLUMN `{$column}` {$definition}");
+        }
+    }
+    $assigneeColumns = [
+        'notify_seen' => "TINYINT(1) NOT NULL DEFAULT 0 AFTER `user_id`",
+        'seen_at' => "DATETIME DEFAULT NULL AFTER `notify_seen`",
+        'assignee_status' => "ENUM('pending','in_progress','completed','cancelled') NOT NULL DEFAULT 'pending' AFTER `seen_at`",
+        'assignee_note' => "TEXT DEFAULT NULL AFTER `assignee_status`",
+        'updated_at' => "TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER `assignee_note`"
+    ];
+    foreach ($assigneeColumns as $column => $definition) {
+        if (!amgcColumnExists($conn, 'user_task_assignees', $column)) {
+            @$conn->query("ALTER TABLE `user_task_assignees` ADD COLUMN `{$column}` {$definition}");
+        }
+    }
+}
+
+function amgcOrderProductCreateRecurringInvoiceTasks($conn, $soId, $soNumber, $customerName, $branchId, $userId, $startDate, $every, $period, $untilDate, $recurrenceGroup) {
+    $soId = (int)$soId;
+    $branchId = (int)$branchId;
+    $userId = (int)$userId;
+    $every = max(1, (int)$every);
+    $period = strtolower(trim((string)$period));
+    $startDate = substr(trim((string)$startDate), 0, 10);
+    $untilDate = substr(trim((string)$untilDate), 0, 10);
+    if ($soId <= 0 || $userId <= 0 || $startDate === '' || $untilDate === '' || !in_array($period, ['day','week','month','year'], true)) return 0;
+
+    amgcOrderProductEnsureTaskScheduleTables($conn);
+
+    // Prevent duplicated reminders when the same request is retried.
+    $delete = $conn->prepare("DELETE FROM user_tasks WHERE source_type='recurring_invoice' AND source_id=?");
+    if ($delete) { $delete->bind_param('i', $soId); $delete->execute(); $delete->close(); }
+
+    try {
+        $date = new DateTime($startDate);
+        $until = new DateTime($untilDate);
+    } catch (Exception $dateError) {
+        throw new Exception('Invalid recurring invoice schedule date.');
+    }
+    if ($until < $date) {
+        throw new Exception('Recurring invoice Until Date cannot be earlier than the invoice date.');
+    }
+    if ($period === 'day') $interval = new DateInterval('P' . $every . 'D');
+    elseif ($period === 'week') $interval = new DateInterval('P' . ($every * 7) . 'D');
+    elseif ($period === 'month') $interval = new DateInterval('P' . $every . 'M');
+    else $interval = new DateInterval('P' . $every . 'Y');
+
+    // The current invoice is already created, so reminders begin on the next occurrence.
+    $date->add($interval);
+    $created = 0;
+    $taskTime = '08:00:00';
+    $titleCustomer = trim((string)$customerName) !== '' ? trim((string)$customerName) : 'Customer';
+    $title = 'Recurring Invoice - ' . $titleCustomer . ' (' . $soNumber . ')';
+    $description = 'Scheduled recurring invoice based on ' . $soNumber . '. Open Create Invoice, review the customer and order details, then create the next invoice.';
+    $priority = 'normal';
+    $reminderDays = 1;
+    $isRecurring = 1;
+    $sourceType = 'recurring_invoice';
+
+    $insert = $conn->prepare("INSERT INTO user_tasks
+        (branch_id, created_by, title, description, task_date, task_time, due_datetime, reminder_days, priority, is_recurring, recurrence_interval, recurrence_unit, recurrence_until, recurrence_group, source_type, source_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    if (!$insert) throw new Exception('Unable to prepare recurring invoice task schedule: ' . $conn->error);
+    $assign = $conn->prepare("INSERT IGNORE INTO user_task_assignees (task_id, user_id) VALUES (?, ?)");
+    if (!$assign) { $insert->close(); throw new Exception('Unable to prepare recurring invoice assignee: ' . $conn->error); }
+
+    while ($date <= $until && $created < 370) {
+        $taskDate = $date->format('Y-m-d');
+        $dueDateTime = $taskDate . ' ' . $taskTime;
+        $insert->bind_param('iisssssisiissssi', $branchId, $userId, $title, $description, $taskDate, $taskTime, $dueDateTime, $reminderDays, $priority, $isRecurring, $every, $period, $untilDate, $recurrenceGroup, $sourceType, $soId);
+        if (!$insert->execute()) {
+            $message = $insert->error;
+            $assign->close();
+            $insert->close();
+            throw new Exception('Unable to save recurring invoice task: ' . $message);
+        }
+        $taskId = (int)$conn->insert_id;
+        $assign->bind_param('ii', $taskId, $userId);
+        if (!$assign->execute()) {
+            $message = $assign->error;
+            $assign->close(); $insert->close();
+            throw new Exception('Unable to assign recurring invoice task: ' . $message);
+        }
+        $created++;
+        $date->add($interval);
+    }
+    $assign->close();
+    $insert->close();
+    return $created;
+}
+
 // ===== PICKUP PAYMENT / INVOICE HELPERS =====
 function amgcOrderProductTableExists($conn, $table) {
     $table = preg_replace('/[^a-zA-Z0-9_]/', '', $table);
     $res = $conn->query("SHOW TABLES LIKE '$table'");
     return ($res && $res->num_rows > 0);
+}
+
+function amgcOrderProductNormalizeSIAttachments($raw) {
+    if (empty($raw)) return [];
+    $decoded = json_decode((string)$raw, true);
+    if (is_array($decoded)) {
+        $clean = [];
+        foreach ($decoded as $file) {
+            if (!is_array($file)) continue;
+            $path = trim((string)($file['path'] ?? ''));
+            if ($path === '') continue;
+            $clean[] = [
+                'name' => trim((string)($file['name'] ?? basename($path))),
+                'path' => $path,
+                'uploaded_at' => trim((string)($file['uploaded_at'] ?? ''))
+            ];
+        }
+        return $clean;
+    }
+    $raw = trim((string)$raw);
+    return $raw !== '' ? [['name' => basename($raw), 'path' => $raw, 'uploaded_at' => '']] : [];
+}
+
+function amgcOrderProductSaveSIAttachments($so_id) {
+    $saved = [];
+    if (!isset($_FILES['si_attachments'])) return $saved;
+
+    $files = $_FILES['si_attachments'];
+    $names = is_array($files['name'] ?? null) ? $files['name'] : [$files['name'] ?? ''];
+    $tmpNames = is_array($files['tmp_name'] ?? null) ? $files['tmp_name'] : [$files['tmp_name'] ?? ''];
+    $errors = is_array($files['error'] ?? null) ? $files['error'] : [$files['error'] ?? UPLOAD_ERR_NO_FILE];
+    $sizes = is_array($files['size'] ?? null) ? $files['size'] : [$files['size'] ?? 0];
+
+    $uploadDir = __DIR__ . '/../uploads/si_attachments';
+    if (!is_dir($uploadDir) && !mkdir($uploadDir, 0775, true)) {
+        throw new Exception('Unable to create SI attachment upload folder.');
+    }
+
+    $allowedExtensions = ['pdf','jpg','jpeg','png','webp','doc','docx','xls','xlsx'];
+    $maxSize = 15 * 1024 * 1024;
+
+    foreach ($names as $idx => $originalName) {
+        $originalName = trim((string)$originalName);
+        $error = (int)($errors[$idx] ?? UPLOAD_ERR_NO_FILE);
+        if ($error === UPLOAD_ERR_NO_FILE || $originalName === '') continue;
+        if ($error !== UPLOAD_ERR_OK) throw new Exception('Failed to upload one SI attachment.');
+
+        $size = (int)($sizes[$idx] ?? 0);
+        if ($size > $maxSize) throw new Exception('Each SI attachment must not exceed 15MB.');
+
+        $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+        if (!in_array($extension, $allowedExtensions, true)) {
+            throw new Exception('Invalid SI attachment type. Allowed: PDF, images, Word, and Excel files.');
+        }
+
+        $safeBase = preg_replace('/[^a-zA-Z0-9_\-\.]/', '_', pathinfo($originalName, PATHINFO_FILENAME));
+        $safeBase = trim($safeBase, '._-');
+        if ($safeBase === '') $safeBase = 'si_attachment';
+        $fileName = 'SI_' . (int)$so_id . '_' . date('YmdHis') . '_' . bin2hex(random_bytes(4)) . '_' . $safeBase . '.' . $extension;
+        $targetPath = $uploadDir . '/' . $fileName;
+        if (!move_uploaded_file($tmpNames[$idx], $targetPath)) {
+            throw new Exception('Unable to save SI attachment.');
+        }
+
+        $saved[] = [
+            'name' => $originalName,
+            'path' => '../uploads/si_attachments/' . $fileName,
+            'uploaded_at' => date('Y-m-d H:i:s')
+        ];
+    }
+
+    return $saved;
 }
 
 function amgcOrderProductGetCreditTermsDays($conn, $customer_id) {
@@ -218,6 +481,326 @@ function amgcOrderProductInsertPayment($conn, $invoice_id, $so_id, $customer_id,
 }
 
 
+
+
+
+// ===== ACCOUNTING / JOURNAL POSTING HELPERS =====
+// This connects saved invoices from Order Product to Chart of Accounts and Journal Entries.
+function amgcOrderProductEnsureAccountingTables($conn) {
+    $conn->query("CREATE TABLE IF NOT EXISTS `chart_of_accounts` (
+        `account_id` INT(11) NOT NULL AUTO_INCREMENT,
+        `branch_id` INT(11) DEFAULT NULL,
+        `parent_account_id` INT(11) DEFAULT NULL,
+        `account_code` VARCHAR(50) DEFAULT NULL,
+        `account_title` VARCHAR(255) NOT NULL,
+        `account_type` VARCHAR(100) NOT NULL,
+        `description` TEXT DEFAULT NULL,
+        `balance` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+        `status` ENUM('active','inactive') NOT NULL DEFAULT 'active',
+        `created_by` INT(11) DEFAULT NULL,
+        `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        `updated_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (`account_id`),
+        KEY `idx_chart_accounts_branch_id` (`branch_id`),
+        KEY `idx_chart_accounts_type` (`account_type`),
+        KEY `idx_chart_accounts_status` (`status`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS `journal_entries` (
+        `journal_id` INT(11) NOT NULL AUTO_INCREMENT,
+        `entry_no` VARCHAR(100) NOT NULL,
+        `journal_date` DATE NOT NULL,
+        `attachment_path` TEXT DEFAULT NULL,
+        `branch_id` INT(11) NOT NULL DEFAULT 0,
+        `created_by` INT(11) NOT NULL DEFAULT 0,
+        `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (`journal_id`),
+        KEY `entry_no` (`entry_no`),
+        KEY `branch_id` (`branch_id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS `journal_entry_details` (
+        `detail_id` INT(11) NOT NULL AUTO_INCREMENT,
+        `journal_id` INT(11) NOT NULL,
+        `account_id` INT(11) NOT NULL DEFAULT 0,
+        `account_title` VARCHAR(255) NOT NULL,
+        `debit` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+        `credit` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+        `memo` TEXT DEFAULT NULL,
+        `counterparty` VARCHAR(255) DEFAULT NULL,
+        `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (`detail_id`),
+        KEY `journal_id` (`journal_id`),
+        KEY `account_id` (`account_id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS `chart_account_transactions` (
+        `transaction_id` INT(11) NOT NULL AUTO_INCREMENT,
+        `account_id` INT(11) NOT NULL,
+        `branch_id` INT(11) NOT NULL DEFAULT 0,
+        `transaction_date` DATE NOT NULL,
+        `transaction_type` VARCHAR(100) NOT NULL,
+        `transaction_no` VARCHAR(100) DEFAULT NULL,
+        `reference_no` VARCHAR(100) DEFAULT NULL,
+        `memo` TEXT DEFAULT NULL,
+        `account_name` VARCHAR(255) DEFAULT NULL,
+        `counterparty` VARCHAR(255) DEFAULT NULL,
+        `debit` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+        `credit` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+        `balance_after` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+        `source_table` VARCHAR(100) DEFAULT NULL,
+        `source_id` INT(11) DEFAULT NULL,
+        `created_by` INT(11) DEFAULT NULL,
+        `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (`transaction_id`),
+        KEY `idx_cat_account_id` (`account_id`),
+        KEY `idx_cat_branch_id` (`branch_id`),
+        KEY `idx_cat_source` (`source_table`, `source_id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+
+    $neededColumns = [
+        'counterparty' => "ALTER TABLE `chart_account_transactions` ADD COLUMN `counterparty` VARCHAR(255) DEFAULT NULL AFTER `account_name`",
+        'source_table' => "ALTER TABLE `chart_account_transactions` ADD COLUMN `source_table` VARCHAR(100) DEFAULT NULL AFTER `balance_after`",
+        'source_id' => "ALTER TABLE `chart_account_transactions` ADD COLUMN `source_id` INT(11) DEFAULT NULL AFTER `source_table`",
+        'created_by' => "ALTER TABLE `chart_account_transactions` ADD COLUMN `created_by` INT(11) DEFAULT NULL AFTER `source_id`",
+        'created_at' => "ALTER TABLE `chart_account_transactions` ADD COLUMN `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER `created_by`"
+    ];
+    foreach ($neededColumns as $column => $sql) {
+        if (!amgcColumnExists($conn, 'chart_account_transactions', $column)) {
+            @$conn->query($sql);
+        }
+    }
+}
+
+function amgcOrderProductGetOrCreateAccount($conn, $title, $type, $branch_id, $user_id) {
+    amgcOrderProductEnsureAccountingTables($conn);
+    $branch_id = (int)$branch_id;
+    $user_id = (int)$user_id;
+
+    $sql = "SELECT account_id, account_title, account_type, COALESCE(balance,0) AS balance FROM chart_of_accounts WHERE status = 'active' AND account_title = ?";
+    if ($branch_id > 0 && amgcColumnExists($conn, 'chart_of_accounts', 'branch_id')) {
+        $sql .= " AND (branch_id = ? OR branch_id = 0 OR branch_id IS NULL) ORDER BY CASE WHEN branch_id = ? THEN 0 WHEN branch_id IS NULL THEN 1 ELSE 2 END, account_id ASC LIMIT 1";
+        $stmt = $conn->prepare($sql);
+        if ($stmt) $stmt->bind_param('sii', $title, $branch_id, $branch_id);
+    } else {
+        $sql .= " ORDER BY account_id ASC LIMIT 1";
+        $stmt = $conn->prepare($sql);
+        if ($stmt) $stmt->bind_param('s', $title);
+    }
+    if ($stmt) {
+        $stmt->execute();
+        $row = $stmt->get_result()->fetch_assoc();
+        $stmt->close();
+        if ($row) return $row;
+    }
+
+    $description = 'Auto-created for Order Product invoice posting.';
+    $account_code = '';
+    $target_branch = $branch_id > 0 ? $branch_id : null;
+    $balance = 0.00;
+    $parent = null;
+    $insert = $conn->prepare("INSERT INTO chart_of_accounts (branch_id, parent_account_id, account_code, account_title, account_type, description, balance, status, created_by) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?)");
+    if (!$insert) throw new Exception('Unable to create chart account: ' . $conn->error);
+    $insert->bind_param('iissssdi', $target_branch, $parent, $account_code, $title, $type, $description, $balance, $user_id);
+    if (!$insert->execute()) throw new Exception('Unable to create chart account: ' . $insert->error);
+    $account_id = (int)$conn->insert_id;
+    $insert->close();
+    return ['account_id' => $account_id, 'account_title' => $title, 'account_type' => $type, 'balance' => 0.00];
+}
+
+function amgcOrderProductAccountNewBalance($account_type, $current_balance, $debit, $credit) {
+    $normalDebitTypes = ['Bank', 'Accounts Receivable', 'Other Current Asset', 'Fixed Asset', 'Other Asset', 'Cost of Goods Sold', 'Expense', 'Other Expense'];
+    if (in_array($account_type, $normalDebitTypes, true)) {
+        return (float)$current_balance + (float)$debit - (float)$credit;
+    }
+    return (float)$current_balance - (float)$debit + (float)$credit;
+}
+
+function amgcOrderProductInsertAccountingLine($conn, $journal_id, $account, $branch_id, $entry_date, $entry_no, $reference_no, $memo, $counterparty, $debit, $credit, $source_table, $source_id, $user_id) {
+    $account_id = (int)$account['account_id'];
+    $account_title = (string)$account['account_title'];
+    $account_type = (string)$account['account_type'];
+    $debit = round((float)$debit, 2);
+    $credit = round((float)$credit, 2);
+    if ($account_id <= 0 || ($debit <= 0 && $credit <= 0)) return;
+
+    $current_balance = (float)($account['balance'] ?? 0);
+    $new_balance = amgcOrderProductAccountNewBalance($account_type, $current_balance, $debit, $credit);
+
+    $upd = $conn->prepare("UPDATE chart_of_accounts SET balance = ? WHERE account_id = ?");
+    if (!$upd) throw new Exception('Unable to update chart account balance: ' . $conn->error);
+    $upd->bind_param('di', $new_balance, $account_id);
+    if (!$upd->execute()) throw new Exception('Unable to update chart account balance: ' . $upd->error);
+    $upd->close();
+
+    $detail = $conn->prepare("INSERT INTO journal_entry_details (journal_id, account_id, account_title, debit, credit, memo, counterparty) VALUES (?, ?, ?, ?, ?, ?, ?)");
+    if (!$detail) throw new Exception('Unable to save journal detail: ' . $conn->error);
+    $detail->bind_param('iisddss', $journal_id, $account_id, $account_title, $debit, $credit, $memo, $counterparty);
+    if (!$detail->execute()) throw new Exception('Unable to save journal detail: ' . $detail->error);
+    $detail->close();
+
+    $cat = $conn->prepare("INSERT INTO chart_account_transactions (account_id, branch_id, transaction_date, transaction_type, transaction_no, reference_no, memo, account_name, counterparty, debit, credit, balance_after, source_table, source_id, created_by) VALUES (?, ?, ?, 'Create Invoice', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    if (!$cat) throw new Exception('Unable to save chart account transaction: ' . $conn->error);
+    $cat->bind_param('iissssssdddsii', $account_id, $branch_id, $entry_date, $entry_no, $reference_no, $memo, $account_title, $counterparty, $debit, $credit, $new_balance, $source_table, $source_id, $user_id);
+    if (!$cat->execute()) throw new Exception('Unable to save chart account transaction: ' . $cat->error);
+    $cat->close();
+}
+
+
+function amgcOrderProductFirstExistingColumn($conn, $table, $columns) {
+    foreach ($columns as $column) {
+        if (amgcColumnExists($conn, $table, $column)) {
+            return $column;
+        }
+    }
+    return '';
+}
+
+function amgcOrderProductGetItemCostForAccounting($conn, $item_id, $unit_type, $branch_id = 0) {
+    $item_id = (int)$item_id;
+    $branch_id = (int)$branch_id;
+    $unit_type = trim((string)$unit_type);
+    if ($item_id <= 0) return 0.00;
+
+    // 1) Primary source: item_unit_inventory for the exact selected UoM.
+    if (amgcOrderProductTableExists($conn, 'item_unit_inventory') && amgcOrderProductTableExists($conn, 'unit_types')) {
+        $cost_col = amgcOrderProductFirstExistingColumn($conn, 'item_unit_inventory', ['unit_cost', 'ave_cost', 'average_cost', 'cost', 'purchase_cost']);
+        if ($cost_col !== '') {
+            $branch_filter = '';
+            if ($branch_id > 0 && amgcColumnExists($conn, 'item_unit_inventory', 'branch_id')) {
+                $branch_filter = " AND (iui.branch_id = " . (int)$branch_id . " OR iui.branch_id = 0 OR iui.branch_id IS NULL)";
+            }
+            $sql = "SELECT COALESCE(NULLIF(iui.`$cost_col`, 0), 0) AS unit_cost
+                    FROM item_unit_inventory iui
+                    JOIN unit_types ut ON iui.unit_type_id = ut.unit_type_id
+                    WHERE iui.item_id = ?" . ($unit_type !== '' ? " AND LOWER(ut.unit_type_name) = LOWER(?)" : "") . $branch_filter . "
+                    ORDER BY CASE WHEN COALESCE(iui.`$cost_col`,0) > 0 THEN 0 ELSE 1 END, iui.inventory_id DESC
+                    LIMIT 1";
+            $stmt = $conn->prepare($sql);
+            if ($stmt) {
+                if ($unit_type !== '') $stmt->bind_param('is', $item_id, $unit_type);
+                else $stmt->bind_param('i', $item_id);
+                $stmt->execute();
+                $row = $stmt->get_result()->fetch_assoc();
+                $stmt->close();
+                $cost = (float)($row['unit_cost'] ?? 0);
+                if ($cost > 0) return $cost;
+            }
+
+            // If exact UoM has no cost, use the average cost of any costed inventory row for the item.
+            $sql = "SELECT AVG(NULLIF(`$cost_col`, 0)) AS avg_cost FROM item_unit_inventory WHERE item_id = ?";
+            if ($branch_id > 0 && amgcColumnExists($conn, 'item_unit_inventory', 'branch_id')) {
+                $sql .= " AND (branch_id = " . (int)$branch_id . " OR branch_id = 0 OR branch_id IS NULL)";
+            }
+            $stmt = $conn->prepare($sql);
+            if ($stmt) {
+                $stmt->bind_param('i', $item_id);
+                $stmt->execute();
+                $row = $stmt->get_result()->fetch_assoc();
+                $stmt->close();
+                $cost = (float)($row['avg_cost'] ?? 0);
+                if ($cost > 0) return $cost;
+            }
+        }
+    }
+
+    // 2) Fallback: item_unit_pricing if your cost is stored with unit pricing.
+    if (amgcOrderProductTableExists($conn, 'item_unit_pricing')) {
+        $cost_col = amgcOrderProductFirstExistingColumn($conn, 'item_unit_pricing', ['unit_cost', 'ave_cost', 'average_cost', 'cost', 'purchase_cost', 'purchase_price']);
+        if ($cost_col !== '') {
+            $join = amgcOrderProductTableExists($conn, 'unit_types') && amgcColumnExists($conn, 'item_unit_pricing', 'unit_type_id');
+            $sql = $join
+                ? "SELECT COALESCE(NULLIF(iup.`$cost_col`,0),0) AS unit_cost FROM item_unit_pricing iup JOIN unit_types ut ON iup.unit_type_id = ut.unit_type_id WHERE iup.item_id = ?" . ($unit_type !== '' ? " AND LOWER(ut.unit_type_name) = LOWER(?)" : "") . " ORDER BY CASE WHEN COALESCE(iup.`$cost_col`,0) > 0 THEN 0 ELSE 1 END LIMIT 1"
+                : "SELECT COALESCE(NULLIF(`$cost_col`,0),0) AS unit_cost FROM item_unit_pricing WHERE item_id = ? ORDER BY CASE WHEN COALESCE(`$cost_col`,0) > 0 THEN 0 ELSE 1 END LIMIT 1";
+            $stmt = $conn->prepare($sql);
+            if ($stmt) {
+                if ($join && $unit_type !== '') $stmt->bind_param('is', $item_id, $unit_type);
+                else $stmt->bind_param('i', $item_id);
+                $stmt->execute();
+                $row = $stmt->get_result()->fetch_assoc();
+                $stmt->close();
+                $cost = (float)($row['unit_cost'] ?? 0);
+                if ($cost > 0) return $cost;
+            }
+        }
+    }
+
+    // 3) Last fallback: item master cost columns.
+    if (amgcOrderProductTableExists($conn, 'items')) {
+        $cost_col = amgcOrderProductFirstExistingColumn($conn, 'items', ['ave_cost', 'average_cost', 'unit_cost', 'item_cost', 'cost', 'purchase_cost', 'purchase_price', 'buying_price']);
+        if ($cost_col !== '') {
+            $sql = "SELECT COALESCE(NULLIF(`$cost_col`,0),0) AS unit_cost FROM items WHERE item_id = ? LIMIT 1";
+            $stmt = $conn->prepare($sql);
+            if ($stmt) {
+                $stmt->bind_param('i', $item_id);
+                $stmt->execute();
+                $row = $stmt->get_result()->fetch_assoc();
+                $stmt->close();
+                $cost = (float)($row['unit_cost'] ?? 0);
+                if ($cost > 0) return $cost;
+            }
+        }
+    }
+
+    return 0.00;
+}
+
+function amgcOrderProductPostInvoiceAccounting($conn, $so_id, $invoice_id, $customer_id, $branch_id, $user_id, $total_amount, $total_cogs, $document_no = '') {
+    $so_id = (int)$so_id;
+    $invoice_id = (int)$invoice_id;
+    $customer_id = (int)$customer_id;
+    $branch_id = (int)$branch_id;
+    $user_id = (int)$user_id;
+    $total_amount = round((float)$total_amount, 2);
+    $total_cogs = round(max(0, (float)$total_cogs), 2);
+    if ($so_id <= 0 || $total_amount <= 0) return;
+
+    amgcOrderProductEnsureAccountingTables($conn);
+
+    $dup = $conn->prepare("SELECT transaction_id FROM chart_account_transactions WHERE source_table = 'sales_orders' AND source_id = ? LIMIT 1");
+    if ($dup) {
+        $dup->bind_param('i', $so_id);
+        $dup->execute();
+        $existing = $dup->get_result()->fetch_assoc();
+        $dup->close();
+        if ($existing) return;
+    }
+
+    $customer_name = '';
+    $cust = $conn->prepare("SELECT customer_name FROM customers WHERE customer_id = ? LIMIT 1");
+    if ($cust) {
+        $cust->bind_param('i', $customer_id);
+        $cust->execute();
+        $row = $cust->get_result()->fetch_assoc();
+        $cust->close();
+        $customer_name = trim((string)($row['customer_name'] ?? ''));
+    }
+
+    $ar = amgcOrderProductGetOrCreateAccount($conn, 'Accounts Receivable', 'Accounts Receivable', $branch_id, $user_id);
+    $sales = amgcOrderProductGetOrCreateAccount($conn, 'Sales', 'Income', $branch_id, $user_id);
+    $cogs = amgcOrderProductGetOrCreateAccount($conn, 'Cost of Goods Sold', 'Cost of Goods Sold', $branch_id, $user_id);
+    $inventory = amgcOrderProductGetOrCreateAccount($conn, 'Inventory', 'Other Current Asset', $branch_id, $user_id);
+
+    $entry_no = 'INV-' . date('Ymd') . '-' . str_pad((string)$so_id, 5, '0', STR_PAD_LEFT);
+    $entry_date = date('Y-m-d');
+    $reference_no = trim($document_no) !== '' ? trim($document_no) : ('SO #' . $so_id);
+    $memo = 'Invoice posted from Order Product';
+
+    $header = $conn->prepare("INSERT INTO journal_entries (entry_no, journal_date, attachment_path, branch_id, created_by) VALUES (?, ?, NULL, ?, ?)");
+    if (!$header) throw new Exception('Unable to save invoice journal header: ' . $conn->error);
+    $header->bind_param('ssii', $entry_no, $entry_date, $branch_id, $user_id);
+    if (!$header->execute()) throw new Exception('Unable to save invoice journal header: ' . $header->error);
+    $journal_id = (int)$conn->insert_id;
+    $header->close();
+
+    amgcOrderProductInsertAccountingLine($conn, $journal_id, $ar, $branch_id, $entry_date, $entry_no, $reference_no, $memo, $customer_name, $total_amount, 0, 'sales_orders', $so_id, $user_id);
+    amgcOrderProductInsertAccountingLine($conn, $journal_id, $sales, $branch_id, $entry_date, $entry_no, $reference_no, $memo, $customer_name, 0, $total_amount, 'sales_orders', $so_id, $user_id);
+
+    if ($total_cogs > 0) {
+        amgcOrderProductInsertAccountingLine($conn, $journal_id, $cogs, $branch_id, $entry_date, $entry_no, $reference_no, $memo, $customer_name, $total_cogs, 0, 'sales_orders', $so_id, $user_id);
+        amgcOrderProductInsertAccountingLine($conn, $journal_id, $inventory, $branch_id, $entry_date, $entry_no, $reference_no, $memo, $customer_name, 0, $total_cogs, 'sales_orders', $so_id, $user_id);
+    }
+}
 
 // ===== CREDIT LIMIT APPROVAL HELPERS =====
 function amgcOrderProductGetActiveApprovedCreditRequest($conn, $customer_id) {
@@ -578,26 +1161,35 @@ sort($categories);
 // Get all customers
 $customers = [];
 
+// Customer dropdown group source. It will use the first existing column below.
+$customer_group_column = amgcOrderProductFirstExistingColumn($conn, 'customers', ['customer_group', 'group_name', 'customer_type', 'group_type', 'classification']);
+$customer_group_select_sql = $customer_group_column !== ''
+    ? "COALESCE(NULLIF(TRIM(c.`$customer_group_column`), ''), 'General') AS customer_group"
+    : "'General' AS customer_group";
+
 if ($branch_column_exists) {
     if ($view_all_branches) {
         $customers_query = "SELECT c.customer_id, c.customer_name, c.email, c.phone_number, c.address, c.city,
-                        c.price_level
+                        c.price_level,
+                        $customer_group_select_sql
                         FROM customers c
                         LEFT JOIN branches b ON c.branch_id = b.branch_id
                         WHERE c.status = 'active'
-                        ORDER BY c.customer_name ASC";
+                        ORDER BY customer_group ASC, c.customer_name ASC";
     } else {
         $customers_query = "SELECT c.customer_id, c.customer_name, c.email, c.phone_number, c.address, c.city,
-                        c.price_level
+                        c.price_level,
+                        $customer_group_select_sql
                         FROM customers c
                         WHERE c.status = 'active' AND c.branch_id = $branch_id
-                        ORDER BY c.customer_name ASC";
+                        ORDER BY customer_group ASC, c.customer_name ASC";
     }
 } else {
-    $customers_query = "SELECT customer_id, customer_name, email, phone_number, address, city, price_level
-                    FROM customers
-                    WHERE status = 'active'
-                    ORDER BY customer_name ASC";
+    $customers_query = "SELECT c.customer_id, c.customer_name, c.email, c.phone_number, c.address, c.city, c.price_level,
+                    $customer_group_select_sql
+                    FROM customers c
+                    WHERE c.status = 'active'
+                    ORDER BY customer_group ASC, c.customer_name ASC";
 }
 
 $customers_result = $conn->query($customers_query);
@@ -622,18 +1214,129 @@ if ($delivery_drivers_result) {
     error_log("Drivers query error: " . $conn->error);
 }
 
-// Get active branch vehicles for delivery assignment
+// Get active Motorpool-registered vehicles for delivery assignment.
+// Only vehicles registered in Motorpool should appear during order confirmation.
 $delivery_vehicles = [];
-$delivery_vehicles_query = "SELECT vehicle_id, vehicle_type, plate_number FROM vehicles WHERE status = 'active'";
-if (!$view_all_branches) {
-    $delivery_vehicles_query .= " AND branch_id = " . (int)$branch_id;
-}
-$delivery_vehicles_query .= " ORDER BY vehicle_type ASC, plate_number ASC";
-$delivery_vehicles_result = $conn->query($delivery_vehicles_query);
-if ($delivery_vehicles_result) {
-    $delivery_vehicles = $delivery_vehicles_result->fetch_all(MYSQLI_ASSOC);
+if (amgcOrderProductTableExists($conn, 'motorpool_vehicles')) {
+    $motorpoolVehicleColumns = [];
+    $motorpoolVehicleColumnsResult = $conn->query("SHOW COLUMNS FROM motorpool_vehicles");
+    if ($motorpoolVehicleColumnsResult) {
+        while ($mvCol = $motorpoolVehicleColumnsResult->fetch_assoc()) {
+            $motorpoolVehicleColumns[] = $mvCol['Field'];
+        }
+    }
+
+    $motorpoolIdExpr = in_array('id', $motorpoolVehicleColumns, true) ? 'id' : (in_array('vehicle_id', $motorpoolVehicleColumns, true) ? 'vehicle_id' : '0');
+    $motorpoolTypeParts = [];
+    foreach (['vehicle_type', 'vehicle_category', 'make_brand', 'classification', 'body_type'] as $typeCol) {
+        if (in_array($typeCol, $motorpoolVehicleColumns, true)) {
+            $motorpoolTypeParts[] = "NULLIF(TRIM(`$typeCol`), '')";
+        }
+    }
+    $motorpoolTypeExpr = !empty($motorpoolTypeParts) ? 'COALESCE(' . implode(', ', $motorpoolTypeParts) . ", 'Vehicle')" : "'Vehicle'";
+    $motorpoolPlateExpr = in_array('plate_no', $motorpoolVehicleColumns, true) ? 'plate_no' : (in_array('plate_number', $motorpoolVehicleColumns, true) ? 'plate_number' : "''");
+    $motorpoolBranchCondition = "";
+    if (!$view_all_branches && $branch_id > 0 && in_array('branch_id', $motorpoolVehicleColumns, true)) {
+        $motorpoolBranchCondition = " WHERE branch_id = " . (int)$branch_id;
+    }
+
+    $delivery_vehicles_query = "SELECT `$motorpoolIdExpr` AS vehicle_id, $motorpoolTypeExpr AS vehicle_type, `$motorpoolPlateExpr` AS plate_number FROM motorpool_vehicles $motorpoolBranchCondition ORDER BY vehicle_type ASC, plate_number ASC";
+    $delivery_vehicles_result = $conn->query($delivery_vehicles_query);
+    if ($delivery_vehicles_result) {
+        $delivery_vehicles = $delivery_vehicles_result->fetch_all(MYSQLI_ASSOC);
+    } else {
+        error_log("Motorpool vehicles query error: " . $conn->error);
+    }
 } else {
-    error_log("Vehicles query error: " . $conn->error);
+    error_log("motorpool_vehicles table was not found. Delivery vehicle list is empty.");
+}
+
+// ===== SALES ORDER TAB EDIT MODAL: DRIVER / VEHICLE DROPDOWN DATA =====
+// Same purpose as sales_order.php: group drivers by pending deliveries and load Motorpool vehicles.
+$available_drivers = [];
+if (amgcOrderProductTableExists($conn, 'drivers')) {
+    $available_drivers_query = "
+        SELECT
+            d.driver_id,
+            d.driver_name,
+            COALESCE(d.status, 'active') AS status,
+            (
+                SELECT COUNT(*)
+                FROM pick_lists pl
+                JOIN sales_orders so ON pl.so_id = so.so_id
+                WHERE pl.driver_id = d.driver_id
+                  AND so.order_status IN ('confirmed', 'processing', 'ready', 'in_transit')
+                  AND pl.pick_status NOT IN ('completed', 'cancelled')
+            ) AS pending_deliveries,
+            (
+                SELECT COUNT(*)
+                FROM trip_tickets tt
+                WHERE tt.driver_id = d.driver_id
+                  AND tt.trip_status = 'in-progress'
+            ) AS active_trips
+        FROM drivers d
+        WHERE COALESCE(d.status, 'active') = 'active'
+    ";
+    if (!$view_all_branches && $branch_id > 0 && amgcColumnExists($conn, 'drivers', 'branch_id')) {
+        $available_drivers_query .= " AND (d.branch_id = " . (int)$branch_id . " OR d.branch_id IS NULL OR d.branch_id = 0)";
+    }
+    $available_drivers_query .= " HAVING active_trips = 0 ORDER BY pending_deliveries DESC, d.driver_name ASC";
+    $available_drivers_result = $conn->query($available_drivers_query);
+    if ($available_drivers_result) {
+        $available_drivers = $available_drivers_result->fetch_all(MYSQLI_ASSOC);
+    }
+}
+$drivers_with_pending = array_values(array_filter($available_drivers, function($d) {
+    return (int)($d['pending_deliveries'] ?? 0) > 0;
+}));
+$available_drivers_without_pending = array_values(array_filter($available_drivers, function($d) {
+    return (int)($d['pending_deliveries'] ?? 0) === 0;
+}));
+
+$available_vehicles = [];
+if (amgcOrderProductTableExists($conn, 'motorpool_vehicles')) {
+    $mv_cols = [];
+    $mv_cols_res = $conn->query("SHOW COLUMNS FROM motorpool_vehicles");
+    if ($mv_cols_res) { while ($c = $mv_cols_res->fetch_assoc()) $mv_cols[] = $c['Field']; }
+    $mv_id_expr = in_array('id', $mv_cols, true) ? 'id' : (in_array('vehicle_id', $mv_cols, true) ? 'vehicle_id' : '0');
+    $mv_type_parts = [];
+    foreach (['vehicle_type','vehicle_category','make_brand','classification','body_type'] as $col) {
+        if (in_array($col, $mv_cols, true)) $mv_type_parts[] = "NULLIF(TRIM(`$col`), '')";
+    }
+    $mv_type_expr = $mv_type_parts ? 'COALESCE(' . implode(', ', $mv_type_parts) . ", 'Motorpool Vehicle')" : "'Motorpool Vehicle'";
+    $mv_plate_expr = in_array('plate_no', $mv_cols, true) ? 'plate_no' : (in_array('plate_number', $mv_cols, true) ? 'plate_number' : (in_array('vehicle_id', $mv_cols, true) ? 'vehicle_id' : "''"));
+    $mv_status_condition = in_array('status', $mv_cols, true) ? " AND LOWER(TRIM(COALESCE(status, 'active'))) = 'active'" : "";
+    $mv_branch_condition = (!$view_all_branches && $branch_id > 0 && in_array('branch_id', $mv_cols, true)) ? " AND COALESCE(branch_id, 0) = " . (int)$branch_id : "";
+    $available_vehicles_query = "
+        SELECT `$mv_id_expr` AS vehicle_id,
+               $mv_type_expr AS vehicle_type,
+               COALESCE(NULLIF(TRIM(`$mv_plate_expr`), ''), CONCAT('Vehicle #', `$mv_id_expr`)) AS plate_number
+        FROM motorpool_vehicles
+        WHERE 1=1 $mv_status_condition $mv_branch_condition
+        ORDER BY plate_number ASC, vehicle_type ASC
+    ";
+    $available_vehicles_result = $conn->query($available_vehicles_query);
+    if ($available_vehicles_result) {
+        $available_vehicles = $available_vehicles_result->fetch_all(MYSQLI_ASSOC);
+    }
+} else {
+    $available_vehicles = $delivery_vehicles ?? [];
+}
+
+// Robust fallback for embedded Sales Order edit modal dropdowns.
+// If the stricter sales_order.php-style filters return empty because of branch/status column differences,
+// still show active driver and Motorpool vehicle choices instead of an empty dropdown.
+if (empty($available_drivers) && !empty($delivery_drivers)) {
+    $available_drivers = array_map(function($d) {
+        $d['pending_deliveries'] = $d['pending_deliveries'] ?? 0;
+        $d['active_trips'] = $d['active_trips'] ?? 0;
+        return $d;
+    }, $delivery_drivers);
+    $drivers_with_pending = [];
+    $available_drivers_without_pending = $available_drivers;
+}
+if (empty($available_vehicles) && !empty($delivery_vehicles)) {
+    $available_vehicles = $delivery_vehicles;
 }
 
 // Build inventory array with per-item UOM stock, same source used by Sales orderproduct.
@@ -836,7 +1539,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $agent_location = isset($_POST['agent_location']) ? trim($_POST['agent_location']) : '';
         $order_status = isset($_POST['order_status']) ? trim($_POST['order_status']) : 'pending'; // Get order status from POST
         $fulfillment_type = isset($_POST['fulfillment_type']) ? trim($_POST['fulfillment_type']) : 'pickup';
-        $collect_payment = isset($_POST['collect_payment']) && (string)$_POST['collect_payment'] === '1';
+        $billing_type = isset($_POST['billing_type']) && strtolower(trim($_POST['billing_type'])) === 'credit' ? 'credit' : 'invoice';
+        $is_credit_order = ($billing_type === 'credit');
+        $is_recurring = isset($_POST['is_recurring']) && (string)$_POST['is_recurring'] === '1' ? 1 : 0;
+        $recurring_every = $is_recurring ? max(1, (int)($_POST['recurring_every'] ?? 1)) : null;
+        $recurring_period = $is_recurring ? strtolower(trim((string)($_POST['recurring_period'] ?? 'month'))) : null;
+        $recurring_until = $is_recurring ? trim((string)($_POST['recurring_until'] ?? '')) : '';
+        if ($is_recurring && !in_array($recurring_period, ['day', 'week', 'month', 'year'], true)) {
+            throw new Exception('Please select a valid recurring period.');
+        }
+        if ($is_recurring && $recurring_until === '') {
+            throw new Exception('Until Date is required for a recurring invoice.');
+        }
+        if ($is_recurring) {
+            $recurring_until_ts = strtotime($recurring_until);
+            if ($recurring_until_ts === false) {
+                throw new Exception('Please select a valid Until Date.');
+            }
+            if ($recurring_until_ts < strtotime(date('Y-m-d'))) {
+                throw new Exception('Until Date cannot be earlier than today.');
+            }
+        }
+        $recurring_until_for_bind = ($is_recurring && $recurring_until !== '') ? $recurring_until : null;
+        $recurrence_group = $is_recurring ? ('INV-REC-' . date('YmdHis') . '-' . mt_rand(1000, 9999)) : null;
+        $collect_payment = !$is_credit_order && isset($_POST['collect_payment']) && (string)$_POST['collect_payment'] === '1';
         $delivery_driver_mode = isset($_POST['delivery_driver_mode']) ? trim($_POST['delivery_driver_mode']) : 'select';
         $delivery_driver_id = isset($_POST['delivery_driver_id']) ? (int)$_POST['delivery_driver_id'] : 0;
         $new_driver_first_name = trim($_POST['new_driver_first_name'] ?? '');
@@ -864,9 +1590,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $bank_name = null;
         $bank_branch = null;
         $check_number = null;
+        $payment_amount = 0.00;
 
         if (!in_array($fulfillment_type, ['pickup', 'delivery'], true)) {
             $fulfillment_type = 'pickup';
+        }
+        if ($is_credit_order) {
+            $fulfillment_type = 'pickup';
+            $collect_payment = false;
         }
         // All placed orders should be confirmed immediately, even when stock is low.
         // For pickup orders with collected payment, mark it delivered right away.
@@ -984,40 +1715,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             amgcOrderProductEnsureDeliveryTables($conn);
 
             if ($delivery_vehicle_mode === 'new') {
-                if ($new_vehicle_type === '' || $new_vehicle_plate === '') {
-                    throw new Exception('Vehicle type and plate number are required.');
-                }
-                $check_vehicle = $conn->prepare("SELECT vehicle_id FROM vehicles WHERE plate_number = ? AND branch_id = ? LIMIT 1");
-                if (!$check_vehicle) throw new Exception('Database prepare error while checking vehicle.');
-                $check_vehicle->bind_param('si', $new_vehicle_plate, $branch_id);
-                $check_vehicle->execute();
-                $existing_vehicle = $check_vehicle->get_result()->fetch_assoc();
-                $check_vehicle->close();
-                if ($existing_vehicle) {
-                    $delivery_vehicle_id = (int)$existing_vehicle['vehicle_id'];
-                } else {
-                    $vehicle_status = 'active';
-                    $insert_vehicle = $conn->prepare("INSERT INTO vehicles (branch_id, vehicle_type, plate_number, status, created_at, updated_at) VALUES (?, ?, ?, ?, NOW(), NOW())");
-                    if (!$insert_vehicle) throw new Exception('Database prepare error while adding vehicle.');
-                    $insert_vehicle->bind_param('isss', $branch_id, $new_vehicle_type, $new_vehicle_plate, $vehicle_status);
-                    if (!$insert_vehicle->execute()) throw new Exception('Failed to add vehicle: ' . $insert_vehicle->error);
-                    $delivery_vehicle_id = (int)$conn->insert_id;
-                    $insert_vehicle->close();
-                }
+                throw new Exception('Please select a vehicle registered in Motorpool. Adding a vehicle from this page is not allowed.');
             }
 
             if ($delivery_vehicle_id > 0) {
-                $vehicle_stmt = $conn->prepare("SELECT vehicle_type, plate_number FROM vehicles WHERE vehicle_id = ? AND status = 'active' LIMIT 1");
-                if (!$vehicle_stmt) throw new Exception('Database prepare error while loading vehicle.');
+                if (!amgcOrderProductTableExists($conn, 'motorpool_vehicles')) {
+                    throw new Exception('Motorpool vehicles table was not found. Please register the vehicle in Motorpool first.');
+                }
+
+                $motorpoolVehicleColumns = [];
+                $motorpoolVehicleColumnsResult = $conn->query("SHOW COLUMNS FROM motorpool_vehicles");
+                if ($motorpoolVehicleColumnsResult) {
+                    while ($mvCol = $motorpoolVehicleColumnsResult->fetch_assoc()) {
+                        $motorpoolVehicleColumns[] = $mvCol['Field'];
+                    }
+                }
+
+                $motorpoolIdCol = in_array('id', $motorpoolVehicleColumns, true) ? 'id' : (in_array('vehicle_id', $motorpoolVehicleColumns, true) ? 'vehicle_id' : '');
+                if ($motorpoolIdCol === '') {
+                    throw new Exception('Motorpool vehicle ID column was not found.');
+                }
+
+                $motorpoolTypeParts = [];
+                foreach (['vehicle_type', 'vehicle_category', 'make_brand', 'classification', 'body_type'] as $typeCol) {
+                    if (in_array($typeCol, $motorpoolVehicleColumns, true)) {
+                        $motorpoolTypeParts[] = "NULLIF(TRIM(`$typeCol`), '')";
+                    }
+                }
+                $motorpoolTypeExpr = !empty($motorpoolTypeParts) ? 'COALESCE(' . implode(', ', $motorpoolTypeParts) . ", 'Vehicle')" : "'Vehicle'";
+                $motorpoolPlateExpr = in_array('plate_no', $motorpoolVehicleColumns, true) ? 'plate_no' : (in_array('plate_number', $motorpoolVehicleColumns, true) ? 'plate_number' : "''");
+
+                $vehicleSql = "SELECT $motorpoolTypeExpr AS vehicle_type, `$motorpoolPlateExpr` AS plate_number FROM motorpool_vehicles WHERE `$motorpoolIdCol` = ?";
+                if (!$view_all_branches && $branch_id > 0 && in_array('branch_id', $motorpoolVehicleColumns, true)) {
+                    $vehicleSql .= " AND branch_id = " . (int)$branch_id;
+                }
+                $vehicleSql .= " LIMIT 1";
+
+                $vehicle_stmt = $conn->prepare($vehicleSql);
+                if (!$vehicle_stmt) throw new Exception('Database prepare error while loading Motorpool vehicle.');
                 $vehicle_stmt->bind_param('i', $delivery_vehicle_id);
                 $vehicle_stmt->execute();
                 $vehicle_row = $vehicle_stmt->get_result()->fetch_assoc();
                 $vehicle_stmt->close();
-                if (!$vehicle_row) throw new Exception('Selected vehicle was not found.');
+
+                if (!$vehicle_row) {
+                    throw new Exception('Selected vehicle was not found in registered Motorpool vehicles.');
+                }
+
                 $assigned_vehicle_type = (string)$vehicle_row['vehicle_type'];
                 $assigned_vehicle_plate = (string)$vehicle_row['plate_number'];
             } else {
-                throw new Exception('Please select or add a vehicle.');
+                throw new Exception('Please select a registered Motorpool vehicle.');
             }
 
             if ($delivery_driver_mode === 'new') {
@@ -1115,8 +1863,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
         $document_type = (isset($_POST['document_type']) && strtoupper(trim($_POST['document_type'])) === 'SI') ? 'SI' : 'SO';
         $si_number = trim($_POST['si_number'] ?? '');
-        $atw_no = trim($_POST['atw_no'] ?? '');
-        $gatepass_no = trim($_POST['gatepass_no'] ?? '');
+        $atw_no = $is_credit_order ? '' : trim($_POST['atw_no'] ?? '');
+        $gatepass_no = $is_credit_order ? '' : trim($_POST['gatepass_no'] ?? '');
         $registered_business_name = trim($_POST['registered_business_name'] ?? '');
         $tin = trim($_POST['tin'] ?? '');
         $business_address = trim($_POST['business_address'] ?? '');
@@ -1211,11 +1959,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
         
         $manual_so_suffix = isset($_POST['so_suffix']) ? trim($_POST['so_suffix']) : '';
-        if ($atw_no === '' || $gatepass_no === '') {
-            throw new Exception('ATW No. and Gatepass No. are required.');
-        }
-        if (!preg_match('/^\d{1,6}$/', $atw_no) || !preg_match('/^\d{1,6}$/', $gatepass_no)) {
-            throw new Exception('ATW No. and Gatepass No. must be numbers only with a maximum of 6 digits.');
+        if (!$is_credit_order) {
+            if ($gatepass_no === '') {
+                throw new Exception('Gatepass No. is required.');
+            }
+            if (($atw_no !== '' && !preg_match('/^\d{1,6}$/', $atw_no)) || !preg_match('/^\d{1,6}$/', $gatepass_no)) {
+                throw new Exception('ATW No. and Gatepass No. must be numbers only with a maximum of 6 digits.');
+            }
         }
 
         if ($document_type === 'SI') {
@@ -1231,8 +1981,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
         
         
-        if (!preg_match('/^\d{5,6}$/', $manual_so_suffix)) {
-            throw new Exception("Invalid SO number. Please enter the last 5 to 6 digits only.");
+        if (!preg_match('/^\d{1,6}$/', $manual_so_suffix)) {
+            throw new Exception("Invalid SO number. Please enter numbers only with a maximum of 6 digits.");
         }
         
         $so_number = 'SO-' . date('Ymd') . '-' . $manual_so_suffix;
@@ -1283,6 +2033,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $has_payment_status_column = in_array('payment_status', $columns);
         $has_si_number_column = in_array('si_number', $columns);
         $has_document_type_column = in_array('document_type', $columns);
+        $has_billing_type_column = in_array('billing_type', $columns);
+        $has_is_recurring_column = in_array('is_recurring', $columns);
+        $has_recurring_every_column = in_array('recurring_every', $columns);
+        $has_recurring_period_column = in_array('recurring_period', $columns);
+        $has_recurring_until_column = in_array('recurring_until', $columns);
+        $has_recurrence_group_column = in_array('recurrence_group', $columns);
         $has_atw_no_column = in_array('atw_no', $columns);
         $has_gatepass_no_column = in_array('gatepass_no', $columns);
         $has_registered_business_name_column = in_array('registered_business_name', $columns);
@@ -1364,6 +2120,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         }
         if ($has_si_number_column) { $insert_fields[] = 'si_number'; $insert_placeholders[] = '?'; $insert_types .= 's'; $insert_values[] = ($document_type === 'SI' ? $si_number : null); }
         if ($has_document_type_column) { $insert_fields[] = 'document_type'; $insert_placeholders[] = '?'; $insert_types .= 's'; $insert_values[] = $document_type; }
+        if ($has_billing_type_column) { $insert_fields[] = 'billing_type'; $insert_placeholders[] = '?'; $insert_types .= 's'; $insert_values[] = $billing_type; }
+        if ($has_is_recurring_column) { $insert_fields[] = 'is_recurring'; $insert_placeholders[] = '?'; $insert_types .= 'i'; $insert_values[] = $is_recurring; }
+        if ($has_recurring_every_column) { $insert_fields[] = 'recurring_every'; $insert_placeholders[] = '?'; $insert_types .= 'i'; $insert_values[] = $recurring_every; }
+        if ($has_recurring_period_column) { $insert_fields[] = 'recurring_period'; $insert_placeholders[] = '?'; $insert_types .= 's'; $insert_values[] = $recurring_period; }
+        if ($has_recurring_until_column) { $insert_fields[] = 'recurring_until'; $insert_placeholders[] = '?'; $insert_types .= 's'; $insert_values[] = $recurring_until_for_bind; }
+        if ($has_recurrence_group_column) { $insert_fields[] = 'recurrence_group'; $insert_placeholders[] = '?'; $insert_types .= 's'; $insert_values[] = $recurrence_group; }
         if ($has_atw_no_column) { $insert_fields[] = 'atw_no'; $insert_placeholders[] = '?'; $insert_types .= 's'; $insert_values[] = $atw_no; }
         if ($has_gatepass_no_column) { $insert_fields[] = 'gatepass_no'; $insert_placeholders[] = '?'; $insert_types .= 's'; $insert_values[] = $gatepass_no; }
         if ($has_registered_business_name_column) { $insert_fields[] = 'registered_business_name'; $insert_placeholders[] = '?'; $insert_types .= 's'; $insert_values[] = ($document_type === 'SI' ? $registered_business_name : null); }
@@ -1426,8 +2188,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $has_soi_net_price = in_array('net_price', $soi_columns, true);
         $has_soi_order_amount = in_array('order_amount', $soi_columns, true);
         $has_soi_total_discount = in_array('total_discount', $soi_columns, true);
+        $has_soi_ave_cost = in_array('ave_cost', $soi_columns, true);
+        $has_soi_cogs_amount = in_array('cogs_amount', $soi_columns, true);
+        $has_soi_gross_profit = in_array('gross_profit', $soi_columns, true);
         
         $updated_stock_data = [];
+        $total_cogs = 0.00;
         
         foreach ($items_data as $item) {
             $item_id = (int)$item['id'];
@@ -1477,6 +2243,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             if (!$stmt_items->execute()) {
                 throw new Exception('Failed to save order item: ' . $stmt_items->error);
             }
+            $saved_so_item_id = (int)$conn->insert_id;
             $stmt_items->close();
 
             // Match sales_order.php assignment flow: every delivery pick list must have its pick items.
@@ -1495,7 +2262,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             // Deduct immediately for every placed order.
             // If ordered quantity is greater than available stock, inventory is allowed to go negative.
             $stock_stmt = $conn->prepare("
-                SELECT iui.inventory_id, iui.current_inventory, ut.unit_type_id, ut.unit_type_name
+                SELECT iui.inventory_id, iui.current_inventory, COALESCE(iui.unit_cost, 0) AS unit_cost, ut.unit_type_id, ut.unit_type_name
                 FROM item_unit_inventory iui
                 JOIN unit_types ut ON iui.unit_type_id = ut.unit_type_id
                 WHERE iui.item_id = ? AND LOWER(ut.unit_type_name) = LOWER(?)
@@ -1542,7 +2309,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                 $create_inventory_stmt->close();
 
                 $stock_stmt = $conn->prepare("
-                    SELECT iui.inventory_id, iui.current_inventory, ut.unit_type_id, ut.unit_type_name
+                    SELECT iui.inventory_id, iui.current_inventory, COALESCE(iui.unit_cost, 0) AS unit_cost, ut.unit_type_id, ut.unit_type_name
                     FROM item_unit_inventory iui
                     JOIN unit_types ut ON iui.unit_type_id = ut.unit_type_id
                     WHERE iui.item_id = ? AND iui.unit_type_id = ?
@@ -1559,6 +2326,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 
                 if (!$stock_row) {
                     throw new Exception("Unable to create inventory row for unit type: '$unit_type_name_for_inventory'");
+                }
+            }
+
+            $line_unit_cost = (float)($stock_row['unit_cost'] ?? 0);
+            if ($line_unit_cost <= 0) {
+                $line_unit_cost = amgcOrderProductGetItemCostForAccounting($conn, $item_id, $unit_type, $branch_id);
+            }
+            $line_cogs_amount = round(max(0, $quantity * $line_unit_cost), 2);
+            $line_gross_profit = round($line_order_amount - $line_cogs_amount, 2);
+            $total_cogs += $line_cogs_amount;
+
+            if ($saved_so_item_id > 0 && ($has_soi_ave_cost || $has_soi_cogs_amount || $has_soi_gross_profit)) {
+                $cost_update_fields = [];
+                $cost_update_types = '';
+                $cost_update_values = [];
+                if ($has_soi_ave_cost) { $cost_update_fields[] = 'ave_cost = ?'; $cost_update_types .= 'd'; $cost_update_values[] = $line_unit_cost; }
+                if ($has_soi_cogs_amount) { $cost_update_fields[] = 'cogs_amount = ?'; $cost_update_types .= 'd'; $cost_update_values[] = $line_cogs_amount; }
+                if ($has_soi_gross_profit) { $cost_update_fields[] = 'gross_profit = ?'; $cost_update_types .= 'd'; $cost_update_values[] = $line_gross_profit; }
+                if (!empty($cost_update_fields)) {
+                    $cost_update_types .= 'i';
+                    $cost_update_values[] = $saved_so_item_id;
+                    $cost_update_sql = 'UPDATE sales_order_items SET ' . implode(', ', $cost_update_fields) . ' WHERE so_item_id = ?';
+                    $cost_update_stmt = $conn->prepare($cost_update_sql);
+                    if ($cost_update_stmt) {
+                        $cost_update_stmt->bind_param($cost_update_types, ...$cost_update_values);
+                        $cost_update_stmt->execute();
+                        $cost_update_stmt->close();
+                    }
                 }
             }
 
@@ -1616,24 +2411,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                     $cash_change = max($cash_tendered - $total_amount, 0);
                 } elseif ($payment_method === 'check') {
                     $check_date = trim($_POST['check_date'] ?? '');
-                    $bank_name = trim($_POST['bank_name'] ?? '');
+                    $bank_name = null;
                     $bank_branch = trim($_POST['bank_branch'] ?? '');
                     $check_number = trim($_POST['check_number'] ?? '');
-                    if ($check_date === '' || $bank_name === '' || $bank_branch === '' || $check_number === '') {
+                    $payment_amount = isset($_POST['payment_amount']) ? (float)preg_replace('/[^0-9.]/', '', (string)$_POST['payment_amount']) : 0.00;
+                    if ($check_date === '' || $bank_branch === '' || $check_number === '') {
                         throw new Exception('All check details are required.');
+                    }
+                    if ($payment_amount <= 0) {
+                        throw new Exception('Payment Amount is required.');
+                    }
+                    if (abs($payment_amount - $total_amount) > 0.01) {
+                        throw new Exception('Payment Amount must be equal to the grand total.');
                     }
                     $reference_number = $check_number;
                 } elseif ($payment_method === 'online_transfer') {
                     $reference_number = trim($_POST['reference_number'] ?? '');
                     $bank_name = trim($_POST['online_bank_name'] ?? '');
                     $bank_branch = trim($_POST['online_bank_branch'] ?? '');
+                    $payment_amount = isset($_POST['payment_amount']) ? (float)preg_replace('/[^0-9.]/', '', (string)$_POST['payment_amount']) : 0.00;
                     if ($reference_number === '' || $bank_name === '') {
                         throw new Exception('Reference number and Bank/Wallet are required.');
                     }
+                    if ($payment_amount <= 0) {
+                        throw new Exception('Payment Amount is required.');
+                    }
+                    if (abs($payment_amount - $total_amount) > 0.01) {
+                        throw new Exception('Payment Amount must be equal to the grand total.');
+                    }
+                }
+
+                if ($payment_method === 'cash') {
+                    $payment_amount = $total_amount;
                 }
 
                 $invoice_id = amgcOrderProductFindOrCreateInvoice($conn, $so_id, $customer_id, $branch_id, $total_amount, $user_id, true);
-                $payment_id = amgcOrderProductInsertPayment($conn, $invoice_id, $so_id, $customer_id, $branch_id, $user_id, $payment_method, $total_amount, $reference_number, $check_date, $bank_name, $bank_branch, $check_number, $cash_tendered, $cash_change);
+                $payment_id = amgcOrderProductInsertPayment($conn, $invoice_id, $so_id, $customer_id, $branch_id, $user_id, $payment_method, $payment_amount, $reference_number, $check_date, $bank_name, $bank_branch, $check_number, $cash_tendered, $cash_change);
 
                 // Pickup means the customer personally received/collected the order.
                 // Once payment is collected, the sales order should no longer stay confirmed.
@@ -1654,13 +2467,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $trip_ticket_id = amgcOrderProductCreateDeliveryTripTicket($conn, $so_id, $pick_list_id, $delivery_driver_id, $delivery_vehicle_id, $branch_id, $user_id);
         }
 
+        if ($invoice_id > 0) {
+            $accounting_document_no = ($document_type === 'SI' && $si_number !== '') ? $si_number : $so_number;
+            amgcOrderProductPostInvoiceAccounting($conn, $so_id, $invoice_id, $customer_id, $branch_id, $user_id, $total_amount, $total_cogs, $accounting_document_no);
+        }
+
         amgcOrderProductRecalcCustomerCreditUsed($conn, $customer_id);
+
+        $recurring_task_count = 0;
+        if ($is_recurring) {
+            $recurring_task_count = amgcOrderProductCreateRecurringInvoiceTasks(
+                $conn,
+                $so_id,
+                $so_number,
+                $customer_name,
+                $branch_id,
+                $user_id,
+                substr($order_date, 0, 10),
+                $recurring_every,
+                $recurring_period,
+                $recurring_until_for_bind,
+                $recurrence_group
+            );
+        }
         
         $conn->commit();
         
         echo json_encode([
             'success' => true, 
-            'message' => $fulfillment_type === 'pickup' ? ($collect_payment ? 'Pickup order delivered and payment sent to undeposited payments!' : 'Pickup order confirmed. Payment is now available in Collections.') : 'Delivery order confirmed and assigned successfully!', 
+            'message' => ($fulfillment_type === 'pickup' ? ($collect_payment ? 'Pickup order delivered and payment sent to undeposited payments!' : 'Pickup order confirmed. Payment is now available in Collections.') : 'Delivery order confirmed and assigned successfully!') . ($recurring_task_count > 0 ? ' ' . $recurring_task_count . ' recurring invoice schedule(s) were added to Tasks.' : ''), 
             'so_number' => $so_number,
             'so_id' => $so_id,
             'invoice_id' => $invoice_id,
@@ -1674,7 +2509,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             'discount_calculation_type' => $discount_calculation_type,
             'discount_based_amount' => $discount_based_amount,
             'discount_amount' => $discount_amount,
-            'total_amount' => $total_amount
+            'total_amount' => $total_amount,
+            'recurring_task_count' => $recurring_task_count
         ]);
         exit;
         
@@ -1863,22 +2699,425 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     }
 }
 
+
+
+// Compatibility aliases for Sales Order tab actions copied from sales_order.php
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_order') {
+    $_POST['action'] = 'delete_sales_order_from_tab';
+    if (isset($_POST['order_id']) && !isset($_POST['so_id'])) {
+        $_POST['so_id'] = $_POST['order_id'];
+    }
+}
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_order') {
+    $_POST['action'] = 'update_sales_order_from_tab';
+    if (isset($_POST['order_id']) && !isset($_POST['so_id'])) {
+        $_POST['so_id'] = $_POST['order_id'];
+    }
+}
+
+// ============= HANDLE UPDATE / DELETE SALES ORDER FROM EMBEDDED TAB =============
+// Dedicated SI update from Sales Order tab action button.
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_sales_order_si_from_tab') {
+    header('Content-Type: application/json');
+    try {
+        $conn->begin_transaction();
+        $so_id = (int)($_POST['so_id'] ?? 0);
+        $si_number = trim($_POST['si_number'] ?? '');
+        $registered_business_name = trim($_POST['registered_business_name'] ?? '');
+        $tin = trim($_POST['tin'] ?? '');
+        $business_address = trim($_POST['business_address'] ?? '');
+        if ($so_id <= 0) throw new Exception('Invalid sales order.');
+        if ($si_number === '' || $registered_business_name === '' || $tin === '' || $business_address === '') {
+            throw new Exception('Please complete SI Number, Registered Business Name, TIN, and Address.');
+        }
+        $check_stmt = $conn->prepare("SELECT so_id, order_status, branch_id, si_number FROM sales_orders WHERE so_id = ? LIMIT 1");
+        if (!$check_stmt) throw new Exception('Prepare failed: ' . $conn->error);
+        $check_stmt->bind_param('i', $so_id);
+        $check_stmt->execute();
+        $existing = $check_stmt->get_result()->fetch_assoc();
+        $check_stmt->close();
+        if (!$existing) throw new Exception('Sales order not found.');
+        if (!$view_all_branches && amgcColumnExists($conn, 'sales_orders', 'branch_id') && (int)$branch_id > 0 && (int)($existing['branch_id'] ?? 0) !== (int)$branch_id) {
+            throw new Exception('Order not found or access denied.');
+        }
+        $current_status = strtolower(trim((string)($existing['order_status'] ?? 'pending')));
+        if (!in_array($current_status, ['pending','confirmed','delivered'], true)) {
+            throw new Exception('SI can only be added to Pending, Confirmed, or Delivered sales orders.');
+        }
+        $existing_si_number = trim((string)($existing['si_number'] ?? ''));
+        if ($existing_si_number !== '') {
+            throw new Exception('This sales order already has an SI number and can no longer be edited.');
+        }
+        $si_attachments = amgcOrderProductSaveSIAttachments($so_id);
+        if (empty($si_attachments)) {
+            throw new Exception('SI Attachments are required. Please upload at least one SI attachment.');
+        }
+        $si_attachments_json = json_encode($si_attachments, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+
+        if (amgcColumnExists($conn, 'sales_orders', 'si_number')) {
+            $dup_stmt = $conn->prepare("SELECT so_id FROM sales_orders WHERE si_number = ? AND so_id <> ? LIMIT 1");
+            if ($dup_stmt) {
+                $dup_stmt->bind_param('si', $si_number, $so_id);
+                $dup_stmt->execute();
+                $dup_row = $dup_stmt->get_result()->fetch_assoc();
+                $dup_stmt->close();
+                if ($dup_row) throw new Exception('SI number already exists. Please enter another SI number.');
+            }
+        }
+        $fields = []; $types = ''; $values = [];
+        foreach (['document_type'=>'SI','si_number'=>$si_number,'registered_business_name'=>$registered_business_name,'tin'=>$tin,'business_address'=>$business_address] as $col => $val) {
+            if (amgcColumnExists($conn, 'sales_orders', $col)) { $fields[] = "$col = ?"; $types .= 's'; $values[] = $val; }
+        }
+        if ($si_attachments_json !== null && amgcColumnExists($conn, 'sales_orders', 'si_attachments')) { $fields[] = "si_attachments = ?"; $types .= 's'; $values[] = $si_attachments_json; }
+        if (empty($fields)) throw new Exception('SI columns are not available in sales_orders table.');
+        $types .= 'i'; $values[] = $so_id;
+        $stmt = $conn->prepare('UPDATE sales_orders SET ' . implode(', ', $fields) . ' WHERE so_id = ?');
+        if (!$stmt) throw new Exception('Prepare SI update failed: ' . $conn->error);
+        $stmt->bind_param($types, ...$values);
+        if (!$stmt->execute()) throw new Exception('Failed to save SI details: ' . $stmt->error);
+        $stmt->close();
+        foreach (['invoices','payments'] as $targetTable) {
+            if (amgcOrderProductTableExists($conn, $targetTable) && amgcColumnExists($conn, $targetTable, 'so_id')) {
+                $tFields = []; $tTypes = ''; $tValues = [];
+                foreach (['si_number'=>$si_number,'registered_business_name'=>$registered_business_name,'tin'=>$tin,'business_address'=>$business_address] as $col => $val) {
+                    if (amgcColumnExists($conn, $targetTable, $col)) { $tFields[] = "$col = ?"; $tTypes .= 's'; $tValues[] = $val; }
+                }
+                if ($si_attachments_json !== null && amgcColumnExists($conn, $targetTable, 'si_attachments')) { $tFields[] = "si_attachments = ?"; $tTypes .= 's'; $tValues[] = $si_attachments_json; }
+                if (!empty($tFields)) {
+                    $tTypes .= 'i'; $tValues[] = $so_id;
+                    $tStmt = $conn->prepare('UPDATE ' . $targetTable . ' SET ' . implode(', ', $tFields) . ' WHERE so_id = ?');
+                    if ($tStmt) { $tStmt->bind_param($tTypes, ...$tValues); $tStmt->execute(); $tStmt->close(); }
+                }
+            }
+        }
+        $conn->commit();
+        echo json_encode(['success' => true, 'message' => 'SI details saved successfully.']);
+        exit;
+    } catch (Throwable $e) {
+        try { $conn->rollback(); } catch (Throwable $rollbackError) {}
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        exit;
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'update_sales_order_from_tab') {
+    header('Content-Type: application/json');
+
+    try {
+        $conn->begin_transaction();
+
+        $so_id = (int)($_POST['so_id'] ?? 0);
+        $order_date = trim($_POST['order_date'] ?? ($_POST['created_at'] ?? ''));
+        $order_status = strtolower(trim($_POST['order_status'] ?? 'pending'));
+        $si_number = trim($_POST['si_number'] ?? '');
+        $registered_business_name = trim($_POST['registered_business_name'] ?? '');
+        $tin = trim($_POST['tin'] ?? '');
+        $business_address = trim($_POST['business_address'] ?? '');
+        $edited_items_json = trim($_POST['edited_items'] ?? '');
+
+        if ($so_id <= 0) {
+            throw new Exception('Invalid sales order.');
+        }
+        if ($order_date === '') {
+            $order_date = date('Y-m-d');
+        }
+        if (!in_array($order_status, ['pending','confirmed','processing','ready','in_transit','delivered','cancelled'], true)) {
+            $order_status = 'pending';
+        }
+
+        $check_sql = "SELECT so_id, order_status, branch_id, si_number, registered_business_name, tin, business_address FROM sales_orders WHERE so_id = ? LIMIT 1";
+        $check_stmt = $conn->prepare($check_sql);
+        if (!$check_stmt) throw new Exception('Prepare failed: ' . $conn->error);
+        $check_stmt->bind_param('i', $so_id);
+        $check_stmt->execute();
+        $existing = $check_stmt->get_result()->fetch_assoc();
+        $check_stmt->close();
+        if (!$existing) throw new Exception('Sales order not found.');
+
+        if (!$view_all_branches && amgcColumnExists($conn, 'sales_orders', 'branch_id') && (int)$branch_id > 0) {
+            if ((int)($existing['branch_id'] ?? 0) !== (int)$branch_id) {
+                throw new Exception('Order not found or access denied.');
+            }
+        }
+
+        $items = json_decode($edited_items_json, true);
+        if (is_array($items)) {
+            $total_amount = 0.00;
+            foreach ($items as $item) {
+                $so_item_id = (int)($item['so_item_id'] ?? 0);
+                $qty = max(0, (float)($item['quantity_ordered'] ?? 0));
+                $price = max(0, (float)($item['unit_price'] ?? 0));
+                if ($so_item_id <= 0) continue;
+                $line_total = $qty * $price;
+                $total_amount += $line_total;
+
+                $fields = ['quantity_ordered = ?', 'unit_price = ?'];
+                $types = 'dd';
+                $values = [$qty, $price];
+
+                if (amgcColumnExists($conn, 'sales_order_items', 'gross_price')) { $fields[] = 'gross_price = ?'; $types .= 'd'; $values[] = $price; }
+                if (amgcColumnExists($conn, 'sales_order_items', 'net_price')) { $fields[] = 'net_price = ?'; $types .= 'd'; $values[] = $price; }
+                if (amgcColumnExists($conn, 'sales_order_items', 'order_amount')) { $fields[] = 'order_amount = ?'; $types .= 'd'; $values[] = $line_total; }
+                if (amgcColumnExists($conn, 'sales_order_items', 'line_total')) { $fields[] = 'line_total = ?'; $types .= 'd'; $values[] = $line_total; }
+                if (amgcColumnExists($conn, 'sales_order_items', 'discount_amount')) { $fields[] = 'discount_amount = 0'; }
+                if (amgcColumnExists($conn, 'sales_order_items', 'total_discount')) { $fields[] = 'total_discount = 0'; }
+
+                $types .= 'ii';
+                $values[] = $so_item_id;
+                $values[] = $so_id;
+                $update_item_sql = 'UPDATE sales_order_items SET ' . implode(', ', $fields) . ' WHERE so_item_id = ? AND so_id = ?';
+                $update_item_stmt = $conn->prepare($update_item_sql);
+                if (!$update_item_stmt) throw new Exception('Prepare item update failed: ' . $conn->error);
+                $update_item_stmt->bind_param($types, ...$values);
+                if (!$update_item_stmt->execute()) throw new Exception('Failed to update item: ' . $update_item_stmt->error);
+                $update_item_stmt->close();
+            }
+
+            $order_fields = ['total_amount = ?'];
+            $order_types = 'd';
+            $order_values = [$total_amount];
+            if (amgcColumnExists($conn, 'sales_orders', 'order_amount')) { $order_fields[] = 'order_amount = ?'; $order_types .= 'd'; $order_values[] = $total_amount; }
+            if (amgcColumnExists($conn, 'sales_orders', 'discount_amount')) { $order_fields[] = 'discount_amount = 0'; }
+            if (amgcColumnExists($conn, 'sales_orders', 'total_discount_amount')) { $order_fields[] = 'total_discount_amount = 0'; }
+            $order_types .= 'i';
+            $order_values[] = $so_id;
+            $update_total_stmt = $conn->prepare('UPDATE sales_orders SET ' . implode(', ', $order_fields) . ' WHERE so_id = ?');
+            if ($update_total_stmt) {
+                $update_total_stmt->bind_param($order_types, ...$order_values);
+                $update_total_stmt->execute();
+                $update_total_stmt->close();
+            }
+        }
+
+        // SI details are intentionally not updated here.
+        // Once an SI number is saved from the dedicated SI action button, it becomes locked.
+        $fields = ['order_date = ?', 'order_status = ?'];
+        $types = 'ss';
+        $values = [$order_date, $order_status];
+        $types .= 'i';
+        $values[] = $so_id;
+        $update_order_sql = 'UPDATE sales_orders SET ' . implode(', ', $fields) . ' WHERE so_id = ?';
+        $update_order_stmt = $conn->prepare($update_order_sql);
+        if (!$update_order_stmt) throw new Exception('Prepare order update failed: ' . $conn->error);
+        $update_order_stmt->bind_param($types, ...$values);
+        if (!$update_order_stmt->execute()) throw new Exception('Failed to update sales order: ' . $update_order_stmt->error);
+        $update_order_stmt->close();
+
+        // Same confirmation behavior as sales_order.php: driver and vehicle are required when confirming a pending order.
+        $old_status = strtolower(trim((string)($existing['order_status'] ?? 'pending')));
+        $selected_driver_id = 0;
+        foreach (['driver_id', 'delivery_driver_id', 'edit_driver_id'] as $driver_post_key) {
+            if (isset($_POST[$driver_post_key]) && $_POST[$driver_post_key] !== '') {
+                $selected_driver_id = (int)$_POST[$driver_post_key];
+                break;
+            }
+        }
+        $selected_vehicle_id = 0;
+        foreach (['vehicle_id', 'delivery_vehicle_id', 'edit_vehicle_id'] as $vehicle_post_key) {
+            if (isset($_POST[$vehicle_post_key]) && $_POST[$vehicle_post_key] !== '') {
+                $selected_vehicle_id = (int)$_POST[$vehicle_post_key];
+                break;
+            }
+        }
+        $order_branch_id = (int)($existing['branch_id'] ?? $branch_id);
+
+        $fulfillment_type = 'delivery';
+        if (amgcColumnExists($conn, 'sales_orders', 'fulfillment_type')) {
+            $fulfillment_stmt = $conn->prepare("SELECT COALESCE(NULLIF(TRIM(fulfillment_type), ''), 'delivery') AS fulfillment_type FROM sales_orders WHERE so_id = ? LIMIT 1");
+            if ($fulfillment_stmt) {
+                $fulfillment_stmt->bind_param('i', $so_id);
+                $fulfillment_stmt->execute();
+                $fulfillment_row = $fulfillment_stmt->get_result()->fetch_assoc();
+                $fulfillment_stmt->close();
+                $fulfillment_type = strtolower(trim((string)($fulfillment_row['fulfillment_type'] ?? 'delivery')));
+            }
+        }
+        $requires_delivery_assignment = !in_array($fulfillment_type, ['pickup', 'pick_up', 'walk-in', 'walkin'], true);
+
+        if ($order_status === 'confirmed' && $old_status === 'pending' && $requires_delivery_assignment) {
+            if ($selected_driver_id <= 0) {
+                throw new Exception('Please select a driver for this delivery.');
+            }
+            if ($selected_vehicle_id <= 0) {
+                throw new Exception('Please select a vehicle for this delivery.');
+            }
+
+            if (amgcOrderProductTableExists($conn, 'drivers')) {
+                $driver_check_sql = "SELECT driver_id FROM drivers WHERE driver_id = ? AND COALESCE(status, 'active') = 'active'";
+                if (!$view_all_branches && $order_branch_id > 0 && amgcColumnExists($conn, 'drivers', 'branch_id')) {
+                    $driver_check_sql .= " AND (branch_id = ? OR branch_id IS NULL OR branch_id = 0)";
+                    $driver_check_stmt = $conn->prepare($driver_check_sql);
+                    $driver_check_stmt->bind_param('ii', $selected_driver_id, $order_branch_id);
+                } else {
+                    $driver_check_stmt = $conn->prepare($driver_check_sql);
+                    $driver_check_stmt->bind_param('i', $selected_driver_id);
+                }
+                if ($driver_check_stmt) {
+                    $driver_check_stmt->execute();
+                    if ($driver_check_stmt->get_result()->num_rows === 0) {
+                        throw new Exception('Selected driver is not available or does not belong to this branch.');
+                    }
+                    $driver_check_stmt->close();
+                }
+            }
+
+            $picklist_id = 0;
+            if (amgcOrderProductTableExists($conn, 'pick_lists')) {
+                $existing_pick_stmt = $conn->prepare("SELECT pick_list_id FROM pick_lists WHERE so_id = ? ORDER BY pick_list_id DESC LIMIT 1");
+                if ($existing_pick_stmt) {
+                    $existing_pick_stmt->bind_param('i', $so_id);
+                    $existing_pick_stmt->execute();
+                    $pick_row = $existing_pick_stmt->get_result()->fetch_assoc();
+                    $existing_pick_stmt->close();
+                    $picklist_id = (int)($pick_row['pick_list_id'] ?? 0);
+                }
+                if ($picklist_id <= 0) {
+                    $pick_list_number = 'PL-' . date('Ymd') . '-' . str_pad((string)$so_id, 5, '0', STR_PAD_LEFT);
+                    $picklist_stmt = $conn->prepare("INSERT INTO pick_lists (pick_list_number, so_id, branch_id, driver_id, pick_status, created_at) VALUES (?, ?, ?, ?, 'open', NOW())");
+                    if ($picklist_stmt) {
+                        $picklist_stmt->bind_param('siii', $pick_list_number, $so_id, $order_branch_id, $selected_driver_id);
+                        if (!$picklist_stmt->execute()) throw new Exception('Failed to create pick list: ' . $picklist_stmt->error);
+                        $picklist_id = (int)$conn->insert_id;
+                        $picklist_stmt->close();
+                    }
+                }
+                if ($picklist_id > 0 && amgcOrderProductTableExists($conn, 'pick_list_items')) {
+                    $del_pick_items = $conn->prepare("DELETE FROM pick_list_items WHERE pick_list_id = ?");
+                    if ($del_pick_items) { $del_pick_items->bind_param('i', $picklist_id); $del_pick_items->execute(); $del_pick_items->close(); }
+                    $ins_pick_items = $conn->prepare("INSERT INTO pick_list_items (pick_list_id, item_id, quantity_to_pick) SELECT ?, item_id, quantity_ordered FROM sales_order_items WHERE so_id = ? AND quantity_ordered > 0");
+                    if ($ins_pick_items) { $ins_pick_items->bind_param('ii', $picklist_id, $so_id); $ins_pick_items->execute(); $ins_pick_items->close(); }
+                }
+            }
+
+            if (amgcOrderProductTableExists($conn, 'trip_tickets')) {
+                $existing_trip_stmt = $conn->prepare("SELECT trip_id FROM trip_tickets WHERE so_id = ? LIMIT 1");
+                $has_existing_trip = false;
+                if ($existing_trip_stmt) {
+                    $existing_trip_stmt->bind_param('i', $so_id);
+                    $existing_trip_stmt->execute();
+                    $has_existing_trip = (bool)$existing_trip_stmt->get_result()->fetch_assoc();
+                    $existing_trip_stmt->close();
+                }
+                if (!$has_existing_trip) {
+                    $trip_ticket_number = 'TT-' . date('Ymd') . '-' . str_pad((string)$so_id, 5, '0', STR_PAD_LEFT);
+                    $trip_date = date('Y-m-d');
+                    $trip_fields = ['trip_number', 'driver_id', 'branch_id', 'trip_date', 'trip_status', 'created_by', 'created_at'];
+                    $trip_placeholders = ['?', '?', '?', '?', "'planned'", '?', 'NOW()'];
+                    $trip_types = 'siisi';
+                    $trip_values = [$trip_ticket_number, $selected_driver_id, $order_branch_id, $trip_date, $user_id];
+                    if (amgcColumnExists($conn, 'trip_tickets', 'vehicle_id')) { $trip_fields[] = 'vehicle_id'; $trip_placeholders[] = '?'; $trip_types .= 'i'; $trip_values[] = $selected_vehicle_id; }
+                    if (amgcColumnExists($conn, 'trip_tickets', 'so_id')) { $trip_fields[] = 'so_id'; $trip_placeholders[] = '?'; $trip_types .= 'i'; $trip_values[] = $so_id; }
+                    if (amgcColumnExists($conn, 'trip_tickets', 'picklist_id')) { $trip_fields[] = 'picklist_id'; $trip_placeholders[] = '?'; $trip_types .= 'i'; $trip_values[] = $picklist_id; }
+                    $trip_sql = 'INSERT INTO trip_tickets (' . implode(', ', $trip_fields) . ') VALUES (' . implode(', ', $trip_placeholders) . ')';
+                    $trip_stmt = $conn->prepare($trip_sql);
+                    if ($trip_stmt) {
+                        $trip_stmt->bind_param($trip_types, ...$trip_values);
+                        if (!$trip_stmt->execute()) throw new Exception('Failed to create trip ticket: ' . $trip_stmt->error);
+                        $trip_stmt->close();
+                    }
+                }
+            }
+        }
+
+        if (function_exists('amgcSyncSalesOrderComputedSnapshots')) {
+            @amgcSyncSalesOrderComputedSnapshots($conn, $so_id);
+        }
+
+        $conn->commit();
+        echo json_encode(['success' => true, 'message' => 'Sales order updated successfully.']);
+        exit;
+    } catch (Throwable $e) {
+        if ($conn) { @$conn->rollback(); }
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        exit;
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete_sales_order_from_tab') {
+    header('Content-Type: application/json');
+
+    try {
+        $conn->begin_transaction();
+        $so_id = (int)($_POST['so_id'] ?? 0);
+        if ($so_id <= 0) throw new Exception('Invalid sales order.');
+
+        $check_stmt = $conn->prepare("SELECT so_id, order_status, branch_id FROM sales_orders WHERE so_id = ? LIMIT 1");
+        if (!$check_stmt) throw new Exception('Prepare failed: ' . $conn->error);
+        $check_stmt->bind_param('i', $so_id);
+        $check_stmt->execute();
+        $order = $check_stmt->get_result()->fetch_assoc();
+        $check_stmt->close();
+        if (!$order) throw new Exception('Sales order not found.');
+        if (strtolower(trim($order['order_status'] ?? '')) !== 'pending') {
+            throw new Exception('Only pending sales orders can be deleted.');
+        }
+        if (!$view_all_branches && amgcColumnExists($conn, 'sales_orders', 'branch_id') && (int)$branch_id > 0 && (int)($order['branch_id'] ?? 0) !== (int)$branch_id) {
+            throw new Exception('Order not found or access denied.');
+        }
+
+        foreach (['pick_lists', 'invoices', 'trip_tickets'] as $tbl) {
+            if (amgcOrderProductTableExists($conn, $tbl) && amgcColumnExists($conn, $tbl, 'so_id')) {
+                $chk = $conn->prepare("SELECT COUNT(*) AS cnt FROM `$tbl` WHERE so_id = ?");
+                if ($chk) {
+                    $chk->bind_param('i', $so_id);
+                    $chk->execute();
+                    $cnt = (int)($chk->get_result()->fetch_assoc()['cnt'] ?? 0);
+                    $chk->close();
+                    if ($cnt > 0) throw new Exception('Cannot delete order with existing related records.');
+                }
+            }
+        }
+
+        $del_items = $conn->prepare('DELETE FROM sales_order_items WHERE so_id = ?');
+        if ($del_items) { $del_items->bind_param('i', $so_id); $del_items->execute(); $del_items->close(); }
+        $del_order = $conn->prepare('DELETE FROM sales_orders WHERE so_id = ?');
+        if (!$del_order) throw new Exception('Prepare delete failed: ' . $conn->error);
+        $del_order->bind_param('i', $so_id);
+        if (!$del_order->execute()) throw new Exception('Failed to delete sales order.');
+        $del_order->close();
+
+        $conn->commit();
+        echo json_encode(['success' => true, 'message' => 'Sales order deleted successfully.']);
+        exit;
+    } catch (Throwable $e) {
+        if ($conn) { @$conn->rollback(); }
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        exit;
+    }
+}
+
 // ============= HANDLE GET ORDER DETAILS (for modal) =============
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'get_order_details') {
     header('Content-Type: application/json');
-    
+
     try {
-        $order_id = (int)$_POST['order_id'];
-        
-        // Get order details
-        $sql = "SELECT 
+        $order_id = (int)($_POST['order_id'] ?? 0);
+        if ($order_id <= 0) {
+            throw new Exception('Invalid order ID.');
+        }
+
+        $customer_group_select = amgcColumnExists($conn, 'customers', 'customer_group') ? "c.customer_group" : "'' AS customer_group";
+        $credit_limit_select = amgcColumnExists($conn, 'customers', 'credit_limit') ? "COALESCE(c.credit_limit, 0) AS credit_limit" : "0 AS credit_limit";
+        $credit_used_select = amgcColumnExists($conn, 'customers', 'credit_used') ? "COALESCE(c.credit_used, 0) AS credit_used" : "0 AS credit_used";
+        $fulfillment_select = amgcColumnExists($conn, 'sales_orders', 'fulfillment_type') ? "so.fulfillment_type" : "'pickup' AS fulfillment_type";
+        $billing_select = amgcColumnExists($conn, 'sales_orders', 'billing_type') ? "so.billing_type" : "'invoice' AS billing_type";
+
+        $sql = "SELECT
                     so.so_id,
                     so.so_number,
                     so.document_type,
+                    so.si_number,
+                    so.registered_business_name,
+                    so.tin,
+                    so.business_address,
                     so.atw_no,
                     so.gatepass_no,
                     so.order_date,
+                    so.created_at,
                     so.total_amount,
+                    so.order_amount,
+                    $fulfillment_select,
+                    $billing_select,
                     COALESCE(so.outstanding_balance_amount, 0) AS outstanding_balance_amount,
                     COALESCE(so.outstanding_balance_approval_required, 0) AS outstanding_balance_approval_required,
                     COALESCE(so.outstanding_balance_approved, 0) AS outstanding_balance_approved,
@@ -1896,39 +3135,44 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                         WHERE soi_sub.so_id = so.so_id
                     ) AS order_subtotal,
                     so.order_status,
+                    so.payment_status,
                     so.branch_id,
+                    c.customer_id,
                     c.customer_name,
                     c.store_name,
                     c.customer_code,
                     c.email,
                     c.phone_number,
                     c.address,
-                    u.first_name as created_by,
-                    b.branch_name,
-                    COALESCE(d.driver_name, 'No Driver') as assigned_driver
+                    $customer_group_select,
+                    $credit_limit_select,
+                    $credit_used_select,
+                    TRIM(CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, ''))) as created_by,
+                    b.branch_name
                 FROM sales_orders so
                 LEFT JOIN customers c ON so.customer_id = c.customer_id
                 LEFT JOIN users u ON so.created_by = u.user_id
                 LEFT JOIN users obau ON so.outstanding_balance_approved_by = obau.user_id
                 LEFT JOIN branches b ON so.branch_id = b.branch_id
-                LEFT JOIN pick_lists pl ON so.so_id = pl.so_id
-                LEFT JOIN drivers d ON pl.driver_id = d.driver_id
                 WHERE so.so_id = ?";
-        
+
         $stmt = $conn->prepare($sql);
+        if (!$stmt) throw new Exception('Prepare failed: ' . $conn->error);
         $stmt->bind_param('i', $order_id);
         $stmt->execute();
         $result = $stmt->get_result();
-        
         if ($result->num_rows === 0) {
             echo json_encode(['success' => false, 'message' => 'Order not found']);
             exit;
         }
-        
         $order = $result->fetch_assoc();
-        
-        // Get order items
-        $items_sql = "SELECT 
+        $stmt->close();
+
+        if (!$view_all_branches && amgcColumnExists($conn, 'sales_orders', 'branch_id') && (int)$branch_id > 0 && (int)($order['branch_id'] ?? 0) !== (int)$branch_id) {
+            throw new Exception('Order not found or access denied.');
+        }
+
+        $items_sql = "SELECT
                         soi.so_item_id,
                         soi.so_id,
                         soi.item_id,
@@ -1949,19 +3193,944 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
                      WHERE soi.so_id = ?
                      ORDER BY soi.so_item_id";
         $items_stmt = $conn->prepare($items_sql);
+        if (!$items_stmt) throw new Exception('Unable to load order items: ' . $conn->error);
         $items_stmt->bind_param('i', $order_id);
         $items_stmt->execute();
-        $items_result = $items_stmt->get_result();
-        $items = $items_result->fetch_all(MYSQLI_ASSOC);
-        
+        $items = $items_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $items_stmt->close();
+
+        $invoice = null;
+        if (amgcOrderProductTableExists($conn, 'invoices')) {
+            $invoice_so_filter = amgcColumnExists($conn, 'invoices', 'so_id') ? "i.so_id = ?" : "1=0";
+            $inv_sql = "SELECT i.* FROM invoices i WHERE $invoice_so_filter ORDER BY i.invoice_id DESC LIMIT 1";
+            $inv_stmt = $conn->prepare($inv_sql);
+            if ($inv_stmt) {
+                $inv_stmt->bind_param('i', $order_id);
+                $inv_stmt->execute();
+                $invoice = $inv_stmt->get_result()->fetch_assoc() ?: null;
+                $inv_stmt->close();
+            }
+        }
+
+        $payments = [];
+        $payment_total = 0.00;
+        if (amgcOrderProductTableExists($conn, 'payments')) {
+            $payment_filters = [];
+            if ($invoice && isset($invoice['invoice_id']) && amgcColumnExists($conn, 'payments', 'invoice_id')) {
+                $payment_filters[] = "invoice_id = " . (int)$invoice['invoice_id'];
+            }
+            if (amgcColumnExists($conn, 'payments', 'so_id')) {
+                $payment_filters[] = "so_id = " . (int)$order_id;
+            }
+            if (!empty($payment_filters)) {
+                $pay_sql = "SELECT * FROM payments WHERE (" . implode(' OR ', $payment_filters) . ") ORDER BY payment_date DESC, payment_id DESC";
+                $pay_res = $conn->query($pay_sql);
+                if ($pay_res) {
+                    while ($pay = $pay_res->fetch_assoc()) {
+                        $payments[] = $pay;
+                        if (strtolower(trim((string)($pay['status'] ?? 'completed'))) === 'completed') {
+                            $payment_total += (float)($pay['amount'] ?? 0);
+                        }
+                    }
+                }
+            }
+        }
+
+        $documents = [];
+        if (amgcOrderProductTableExists($conn, 'pick_lists')) {
+            $pick_sql = "SELECT pl.*,
+                            d.driver_name,
+                            d.vehicle_type,
+                            d.vehicle_plate_number
+                         FROM pick_lists pl
+                         LEFT JOIN drivers d ON pl.driver_id = d.driver_id
+                         WHERE pl.so_id = ?
+                         ORDER BY pl.pick_list_id DESC LIMIT 1";
+            $pick_stmt = $conn->prepare($pick_sql);
+            if ($pick_stmt) {
+                $pick_stmt->bind_param('i', $order_id);
+                $pick_stmt->execute();
+                $pick = $pick_stmt->get_result()->fetch_assoc();
+                $pick_stmt->close();
+                if ($pick) {
+                    $documents['pick_list_number'] = $pick['pick_list_number'] ?? $pick['pick_number'] ?? ('PL-' . ($pick['pick_list_id'] ?? ''));
+                    $documents['driver_id'] = (int)($pick['driver_id'] ?? 0);
+                    $documents['driver_name'] = $pick['driver_name'] ?? '';
+                    $documents['vehicle'] = trim(($pick['vehicle_type'] ?? '') . ' ' . ($pick['vehicle_plate_number'] ?? ''));
+                }
+            }
+        }
+        if (amgcOrderProductTableExists($conn, 'trip_tickets') && amgcColumnExists($conn, 'trip_tickets', 'so_id')) {
+            $trip_sql = "SELECT tt.*, d.driver_name,
+                            COALESCE(v.plate_number, mv.plate_no, d.vehicle_plate_number, '') AS vehicle_plate,
+                            COALESCE(v.vehicle_type, mv.vehicle_type, mv.vehicle_category, d.vehicle_type, '') AS vehicle_type
+                         FROM trip_tickets tt
+                         LEFT JOIN drivers d ON tt.driver_id = d.driver_id
+                         LEFT JOIN vehicles v ON tt.vehicle_id = v.vehicle_id
+                         LEFT JOIN motorpool_vehicles mv ON tt.vehicle_id = mv.id
+                         WHERE tt.so_id = ?
+                         ORDER BY tt.trip_id DESC LIMIT 1";
+            $trip_stmt = $conn->prepare($trip_sql);
+            if ($trip_stmt) {
+                $trip_stmt->bind_param('i', $order_id);
+                $trip_stmt->execute();
+                $trip = $trip_stmt->get_result()->fetch_assoc();
+                $trip_stmt->close();
+                if ($trip) {
+                    $documents['trip_ticket_number'] = $trip['trip_number'] ?? ('TT-' . ($trip['trip_id'] ?? ''));
+                    if (!empty($trip['driver_id'])) $documents['driver_id'] = (int)$trip['driver_id'];
+                    if (!empty($trip['vehicle_id'])) $documents['vehicle_id'] = (int)$trip['vehicle_id'];
+                    if (!empty($trip['driver_name'])) $documents['driver_name'] = $trip['driver_name'];
+                    $vehicleDisplay = trim(($trip['vehicle_type'] ?? '') . ' ' . ($trip['vehicle_plate'] ?? ''));
+                    if ($vehicleDisplay !== '') $documents['vehicle'] = $vehicleDisplay;
+                }
+            }
+        }
+
+        $order['payment_total'] = $payment_total;
+        $order['balance_due'] = max(0, (float)($order['total_amount'] ?? 0) - $payment_total);
+        $order['si_attachments_list'] = amgcOrderProductNormalizeSIAttachments($order['si_attachments'] ?? '');
+        if ($invoice) {
+            $invoice['si_attachments_list'] = amgcOrderProductNormalizeSIAttachments($invoice['si_attachments'] ?? '');
+            if (empty($order['si_attachments_list']) && !empty($invoice['si_attachments_list'])) {
+                $order['si_attachments_list'] = $invoice['si_attachments_list'];
+            }
+        }
+
         echo json_encode([
             'success' => true,
             'order' => $order,
-            'items' => $items
+            'items' => $items,
+            'invoice' => $invoice,
+            'payments' => $payments,
+            'documents' => $documents
         ]);
         exit;
+
+    } catch (Throwable $e) {
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        exit;
+    }
+}
+
+
+
+// ============= HANDLE EXPORT ALL SALES ORDERS (same data/export logic as sales_order.php, embedded for Sales Order tab) =============
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'export_all_orders') {
+    header('Content-Type: application/json');
+
+    try {
+        if (!isset($hide_beginning_balance_orders_condition)) {
+            $hide_beginning_balance_orders_condition = "AND LOWER(TRIM(COALESCE(so.fulfillment_type, ''))) <> 'beginning_balance'";
+        }
+        if (!isset($so_branch_column_exists)) {
+            $so_branch_column_exists = amgcColumnExists($conn, 'sales_orders', 'branch_id');
+        }
+
+        if (function_exists('amgcSyncSalesOrderComputedSnapshots')) {
+            amgcSyncSalesOrderComputedSnapshots($conn);
+        }
+
+        $start_date = isset($_POST['start_date']) ? trim((string)$_POST['start_date']) : '';
+        $end_date = isset($_POST['end_date']) ? trim((string)$_POST['end_date']) : '';
+        $status = isset($_POST['status']) ? trim((string)$_POST['status']) : '';
+        $customer = isset($_POST['customer']) ? trim((string)$_POST['customer']) : '';
+        $search = isset($_POST['search']) ? trim((string)$_POST['search']) : '';
+
+        $soi_gross_price_expr = amgcColumnExists($conn, 'sales_order_items', 'gross_price') ? 'soi.gross_price' : '0';
+        $soi_net_price_expr = amgcColumnExists($conn, 'sales_order_items', 'net_price') ? 'soi.net_price' : '0';
+        $soi_order_amount_expr = amgcColumnExists($conn, 'sales_order_items', 'order_amount') ? 'soi.order_amount' : '0';
+        $soi_total_discount_expr = amgcColumnExists($conn, 'sales_order_items', 'total_discount') ? 'soi.total_discount' : '0';
+        $soi_cogs_expr = amgcColumnExists($conn, 'sales_order_items', 'cogs_amount') ? 'soi.cogs_amount' : '0';
+        $soi_gross_profit_expr = amgcColumnExists($conn, 'sales_order_items', 'gross_profit') ? 'soi.gross_profit' : '0';
+        $soi_discount_type_expr = amgcColumnExists($conn, 'sales_order_items', 'discount_type') ? 'soi.discount_type' : "'computed'";
+        $soi_discount_value_expr = amgcColumnExists($conn, 'sales_order_items', 'discount_value') ? 'soi.discount_value' : '0';
+        $soi_ave_cost_expr = amgcColumnExists($conn, 'sales_order_items', 'ave_cost') ? 'soi.ave_cost' : '0';
+        $effective_order_date_expr = "DATE(COALESCE(so.created_at, so.order_date, NOW()))";
+
+        $query = "
+            SELECT
+                DATE(COALESCE(so.created_at, so.order_date)) as date_encoded,
+                so.so_number as so_order_number,
+                COALESCE(c.customer_code, '') as customer_code,
+                COALESCE(c.store_name, '') as store_name,
+                COALESCE(c.customer_name, '') as customer_name,
+                COALESCE(i.item_code, '') as item_code,
+                COALESCE(i.item_name, '') as item_description,
+                COALESCE(soi.unit_type, '') as unit_of_measurement,
+                soi.quantity_ordered as quantity,
+                COALESCE(NULLIF($soi_gross_price_expr, 0), (
+                    SELECT iup.unit_price
+                    FROM item_unit_pricing iup
+                    LEFT JOIN unit_types utp ON iup.unit_type_id = utp.unit_type_id
+                    WHERE iup.item_id = soi.item_id
+                      AND LOWER(TRIM(utp.unit_type_name)) = LOWER(TRIM(soi.unit_type))
+                      AND (iup.effective_date IS NULL OR iup.effective_date <= $effective_order_date_expr)
+                      AND (iup.effective_until IS NULL OR iup.effective_until >= $effective_order_date_expr)
+                    ORDER BY COALESCE(iup.effective_date, '1900-01-01') DESC, iup.pricing_id DESC
+                    LIMIT 1
+                ), COALESCE(NULLIF($soi_net_price_expr, 0), soi.unit_price, i.unit_price, 0)) as gross_price,
+                COALESCE(NULLIF($soi_net_price_expr, 0), soi.unit_price, i.unit_price, 0) as net_price,
+                COALESCE($soi_order_amount_expr, 0) as saved_order_amount,
+                COALESCE($soi_total_discount_expr, 0) as saved_total_discount,
+                COALESCE($soi_cogs_expr, 0) as saved_cogs,
+                COALESCE($soi_gross_profit_expr, 0) as saved_gross_profit,
+                COALESCE($soi_discount_type_expr, 'computed') as discount_type,
+                COALESCE($soi_discount_value_expr, 0) as discount_value,
+                COALESCE(NULLIF($soi_ave_cost_expr, 0), (
+                    SELECT AVG(iui.unit_cost)
+                    FROM item_unit_inventory iui
+                    LEFT JOIN unit_types utc ON iui.unit_type_id = utc.unit_type_id
+                    WHERE iui.item_id = soi.item_id
+                      AND LOWER(TRIM(utc.unit_type_name)) = LOWER(TRIM(soi.unit_type))
+                      AND DATE(iui.updated_at) BETWEEN DATE_SUB($effective_order_date_expr, INTERVAL 30 DAY) AND $effective_order_date_expr
+                ), (
+                    SELECT AVG(iui2.unit_cost)
+                    FROM item_unit_inventory iui2
+                    LEFT JOIN unit_types utc2 ON iui2.unit_type_id = utc2.unit_type_id
+                    WHERE iui2.item_id = soi.item_id
+                      AND LOWER(TRIM(utc2.unit_type_name)) = LOWER(TRIM(soi.unit_type))
+                ), 0) as ave_cost,
+                CONCAT(COALESCE(u.first_name, ''), CASE WHEN u.last_name IS NOT NULL AND u.last_name != '' THEN CONCAT(' ', u.last_name) ELSE '' END) as encoded_by
+            FROM sales_orders so
+            JOIN customers c ON so.customer_id = c.customer_id
+            JOIN sales_order_items soi ON so.so_id = soi.so_id
+            JOIN items i ON soi.item_id = i.item_id
+            LEFT JOIN users u ON so.created_by = u.user_id
+            WHERE 1=1
+            $hide_beginning_balance_orders_condition
+        ";
+
+        if (!empty($start_date) && !empty($end_date)) {
+            $query .= " AND DATE(so.created_at) BETWEEN '" . $conn->real_escape_string($start_date) . "' AND '" . $conn->real_escape_string($end_date) . "'";
+        }
+        if (!empty($status)) {
+            $query .= " AND so.order_status = '" . $conn->real_escape_string($status) . "'";
+        }
+        if (!empty($customer)) {
+            $query .= " AND c.customer_name = '" . $conn->real_escape_string($customer) . "'";
+        }
+        if (!empty($search)) {
+            $search_escaped = $conn->real_escape_string($search);
+            $query .= " AND (so.so_number LIKE '%$search_escaped%' OR c.customer_name LIKE '%$search_escaped%' OR i.item_name LIKE '%$search_escaped%' OR i.item_code LIKE '%$search_escaped%')";
+        }
+        if ($so_branch_column_exists && !$view_all_branches) {
+            $query .= " AND so.branch_id = " . (int)$branch_id;
+        }
+        $query .= " ORDER BY so.created_at DESC, so.so_id, soi.so_item_id";
+
+        $result = $conn->query($query);
+        if (!$result) {
+            echo json_encode(['success' => false, 'message' => 'Query failed: ' . $conn->error]);
+            exit;
+        }
+
+        $data = $result->fetch_all(MYSQLI_ASSOC);
+        foreach ($data as &$row) {
+            if (function_exists('amgcCalculateSalesLine')) {
+                $calc = amgcCalculateSalesLine(
+                    $row['quantity'] ?? 0,
+                    $row['gross_price'] ?? 0,
+                    $row['discount_type'] ?? 'computed',
+                    $row['discount_value'] ?? 0,
+                    $row['net_price'] ?? 0,
+                    $row['ave_cost'] ?? 0
+                );
+                $row['gross_price'] = $calc['gross_price'];
+                $row['discount'] = $calc['discount'];
+                $row['net_price'] = $calc['net_price'];
+                $row['order_amount'] = isset($row['saved_order_amount']) && (float)$row['saved_order_amount'] != 0 ? (float)$row['saved_order_amount'] : $calc['order_amount'];
+                $row['total_discount'] = isset($row['saved_total_discount']) && (float)$row['saved_total_discount'] != 0 ? (float)$row['saved_total_discount'] : $calc['total_discount'];
+                $row['ave_cost'] = $calc['ave_cost'];
+                $row['cogs'] = isset($row['saved_cogs']) && (float)$row['saved_cogs'] != 0 ? (float)$row['saved_cogs'] : $calc['cogs'];
+                $row['gross_profit'] = isset($row['saved_gross_profit']) && (float)$row['saved_gross_profit'] != 0 ? (float)$row['saved_gross_profit'] : $calc['gross_profit'];
+            } else {
+                $row['discount'] = max(0, (float)$row['gross_price'] - (float)$row['net_price']);
+                $row['order_amount'] = (float)$row['quantity'] * (float)$row['net_price'];
+                $row['total_discount'] = (float)$row['quantity'] * (float)$row['discount'];
+                $row['cogs'] = (float)$row['quantity'] * (float)$row['ave_cost'];
+                $row['gross_profit'] = (float)$row['order_amount'] - (float)$row['cogs'];
+            }
+        }
+        unset($row);
+
+        echo json_encode(['success' => true, 'data' => $data]);
+        exit;
+    } catch (Throwable $e) {
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        exit;
+    }
+}
+
+// ============= HANDLE PRINT ALL SALES ORDERS (copied style from sales_order.php, embedded for Sales Order tab) =============
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'print_all_orders') {
+    header('Content-Type: application/json');
+
+    try {
+        if (!function_exists('op_so_print_h')) {
+            function op_so_print_h($value) {
+                return htmlspecialchars((string)($value ?? ''), ENT_QUOTES, 'UTF-8');
+            }
+        }
+        if (!function_exists('op_so_print_calc_line')) {
+            function op_so_print_calc_line($qty, $grossPrice, $discountType, $discountValue, $netPrice, $aveCost) {
+                $qty = (float)$qty;
+                $grossPrice = (float)$grossPrice;
+                $discountValue = (float)$discountValue;
+                $netPrice = (float)$netPrice;
+                $aveCost = (float)$aveCost;
+                $discountType = strtolower(trim((string)$discountType));
+
+                if ($grossPrice <= 0 && $netPrice > 0) $grossPrice = $netPrice;
+
+                if ($discountType === 'percentage') {
+                    $rate = ($discountValue > 1) ? ($discountValue / 100) : $discountValue;
+                    $rate = max(0, min(1, $rate));
+                    $discountPerUnit = $grossPrice * $rate;
+                    $netPrice = max(0, $grossPrice - $discountPerUnit);
+                } elseif ($discountType === 'peso') {
+                    $discountPerUnit = max(0, $grossPrice - $discountValue);
+                    $netPrice = max(0, $discountValue);
+                } else {
+                    $discountPerUnit = max(0, $grossPrice - $netPrice);
+                }
+
+                $orderAmount = $qty * $netPrice;
+                $totalDiscount = $qty * $discountPerUnit;
+                $cogs = $qty * $aveCost;
+                $grossProfit = $orderAmount - $cogs;
+
+                return [
+                    'gross_price' => $grossPrice,
+                    'discount' => $discountValue > 0 ? $discountValue : $discountPerUnit,
+                    'net_price' => $netPrice,
+                    'order_amount' => $orderAmount,
+                    'total_discount' => $totalDiscount,
+                    'ave_cost' => $aveCost,
+                    'cogs' => $cogs,
+                    'gross_profit' => $grossProfit
+                ];
+            }
+        }
+
+        $start_date = trim((string)($_POST['start_date'] ?? ''));
+        $end_date = trim((string)($_POST['end_date'] ?? ''));
+        $status = trim((string)($_POST['status'] ?? ''));
+        $customer = trim((string)($_POST['customer'] ?? ''));
+        $search = trim((string)($_POST['search'] ?? ''));
+
+        $so_branch_exists_for_print = function_exists('amgcColumnExists') ? amgcColumnExists($conn, 'sales_orders', 'branch_id') : false;
+        $so_fulfillment_exists_for_print = function_exists('amgcColumnExists') ? amgcColumnExists($conn, 'sales_orders', 'fulfillment_type') : false;
+
+        $query = "
+            SELECT
+                DATE(COALESCE(so.created_at, so.order_date)) as date_encoded,
+                so.so_number as so_order_number,
+                COALESCE(c.customer_code, '') as customer_code,
+                COALESCE(c.store_name, '') as store_name,
+                COALESCE(c.customer_name, '') as customer_name,
+                COALESCE(i.item_code, '') as item_code,
+                COALESCE(i.item_name, '') as item_description,
+                COALESCE(soi.unit_type, '') as unit_of_measurement,
+                COALESCE(soi.quantity_ordered, 0) as quantity,
+                COALESCE(NULLIF(soi.gross_price, 0), COALESCE(NULLIF(soi.unit_price, 0), NULLIF(soi.net_price, 0), 0)) as gross_price,
+                COALESCE(NULLIF(soi.net_price, 0), soi.unit_price, 0) as net_price,
+                COALESCE(soi.order_amount, 0) as saved_order_amount,
+                COALESCE(soi.total_discount, 0) as saved_total_discount,
+                COALESCE(soi.cogs_amount, 0) as saved_cogs,
+                COALESCE(soi.gross_profit, 0) as saved_gross_profit,
+                COALESCE(soi.discount_type, 'computed') as discount_type,
+                COALESCE(soi.discount_value, 0) as discount_value,
+                COALESCE(NULLIF(soi.ave_cost, 0), (
+                    SELECT AVG(iui.unit_cost)
+                    FROM item_unit_inventory iui
+                    LEFT JOIN unit_types utc ON iui.unit_type_id = utc.unit_type_id
+                    WHERE iui.item_id = soi.item_id
+                      AND LOWER(TRIM(utc.unit_type_name)) = LOWER(TRIM(soi.unit_type))
+                      AND DATE(iui.updated_at) BETWEEN DATE_SUB(CURDATE(), INTERVAL 30 DAY) AND CURDATE()
+                ), (
+                    SELECT AVG(iui2.unit_cost)
+                    FROM item_unit_inventory iui2
+                    LEFT JOIN unit_types utc2 ON iui2.unit_type_id = utc2.unit_type_id
+                    WHERE iui2.item_id = soi.item_id
+                      AND LOWER(TRIM(utc2.unit_type_name)) = LOWER(TRIM(soi.unit_type))
+                ), 0) as ave_cost,
+                CONCAT(COALESCE(u.first_name, ''), CASE WHEN u.last_name IS NOT NULL AND u.last_name != '' THEN CONCAT(' ', u.last_name) ELSE '' END) as encoded_by
+            FROM sales_orders so
+            JOIN customers c ON so.customer_id = c.customer_id
+            JOIN sales_order_items soi ON so.so_id = soi.so_id
+            JOIN items i ON soi.item_id = i.item_id
+            LEFT JOIN users u ON so.created_by = u.user_id
+            WHERE 1=1
+        ";
+
+        if ($so_fulfillment_exists_for_print) {
+            $query .= " AND LOWER(TRIM(COALESCE(so.fulfillment_type, ''))) <> 'beginning_balance'";
+        }
+        if ($start_date !== '' && $end_date !== '') {
+            $query .= " AND DATE(COALESCE(so.created_at, so.order_date)) BETWEEN '" . $conn->real_escape_string($start_date) . "' AND '" . $conn->real_escape_string($end_date) . "'";
+        }
+        if ($status !== '') {
+            $query .= " AND so.order_status = '" . $conn->real_escape_string($status) . "'";
+        }
+        if ($customer !== '') {
+            $query .= " AND c.customer_name = '" . $conn->real_escape_string($customer) . "'";
+        }
+        if ($search !== '') {
+            $search_escaped = $conn->real_escape_string($search);
+            $query .= " AND (so.so_number LIKE '%$search_escaped%' OR c.customer_name LIKE '%$search_escaped%' OR i.item_name LIKE '%$search_escaped%' OR i.item_code LIKE '%$search_escaped%')";
+        }
+        if ($so_branch_exists_for_print && empty($view_all_branches) && (int)$branch_id > 0) {
+            $query .= " AND so.branch_id = " . (int)$branch_id;
+        }
+        $query .= " ORDER BY COALESCE(so.created_at, so.order_date) DESC, so.so_id, soi.so_item_id";
+
+        $result = $conn->query($query);
+        if (!$result) throw new Exception('Print query failed: ' . $conn->error);
+
+        $rows = $result->fetch_all(MYSQLI_ASSOC);
+        foreach ($rows as &$row) {
+            $calc = op_so_print_calc_line(
+                $row['quantity'] ?? 0,
+                $row['gross_price'] ?? 0,
+                $row['discount_type'] ?? 'computed',
+                $row['discount_value'] ?? 0,
+                $row['net_price'] ?? 0,
+                $row['ave_cost'] ?? 0
+            );
+            $row['gross_price'] = $calc['gross_price'];
+            $row['discount'] = $calc['discount'];
+            $row['net_price'] = $calc['net_price'];
+            $row['order_amount'] = isset($row['saved_order_amount']) && (float)$row['saved_order_amount'] != 0 ? (float)$row['saved_order_amount'] : $calc['order_amount'];
+            $row['total_discount'] = isset($row['saved_total_discount']) && (float)$row['saved_total_discount'] != 0 ? (float)$row['saved_total_discount'] : $calc['total_discount'];
+            $row['ave_cost'] = $calc['ave_cost'];
+            $row['cogs'] = isset($row['saved_cogs']) && (float)$row['saved_cogs'] != 0 ? (float)$row['saved_cogs'] : $calc['cogs'];
+            $row['gross_profit'] = isset($row['saved_gross_profit']) && (float)$row['saved_gross_profit'] != 0 ? (float)$row['saved_gross_profit'] : $calc['gross_profit'];
+        }
+        unset($row);
+
+        $print_branch_name = 'All Branches';
+        if (empty($view_all_branches) && (int)$branch_id > 0) {
+            $print_branch_name = $branch_name ?? ('Branch ' . (int)$branch_id);
+        }
+
+        $logo_base64_print = '';
+        $logo_path_print = '../Pictures/amgc3DLogo.png';
+        if (file_exists($logo_path_print)) {
+            $logo_base64_print = 'data:image/png;base64,' . base64_encode(file_get_contents($logo_path_print));
+        }
+        $logo_html = $logo_base64_print !== '' ? '<img src="' . $logo_base64_print . '" alt="Logo">' : '';
+
+        $html = '<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="UTF-8">
+            <title>All Sales Orders Report</title>
+            <style>
+                @page { size: A4 landscape; margin: 8mm; }
+                * { box-sizing: border-box; }
+                body { font-family: Arial, sans-serif; margin: 10px; font-size: 10.5px; line-height: 1.22; color: #111827; background: #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                .header { display: flex; align-items: center; justify-content: center; gap: 9px; text-align: center; margin-bottom: 10px; padding-bottom: 7px; border-bottom: 2px solid #047857; }
+                .header img { height: 42px !important; width: 42px !important; object-fit: contain; margin: 0 !important; flex: 0 0 auto; }
+                .header h1 { margin: 0 0 2px 0; font-size: 15px; line-height: 1.1; font-weight: 800; color: #052A47; }
+                .header p { margin: 1px 0; color: #334155; font-size: 8.8px; line-height: 1.15; font-weight: 600; }
+                .print-title-text { text-align: left; }
+                table { width: 100%; border-collapse: collapse; margin-top: 8px; table-layout: fixed; }
+                th { border: 0.55px solid #94a3b8; padding: 4px 3px; text-align: center; vertical-align: middle; background: #047857; font-size: 7.2px; line-height: 1.1; font-weight: 400; color: #fff; text-transform: uppercase; overflow-wrap: anywhere; word-break: normal; }
+                td { border: 0.55px solid #94a3b8; padding: 4px 3px; text-align: center; vertical-align: middle; font-size: 7.4px; line-height: 1.12; color: #111827; overflow-wrap: anywhere; word-break: normal; }
+                tbody tr:nth-child(even) { background: #f8fafc; }
+                th:nth-child(1), td:nth-child(1) { width: 5.5%; }
+                th:nth-child(2), td:nth-child(2) { width: 9.2%; }
+                td:nth-child(2) { font-weight: 700; }
+                th:nth-child(3), td:nth-child(3) { width: 7.2%; }
+                td:nth-child(3) { font-weight: 700; }
+                th:nth-child(4), td:nth-child(4) { width: 6.8%; text-align: left; }
+                th:nth-child(5), td:nth-child(5) { width: 6.8%; text-align: left; }
+                th:nth-child(6), td:nth-child(6) { width: 4.2%; font-size: 6.8px; padding-left: 2px; padding-right: 2px; }
+                th:nth-child(7), td:nth-child(7) { width: 5.2%; font-size: 6.8px; padding-left: 2px; padding-right: 2px; text-align: left; }
+                th:nth-child(8), td:nth-child(8) { width: 5.2%; }
+                th:nth-child(9), td:nth-child(9) { width: 4.5%; }
+                th:nth-child(10), td:nth-child(10), th:nth-child(11), td:nth-child(11), th:nth-child(12), td:nth-child(12), th:nth-child(13), td:nth-child(13), th:nth-child(14), td:nth-child(14), th:nth-child(15), td:nth-child(15), th:nth-child(16), td:nth-child(16), th:nth-child(17), td:nth-child(17) { width: 5.4%; }
+                th:nth-child(18), td:nth-child(18) { width: 6.4%; }
+                table thead th { font-weight: 400 !important; }
+                .footer { margin-top: 10px; padding-top: 6px; border-top: 1px solid #94a3b8; text-align: center; font-size: 8.5px; color: #334155; font-weight: 600; }
+                @media print { body { margin: 0; } .header { margin-bottom: 8px; padding-bottom: 5px; } table { page-break-inside: auto; } thead { display: table-header-group; } tr { page-break-inside: avoid; break-inside: avoid; } .no-print { display: none; } }
+            </style>
         
-    } catch (Exception $e) {
+
+<style id="amgc-order-details-true-fullscreen-final">
+/* Invoice Details modal only: true fullscreen, fit to screen, no internal scroll. */
+#orderDetailsModal.modal {
+    padding: 0 !important;
+}
+#orderDetailsModal .modal-dialog,
+#orderDetailsModal .modal-dialog.order-details-wide-modal,
+#orderDetailsModal .modal-fullscreen {
+    position: fixed !important;
+    inset: 0 !important;
+    width: 100vw !important;
+    max-width: 100vw !important;
+    min-width: 100vw !important;
+    height: 100vh !important;
+    max-height: 100vh !important;
+    min-height: 100vh !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    transform: none !important;
+}
+#orderDetailsModal .modal-content {
+    width: 100vw !important;
+    height: 100vh !important;
+    min-height: 100vh !important;
+    max-height: 100vh !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    background: #fff !important;
+}
+#orderDetailsModal .modal-header {
+    height: 46px !important;
+    min-height: 46px !important;
+    max-height: 46px !important;
+    flex: 0 0 46px !important;
+    padding: 8px 16px !important;
+    background: linear-gradient(90deg, #047857 0%, #36d34a 100%) !important;
+    color: #fff !important;
+    border: 0 !important;
+}
+#orderDetailsModal .modal-title {
+    font-size: 1.22rem !important;
+    line-height: 1.1 !important;
+    font-weight: 800 !important;
+}
+#orderDetailsModal .btn-close {
+    width: 34px !important;
+    height: 34px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border-radius: 50% !important;
+    background-color: rgba(255,255,255,.45) !important;
+    opacity: 1 !important;
+}
+#orderDetailsModal .modal-body {
+    flex: 1 1 auto !important;
+    height: calc(100vh - 46px) !important;
+    max-height: calc(100vh - 46px) !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    overflow-y: hidden !important;
+    overflow-x: hidden !important;
+    padding: 0 !important;
+    background: #fff !important;
+}
+#orderDetailsModal .modal-footer { display: none !important; }
+#orderDetailsModal .op-invoice-form-view {
+    height: 100% !important;
+    min-height: 0 !important;
+    width: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    background: #fff !important;
+    font-size: clamp(13px, .82vw, 16px) !important;
+}
+#orderDetailsModal .op-invoice-main {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    height: 100% !important;
+    padding: clamp(8px, .7vw, 14px) clamp(14px, 1vw, 22px) !important;
+    display: grid !important;
+    grid-template-rows: auto auto 1fr !important;
+    row-gap: clamp(7px, .55vw, 11px) !important;
+    overflow: hidden !important;
+}
+#orderDetailsModal .op-invoice-sheet-head {
+    display: grid !important;
+    grid-template-columns: minmax(420px, 1fr) minmax(760px, 1.45fr) !important;
+    gap: clamp(12px, 1vw, 22px) !important;
+    align-items: start !important;
+    min-height: 0 !important;
+}
+#orderDetailsModal .op-invoice-title {
+    font-size: clamp(2.25rem, 2.35vw, 3.15rem) !important;
+    line-height: .95 !important;
+    margin: 0 0 clamp(6px, .45vw, 10px) !important;
+    font-weight: 300 !important;
+}
+#orderDetailsModal .op-customer-readonly {
+    max-width: none !important;
+    padding: clamp(7px, .55vw, 10px) clamp(9px, .7vw, 12px) !important;
+    line-height: 1.12 !important;
+    font-size: clamp(13px, .82vw, 15px) !important;
+}
+#orderDetailsModal .op-customer-readonly .name {
+    font-size: clamp(1rem, .98vw, 1.25rem) !important;
+    margin-bottom: 3px !important;
+}
+#orderDetailsModal .op-right-fields {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(130px, 1fr)) !important;
+    gap: clamp(6px, .45vw, 10px) clamp(10px, .8vw, 16px) !important;
+}
+#orderDetailsModal .op-field label,
+#orderDetailsModal .op-section-label {
+    font-size: clamp(.72rem, .68vw, .84rem) !important;
+    margin-bottom: 2px !important;
+    line-height: 1.05 !important;
+    font-weight: 800 !important;
+}
+#orderDetailsModal .op-detail-control,
+#orderDetailsModal .op-detail-select {
+    height: clamp(28px, 2.1vh, 36px) !important;
+    min-height: clamp(28px, 2.1vh, 36px) !important;
+    padding: 3px 8px !important;
+    font-size: clamp(13px, .82vw, 16px) !important;
+}
+#orderDetailsModal .op-items-wrap {
+    margin-top: 0 !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+}
+#orderDetailsModal .op-items-table {
+    table-layout: fixed !important;
+    width: 100% !important;
+    font-size: clamp(13px, .82vw, 16px) !important;
+}
+#orderDetailsModal .op-items-table thead th {
+    padding: clamp(5px, .36vw, 8px) 8px !important;
+    font-size: clamp(.78rem, .75vw, .95rem) !important;
+    line-height: 1.1 !important;
+}
+#orderDetailsModal .op-items-table td {
+    height: auto !important;
+    min-height: 0 !important;
+    padding: clamp(4px, .34vw, 7px) 8px !important;
+    line-height: 1.18 !important;
+    font-size: clamp(13px, .82vw, 16px) !important;
+}
+#orderDetailsModal .op-invoice-muted,
+#orderDetailsModal .small {
+    font-size: clamp(11px, .68vw, 13px) !important;
+    line-height: 1.05 !important;
+}
+#orderDetailsModal .op-lower-area {
+    display: grid !important;
+    grid-template-columns: minmax(620px, 1fr) minmax(330px, 430px) !important;
+    gap: clamp(14px, 1vw, 24px) !important;
+    margin-top: 0 !important;
+    min-height: 0 !important;
+    align-items: start !important;
+    overflow: hidden !important;
+}
+#orderDetailsModal .op-message-box {
+    min-height: clamp(30px, 3.3vh, 44px) !important;
+    height: clamp(30px, 3.3vh, 44px) !important;
+    padding: 4px 8px !important;
+    resize: none !important;
+    font-size: clamp(13px, .8vw, 15px) !important;
+}
+#orderDetailsModal .op-payment-box {
+    margin-top: clamp(6px, .45vw, 10px) !important;
+    padding: clamp(7px, .55vw, 10px) clamp(10px, .7vw, 14px) !important;
+}
+#orderDetailsModal .op-payment-toggle-line {
+    margin-bottom: 5px !important;
+    font-size: clamp(.74rem, .72vw, .9rem) !important;
+}
+#orderDetailsModal .op-payment-detail-line {
+    gap: 10px !important;
+}
+#orderDetailsModal .op-summary-box {
+    width: 100% !important;
+    max-width: 420px !important;
+    margin-left: auto !important;
+    font-size: clamp(13px, .82vw, 16px) !important;
+}
+#orderDetailsModal .op-summary-box > div {
+    margin-bottom: clamp(4px, .35vw, 7px) !important;
+    gap: 12px !important;
+    grid-template-columns: 1fr minmax(110px, 150px) !important;
+}
+#orderDetailsModal .op-balance-due span,
+#orderDetailsModal .op-balance-due strong {
+    font-size: clamp(1rem, 1.08vw, 1.35rem) !important;
+}
+#orderDetailsModal .op-detail-footer {
+    margin-top: clamp(8px, .65vw, 14px) !important;
+    gap: 10px !important;
+}
+#orderDetailsModal .op-detail-footer .btn {
+    min-width: clamp(100px, 7vw, 130px) !important;
+    min-height: clamp(34px, 3vh, 42px) !important;
+    padding: 5px 14px !important;
+    font-size: clamp(13px, .84vw, 16px) !important;
+    font-weight: 800 !important;
+}
+@media (max-width: 1280px) {
+    #orderDetailsModal .op-invoice-sheet-head { grid-template-columns: minmax(340px, .9fr) minmax(620px, 1.35fr) !important; }
+    #orderDetailsModal .op-right-fields { grid-template-columns: repeat(4, minmax(100px, 1fr)) !important; }
+    #orderDetailsModal .op-lower-area { grid-template-columns: minmax(520px, 1fr) minmax(280px, 360px) !important; }
+}
+@media (max-height: 760px) {
+    #orderDetailsModal .modal-header { height: 40px !important; min-height: 40px !important; flex-basis: 40px !important; padding: 6px 14px !important; }
+    #orderDetailsModal .modal-body { height: calc(100vh - 40px) !important; max-height: calc(100vh - 40px) !important; }
+    #orderDetailsModal .op-invoice-main { padding-top: 6px !important; padding-bottom: 6px !important; row-gap: 5px !important; }
+    #orderDetailsModal .op-invoice-title { font-size: 2rem !important; margin-bottom: 4px !important; }
+    #orderDetailsModal .op-customer-readonly { padding-top: 5px !important; padding-bottom: 5px !important; line-height: 1.05 !important; }
+    #orderDetailsModal .op-detail-control,
+    #orderDetailsModal .op-detail-select { height: 26px !important; min-height: 26px !important; }
+    #orderDetailsModal .op-message-box { height: 28px !important; min-height: 28px !important; }
+}
+</style>
+
+
+<style id="amgc-swal-click-safe-fix">
+/* AMGC FIX: keep Order Submitted SweetAlert above invoice/modal layers and clickable */
+.swal2-container,
+.swal2-container.swal2-center,
+.swal2-container:has(.animated-order-alert),
+.swal2-container:has(.outstanding-approval-swal) {
+    z-index: 2147483000 !important;
+    pointer-events: auto !important;
+}
+
+.swal2-popup,
+.swal2-popup.animated-order-alert,
+.swal2-popup.outstanding-approval-swal,
+.swal2-actions,
+.swal2-styled,
+.swal2-confirm,
+.swal2-deny,
+.swal2-cancel {
+    pointer-events: auto !important;
+}
+
+.swal2-popup.animated-order-alert .swal2-actions {
+    position: relative !important;
+    z-index: 2147483001 !important;
+}
+
+.swal2-popup.animated-order-alert .swal2-confirm {
+    cursor: pointer !important;
+    opacity: 1 !important;
+}
+</style>
+
+
+
+
+
+
+
+</head>
+        <body>
+            <div class="header">' . $logo_html . '<div class="print-title-text"><h1>Sales Orders Report</h1><p>Branch: ' . op_so_print_h($print_branch_name) . '</p><p>Generated: ' . date('Y-m-d H:i:s') . '</p></div></div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date Encoded</th><th>SO Order Number</th><th>Customer Code</th><th>Store Name</th><th>Customer Name</th><th>Item Code</th><th>Item Description</th><th>Unit of Measurement</th><th>Quantity</th><th>Gross Price</th><th>Discount</th><th>Net Price</th><th>Order Amount</th><th>Total Discount</th><th>Ave. Cost</th><th>COGS</th><th>Gross Profit</th><th>Encoded by</th>
+                    </tr>
+                </thead>
+                <tbody>';
+
+        foreach ($rows as $row) {
+            $html .= '<tr>
+                <td>' . op_so_print_h($row['date_encoded'] ?? '') . '</td>
+                <td>' . op_so_print_h($row['so_order_number'] ?? '') . '</td>
+                <td>' . op_so_print_h($row['customer_code'] ?? '') . '</td>
+                <td>' . op_so_print_h($row['store_name'] ?? '') . '</td>
+                <td>' . op_so_print_h($row['customer_name'] ?? '') . '</td>
+                <td>' . op_so_print_h($row['item_code'] ?? '') . '</td>
+                <td>' . op_so_print_h($row['item_description'] ?? '') . '</td>
+                <td>' . op_so_print_h($row['unit_of_measurement'] ?? '') . '</td>
+                <td>' . number_format((float)($row['quantity'] ?? 0), 2) . '</td>
+                <td>' . number_format((float)($row['gross_price'] ?? 0), 2) . '</td>
+                <td>' . number_format((float)($row['discount'] ?? 0), 2) . '</td>
+                <td>' . number_format((float)($row['net_price'] ?? 0), 2) . '</td>
+                <td>' . number_format((float)($row['order_amount'] ?? 0), 2) . '</td>
+                <td>' . number_format((float)($row['total_discount'] ?? 0), 2) . '</td>
+                <td>' . number_format((float)($row['ave_cost'] ?? 0), 2) . '</td>
+                <td>' . number_format((float)($row['cogs'] ?? 0), 2) . '</td>
+                <td>' . number_format((float)($row['gross_profit'] ?? 0), 2) . '</td>
+                <td>' . op_so_print_h($row['encoded_by'] ?? '') . '</td>
+            </tr>';
+        }
+
+        $html .= '</tbody></table><div class="footer">Total records: ' . count($rows) . '</div>
+<style>
+/* Clean invoice details view controls */
+#orderDetailsModal .op-invoice-topbar { display: none !important; }
+#orderDetailsModal .modal-footer.d-none { display: none !important; }
+#orderDetailsModal .op-detail-footer { gap: 10px !important; justify-content: flex-end !important; }
+#orderDetailsModal .op-detail-footer .btn { min-width: 118px !important; }
+</style>
+
+
+
+<style>
+/* FINAL OVERRIDE: Invoice Details modal only. Does not affect Create Invoice tab. */
+#orderDetailsModal.show .modal-dialog.order-details-wide-modal,
+#orderDetailsModal .modal-dialog.order-details-wide-modal,
+#orderDetailsModal .modal-dialog {
+    width: 100vw !important;
+    max-width: 100vw !important;
+    min-width: 100vw !important;
+    height: 100vh !important;
+    max-height: 100vh !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    transform: none !important;
+}
+#orderDetailsModal .modal-content {
+    width: 100vw !important;
+    height: 100vh !important;
+    min-height: 100vh !important;
+    max-height: 100vh !important;
+    border-radius: 0 !important;
+    border: 0 !important;
+    overflow: hidden !important;
+    font-size: 16px !important;
+}
+#orderDetailsModal .modal-header {
+    flex: 0 0 auto !important;
+    height: 54px !important;
+    min-height: 54px !important;
+    padding: 10px 18px !important;
+}
+#orderDetailsModal .modal-title {
+    font-size: 1.35rem !important;
+    font-weight: 800 !important;
+}
+#orderDetailsModal .btn-close {
+    transform: scale(1.15) !important;
+}
+#orderDetailsModal .modal-body {
+    flex: 1 1 auto !important;
+    height: calc(100vh - 54px) !important;
+    max-height: calc(100vh - 54px) !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding: 0 !important;
+    background: #fff !important;
+}
+#orderDetailsModal .modal-footer {
+    display: none !important;
+}
+#orderDetailsModal .op-invoice-form-view {
+    width: 100% !important;
+    max-width: none !important;
+    min-height: calc(100vh - 54px) !important;
+    font-size: 16px !important;
+}
+#orderDetailsModal .op-invoice-topbar {
+    display: none !important;
+}
+#orderDetailsModal .op-invoice-main {
+    width: 100% !important;
+    max-width: none !important;
+    padding: 18px 26px 20px !important;
+}
+#orderDetailsModal .op-invoice-sheet-head {
+    display: grid !important;
+    grid-template-columns: minmax(460px, 0.95fr) minmax(920px, 1.55fr) !important;
+    gap: 20px !important;
+    align-items: start !important;
+}
+#orderDetailsModal .op-right-fields {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(150px, 1fr)) !important;
+    gap: 12px 16px !important;
+}
+#orderDetailsModal .op-invoice-title {
+    font-size: 3.4rem !important;
+    line-height: 1 !important;
+    margin: 8px 0 14px !important;
+    font-weight: 400 !important;
+}
+#orderDetailsModal .op-customer-info-box,
+#orderDetailsModal .op-customer-info-box * {
+    font-size: 1rem !important;
+    line-height: 1.18 !important;
+}
+#orderDetailsModal .op-detail-label {
+    font-size: .9rem !important;
+    margin-bottom: 5px !important;
+    font-weight: 800 !important;
+}
+#orderDetailsModal .op-detail-control,
+#orderDetailsModal .op-detail-select {
+    min-height: 40px !important;
+    height: 40px !important;
+    padding: 7px 11px !important;
+    font-size: 1rem !important;
+}
+#orderDetailsModal .op-invoice-items-table {
+    font-size: 1rem !important;
+    margin-top: 12px !important;
+}
+#orderDetailsModal .op-invoice-items-table thead th {
+    font-size: 1rem !important;
+    padding: 8px 10px !important;
+    font-weight: 800 !important;
+}
+#orderDetailsModal .op-invoice-items-table td,
+#orderDetailsModal .op-invoice-items-table tfoot td {
+    padding: 8px 10px !important;
+    font-size: 1rem !important;
+}
+#orderDetailsModal .op-message-box {
+    min-height: 46px !important;
+    font-size: 1rem !important;
+}
+#orderDetailsModal .op-payment-view-box {
+    padding: 12px 14px !important;
+    font-size: 1rem !important;
+}
+#orderDetailsModal .op-summary-box,
+#orderDetailsModal .op-summary-box * {
+    font-size: 1rem !important;
+}
+#orderDetailsModal .op-summary-box .op-balance-due,
+#orderDetailsModal .op-summary-box .balance-due,
+#orderDetailsModal .op-summary-box strong {
+    font-size: 1.25rem !important;
+}
+#orderDetailsModal .op-details-action-bar,
+#orderDetailsModal .op-invoice-actions {
+    margin-top: 12px !important;
+}
+#orderDetailsModal .op-details-action-bar .btn,
+#orderDetailsModal .op-invoice-actions .btn {
+    min-width: 120px !important;
+    min-height: 40px !important;
+    font-size: 1rem !important;
+    font-weight: 700 !important;
+}
+@media (max-width: 1400px) {
+    #orderDetailsModal .op-invoice-sheet-head {
+        grid-template-columns: minmax(380px, .95fr) minmax(720px, 1.4fr) !important;
+    }
+    #orderDetailsModal .op-right-fields {
+        grid-template-columns: repeat(3, minmax(140px, 1fr)) !important;
+    }
+}
+@media (max-width: 992px) {
+    #orderDetailsModal .op-invoice-sheet-head {
+        grid-template-columns: 1fr !important;
+    }
+    #orderDetailsModal .op-right-fields {
+        grid-template-columns: repeat(2, minmax(120px, 1fr)) !important;
+    }
+    #orderDetailsModal .op-invoice-title {
+        font-size: 2.6rem !important;
+    }
+}
+</style>
+
+</body></html>';
+        echo json_encode(['success' => true, 'html' => $html]);
+    } catch (Throwable $e) {
         echo json_encode(['success' => false, 'message' => $e->getMessage()]);
     }
     exit;
@@ -2327,6 +4496,91 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         exit;
     }
 }
+
+
+// ===== EMBEDDED SALES ORDER TAB DATA =====
+// This keeps the Sales Order list inside orderproduct.php without iframe/include.
+$op_sales_orders = [];
+$op_sales_order_error = '';
+try {
+    $op_so_branch_exists = amgcColumnExists($conn, 'sales_orders', 'branch_id');
+    $op_so_fulfillment_exists = amgcColumnExists($conn, 'sales_orders', 'fulfillment_type');
+    $op_so_si_exists = amgcColumnExists($conn, 'sales_orders', 'si_number');
+    $op_so_order_amount_exists = amgcColumnExists($conn, 'sales_orders', 'order_amount');
+    $op_so_discount_exists = amgcColumnExists($conn, 'sales_orders', 'total_discount_amount');
+    $op_so_gp_exists = amgcColumnExists($conn, 'sales_orders', 'gross_profit_amount');
+    $op_so_cogs_exists = amgcColumnExists($conn, 'sales_orders', 'cogs_amount');
+    $op_customers_branch_exists = amgcColumnExists($conn, 'customers', 'branch_id');
+
+    $op_si_select = $op_so_si_exists ? "so.si_number" : "NULL AS si_number";
+    $op_branch_select = $op_so_branch_exists ? "so.branch_id" : "0 AS branch_id";
+    $op_order_amount_select = $op_so_order_amount_exists ? "COALESCE(NULLIF(so.order_amount,0), so.total_amount, 0) AS display_total" : "COALESCE(so.total_amount,0) AS display_total";
+    $op_discount_select = $op_so_discount_exists ? "COALESCE(so.total_discount_amount,0) AS total_discount_amount" : "0 AS total_discount_amount";
+    $op_gp_select = $op_so_gp_exists ? "COALESCE(so.gross_profit_amount,0) AS gross_profit_amount" : "0 AS gross_profit_amount";
+    $op_cogs_select = $op_so_cogs_exists ? "COALESCE(so.cogs_amount,0) AS cogs_amount" : "0 AS cogs_amount";
+
+    $op_branch_join = $op_so_branch_exists ? "LEFT JOIN branches b ON so.branch_id = b.branch_id" : "";
+    $op_where = "WHERE 1=1";
+    if ($op_so_fulfillment_exists) {
+        $op_where .= " AND LOWER(TRIM(COALESCE(so.fulfillment_type,''))) <> 'beginning_balance'";
+    }
+    if (!$view_all_branches && (int)$branch_id > 0) {
+        if ($op_so_branch_exists) {
+            $op_where .= " AND (so.branch_id = " . (int)$branch_id . " OR so.branch_id IS NULL OR so.branch_id = 0)";
+        } elseif ($op_customers_branch_exists) {
+            $op_where .= " AND (c.branch_id = " . (int)$branch_id . " OR c.branch_id IS NULL OR c.branch_id = 0)";
+        }
+    }
+
+    $op_sales_order_sql = "
+        SELECT
+            so.so_id,
+            so.customer_id,
+            so.so_number,
+            $op_si_select,
+            so.order_date,
+            COALESCE(so.order_status, 'pending') AS order_status,
+            COALESCE(so.payment_status, 'unpaid') AS payment_status,
+            $op_branch_select,
+            $op_order_amount_select,
+            $op_discount_select,
+            $op_cogs_select,
+            $op_gp_select,
+            c.customer_code,
+            c.customer_name,
+            c.store_name,
+            COALESCE(b.branch_name, '') AS branch_name,
+            TRIM(CONCAT(COALESCE(u.first_name,''), ' ', COALESCE(u.last_name,''))) AS encoded_by,
+            (SELECT COALESCE(SUM(quantity_ordered),0) FROM sales_order_items soi WHERE soi.so_id = so.so_id) AS total_qty,
+            (SELECT COUNT(*) FROM sales_order_items soi2 WHERE soi2.so_id = so.so_id) AS item_count
+        FROM sales_orders so
+        LEFT JOIN customers c ON so.customer_id = c.customer_id
+        LEFT JOIN users u ON so.created_by = u.user_id
+        $op_branch_join
+        $op_where
+        ORDER BY so.order_date DESC, so.so_id DESC
+        LIMIT 500
+    ";
+    $op_sales_order_result = $conn->query($op_sales_order_sql);
+    if ($op_sales_order_result) {
+        $op_sales_orders = $op_sales_order_result->fetch_all(MYSQLI_ASSOC);
+    } else {
+        $op_sales_order_error = $conn->error;
+        error_log("Embedded Sales Order query error: " . $conn->error);
+    }
+} catch (Throwable $e) {
+    $op_sales_order_error = $e->getMessage();
+    error_log("Embedded Sales Order tab error: " . $e->getMessage());
+}
+
+$op_sales_order_count = count($op_sales_orders);
+$op_sales_order_pending_count = count(array_filter($op_sales_orders, function($row) {
+    return strtolower(trim((string)($row['order_status'] ?? ''))) === 'pending';
+}));
+$op_sales_order_confirmed_count = count(array_filter($op_sales_orders, function($row) {
+    return in_array(strtolower(trim((string)($row['order_status'] ?? ''))), ['confirmed','processing','ready','in_transit','delivered'], true);
+}));
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -2340,6 +4594,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     <link rel="apple-touch-icon" sizes="180x180" href="../Pictures/apple-touch-icon.png" />
     <link rel="manifest" href="../Pictures/site.webmanifest" />
     <link rel="stylesheet" href="../css/current_inventory.css">
+    <link href="https://fonts.googleapis.com/css2?family=Tenor+Sans&family=Alice&display=swap" rel="stylesheet">
     <!-- Bootstrap 5 CSS -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <!-- Bootstrap Icons -->
@@ -2432,6 +4687,18 @@ body {
 }
 
 /* Remove extra padding from main-content on mobile */
+@media (max-width: 768px) {
+    body.order-product-invoice-style .invoice-lower-fields {
+        grid-template-columns: repeat(2, minmax(130px, 1fr)) !important;
+    }
+    body.order-product-invoice-style .invoice-lower-fields .invoice-fulfillment-field,
+    body.order-product-invoice-style .invoice-lower-fields .invoice-atw-field,
+    body.order-product-invoice-style .invoice-lower-fields .invoice-gatepass-field,
+    body.order-product-invoice-style .invoice-lower-fields .invoice-delivery-type-field {
+        grid-column: auto;
+    }
+}
+
 @media (max-width: 768px) {
     .main-content {
         padding: 6px 10px 10px 10px !important;
@@ -2627,6 +4894,16 @@ body {
             outline: none;
             border-color: #2E7D32;
             box-shadow: 0 0 0 3px rgba(46,125,50,0.1);
+        }
+
+        #productSearch:-webkit-autofill,
+        #productSearch:-webkit-autofill:hover,
+        #productSearch:-webkit-autofill:focus {
+            -webkit-text-fill-color: #111827;
+            transition: background-color 9999s ease-in-out 0s;
+            box-shadow: 0 0 0 1000px #ffffff inset;
+            border: 1px solid #e0e0e0;
+            border-radius: 25px;
         }
         
         .search-reset {
@@ -3407,6 +5684,113 @@ input[type="number"]::-webkit-outer-spin-button {
     box-shadow: 0 5px 15px rgba(4, 120, 87, 0.3);
 }
 
+/* ===== FIX: SweetAlert approval/success modals should not create page scrollbars ===== */
+body.swal2-shown,
+body.swal2-height-auto {
+    overflow: hidden !important;
+}
+
+.swal2-container {
+    overflow: hidden !important;
+    padding: 12px !important;
+}
+
+.swal2-popup.outstanding-approval-swal {
+    width: min(520px, calc(100vw - 32px)) !important;
+    max-height: calc(100vh - 32px) !important;
+    overflow: hidden !important;
+    padding: 1.1rem 1.25rem !important;
+    border-radius: 12px !important;
+}
+
+.swal2-popup.outstanding-approval-swal .swal2-icon {
+    margin: 0.25rem auto 0.75rem !important;
+    width: 4rem !important;
+    height: 4rem !important;
+}
+
+.swal2-popup.outstanding-approval-swal .swal2-title {
+    font-size: 1.45rem !important;
+    line-height: 1.15 !important;
+    padding: 0 !important;
+    margin: 0 0 0.75rem !important;
+}
+
+.swal2-popup.outstanding-approval-swal .swal2-html-container {
+    margin: 0 !important;
+    padding: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+}
+
+.swal2-popup.outstanding-approval-swal .outstanding-approval-body {
+    font-size: 0.95rem !important;
+    line-height: 1.25 !important;
+}
+
+.swal2-popup.outstanding-approval-swal .outstanding-approval-summary p {
+    margin-bottom: 0.45rem !important;
+}
+
+.swal2-popup.outstanding-approval-swal .outstanding-approval-summary hr {
+    margin: 0.55rem 0 !important;
+}
+
+.swal2-popup.outstanding-approval-swal textarea {
+    min-height: 74px !important;
+    height: 74px !important;
+    resize: none !important;
+}
+
+.swal2-popup.outstanding-approval-swal .form-check {
+    margin-top: 0.65rem !important;
+}
+
+.swal2-popup.outstanding-approval-swal .swal2-actions {
+    margin-top: 0.9rem !important;
+}
+
+.swal2-popup.outstanding-approval-swal .swal2-styled {
+    padding: 0.6rem 1rem !important;
+    font-size: 0.95rem !important;
+}
+
+.swal2-popup.animated-order-alert {
+    width: min(520px, calc(100vw - 32px)) !important;
+    max-height: calc(100vh - 32px) !important;
+    overflow: hidden !important;
+}
+
+.swal2-popup.animated-order-alert .swal2-html-container {
+    overflow: visible !important;
+}
+
+.swal2-container:has(.animated-order-alert),
+.swal2-container:has(.outstanding-approval-swal) {
+    overflow: hidden !important;
+}
+
+.swal2-popup.animated-order-alert,
+.swal2-popup.outstanding-approval-swal {
+    box-sizing: border-box !important;
+}
+
+.swal2-popup.outstanding-approval-swal {
+    width: min(500px, calc(100vw - 40px)) !important;
+    max-height: calc(100vh - 40px) !important;
+}
+
+.swal2-popup.outstanding-approval-swal .swal2-html-container {
+    overflow-x: hidden !important;
+}
+
+.swal2-popup.outstanding-approval-swal .outstanding-approval-body {
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+}
+
+
+
 .order-cancel-btn {
     background: #f8f9fa !important;
     color: #6c757d !important;
@@ -3756,6 +6140,160 @@ input[type="number"]::-webkit-outer-spin-button {
 #orderDetailsModal .modal-footer .btn-primary:hover {
     transform: translateY(-1px) !important;
     box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3) !important;
+}
+
+
+/* Recurring invoice / schedule - aligned with ATW, Gatepass and Delivery Type */
+.invoice-recurring-lower-slot {
+    grid-column: 1 / 3;
+    min-width: 0;
+    align-self: start;
+}
+
+.order-recurring-section {
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+    padding: 6px 7px;
+    border: 1px solid #dfe7ec;
+    background: #f8fafc;
+    border-radius: 5px;
+    box-sizing: border-box;
+}
+
+.invoice-recurring-section {
+    width: 100%;
+    max-width: 100%;
+    margin: 0;
+}
+
+.classic-recurring-section {
+    width: 100%;
+    max-width: 100%;
+    margin: 6px 0 8px;
+}
+
+.order-recurring-section:has(.order-recurring-toggle input:checked) .order-recurring-fields {
+    display: grid !important;
+}
+
+.order-recurring-section:has(.order-recurring-toggle input:not(:checked)) .order-recurring-fields {
+    display: none !important;
+}
+
+.order-recurring-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    color: #052a47;
+    font-size: 10px;
+    line-height: 1.15;
+    font-weight: 700;
+    cursor: pointer;
+    user-select: none;
+}
+
+.order-recurring-toggle input {
+    width: 13px;
+    height: 13px;
+    margin: 0;
+    cursor: pointer;
+}
+
+.order-recurring-fields {
+    display: grid;
+    grid-template-columns: 72px minmax(120px, 1fr) minmax(145px, 1.15fr);
+    gap: 6px;
+    align-items: stretch;
+    margin-top: 6px;
+}
+
+.order-recurring-field {
+    min-width: 0;
+    padding: 5px 6px 6px;
+    border: 1px solid #d8e1e7;
+    border-radius: 4px;
+    background: #ffffff;
+    box-sizing: border-box;
+}
+
+.order-recurring-fields[hidden] {
+    display: none !important;
+}
+
+.order-recurring-field label {
+    display: block;
+    margin: 0 0 3px;
+    color: #475569;
+    font-size: 8px;
+    line-height: 1.05;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.order-recurring-example {
+    grid-column: 1 / -1;
+    margin: 0;
+    padding: 1px 2px 0;
+    color: #6b7280;
+    font-size: 9px;
+    line-height: 1.25;
+}
+
+/* Keep ATW, Gatepass and Delivery Type aligned at the top even when recurring fields expand. */
+body.order-product-invoice-style .invoice-lower-fields {
+    align-items: start !important;
+}
+
+body.order-product-invoice-style .invoice-atw-field,
+body.order-product-invoice-style .invoice-gatepass-field,
+body.order-product-invoice-style .invoice-delivery-type-field {
+    align-self: start !important;
+}
+
+@media (max-width: 768px) {
+    .invoice-recurring-lower-slot {
+        grid-column: 1 / -1;
+    }
+
+    .order-recurring-fields {
+        grid-template-columns: 1fr;
+    }
+
+    .order-recurring-example {
+        grid-column: 1;
+    }
+}
+
+.order-recurring-field input,
+.order-recurring-field select {
+    width: 100%;
+    height: 28px;
+    min-height: 28px;
+    padding: 3px 7px;
+    border: 1px solid #cfd8df;
+    border-radius: 4px;
+    background: #fff;
+    color: #111827;
+    font-size: 11px;
+}
+@media (max-width: 900px) {
+    .invoice-recurring-section,
+    .classic-recurring-section {
+        width: 455px;
+        max-width: 100%;
+        margin-left: 0;
+    }
+}
+@media (max-width: 576px) {
+    .order-recurring-fields {
+        grid-template-columns: 1fr;
+        gap: 6px;
+    }
+    .order-recurring-field {
+        padding: 6px 7px 7px;
+    }
 }
 
 /* Order Details Card */
@@ -4444,177 +6982,1732 @@ input[type="number"]::-webkit-outer-spin-button {
     }
 }
 
-    </style>
+    
+/* ===== AMGC ORDER PRODUCT DUAL STYLE UPDATE ===== */
+.order-style-navbar-dropdown {
+    margin-left: 8px;
+    margin-right: 10px;
+    flex-shrink: 0;
+}
+.order-style-menu-btn {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    border: 1px solid #d1d5db;
+    background: #ffffff;
+    color: #052A47;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px rgba(5, 42, 71, 0.08);
+}
+.order-style-menu-btn:hover,
+.order-style-menu-btn:focus {
+    background: #f3f4f6;
+    color: #047857;
+}
+.order-style-menu {
+    min-width: 185px;
+    border-radius: 10px;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 12px 28px rgba(5, 42, 71, 0.14);
+    padding: 6px;
+}
+.order-style-menu .style-menu-item {
+    border-radius: 8px;
+    font-size: 0.86rem;
+    font-weight: 700;
+    color: #374151;
+    padding: 9px 10px;
+}
+.order-style-menu .style-menu-item.active,
+.order-style-menu .style-menu-item:active {
+    background: #047857;
+    color: #ffffff;
+}
+body.order-product-invoice-style .classic-cart-btn {
+    display: none !important;
+}
+body.order-product-classic-style .classic-cart-btn {
+    display: inline-flex !important;
+}
+.invoice-style-workspace {
+    display: none;
+    background: #ffffff;
+    border-radius: 10px;
+    border: 1px solid #d7dce2;
+    box-shadow: 0 10px 24px rgba(5, 42, 71, 0.07);
+    overflow: hidden;
+}
+body.order-product-invoice-style .invoice-style-workspace {
+    display: block;
+}
+body.order-product-invoice-style .category-tabs-container,
+body.order-product-invoice-style .products-section {
+    display: none !important;
+}
+body.order-product-classic-style .invoice-style-workspace {
+    display: none !important;
+}
+.invoice-blue-strip {
+    background: #047857;
+    padding: 5px 10px;
+    display: grid;
+    grid-template-columns: minmax(260px, 1fr) auto minmax(260px, 1fr);
+    gap: 18px;
+    align-items: center;
+    color: #ffffff;
+    font-size: 12px;
+}
+.invoice-strip-field {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: 6px;
+}
+.invoice-strip-field label {
+    margin: 0;
+    font-weight: 700;
+    white-space: nowrap;
+}
+.invoice-strip-field select {
+    height: 27px;
+    border-radius: 2px;
+    border: 1px solid #b8c1cc;
+    font-size: 12px;
+    padding: 2px 6px;
+}
+
+.invoice-credit-check-wrap {
+    height: 27px;
+    width: 32px;
+    min-width: 32px;
+    border-radius: 2px;
+    border: 1px solid #b8c1cc;
+    background: #ffffff;
+    color: #052A47;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    font-size: 12px;
+    font-weight: 600;
+}
+.invoice-credit-check-wrap input {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    accent-color: #047857;
+}
+.invoice-sheet {
+    padding: 20px 26px 18px;
+}
+.invoice-sheet-head {
+    display: grid;
+    grid-template-columns: 1fr 455px;
+    gap: 30px;
+}
+.invoice-title {
+    font-size: 38px;
+    font-weight: 400;
+    color: #444;
+    margin: 0;
+}
+.invoice-right-fields {
+    display: grid;
+    grid-template-columns: 110px 110px;
+    gap: 24px 26px;
+    justify-content: end;
+}
+.invoice-lower-fields {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(120px, 1fr));
+    gap: 14px 16px;
+    align-items: end;
+    margin-top: 28px;
+}
+.invoice-lower-fields .invoice-mini-field {
+    min-width: 0;
+}
+.invoice-lower-fields .invoice-fulfillment-field {
+    min-width: 0;
+}
+
+/* Keep the document fields grouped on the right side of the lower invoice row.
+   Driver and Vehicle stay on the left when Delivery is selected.
+   ATW, Gatepass, and Delivery Type always stay beside each other on the right. */
+.invoice-lower-fields .invoice-atw-field {
+    grid-column: 3 / 4;
+}
+.invoice-lower-fields .invoice-gatepass-field {
+    grid-column: 4 / 5;
+}
+.invoice-lower-fields .invoice-delivery-type-field {
+    grid-column: 5 / 6;
+}
+.invoice-mini-field label,
+.invoice-message label {
+    display: block;
+    font-size: 10px;
+    color: #6b7280;
+    font-weight: 700;
+    text-transform: uppercase;
+    margin-bottom: 3px;
+}
+.invoice-mini-field input,
+.invoice-mini-field select {
+    height: 25px;
+    border: 1px solid #cfd4da;
+    background: #f2f2f2;
+    border-radius: 3px;
+    padding: 3px 6px;
+    font-size: 12px;
+    width: 100%;
+}
+.invoice-table-wrap {
+    margin-top: 32px;
+    border: 1px solid #d9dee4;
+    max-height: 255px;
+    overflow-y: auto;
+}
+.invoice-entry-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-size: 12px;
+}
+.invoice-entry-table thead th {
+    background: #ffffff;
+    color: #8a8f98;
+    font-weight: 500;
+    text-transform: uppercase;
+    border-bottom: 1px solid #d9dee4;
+    border-right: 1px solid #e2e6ea;
+    padding: 4px;
+    height: 20px;
+}
+.invoice-entry-table tbody tr:nth-child(odd) td {
+    background: #E6F4E6;
+}
+.invoice-entry-table tbody tr:nth-child(even) td {
+    background: #ffffff;
+}
+.invoice-entry-table td {
+    border-right: 1px solid #e2e6ea;
+    height: 27px;
+    padding: 0;
+}
+.invoice-entry-table select,
+.invoice-entry-table input {
+    width: 100%;
+    height: 27px;
+    border: 0;
+    background: transparent;
+    padding: 3px 6px;
+    font-size: 12px;
+    outline: 0;
+}
+.invoice-entry-table input[readonly] {
+    color: #333;
+}
+
+body.order-product-invoice-style .invoice-entry-table .invoice-qty,
+body.order-product-invoice-style .invoice-entry-table .invoice-price,
+body.order-product-invoice-style .invoice-entry-table .invoice-amount {
+    text-align: right;
+}
+
+body.order-product-invoice-style .invoice-entry-table .invoice-price {
+    background: transparent !important;
+    color: #111827;
+    font-weight: 600;
+    border: 0 !important;
+    box-shadow: none !important;
+}
+body.order-product-invoice-style .invoice-entry-table .invoice-price:focus {
+    outline: 1px solid #047857;
+    background: transparent !important;
+    box-shadow: none !important;
+}
+body.order-product-invoice-style .invoice-entry-table .invoice-price::-webkit-inner-spin-button,
+body.order-product-invoice-style .invoice-entry-table .invoice-price::-webkit-outer-spin-button {
+    opacity: 0;
+}
+.invoice-bottom-area {
+    display: grid;
+    grid-template-columns: minmax(420px, 520px) 380px;
+    justify-content: space-between;
+    gap: 30px;
+    margin-top: 22px;
+}
+.invoice-message textarea {
+    width: 100%;
+    height: 42px;
+    border: 1px solid #cfd4da;
+    background: #efefef;
+    resize: none;
+    border-radius: 3px;
+}
+.invoice-totals {
+    width: 100%;
+}
+.invoice-total-line {
+    display: grid;
+    grid-template-columns: 1fr 115px;
+    gap: 18px;
+    align-items: center;
+    min-height: 24px;
+    font-size: 12px;
+}
+.invoice-total-line span:first-child {
+    text-align: right;
+    color: #5f6570;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+.invoice-total-line strong,
+.invoice-total-line span:last-child {
+    text-align: right;
+}
+.invoice-balance-line {
+    font-size: 16px;
+}
+.invoice-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 14px;
+    margin-top: 12px;
+}
+.invoice-actions .btn {
+    min-width: 105px;
+    border-radius: 3px;
+    padding: 5px 12px;
+    font-weight: 700;
+    font-size: 12px;
+}
+.invoice-actions .btn-primary {
+    background: #3f78d6;
+    border-color: #3f78d6;
+}
+.invoice-help-note {
+    font-size: 11px;
+    color: #6b7280;
+    margin-top: 8px;
+}
+
+.invoice-payment-panel {
+    margin-top: 14px;
+    padding: 14px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+}
+.invoice-payment-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.invoice-payment-fields {
+    margin-top: 12px;
+}
+.invoice-payment-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+}
+.invoice-payment-grid label {
+    display: block;
+    margin-bottom: 4px;
+    color: #052A47;
+    font-size: 12px;
+    font-weight: 700;
+}
+.invoice-payment-full {
+    grid-column: 1 / -1;
+}
+.invoice-payment-panel .form-check-input:checked {
+    background-color: #0d6efd;
+    border-color: #0d6efd;
+}
+@media (max-width: 992px) {
+    .invoice-blue-strip,
+    .invoice-sheet-head,
+    .invoice-bottom-area {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .invoice-payment-grid {
+        grid-template-columns: 1fr !important;
+    }
+    .invoice-right-fields {
+        grid-template-columns: repeat(2, minmax(120px, 1fr));
+        justify-content: stretch;
+    }
+    .invoice-table-wrap {
+        margin-top: 28px;
+    }
+    .invoice-title {
+        font-size: 30px;
+    }
+}
+
+
+
+/* ===== FIX: navbar style dropdown + default style scrolling ===== */
+.navbar-top {
+    position: relative;
+    overflow: visible !important;
+    z-index: 50;
+}
+.order-style-navbar-dropdown {
+    position: relative;
+}
+.order-style-navbar-dropdown .dropdown-menu,
+.order-style-menu {
+    position: absolute !important;
+    top: calc(100% + 8px) !important;
+    left: 0 !important;
+    right: auto !important;
+    transform: none !important;
+    z-index: 99999 !important;
+    min-width: 190px;
+    max-width: 220px;
+    background: #ffffff;
+}
+.order-style-navbar-dropdown .dropdown-menu.show {
+    display: block !important;
+}
+body.order-product-invoice-style .main-content {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    min-height: 0;
+}
+body.order-product-invoice-style .invoice-style-workspace {
+    flex-shrink: 0;
+    margin-bottom: 24px;
+}
+body.order-product-invoice-style .invoice-table-wrap {
+    max-height: none !important;
+    overflow-y: visible !important;
+}
+body.order-product-invoice-style .invoice-sheet {
+    min-height: 720px;
+}
+@media (max-width: 768px) {
+    body.order-product-invoice-style .main-content {
+        padding-bottom: 95px !important;
+    }
+}
+
+        .locked-customer-select,
+        .locked-customer-select:disabled {
+            cursor: not-allowed;
+            opacity: 1;
+            background-color: #f3f4f6 !important;
+            color: #111827 !important;
+        }
+
+/* Invoice-style Order Details modal */
+#orderDetailsModal .modal-dialog {
+    max-width: 98vw;
+}
+#orderDetailsModal .modal-content {
+    border-radius: 4px;
+    overflow: hidden;
+    font-family: 'Inter', Arial, Helvetica, sans-serif;
+    border: 1px solid #d7e1ea;
+}
+#orderDetailsModal .modal-header {
+    background: #047857;
+    color: #fff;
+    border-bottom: 0;
+    padding: 10px 18px;
+}
+#orderDetailsModal .modal-title {
+    font-size: 1.05rem;
+    font-weight: 800;
+    letter-spacing: .02em;
+}
+#orderDetailsModal .modal-body {
+    background: #fff;
+    padding: 0;
+}
+#orderDetailsModal .modal-footer {
+    display: none;
+}
+.op-invoice-detail-view {
+    color: #052A47;
+    font-size: 14px;
+}
+.op-invoice-topbar {
+    display: grid;
+    grid-template-columns: minmax(280px, 1.4fr) minmax(120px, .45fr) minmax(280px, 1.2fr);
+    gap: 14px;
+    align-items: center;
+    background: #047857;
+    padding: 8px 12px;
+    color: #fff;
+}
+.op-top-field {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: 8px;
+    font-weight: 800;
+    min-width: 0;
+}
+.op-top-field span {
+    white-space: nowrap;
+    font-size: .78rem;
+    text-transform: uppercase;
+}
+.op-top-field div {
+    background: #fff;
+    color: #0f172a;
+    min-height: 34px;
+    border-radius: 2px;
+    padding: 7px 10px;
+    font-weight: 500;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.op-invoice-main {
+    padding: 22px 26px 26px;
+}
+.op-invoice-title {
+    font-size: 2.55rem;
+    line-height: 1;
+    font-weight: 300;
+    color: #334155;
+    margin-top: 8px;
+}
+.op-section-label,
+#orderDetailsModal label {
+    font-size: .76rem;
+    color: #64748b;
+    font-weight: 800;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+}
+.op-readonly-input,
+.op-message-box {
+    border: 1px solid #cfd8e3;
+    border-radius: 5px;
+    min-height: 38px;
+    background: #f8fafc;
+    color: #0f172a;
+    font-size: .9rem;
+}
+.op-customer-box,
+.op-invoice-panel {
+    border: 1px solid #d7e1ea;
+    border-radius: 8px;
+    background: #f8fafc;
+    padding: 12px 14px;
+}
+.op-customer-box div {
+    margin-bottom: 5px;
+}
+.op-customer-name {
+    font-size: 1rem;
+    font-weight: 800;
+    color: #047857;
+    margin-bottom: 8px !important;
+}
+.op-readonly-field {
+    border: 1px solid #d7e1ea;
+    border-radius: 6px;
+    background: #fff;
+    padding: 9px 10px;
+    min-height: 58px;
+}
+.op-readonly-field small {
+    display: block;
+    color: #64748b;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: .68rem;
+    margin-bottom: 2px;
+}
+.op-invoice-items-wrap {
+    border: 1px solid #d7e1ea;
+    border-radius: 4px;
+    overflow: hidden;
+}
+.op-invoice-items-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: .92rem;
+}
+.op-invoice-items-table thead th {
+    background: #047857;
+    color: #fff;
+    padding: 11px 12px;
+    font-size: .8rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: .02em;
+    border-right: 1px solid rgba(255,255,255,.2);
+}
+.op-invoice-items-table td {
+    padding: 10px 12px;
+    min-height: 36px;
+    border-right: 1px solid #d7e1ea;
+    border-bottom: 1px solid #e5e7eb;
+    vertical-align: middle;
+}
+.op-invoice-items-table tbody tr.op-invoice-alt-row,
+.op-invoice-items-table tbody tr:nth-child(even) {
+    background: #e8f5e9;
+}
+.op-invoice-items-table tfoot td {
+    background: #047857;
+    color: #fff;
+    padding: 10px 12px;
+    font-weight: 800;
+}
+.op-invoice-muted {
+    color: #64748b;
+    font-size: .82rem;
+    margin-top: 2px;
+}
+.op-message-box {
+    min-height: 58px;
+    resize: none;
+}
+.op-payment-line,
+.op-summary-box > div {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 9px;
+}
+.op-payment-line {
+    border-bottom: 1px dashed #d7e1ea;
+    padding-bottom: 7px;
+    font-size: .88rem;
+}
+.op-invoice-empty-line {
+    color: #64748b;
+    font-size: .88rem;
+}
+.op-summary-box {
+    width: min(360px, 100%);
+    margin-top: 4px;
+    font-size: .93rem;
+}
+.op-summary-box span {
+    color: #475569;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+.op-summary-box strong {
+    color: #0f172a;
+    font-weight: 700;
+}
+.op-summary-box .op-balance-due {
+    margin-top: 6px;
+    padding-top: 8px;
+    border-top: 1px solid #d7e1ea;
+}
+.op-summary-box .op-balance-due span {
+    font-size: 1.05rem;
+}
+.op-summary-box .op-balance-due strong {
+    font-size: 1.2rem;
+    font-weight: 900;
+}
+
+.op-invoice-form-view {
+    color: #334155;
+    font-size: 14px;
+    background: #fff;
+}
+.op-invoice-form-view .op-invoice-topbar {
+    display: grid;
+    grid-template-columns: minmax(420px, 1fr) 140px minmax(420px, .9fr);
+    gap: 22px;
+    align-items: center;
+    padding: 7px 12px;
+    background: #047857;
+    color: #fff;
+}
+.op-invoice-form-view .op-top-field {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    align-items: center;
+    gap: 8px;
+    font-weight: 800;
+    text-transform: uppercase;
+}
+.op-invoice-form-view .op-top-field span {
+    font-size: .78rem;
+    white-space: nowrap;
+}
+.op-invoice-form-view .op-detail-control,
+.op-invoice-form-view .op-detail-select {
+    width: 100%;
+    min-height: 33px;
+    border: 1px solid #cfd8e3;
+    border-radius: 3px;
+    background: #fff;
+    color: #111827;
+    padding: 5px 10px;
+    font-size: .92rem;
+    font-weight: 500;
+}
+.op-invoice-form-view .op-detail-select {
+    appearance: auto;
+}
+.op-invoice-form-view .op-detail-control[readonly],
+.op-invoice-form-view .op-detail-select:disabled,
+.op-invoice-form-view textarea[readonly] {
+    opacity: 1;
+    cursor: default;
+}
+.op-invoice-form-view .op-credit-box {
+    width: 35px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #fff;
+    border-radius: 3px;
+}
+.op-invoice-form-view .op-credit-box input {
+    width: 18px;
+    height: 18px;
+}
+.op-invoice-form-view .op-invoice-main {
+    padding: 26px 26px 22px;
+}
+.op-invoice-form-view .op-invoice-sheet-head {
+    display: grid;
+    grid-template-columns: 1fr minmax(680px, 700px);
+    gap: 26px;
+    align-items: start;
+}
+.op-invoice-form-view .op-invoice-title {
+    font-size: 3rem;
+    line-height: 1;
+    font-weight: 300;
+    color: #334155;
+    margin: 12px 0 22px;
+}
+.op-invoice-form-view .op-customer-readonly {
+    border: 1px solid #d7e1ea;
+    border-radius: 4px;
+    padding: 10px 12px;
+    background: #f8fafc;
+    max-width: 650px;
+}
+.op-invoice-form-view .op-customer-readonly .name {
+    font-weight: 800;
+    color: #052A47;
+    margin-bottom: 4px;
+}
+.op-invoice-form-view .op-right-fields {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(110px, 1fr));
+    gap: 22px 24px;
+    align-items: end;
+}
+.op-invoice-form-view .op-field label,
+.op-invoice-form-view .op-section-label {
+    display: block;
+    font-size: .76rem;
+    color: #64748b;
+    font-weight: 800;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+}
+.op-invoice-form-view .op-field-wide {
+    grid-column: span 2;
+}
+.op-invoice-form-view .op-items-wrap {
+    margin-top: 26px;
+    border: 1px solid #d7e1ea;
+    border-radius: 0;
+    overflow: hidden;
+}
+.op-invoice-form-view .op-items-table {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+}
+.op-invoice-form-view .op-items-table thead th {
+    background: #047857;
+    color: #fff;
+    padding: 10px 7px;
+    font-size: .8rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    border-right: 1px solid rgba(255,255,255,.18);
+}
+.op-invoice-form-view .op-items-table td {
+    height: 34px;
+    padding: 7px 7px;
+    border-right: 1px solid #d7e1ea;
+    border-bottom: 1px solid #d7e1ea;
+    vertical-align: middle;
+    color: #052A47;
+}
+.op-invoice-form-view .op-items-table tbody tr:nth-child(odd) {
+    background: #e8f5e9;
+}
+.op-invoice-form-view .op-items-table tfoot td {
+    background: #047857;
+    color: #fff;
+    font-weight: 800;
+    height: 38px;
+}
+.op-invoice-form-view .op-lower-area {
+    display: grid;
+    grid-template-columns: minmax(420px, 650px) 1fr;
+    gap: 40px;
+    margin-top: 22px;
+}
+.op-invoice-form-view .op-message-box {
+    min-height: 54px;
+    border-radius: 4px;
+    background: #f3f4f6;
+}
+.op-invoice-form-view .op-payment-box {
+    margin-top: 18px;
+    border: 1px solid #d7e1ea;
+    border-radius: 8px;
+    background: #f8fafc;
+    padding: 14px 16px;
+}
+.op-invoice-form-view .op-payment-toggle-line {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 800;
+    color: #475569;
+    text-transform: uppercase;
+    font-size: .78rem;
+    margin-bottom: 12px;
+}
+.op-invoice-form-view .op-payment-detail-line {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+}
+.op-invoice-form-view .op-summary-box {
+    width: 320px;
+    margin-left: auto;
+    font-size: .92rem;
+}
+.op-invoice-form-view .op-summary-box > div {
+    display: grid;
+    grid-template-columns: 1fr 120px;
+    gap: 20px;
+    align-items: center;
+    margin-bottom: 8px;
+}
+.op-invoice-form-view .op-summary-box span {
+    color: #475569;
+    font-weight: 800;
+    text-transform: uppercase;
+    text-align: right;
+}
+.op-invoice-form-view .op-summary-box strong {
+    text-align: right;
+    color: #111827;
+    font-weight: 600;
+}
+.op-invoice-form-view .op-balance-due span,
+.op-invoice-form-view .op-balance-due strong {
+    font-size: 1.15rem;
+    font-weight: 900;
+}
+.op-invoice-form-view .op-detail-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 16px;
+    margin-top: 18px;
+}
+.op-invoice-form-view .op-detail-footer .btn {
+    min-width: 132px;
+    font-weight: 800;
+}
+
+@media (max-width: 900px) {
+    .op-invoice-topbar {
+        grid-template-columns: 1fr;
+    }
+    .op-invoice-title {
+        font-size: 2rem;
+    }
+    .op-invoice-main {
+        padding: 18px;
+    }
+}
+
+</style>
+
+<style id="amgc-default-style-driver-plate-layout-fix">
+/* Added Driver and Plate No. row in Default Invoice Style */
+body.order-product-invoice-style .invoice-sheet-head {
+    grid-template-columns: 1fr minmax(520px, 560px) !important;
+    align-items: start !important;
+}
+
+body.order-product-invoice-style .invoice-right-fields {
+    grid-template-columns: repeat(4, minmax(92px, 1fr)) !important;
+    gap: 22px 24px !important;
+    justify-content: end !important;
+    align-items: end !important;
+}
+
+body.order-product-invoice-style .invoice-mini-field input,
+body.order-product-invoice-style .invoice-mini-field select {
+    width: 100% !important;
+    min-width: 0 !important;
+}
+
+body.order-product-invoice-style .invoice-table-wrap {
+    margin-top: 26px !important;
+}
+
+@media (max-width: 1200px) {
+    body.order-product-invoice-style .invoice-lower-fields {
+        grid-template-columns: repeat(5, minmax(110px, 1fr)) !important;
+    }
+}
+
+@media (max-width: 1200px) {
+    body.order-product-invoice-style .invoice-sheet-head {
+        grid-template-columns: 1fr !important;
+    }
+
+    body.order-product-invoice-style .invoice-right-fields {
+        grid-template-columns: repeat(2, minmax(120px, 1fr)) !important;
+        justify-content: stretch !important;
+        margin-top: 18px !important;
+    }
+}
+
+@media (max-width: 576px) {
+    body.order-product-invoice-style .invoice-right-fields {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+
+/* ===== Customer List style main tabs for Order Product ===== */
+.order-main-tab-pane{display:none;}
+.order-main-tab-pane.active{display:block;}
+.op-main-tabs-wrap{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:10px;margin:0 0 14px 0;box-shadow:0 2px 10px rgba(5,42,71,.05);}
+.op-main-tabs{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.op-main-tab-btn{border:1px solid #d1d5db;background:#fff;color:#052A47;font-weight:700;border-radius:12px;padding:9px 14px;display:inline-flex;align-items:center;gap:8px;transition:all .2s ease;}
+.op-main-tab-btn:hover{background:#f3f4f6;color:#047857;}
+.op-main-tab-btn.active{background:linear-gradient(135deg,#047857 0%,#44D34E 100%);color:#fff;border-color:#047857;box-shadow:0 4px 12px rgba(4,120,87,.25);}
+.op-main-tab-btn .count-badge{background:#eafbea;border:1px solid #bbf7d0;color:#047857;min-width:26px;height:22px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;font-size:.75rem;}
+.op-main-tab-btn.active .count-badge{background:rgba(255,255,255,.22);border-color:rgba(255,255,255,.35);color:#fff;}
+.op-sales-order-section{background:#fff;border:0;border-radius:16px;box-shadow:none;display:flex;flex-direction:column;min-height:calc(100vh - 230px);overflow:visible;gap:16px;}
+.op-so-card{background:#fff;border-radius:16px;}
+.op-so-filter-card{border:1px solid #bbf7d0;border-radius:16px;background:#fff;box-shadow:0 4px 14px rgba(4,120,87,.06);overflow:hidden;}
+.op-so-filter-header{width:100%;border:0;background:#fff;color:#052A47;padding:18px 20px;display:flex;align-items:center;justify-content:space-between;font-weight:700;font-size:1rem;cursor:pointer;}
+.op-so-filter-title{display:flex;align-items:center;gap:12px;}
+.op-so-filter-icon{width:36px;height:36px;border-radius:10px;background:#dcfce7;color:#22c55e;display:inline-flex;align-items:center;justify-content:center;}
+.op-so-filter-chevron{color:#047857;font-size:1.15rem;transition:transform .2s ease;}
+.op-so-filter-chevron{transform:rotate(0deg);}
+.op-so-filter-card:not(.collapsed) .op-so-filter-chevron{transform:rotate(180deg);}
+.op-so-filter-body{border-top:1px solid #bbf7d0;margin:0 16px 0;padding:14px 0 12px;display:block;}
+.op-so-toolbar{padding:14px 0 10px;border-bottom:1px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;}
+.op-so-search-wrap{flex:1 1 430px;max-width:520px;}
+.op-so-limit-wrap{display:flex;align-items:center;gap:8px;flex:0 0 auto;color:#052A47;font-weight:400;font-size:.88rem;white-space:nowrap;}
+.op-so-limit-wrap .form-select{width:86px;height:42px;border-radius:9px;border:1px solid #d1d5db;box-shadow:none;font-weight:400;color:#052A47;padding:6px 28px 6px 10px;}
+.op-so-limit-wrap .form-select:focus{border-color:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.14);}
+.op-so-pagination{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 0 0;color:#052A47;font-weight:400;font-size:.88rem;flex-wrap:wrap;}
+.op-so-pagination-controls{display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.op-so-pagination .btn{height:34px;min-width:38px;border-radius:8px;border:1px solid #d1d5db;background:#fff;color:#052A47;font-weight:400;padding:0 10px;display:inline-flex;align-items:center;justify-content:center;}
+.op-so-pagination .btn:hover:not(:disabled){background:#ecfdf5;border-color:#22c55e;color:#047857;}
+.op-so-pagination .btn:disabled{opacity:.45;cursor:not-allowed;}
+#opSoPageIndicator{padding:0 8px;color:#047857;font-weight:400;}
+
+/* Sales Order pagination/plain text override */
+.op-so-limit-wrap,
+.op-so-limit-wrap label,
+.op-so-limit-wrap span,
+.op-so-limit-wrap .form-select,
+.op-so-pagination,
+.op-so-pagination-info,
+.op-so-pagination-controls,
+.op-so-pagination .btn,
+#opSoPageIndicator {
+    font-weight: 400 !important;
+}
+
+.op-so-search-wrap .input-group{border:1px solid #d1d5db;border-radius:10px;overflow:hidden;background:#fff;}
+.op-so-search-wrap .input-group-text{border:0;background:#ecfdf5;color:#047857;font-size:1.15rem;padding:0 14px;}
+.op-so-search-wrap .form-control{border:0;box-shadow:none;height:48px;font-size:.95rem;}
+.op-so-advanced-filters{display:grid;grid-template-columns:minmax(130px,.75fr) minmax(130px,.75fr) minmax(150px,.9fr) minmax(190px,1.25fr);gap:10px;align-items:end;width:100%;padding-top:2px;}
+.op-so-field{display:flex;flex-direction:column;gap:5px;min-width:0;}
+.op-so-field label{margin:0;color:#052A47;font-size:.74rem;font-weight:700;text-transform:uppercase;letter-spacing:.01em;white-space:nowrap;display:flex;align-items:center;gap:4px;}
+.op-so-field label i{color:#22c55e;font-size:.82rem;}
+.op-so-advanced-filters .form-select,.op-so-advanced-filters .form-control{height:40px;border-radius:9px;font-size:.82rem;min-width:0;max-width:none;border:1px solid #d1d5db;box-shadow:none;padding:7px 10px;}
+.op-so-advanced-filters .form-select{padding-right:28px;}
+.op-so-advanced-filters .form-select:focus,.op-so-advanced-filters .form-control:focus{border-color:#22c55e;box-shadow:0 0 0 3px rgba(34,197,94,.14);}
+.op-so-filter-buttons{display:flex;gap:8px;align-items:center;justify-content:flex-end;grid-column:1 / -1;margin-top:2px;}
+.op-so-advanced-filters .btn{height:38px;border-radius:9px;font-weight:700;padding:0 14px;font-size:.82rem;display:inline-flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;}
+.op-so-advanced-filters .btn-success{background:linear-gradient(135deg,#047857 0%,#44D34E 100%);border-color:#047857;color:#fff;}
+.op-so-advanced-filters .btn-light{background:#fff;border:1px solid #d1d5db;color:#052A47;}
+.op-so-advanced-filters .btn-clear{background:#fff;border:1px solid #d1d5db;color:#ef4444;}
+@media(max-width:1100px){.op-so-advanced-filters{grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.op-so-filter-buttons{justify-content:flex-end}}
+@media(max-width:760px){.op-so-advanced-filters{grid-template-columns:1fr 1fr}.op-so-filter-buttons{grid-column:1 / -1;flex-wrap:wrap}.op-so-filter-buttons .btn{flex:1 1 auto}}
+@media(max-width:480px){.op-so-advanced-filters{grid-template-columns:1fr}.op-so-filter-buttons{justify-content:stretch}.op-so-filter-buttons .btn{width:100%}}
+.op-so-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto;}
+.op-so-actions .btn{height:45px;border-radius:6px;font-weight:700;padding:0 18px;font-size:.95rem;display:inline-flex;align-items:center;gap:8px;}
+.op-so-actions .btn-success,.op-so-actions .btn-outline-success{background:#10b981;border-color:#10b981;color:#fff;}
+.op-so-actions .btn-outline-secondary{background:#fff;border-color:#d1d5db;color:#052A47;}
+.op-so-table-wrap{overflow:auto;flex:1;min-height:0;border-radius:14px;}
+.op-so-table{width:100%;border-collapse:separate;border-spacing:0;font-size:.84rem;}
+.op-so-table thead th{position:sticky;top:0;z-index:5;background:#047857;color:#fff;padding:13px 10px;white-space:nowrap;font-weight:800;border:none;text-align:center;text-transform:uppercase;}
+.op-so-table tbody td{padding:12px 10px;border-bottom:1px solid #eef2f7;vertical-align:middle;white-space:nowrap;text-align:center;}
+.op-so-table tbody tr:hover{background:#f8fafc;}
+.op-so-table tbody tr.op-so-clickable-row{cursor:pointer;}
+.op-so-table tbody tr.op-so-clickable-row:hover{background:#ecfdf5;}
+.op-so-money{text-align:center!important;font-weight:700;color:#052A47;}
+.op-so-status{border-radius:999px;padding:4px 10px;font-size:.73rem;font-weight:800;display:inline-flex;align-items:center;text-transform:capitalize;}
+.op-so-status.pending{background:#fef3c7;color:#92400e;}
+.op-so-status.confirmed,.op-so-status.processing,.op-so-status.ready,.op-so-status.in_transit{background:#dbeafe;color:#1e40af;}
+.op-so-status.delivered{background:#dcfce7;color:#166534;}
+.op-so-status.cancelled{background:#fee2e2;color:#991b1b;}
+
+
+/* ===== Sales Order tab font/table cleanup to match sales_order.php ===== */
+#salesOrderTabContent,
+#salesOrderTabContent .op-so-filter-card,
+#salesOrderTabContent .op-so-toolbar,
+#salesOrderTabContent .op-so-table,
+#salesOrderTabContent .op-so-table th,
+#salesOrderTabContent .op-so-table td,
+#salesOrderTabContent .btn,
+#salesOrderTabContent input,
+#salesOrderTabContent select,
+#salesOrderTabContent label {
+    font-family: system-ui, -apple-system, sans-serif !important;
+    letter-spacing: 0.01em;
+}
+
+#salesOrderTabContent .op-so-table-wrap {
+    overflow: auto !important;
+    border-radius: 14px !important;
+    border: 1px solid #d9f7e5 !important;
+    background: #fff !important;
+    box-shadow: 0 4px 14px rgba(4,120,87,.06) !important;
+}
+
+#salesOrderTabContent .op-so-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    border-spacing: 0 !important;
+    margin: 0 !important;
+    font-size: 0.9rem !important;
+    color: #052A47 !important;
+}
+
+#salesOrderTabContent .op-so-table thead th {
+    background: #047857 !important;
+    color: #ffffff !important;
+    padding: 0.85rem 1.25rem !important;
+    font-size: 0.8rem !important;
+    font-weight: 600 !important;
+    text-transform: uppercase !important;
+    white-space: nowrap !important;
+    text-align: center !important;
+    vertical-align: middle !important;
+    border: none !important;
+    letter-spacing: 0.02em !important;
+}
+
+#salesOrderTabContent .op-so-table tbody tr {
+    background: #ffffff !important;
+    border-bottom: 1px solid #d9f7e5 !important;
+    transition: background-color .18s ease !important;
+}
+
+#salesOrderTabContent .op-so-table tbody tr:hover {
+    background: #ecfdf5 !important;
+}
+
+#salesOrderTabContent .op-so-table tbody td {
+    padding: 0.85rem 1.25rem !important;
+    font-size: 0.9rem !important;
+    font-weight: 400 !important;
+    vertical-align: middle !important;
+    border-bottom: 1px solid #d9f7e5 !important;
+    color: #052A47 !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+}
+
+#salesOrderTabContent .op-so-table tbody td:first-child {
+    font-weight: 700 !important;
+    color: #047857 !important;
+}
+
+#salesOrderTabContent .op-so-money {
+    font-family: system-ui, -apple-system, sans-serif !important;
+    font-weight: 700 !important;
+    color: #052A47 !important;
+}
+
+#salesOrderTabContent .op-so-status {
+    font-family: system-ui, -apple-system, sans-serif !important;
+    border-radius: 999px !important;
+    padding: 0.35rem 0.75rem !important;
+    font-size: 0.76rem !important;
+    font-weight: 700 !important;
+    text-transform: capitalize !important;
+}
+
+#salesOrderTabContent .action-buttons {
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
+}
+
+#salesOrderTabContent .btn-action {
+    width: 34px !important;
+    height: 34px !important;
+    border-radius: 8px !important;
+    font-size: 0.9rem !important;
+}
+
+#salesOrderTabContent .op-so-empty {
+    font-family: system-ui, -apple-system, sans-serif !important;
+    color: #64748b !important;
+    padding: 2rem !important;
+}
+.op-so-action-btn{width:32px;height:32px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;}
+.op-so-empty{padding:44px 16px;text-align:center;color:#6b7280;}
+@media(max-width:1100px){.op-so-actions{justify-content:flex-start;margin-left:0}.op-so-search-wrap{max-width:none}.op-so-limit-wrap{order:3}}
+@media(max-width:768px){.op-so-toolbar{align-items:stretch}.op-so-actions{width:100%}.op-so-actions .btn{width:100%;justify-content:center}.op-so-limit-wrap{width:100%;justify-content:flex-start}.op-so-pagination{align-items:flex-start}.op-so-pagination-controls{width:100%;justify-content:flex-start}}
+
+/* Sales Order tab action buttons, same behavior/style names as sales_order.php */
+.action-buttons{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:nowrap;}
+.btn-action{width:32px;height:32px;border:0;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:.9rem;transition:all .18s ease;cursor:pointer;}
+.btn-action:hover{transform:translateY(-1px);box-shadow:0 4px 10px rgba(0,0,0,.12);}
+.btn-si{background:#0ea5e9;color:#fff;}
+.btn-si:hover{background:#0284c7;color:#fff;}
+.btn-view{background:#e0f2fe;color:#0369a1;}
+.btn-print{background:#dcfce7;color:#047857;}
+.btn-edit{background:#fef3c7;color:#b45309;}
+.btn-delete{background:#fee2e2;color:#b91c1c;}
+
+/* ===== AMGC grouped dropdown + invoice selected category fix ===== */
+#modalCustomerSelect option.dropdown-group-header-option,
+#invoiceCustomerSelect option.dropdown-group-header-option,
+#modalCustomerSelect option.customer-group-header-option,
+#invoiceCustomerSelect option.customer-group-header-option,
+.invoice-item-select option.invoice-product-category-header-option {
+    background-color: #E7F4E8 !important;
+    color: #00785F !important;
+    font-weight: 800 !important;
+    font-style: normal !important;
+    padding: 4px 12px !important;
+    text-transform: none !important;
+}
+
+#modalCustomerSelect option:not(.dropdown-group-header-option),
+#invoiceCustomerSelect option:not(.dropdown-group-header-option),
+.invoice-item-select option:not(.invoice-product-category-header-option) {
+    background-color: #ffffff !important;
+    color: #003B65 !important;
+    font-weight: 400 !important;
+    padding-left: 12px !important;
+}
+
+body.order-product-invoice-style #invoiceItemsBody .invoice-product-cell {
+    position: relative !important;
+    padding-right: 0 !important;
+}
+
+body.order-product-invoice-style #invoiceItemsBody .invoice-product-wrap {
+    position: relative !important;
+    width: 100% !important;
+}
+
+body.order-product-invoice-style #invoiceItemsBody .invoice-product-cell .invoice-item-select {
+    width: 100% !important;
+    padding-right: 130px !important;
+}
+
+body.order-product-invoice-style #invoiceItemsBody .invoice-selected-category {
+    display: none;
+    position: absolute !important;
+    right: 28px !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
+    max-width: 115px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    pointer-events: none !important;
+    color: #00785F !important;
+    background: transparent !important;
+    font-size: 11px !important;
+    font-weight: 800 !important;
+    line-height: 1 !important;
+    text-align: right !important;
+}
+
+body.order-product-invoice-style #invoiceItemsBody .invoice-selected-category.show {
+    display: block !important;
+}
+
+.product-category-header-row td {
+    background: #E7F4E8 !important;
+    color: #00785F !important;
+    border-top: 2px solid #2C6FA3 !important;
+    font-weight: 800 !important;
+    padding: 4px 12px !important;
+}
+
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+
+<style id="amgc-recurring-actual-fixed-v12">
+/* ================= ACTUAL PAGE RECURRING LAYOUT ================= */
+
+/* Invoice lower row: recurring + ATW + Gatepass + Delivery Type in one fixed row. */
+body.order-product-invoice-style .invoice-lower-fields {
+    display: grid !important;
+    grid-template-columns: 2fr 1fr 1fr 1fr !important;
+    column-gap: 16px !important;
+    row-gap: 8px !important;
+    align-items: start !important;
+    margin-top: 28px !important;
+}
+
+/* Recurring panel occupies the left wide column. */
+body.order-product-invoice-style:not(.credit-recurring-mode) .invoice-recurring-lower-slot {
+    display: block !important;
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    align-self: start !important;
+}
+
+/* Put the INPUT boxes of ATW/Gatepass/Delivery Type level with the recurring card top.
+   Their labels remain immediately above their inputs. */
+body.order-product-invoice-style:not(.credit-recurring-mode) .invoice-atw-field {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+}
+body.order-product-invoice-style:not(.credit-recurring-mode) .invoice-gatepass-field {
+    grid-column: 3 !important;
+    grid-row: 1 !important;
+}
+body.order-product-invoice-style:not(.credit-recurring-mode) .invoice-delivery-type-field {
+    grid-column: 4 !important;
+    grid-row: 1 !important;
+}
+
+body.order-product-invoice-style:not(.credit-recurring-mode) .invoice-atw-field,
+body.order-product-invoice-style:not(.credit-recurring-mode) .invoice-gatepass-field,
+body.order-product-invoice-style:not(.credit-recurring-mode) .invoice-delivery-type-field {
+    align-self: start !important;
+    margin-top: -15px !important;
+    min-width: 0 !important;
+}
+
+/* Hide driver and vehicle in the compact invoice header row unless another script explicitly shows them. */
+body.order-product-invoice-style .invoice-lower-fields > .invoice-delivery-field {
+    display: none;
+}
+
+/* Recurring card dimensions. */
+body.order-product-invoice-style .invoice-recurring-section {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    box-sizing: border-box !important;
+}
+
+/* CREDIT MODE:
+   recurring panel is placed on a NEW ROW directly below Date through Due Date. */
+body.order-product-invoice-style .invoice-right-fields {
+    align-items: start !important;
+}
+
+body.order-product-invoice-style .invoice-recurring-credit-slot {
+    display: none !important;
+    grid-column: 1 / -1 !important;
+    grid-row: 2 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+body.order-product-invoice-style.credit-recurring-mode .invoice-recurring-credit-slot {
+    display: block !important;
+}
+
+body.order-product-invoice-style.credit-recurring-mode .invoice-recurring-credit-slot .invoice-recurring-section {
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+}
+
+body.order-product-invoice-style.credit-recurring-mode .invoice-recurring-lower-slot {
+    display: none !important;
+}
+
+/* Hide the lower ATW/Gatepass/Delivery row in Credit mode. */
+body.order-product-invoice-style.credit-recurring-mode .invoice-lower-fields {
+    display: none !important;
+}
+
+/* Compact details inside recurring card. */
+body.order-product-invoice-style .order-recurring-fields {
+    grid-template-columns: 72px minmax(125px, 1fr) minmax(150px, 1.2fr) !important;
+    gap: 6px !important;
+}
+body.order-product-invoice-style .order-recurring-example {
+    grid-column: 1 / -1 !important;
+}
+
+/* Mobile fallback. */
+@media (max-width: 900px) {
+    body.order-product-invoice-style .invoice-lower-fields {
+        grid-template-columns: 1fr !important;
+    }
+
+    body.order-product-invoice-style:not(.credit-recurring-mode) .invoice-recurring-lower-slot,
+    body.order-product-invoice-style:not(.credit-recurring-mode) .invoice-atw-field,
+    body.order-product-invoice-style:not(.credit-recurring-mode) .invoice-gatepass-field,
+    body.order-product-invoice-style:not(.credit-recurring-mode) .invoice-delivery-type-field {
+        grid-column: 1 !important;
+        grid-row: auto !important;
+        margin-top: 0 !important;
+    }
+
+    body.order-product-invoice-style .order-recurring-fields {
+        grid-template-columns: 1fr !important;
+    }
+}
+/* Parent */
+.sidebar .nav-link{
+    position:relative;
+}
+.sidebar-parent-icon {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+}
+
+.task-parent-badge {
+    position: absolute;
+    top: -10px;
+    right: -3px;
+
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+
+    border-radius: 999px;
+    background: #ef4444;
+    color: #fff;
+
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    z-index: 30;
+    pointer-events: none;
+    box-sizing: border-box;
+}
+
+/* Badge sa Tasks child kapag open ang dropdown */
+.task-child-badge {
+    margin-left: auto;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: #ef4444;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    display: none;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Closed dropdown: parent badge visible */
+.employees-dropdown .task-parent-badge {
+    display: inline-flex;
+}
+
+/* Open dropdown: parent badge hidden */
+.employees-dropdown.employees-menu-open .task-parent-badge {
+    display: none;
+}
+
+/* Open dropdown: Tasks badge visible */
+.employees-dropdown.employees-menu-open .task-child-badge {
+    display: inline-flex;
+}
+
+/* Allow badge to extend outside icon */
+.employees-dropdown > .nav-link,
+.sidebar-parent-icon {
+    overflow: visible !important;
+}
+</style>
+
 </head>
 <body>
     <div id="appPage">
-        <!-- Sidebar -->
-        <div class="sidebar" id="sidebar">
-            <div class="sidebar-header">
-                <h3>
-                    <button class="desktop-toggle-btn" id="desktopToggleBtn">
-                        <i class="bi bi-list" id="toggleIcon"></i>
-                    </button>
-                    <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
-                    <span class="nav-text">Branch Admin</span>
-                </h3>
-            </div>
-            <div class="sidebar-content">
-                <div class="sidebar-menu">
-                    <ul class="nav flex-column">
-                        <li class="nav-item">
-                <a class="nav-link" href="branchdashboard.php">
-                <i class="bi bi-speedometer2"></i>
-                <span class="nav-text">Dashboard</span></a>
-            </li>
-                        <li class="nav-item dropdown-nav">
-                            <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'warehouseMenu')">
-                                <i class="bi bi-shop"></i>
-                                <span class="nav-text">Warehouse</span>
-                                <i class="bi bi-chevron-down dropdown-arrow"></i>
-                            </a>
-                            <div class="collapse" id="warehouseMenu">
-                                <ul class="nav flex-column ps-4">
-                                    <li class="nav-item"><a class="nav-link" href="current_inventory.php"><i class="bi bi-bar-chart-line"></i><span class="nav-text">Current Inventory</span></a></li>
-                                    <li class="nav-item"><a class="nav-link" href="bad_orders.php"><i class="bi bi-recycle"></i><span class="nav-text">Bad Orders</span></a></li>
-                                    <li class="nav-item"><a class="nav-link" href="pick_list_items.php"><i class="bi bi-list-check"></i><span class="nav-text">Pick List Items</span></a></li>
-                                    <li class="nav-item"><a class="nav-link" href="pick_list_items.php"><i class="bi bi-list-check"></i><span class="nav-text">Pick List Items</span></a></li>
-                                                                <li class="nav-item">
-                                    <a class="nav-link" href="warehouses.php">
+       <!-- Sidebar -->
+<div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+        <h3>
+            <button class="desktop-toggle-btn" id="desktopToggleBtn">
+                <i class="bi bi-list" id="toggleIcon"></i>
+            </button>
+
+            <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon">
+
+            <span class="nav-text">Branch Admin</span>
+        </h3>
+    </div>
+
+    <div class="sidebar-content">
+        <div class="sidebar-menu">
+            <ul class="nav flex-column">
+                <!-- Dashboard -->
+                <li class="nav-item">
+                    <a class="nav-link" href="branchdashboard.php">
+                        <i class="bi bi-speedometer2"></i>
+                        <span class="nav-text">Dashboard</span>
+                    </a>
+                </li>
+                <!-- Vendor Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'supplierMenu')">
+                        <i class="bi bi-building"></i>
+                        <span class="nav-text">Vendor</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="supplierMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="purchase_order.php">
+                                    <i class="bi bi-file-earmark-text"></i>
+                                    <span class="nav-text">Enter Bills</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="paybills.php">
+                                    <i class="bi bi-currency-dollar"></i>
+                                    <span class="nav-text">Pay Bills</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="supplier.php">
                                     <i class="bi bi-shop"></i>
-                                    <span class="nav-text">Warehouses</span></a>
-                                </li>
-                                </ul>
-                            </div>
-                        </li>
-                        <li class="nav-item dropdown-nav">
-                            <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'supplierMenu')">
-                                <i class="bi bi-building"></i>
-                                <span class="nav-text">Supplier</span>
-                                <i class="bi bi-chevron-down dropdown-arrow"></i>
-                            </a>
-                            <div class="collapse" id="supplierMenu">
-                                <ul class="nav flex-column ps-4">
-                                    <li class="nav-item"><a class="nav-link" href="purchase_order.php"><i class="bi bi-box"></i><span class="nav-text">Recieve Inventory</span></a></li>
-                                    <li class="nav-item"><a class="nav-link" href="supplier.php"><i class="bi bi-people"></i><span class="nav-text">Supplier List</span></a></li>
-                                </ul>
-                            </div>
-                        </li>
-                        <li class="nav-item dropdown-nav">
-                            <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'customerMenu')">
-                                <i class="bi bi-people"></i>
-                                <span class="nav-text">Customer</span>
-                                <i class="bi bi-chevron-down dropdown-arrow"></i>
-                            </a>
-                            <div class="collapse" id="customerMenu">
-                                <ul class="nav flex-column ps-4">
-                                    <li class="nav-item"><a class="nav-link" href="customer_list.php"><i class="bi bi-person-badge"></i><span class="nav-text">Customer List</span></a></li>
-                                    <li class="nav-item"><a class="nav-link" href="approve_credit_requests.php"><i class="bi bi-pencil-square"></i><span class="nav-text">Approved Credit Request</span></a></li>
-                                    <li class="nav-item"><a class="nav-link" href="sales_order.php"><i class="bi bi-cart"></i><span class="nav-text">Sales Order</span></a></li>
-                                    <li class="nav-item"><a class="nav-link" href="collections.php">
-                <i class="bi bi-cash-stack"></i>
-                    <span class="nav-text">Collections</span>
-                </a>
-            </li>
-                                </ul>
-                            </div>
-                        </li>
-                        <li class="nav-item dropdown-nav">
-                            <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'deliveryMenu')">
-                                <i class="bi bi-truck"></i>
-                                <span class="nav-text">Delivery</span>
-                                <i class="bi bi-chevron-down dropdown-arrow"></i>
-                            </a>
-                            <div class="collapse" id="deliveryMenu">
-                                <ul class="nav flex-column ps-4">
-                                    <li class="nav-item"><a class="nav-link" href="trip_tickets.php"><i class="bi bi-ticket-perforated"></i><span class="nav-text">Trip Tickets</span></a></li>
-                                </ul>
-                            </div>
-                        </li>
-<!-- Banking Dropdown -->
-                    <li class="nav-item dropdown-nav">
-                        <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'bankingMenu')">
-                            <i class="bi bi-bank2"></i>
-                            <span class="nav-text">Banking</span>
-                            <i class="bi bi-chevron-down dropdown-arrow"></i>
-                        </a>
+                                    <span class="nav-text">Vendor List</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
 
-                        <div class="collapse" id="bankingMenu">
-                            <ul class="nav flex-column ps-4">
-                                <li class="nav-item">
-                                    <a class="nav-link" href="deposit.php">
-                                        <i class="bi bi-arrow-down-circle"></i>
-                                        <span class="nav-text">Deposit</span>
-                                    </a>
-                                </li>
+                <!-- Customer Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'customerMenu')">
+                        <i class="bi bi-people-fill"></i>
+                        <span class="nav-text">Customers</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
 
-                                <li class="nav-item">
-                                    <a class="nav-link" href="Withdrawal.php">
-                                        <i class="bi bi-arrow-up-circle"></i>
-                                        <span class="nav-text">Withdrawal</span>
-                                    </a>
-                                </li>
+                    <div class="collapse" id="customerMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link active" href="orderproduct.php">
+                                    <i class="bi bi-receipt"></i>
+                                    <span class="nav-text">Create Invoice</span>
+                                </a>
+                            </li>
 
-                                <li class="nav-item">
-                                    <a class="nav-link" href="bank_statement.php">
-                                        <i class="bi bi-receipt"></i>
-                                        <span class="nav-text">Bank Statement</span>
-                                    </a>
-                                </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="collections.php">
+                                    <i class="bi bi-cash-stack"></i>
+                                    <span class="nav-text">Receive Payment</span>
+                                </a>
+                            </li>
 
-                                <li class="nav-item">
-                                    <a class="nav-link" href="expenses.php">
-                                        <i class="bi bi-cash-stack"></i>
-                                        <span class="nav-text">Expenses</span>
-                                    </a>
-                                </li>
-                            </ul>
-                        </div>
-                    </li>
-                        <li class="nav-item"><a class="nav-link" href="drivers.php"><i class="bi bi-people-fill"></i><span class="nav-text">Users</span></a></li>
-                        
-                        <!-- Shared Services Dropdown -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'sharedServicesMenu')">
-        <i class="bi bi-grid-3x3-gap"></i>
-        <span class="nav-text">Shared Services</span>
+                            <li class="nav-item">
+                                <a class="nav-link" href="customer_list.php">
+                                    <i class="bi bi-person-badge"></i>
+                                    <span class="nav-text">Customer List</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+
+                <!-- Employees Dropdown -->
+<li class="nav-item dropdown-nav employees-dropdown">
+    <a class="nav-link"
+       href="#"
+       onclick="toggleSidebarDropdown(event, 'employeesMenu')">
+
+        <span class="sidebar-parent-icon">
+            <i class="bi bi-briefcase"></i>
+
+            <?php if ($task_badge_count > 0): ?>
+                <span class="task-parent-badge">
+                    <?= $task_badge_count ?>
+                </span>
+            <?php endif; ?>
+        </span>
+
+        <span class="nav-text">Employees</span>
         <i class="bi bi-chevron-down dropdown-arrow"></i>
     </a>
-    <div class="collapse" id="sharedServicesMenu">
+
+    <div class="collapse" id="employeesMenu">
         <ul class="nav flex-column ps-4">
             <li class="nav-item">
-                <a class="nav-link" href="motorpool.php">
-                    <i class="bi bi-truck"></i>
-                    <span class="nav-text">Motorpool</span>
+                <a class="nav-link" href="employeelist.php">
+                    <i class="bi bi-person-badge"></i>
+                    <span class="nav-text">Employee List</span>
                 </a>
             </li>
+
             <li class="nav-item">
-                <a class="nav-link" href="central_warehouse.php">
-                    <i class="bi bi-box-seam"></i>
-                    <span class="nav-text">Central Warehouse</span>
+                <a class="nav-link" href="employee.php">
+                    <i class="bi bi-clock-history"></i>
+                    <span class="nav-text">Enter Time</span>
+                </a>
+            </li>
+
+            <li class="nav-item">
+                <a class="nav-link" href="tasks.php">
+                    <i class="bi bi-calendar-check"></i>
+                    <span class="nav-text">Tasks</span>
+
+                    <?php if ($task_badge_count > 0): ?>
+                        <span class="task-child-badge">
+                            <?= $task_badge_count ?>
+                        </span>
+                    <?php endif; ?>
                 </a>
             </li>
         </ul>
     </div>
 </li>
-                        
-                    </ul>
-                </div>
-            </div>
-            <div class="sidebar-footer">
-                <div class="user-profile-sidebar">
-                    <div class="user-avatar-sidebar"><?php echo $user_initials; ?></div>
-                    <div class="user-details-sidebar">
-                        <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-                        <span class="user-role-sidebar"><?php echo ucfirst($user_role); ?></span>
+
+
+                <!-- Banking Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'bankingMenu')">
+                        <i class="bi bi-bank2"></i>
+                        <span class="nav-text">Banking</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="bankingMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="deposit.php">
+                                    <i class="bi bi-bank"></i>
+                                    <span class="nav-text">Record Deposit</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="Withdrawal.php">
+                                    <i class="bi bi-journal-check"></i>
+                                    <span class="nav-text">Write Checks</span>
+                                </a>
+                            </li>
+                            
+                            <li class="nav-item active">
+                                <a class="nav-link" href="transferfunds.php">
+                                    <i class="bi bi-arrow-left-right"></i>
+                                    <span class="nav-text">Transfer Funds</span>
+                                </a>
+                            </li>
+                            
+                            <li class="nav-item" hidden>
+                                <a class="nav-link" href="bank_statement.php">
+                                    <i class="bi bi-receipt"></i>
+                                    <span class="nav-text">Bank Statement</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item" hidden>
+                                <a class="nav-link" href="expenses.php">
+                                    <i class="bi bi-cash-stack"></i>
+                                    <span class="nav-text">Expenses</span>
+                                </a>
+                            </li>
+                        </ul>
                     </div>
-                </div>
-                <button class="logout-btn-sidebar" onclick="logout()">
-                    <i class="bi bi-box-arrow-right"></i>
-                    <span class="logout-text">Logout</span>
-                </button>
+                </li>
+
+                <!-- Company Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'warehouseMenu')">
+                        <i class="bi bi-building"></i>
+                        <span class="nav-text">Company</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="warehouseMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="current_inventory.php">
+                                    <i class="bi bi-box"></i>
+                                    <span class="nav-text">Items</span>
+                                </a>
+                            </li>
+                            
+                             <li class="nav-item">
+                                <a class="nav-link" href="fixed_assets.php">
+                                    <i class="bi bi-building"></i>
+                                    <span class="nav-text">Fixed Assets</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="warehouses.php">
+                                    <i class="bi bi-shop"></i>
+                                    <span class="nav-text">Warehouses</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="chartofaccounts.php">
+                                    <i class="bi bi-graph-up"></i>
+                                    <span class="nav-text">Chart of Accounts</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item" hidden>
+                                <a class="nav-link" href="trip_tickets.php">
+                                    <i class="bi bi-ticket-perforated"></i>
+                                    <span class="nav-text">Trip Tickets</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="motorpool.php">
+                                    <i class="bi bi-truck"></i>
+                                    <span class="nav-text">Motorpool</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="central_warehouse.php">
+                                    <i class="bi bi-box-seam"></i>
+                                    <span class="nav-text">Central Warehouse</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="drivers.php">
+                                    <i class="bi bi-people-fill"></i>
+                                    <span class="nav-text">Users</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+                <!-- Accounting Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'accountingMenu')">
+                        <i class="bi bi-graph-up"></i>
+                        <span class="nav-text">Accounting</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="accountingMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="journal_entries.php">
+                                    <i class="bi bi-journal"></i>
+                                    <span class="nav-text">Journal Entries</span>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="batch_transaction.php">
+                                    <i class="bi bi-collection"></i>
+                                    <span class="nav-text">Batch Transaction</span>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="item_adjustment.php">
+                                    <i class="bi bi-sliders"></i>
+                                    <span class="nav-text">Item Adjusment</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="it_request.php">
+                        <i class="bi bi-headset"></i>
+                        <span class="nav-text">IT Requests</span>
+                    </a>
+                </li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="sidebar-footer">
+        <div class="user-profile-sidebar">
+            <div class="user-avatar-sidebar">
+                <?php echo htmlspecialchars($user_initials); ?>
+            </div>
+
+            <div class="user-details-sidebar">
+                <span class="user-name-sidebar">
+                    <?php echo htmlspecialchars($user_name); ?>
+                </span>
+
+                <span class="user-role-sidebar">
+                    <?php echo htmlspecialchars(ucfirst($user_role)); ?>
+                </span>
             </div>
         </div>
+
+        <button class="logout-btn-sidebar" onclick="logout()">
+            <i class="bi bi-box-arrow-right"></i>
+            <span class="logout-text">Logout</span>
+        </button>
+    </div>
+</div>
 
         <!-- Main Content Area -->
         <div class="main-content">
@@ -4622,16 +8715,263 @@ input[type="number"]::-webkit-outer-spin-button {
                 <button class="mobile-toggle-btn" id="mobileToggleBtn">
                     <i class="bi bi-list"></i>
                 </button>
+
+                <div class="dropdown order-style-navbar-dropdown">
+                    <button class="btn order-style-menu-btn" type="button" id="orderStyleMenuBtn" data-bs-toggle="dropdown" aria-expanded="false" title="Order Product Style">
+                        <i class="bi bi-three-dots-vertical"></i>
+                    </button>
+                    <ul class="dropdown-menu order-style-menu" aria-labelledby="orderStyleMenuBtn">
+                        <li>
+                            <button type="button" class="dropdown-item style-menu-item" id="invoiceStyleBtn" onclick="setOrderProductStyle('invoice')">
+                                <i class="bi bi-receipt me-2"></i> Default Style
+                            </button>
+                        </li>
+                        <li>
+                            <button type="button" class="dropdown-item style-menu-item" id="classicStyleBtn" onclick="setOrderProductStyle('classic')">
+                                <i class="bi bi-grid me-2"></i> Classic Style
+                            </button>
+                        </li>
+                    </ul>
+                </div>
+
                 <div class="page-title">
                     <h2>Order Products</h2>
                     <p>Select products and quantities to create an order</p>
                 </div>
-                <button class="btn btn-success position-relative" type="button" onclick="viewCart()" title="View Cart">
+                <button class="btn btn-success position-relative classic-cart-btn" id="classicCartBtn" type="button" onclick="viewCart()" title="View Cart">
                     <i class="bi bi-cart3"></i>
                     <span class="position-absolute top-0 start-100 translate-middle badge rounded-pill" id="cartBadge" style="display: none;">
                         <span id="cartItemCount">0</span>
                     </span>
                 </button>
+            </div>
+
+
+            <div class="op-main-tabs-wrap no-print">
+                <div class="op-main-tabs" role="tablist" aria-label="Order Product Tabs">
+                    <button type="button" class="op-main-tab-btn active" id="opCreateOrderTabBtn" data-tab="createOrderTabContent" onclick="switchOrderProductMainTab('createOrderTabContent')">
+                        <i class="bi bi-cart-plus"></i><span>Create Invoice</span>
+                    </button>
+                    <button type="button" class="op-main-tab-btn" id="opSalesOrderTabBtn" data-tab="salesOrderTabContent" onclick="switchOrderProductMainTab('salesOrderTabContent')">
+                        <i class="bi bi-receipt-cutoff"></i><span>Sales Order</span><span class="count-badge"><?php echo (int)$op_sales_order_count; ?></span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="order-main-tab-pane active" id="createOrderTabContent">
+            <!-- Default Invoice Style Workspace -->
+            <div class="invoice-style-workspace" id="invoiceStyleWorkspace">
+                <div class="invoice-blue-strip">
+                    <div class="invoice-strip-field">
+                        <label for="invoiceCustomerSelect">CUSTOMER:</label>
+                        <select id="invoiceCustomerSelect" <?php echo $is_customer_locked ? 'disabled' : ''; ?>></select>
+                    </div>
+                    <div class="invoice-strip-field invoice-credit-field">
+                        <label for="invoiceCreditCheckbox">CREDIT:</label>
+                        <div class="invoice-credit-check-wrap">
+                            <input type="checkbox" id="invoiceCreditCheckbox" onchange="toggleBillingTypeFields(); syncInvoiceFieldsToOriginalForm();">
+                        </div>
+                    </div>
+                    <div class="invoice-strip-field">
+                        <label for="invoiceReceivableAccount">ACCOUNTS RECEIVABLE</label>
+                        <select id="invoiceReceivableAccount">
+                            <option value="Accounts Receivable">Accounts Receivable</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="invoice-sheet">
+                    <div class="invoice-sheet-head">
+                        <div>
+                            <h1 class="invoice-title" id="invoiceDocumentTitle">Invoice</h1>
+                        </div>
+                        <div class="invoice-right-fields">
+                            <div class="invoice-mini-field">
+                                <label for="invoiceOrderDate">Date</label>
+                                <input type="date" id="invoiceOrderDate">
+                            </div>
+                            <div class="invoice-mini-field">
+                                <label for="invoiceNumberVisual">Invoice #</label>
+                                <input type="text" id="invoiceNumberVisual" placeholder="Auto">
+                            </div>
+                            <div class="invoice-mini-field">
+                                <label for="invoiceTerms">Terms</label>
+                                <select id="invoiceTerms">
+                                    <option value=""></option>
+                                    <option value="Due on receipt">Due on receipt</option>
+                                    <option value="Net 7">Net 7</option>
+                                    <option value="Net 15">Net 15</option>
+                                    <option value="Net 30">Net 30</option>
+                                </select>
+                            </div>
+                            <div class="invoice-mini-field">
+                                <label for="invoiceDueDate">Due Date</label>
+                                <input type="date" id="invoiceDueDate">
+                            </div>
+                            <div id="invoiceRecurringCreditSlot" class="invoice-recurring-credit-slot"></div>
+
+                        </div>
+                    </div>
+
+                    <div class="invoice-lower-fields">
+                        <div class="invoice-recurring-lower-slot">
+                            <div class="order-recurring-section invoice-recurring-section" id="invoiceRecurringSection">
+                        <label class="order-recurring-toggle" for="invoiceRecurringEnabled">
+                            <input type="checkbox" id="invoiceRecurringEnabled" onchange="toggleOrderRecurring('invoice')" onclick="toggleOrderRecurring('invoice')">
+                            <span>Recurring invoice / schedule</span>
+                        </label>
+                        <div class="order-recurring-fields" id="invoiceRecurringFields" style="display:none;">
+                            <div class="order-recurring-field">
+                                <label for="invoiceRecurringEvery">Every</label>
+                                <input type="number" id="invoiceRecurringEvery" min="1" step="1" value="1">
+                            </div>
+                            <div class="order-recurring-field">
+                                <label for="invoiceRecurringPeriod">Period</label>
+                                <select id="invoiceRecurringPeriod">
+                                    <option value="day">Day(s)</option>
+                                    <option value="week">Week(s)</option>
+                                    <option value="month" selected>Month(s)</option>
+                                    <option value="year">Year(s)</option>
+                                </select>
+                            </div>
+                            <div class="order-recurring-field">
+                                <label for="invoiceRecurringUntil">Until Date</label>
+                                <input type="date" id="invoiceRecurringUntil">
+                            </div>
+                            <div class="order-recurring-example">Example: Every 1 month until Dec 31, 2026 for recurring invoice reminders.</div>
+                        </div>
+                    </div>
+                        </div>
+                        <div class="invoice-mini-field invoice-delivery-field">
+                            <label for="invoiceDriverSelect">Driver</label>
+                            <select id="invoiceDriverSelect">
+                                <option value=""></option>
+                                <?php foreach ($delivery_drivers as $driver): ?>
+                                    <option value="<?php echo (int)$driver['driver_id']; ?>"
+                                            data-vehicle-type="<?php echo htmlspecialchars($driver['vehicle_type'] ?? ''); ?>"
+                                            data-plate="<?php echo htmlspecialchars($driver['vehicle_plate_number'] ?? ''); ?>">
+                                        <?php echo htmlspecialchars($driver['driver_name']); ?><?php echo !empty($driver['license_number']) ? ' - ' . htmlspecialchars($driver['license_number']) : ''; ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="invoice-mini-field invoice-delivery-field">
+                            <label for="invoiceVehicleSelect">Vehicle</label>
+                            <select id="invoiceVehicleSelect">
+                                <option value=""></option>
+                                <?php foreach ($delivery_vehicles as $vehicle): ?>
+                                    <option value="<?php echo (int)$vehicle['vehicle_id']; ?>">
+                                        <?php echo htmlspecialchars(trim(($vehicle['vehicle_type'] ?? 'Vehicle') . ' - ' . ($vehicle['plate_number'] ?? ''))); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+                        <div class="invoice-mini-field invoice-atw-field">
+                            <label for="invoiceAtwNo">ATW No.</label>
+                            <input type="text" id="invoiceAtwNo" maxlength="6" inputmode="numeric" placeholder="Optional">
+                        </div>
+                        <div class="invoice-mini-field invoice-gatepass-field">
+                            <label for="invoiceGatepassNo">Gatepass No.</label>
+                            <input type="text" id="invoiceGatepassNo" maxlength="6" inputmode="numeric" placeholder="Required">
+                        </div>
+                        <div class="invoice-mini-field invoice-fulfillment-field invoice-delivery-type-field">
+                            <label for="invoiceDeliveryType">Delivery Type</label>
+                            <select id="invoiceDeliveryType" name="invoiceDeliveryType" class="invoice-input">
+                                <option value="pickup" selected>Pick Up</option>
+                                <option value="delivery">Delivery</option>
+                            </select>
+                        </div>
+                    </div>
+
+
+
+
+                    <div class="invoice-table-wrap">
+                        <table class="invoice-entry-table">
+                            <thead>
+                                <tr>
+                                    <th style="width: 34%;">PRODUCT</th>
+                                    <th style="width: 18%;">UNIT</th>
+                                    <th style="width: 12%;">QTY</th>
+                                    <th style="width: 18%;">PRICE</th>
+                                    <th style="width: 18%;">TOTAL</th>
+                                </tr>
+                            </thead>
+                            <tbody id="invoiceItemsBody"></tbody>
+                        </table>
+                    </div>
+
+                    <div class="invoice-bottom-area">
+                        <div class="invoice-message">
+                            <label for="invoiceCustomerMessage">Customer Message</label>
+                            <textarea id="invoiceCustomerMessage"></textarea>
+                            <div class="invoice-payment-panel" id="invoicePaymentPanel">
+                                <div class="invoice-payment-toggle-row">
+                                    <div class="form-check form-switch mb-0">
+                                        <input class="form-check-input" type="checkbox" id="invoiceCollectPayment">
+                                        <label class="form-check-label" for="invoiceCollectPayment">Collect payment now</label>
+                                    </div>
+                                </div>
+                                <div id="invoicePaymentFields" class="invoice-payment-fields" style="display:none;">
+                                    <div class="invoice-payment-grid">
+                                        <div>
+                                            <label for="invoicePaymentMethod">Payment Method</label>
+                                            <select id="invoicePaymentMethod" class="form-select form-select-sm">
+                                                <option value="cash">Cash</option>
+                                                <option value="check">Check</option>
+                                                <option value="online_transfer">Online Transfer</option>
+                                            </select>
+                                        </div>
+                                        <div class="invoice-cash-field">
+                                            <label for="invoiceCashTendered">Cash Tendered</label>
+                                            <input type="text" inputmode="decimal" class="form-control form-control-sm no-spinner money-input" id="invoiceCashTendered" placeholder="Amount received">
+                                            <small class="text-muted">Change: <span id="invoiceCashChange">₱0.00</span></small>
+                                        </div>
+                                    </div>
+                                    <div class="invoice-payment-grid invoice-check-fields" style="display:none;">
+                                        <div><label for="invoiceCheckDate">Check Date</label><input type="date" class="form-control form-control-sm" id="invoiceCheckDate"></div>
+                                        <div><label for="invoiceCheckNumber">Check Number</label><input type="text" class="form-control form-control-sm" id="invoiceCheckNumber"></div>
+                                        <div><label for="invoiceCheckPaymentAmount">Payment Amount (₱)</label><input type="text" inputmode="decimal" class="form-control form-control-sm no-spinner money-input" id="invoiceCheckPaymentAmount" placeholder="0.00"></div>
+                                        <div class="invoice-payment-full"><label for="invoiceBankBranch">Bank/Branch</label><input type="text" class="form-control form-control-sm" id="invoiceBankBranch" placeholder="e.g. BDO - Tanauan Branch"></div>
+                                    </div>
+                                    <div class="invoice-payment-grid invoice-online-fields" style="display:none;">
+                                        <div><label for="invoiceReferenceNumber">Reference Number</label><input type="text" class="form-control form-control-sm" id="invoiceReferenceNumber"></div>
+                                        <div><label for="invoiceOnlineBankName">Bank/Wallet</label><input type="text" class="form-control form-control-sm" id="invoiceOnlineBankName" placeholder="GCash, Maya, BPI, etc."></div>
+                                        <div><label for="invoiceOnlinePaymentAmount">Payment Amount (₱)</label><input type="text" inputmode="decimal" class="form-control form-control-sm no-spinner money-input" id="invoiceOnlinePaymentAmount" placeholder="0.00"></div>
+                                        <div class="invoice-payment-full"><label for="invoiceOnlineBankBranch">Branch / Account Note</label><input type="text" class="form-control form-control-sm" id="invoiceOnlineBankBranch" placeholder="Optional"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="invoice-help-note">Default style only changes the layout. The same order saving function is still used.</div>
+                        </div>
+                        <div>
+                            <div class="invoice-totals">
+                                <div class="invoice-total-line">
+                                    <span id="invoiceDiscountLabel">(0.0%)</span>
+                                    <span id="invoiceDiscountAmount">0.00</span>
+                                </div>
+                                <div class="invoice-total-line">
+                                    <span>Total</span>
+                                    <span id="invoiceTotalAmount">0.00</span>
+                                </div>
+                                <div class="invoice-total-line">
+                                    <span>Payments Applied</span>
+                                    <span>0.00</span>
+                                </div>
+                                <div class="invoice-total-line invoice-balance-line">
+                                    <span>Balance Due</span>
+                                    <strong id="invoiceBalanceDue">0.00</strong>
+                                </div>
+                            </div>
+
+                            <div class="invoice-actions">
+                                <button type="button" class="btn btn-light border" id="invoiceSaveCloseBtn" onclick="invoiceSaveAndClose()">Save & Close</button>
+                                <button type="button" class="btn btn-primary" id="invoiceSaveNewBtn" onclick="invoiceSaveAndNew()">Save & New</button>
+                                <button type="button" class="btn btn-light border" onclick="clearInvoiceStyleRows()">Clear</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Category Tabs with Search -->
@@ -4660,9 +9000,30 @@ input[type="number"]::-webkit-outer-spin-button {
             <!-- Products Section -->
             <div class="col-12 products-section">
                 <div class="product-action-bar">
+                    <div aria-hidden="true" style="position:absolute;left:-10000px;top:auto;width:1px;height:1px;overflow:hidden;">
+                        <input type="text" name="username" autocomplete="username" tabindex="-1">
+                        <input type="password" name="password" autocomplete="current-password" tabindex="-1">
+                        <input type="email" name="email" autocomplete="email" tabindex="-1">
+                    </div>
                     <div class="search-wrapper">
                         <i class="bi bi-search search-icon"></i>
-                        <input type="text" class="search-input" id="searchInput" placeholder="Search products...">
+                        <input
+                            type="text"
+                            id="productSearch"
+                            name="product_keyword_search_<?php echo (int)$user_id; ?>_<?php echo time(); ?>"
+                            class="search-input"
+                            placeholder="Search products..."
+                            autocomplete="off"
+                            autocorrect="off"
+                            autocapitalize="off"
+                            spellcheck="false"
+                            inputmode="search"
+                            data-form-type="other"
+                            data-lpignore="true"
+                            data-1p-ignore="true"
+                            data-bwignore="true"
+                            data-no-autofill="true"
+/>
                         <button class="search-reset" id="searchReset" onclick="resetSearch()"><i class="bi bi-x"></i></button>
                     </div>
                     <button class="btn btn-success" id="bulkAddToCartBtn" onclick="bulkAddToCart()">
@@ -4699,16 +9060,209 @@ input[type="number"]::-webkit-outer-spin-button {
                     </table>
                 </div>
             </div>
+            </div><!-- /createOrderTabContent -->
+
+            <div class="order-main-tab-pane" id="salesOrderTabContent">
+            <div class="op-sales-order-section" id="opSalesOrderSection">
+                <div class="op-so-card">
+                    <div class="op-so-filter-card no-print collapsed" id="opSoFilterCard">
+                        <button type="button" class="op-so-filter-header" onclick="toggleOpSalesOrderFilters()">
+                            <span class="op-so-filter-title">
+                                <span class="op-so-filter-icon"><i class="bi bi-funnel-fill"></i></span>
+                                <span>Search &amp; Filters</span>
+                            </span>
+                            <i class="bi bi-chevron-down op-so-filter-chevron"></i>
+                        </button>
+
+                        <div class="op-so-filter-body" id="opSoFilterBody" style="display:none;">
+                            <?php
+                                $op_so_customer_filter_options = [];
+                                if (!empty($op_sales_orders)) {
+                                    foreach ($op_sales_orders as $op_so_filter_order) {
+                                        $op_so_filter_customer_id = (int)($op_so_filter_order['customer_id'] ?? 0);
+                                        $op_so_filter_customer_name = trim((string)($op_so_filter_order['customer_name'] ?? ''));
+                                        if ($op_so_filter_customer_id > 0 && $op_so_filter_customer_name !== '') {
+                                            $op_so_customer_filter_options[$op_so_filter_customer_id] = $op_so_filter_customer_name;
+                                        }
+                                    }
+                                    asort($op_so_customer_filter_options);
+                                }
+                            ?>
+                            <div class="op-so-advanced-filters">
+                                <div class="op-so-field date-field">
+                                    <label for="opSoStartDate"><i class="bi bi-calendar"></i> From:</label>
+                                    <input type="date" class="form-control" id="opSoStartDate" onchange="filterEmbeddedSalesOrders()" title="Start Date">
+                                </div>
+                                <div class="op-so-field date-field">
+                                    <label for="opSoEndDate"><i class="bi bi-calendar"></i> To:</label>
+                                    <input type="date" class="form-control" id="opSoEndDate" onchange="filterEmbeddedSalesOrders()" title="End Date">
+                                </div>
+                                <div class="op-so-field select-field">
+                                    <label for="opSoStatus"><i class="bi bi-flag"></i> STATUS</label>
+                                    <select class="form-select" id="opSoStatus" onchange="filterEmbeddedSalesOrders()">
+                                        <option value="">All Status</option>
+                                        <option value="pending">Pending</option>
+                                        <option value="confirmed">Confirmed</option>
+                                        <option value="processing">Processing</option>
+                                        <option value="ready">Ready</option>
+                                        <option value="in_transit">In Transit</option>
+                                        <option value="delivered">Delivered</option>
+                                        <option value="cancelled">Cancelled</option>
+                                    </select>
+                                </div>
+                                <div class="op-so-field select-field">
+                                    <label for="opSoCustomer"><i class="bi bi-people"></i> CUSTOMER</label>
+                                    <select class="form-select" id="opSoCustomer" onchange="filterEmbeddedSalesOrders()">
+                                        <option value="">All Customers</option>
+                                        <?php foreach ($op_so_customer_filter_options as $op_so_filter_customer_id => $op_so_filter_customer_name): ?>
+                                            <option value="<?php echo (int)$op_so_filter_customer_id; ?>"><?php echo htmlspecialchars($op_so_filter_customer_name); ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="op-so-filter-buttons">
+                                    <button type="button" class="btn btn-success" onclick="filterEmbeddedSalesOrders()">
+                                        <i class="bi bi-funnel"></i> Apply
+                                    </button>
+                                    <button type="button" class="btn btn-light" onclick="setEmbeddedSalesOrderWeekFilter()">
+                                        <i class="bi bi-calendar-week"></i> Week
+                                    </button>
+                                    <button type="button" class="btn btn-clear" onclick="resetEmbeddedSalesOrderFilters()">
+                                        <i class="bi bi-x-circle"></i> Clear
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="op-so-toolbar no-print">
+                        <div class="op-so-search-wrap">
+                            <div class="input-group">
+                                <span class="input-group-text"><i class="bi bi-search"></i></span>
+                                <input type="text" class="form-control" id="opSoSearch" placeholder="Search order number or customer..." oninput="filterEmbeddedSalesOrders()">
+                            </div>
+                        </div>
+
+                        <div class="op-so-limit-wrap">
+                            <label for="opSoPageLength">Show</label>
+                            <select class="form-select" id="opSoPageLength" onchange="changeEmbeddedSalesOrderPageLength(this.value)">
+                                <option value="10" selected>10</option>
+                                <option value="20">20</option>
+                                <option value="50">50</option>
+                                <option value="100">100</option>
+                            </select>
+                            <span>entries</span>
+                        </div>
+
+                        <div class="op-so-actions">
+                            <button type="button" class="btn btn-success" onclick="printEmbeddedSalesOrders()">
+                                <i class="bi bi-printer"></i> Print All Orders
+                            </button>
+                            <button type="button" class="btn btn-success" onclick="exportEmbeddedSalesOrders()">
+                                <i class="bi bi-file-earmark-excel"></i> Export to Excel
+                            </button>
+                        </div>
+                    </div>
+
+                    <?php if (!empty($op_sales_order_error)): ?>
+                        <div class="alert alert-warning m-3 mb-0">
+                            <i class="bi bi-exclamation-triangle"></i>
+                            Sales Order data could not be loaded: <?php echo htmlspecialchars($op_sales_order_error); ?>
+                        </div>
+                    <?php endif; ?>
+
+                    <div class="op-so-table-wrap">
+                        <table class="op-so-table" id="opSalesOrderTable">
+                            <thead>
+                                <tr>
+                                    <th>Order No.</th>
+                                    <th>Date</th>
+                                    <th>Customer</th>
+                                    <th class="text-end">Order Amount</th>
+                                    <th>Order Status</th>
+                                    <th class="text-center no-print">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php if (empty($op_sales_orders)): ?>
+                                    <tr class="op-so-empty-row">
+                                        <td colspan="6">
+                                            <div class="op-so-empty">
+                                                <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+                                                No sales orders found.
+                                            </div>
+                                        </td>
+                                    </tr>
+                                <?php else: ?>
+                                    <?php foreach ($op_sales_orders as $order): 
+                                        $status = strtolower(trim((string)($order['order_status'] ?? 'pending')));
+                                        $orderDateRaw = $order['order_date'] ?? '';
+                                        $orderDateDisplay = $orderDateRaw ? date('M d, Y', strtotime($orderDateRaw)) : '-';
+                                        $orderDateFilter = $orderDateRaw ? date('Y-m-d', strtotime($orderDateRaw)) : '';
+                                        $hasOrderSI = trim((string)($order['si_number'] ?? '')) !== '';
+                                        $searchBlob = strtolower(
+                                            ($order['so_number'] ?? '') . ' ' .
+                                            ($order['customer_code'] ?? '') . ' ' .
+                                            ($order['store_name'] ?? '') . ' ' .
+                                            ($order['customer_name'] ?? '') . ' ' .
+                                            ($order['branch_name'] ?? '') . ' ' .
+                                            ($order['encoded_by'] ?? '')
+                                        );
+                                    ?>
+                                        <tr class="op-so-clickable-row" data-status="<?php echo htmlspecialchars($status); ?>" data-date="<?php echo htmlspecialchars($orderDateFilter); ?>" data-customer="<?php echo (int)($order['customer_id'] ?? 0); ?>" data-search="<?php echo htmlspecialchars($searchBlob); ?>" onclick="openSalesOrderRowDetails(event, <?php echo (int)$order['so_id']; ?>)">
+                                            <td class="fw-bold text-success"><?php echo htmlspecialchars($order['so_number'] ?? ''); ?></td>
+                                            <td><?php echo htmlspecialchars($orderDateDisplay); ?></td>
+                                            <td><?php echo htmlspecialchars($order['customer_name'] ?? 'Walk-in Customer'); ?></td>
+                                            <td class="op-so-money text-end">₱<?php echo number_format((float)($order['display_total'] ?? 0), 2); ?></td>
+                                            <td><span class="op-so-status <?php echo htmlspecialchars($status); ?>"><?php echo htmlspecialchars(str_replace('_', ' ', $status)); ?></span></td>
+                                            <td class="no-print text-center">
+                                                <div class="action-buttons d-flex gap-1 justify-content-center">
+                                                    <button type="button" class="btn-action btn-print op-so-action-btn" title="Print Order" onclick="printSingleOrder(<?php echo (int)$order['so_id']; ?>)">
+                                                        <i class="bi bi-printer"></i>
+                                                    </button>
+                                                    <?php if (in_array($status, ['pending', 'confirmed', 'delivered'], true) && !$hasOrderSI): ?>
+                                                        <button type="button" class="btn-action btn-si op-so-action-btn" title="Issue SI" onclick="openSIActionModal(<?php echo (int)$order['so_id']; ?>)">
+                                                            <i class="bi bi-receipt-cutoff"></i>
+                                                        </button>
+                                                    <?php endif; ?>
+                                                    <?php if ($status === 'pending'): ?>
+                                                        <button type="button" class="btn-action btn-edit op-so-action-btn" title="Edit" onclick="editOrder(<?php echo (int)$order['so_id']; ?>)">
+                                                            <i class="bi bi-pencil"></i>
+                                                        </button>
+                                                        <button type="button" class="btn-action btn-delete op-so-action-btn" title="Delete" onclick="deleteOrder(<?php echo (int)$order['so_id']; ?>)">
+                                                            <i class="bi bi-trash"></i>
+                                                        </button>
+                                                    <?php endif; ?>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="op-so-pagination no-print" id="opSoPagination">
+                        <div class="op-so-pagination-info" id="opSoPaginationInfo">Showing 0 to 0 of 0 entries</div>
+                        <div class="op-so-pagination-controls">
+                            <button type="button" class="btn" id="opSoFirstPage" onclick="setEmbeddedSalesOrderPage(1)">First</button>
+                            <button type="button" class="btn" id="opSoPrevPage" onclick="setEmbeddedSalesOrderPage(opSoCurrentPage - 1)"><i class="bi bi-chevron-left"></i></button>
+                            <span id="opSoPageIndicator">Page 1 of 1</span>
+                            <button type="button" class="btn" id="opSoNextPage" onclick="setEmbeddedSalesOrderPage(opSoCurrentPage + 1)"><i class="bi bi-chevron-right"></i></button>
+                            <button type="button" class="btn" id="opSoLastPage" onclick="setEmbeddedSalesOrderPage(opSoTotalPages || 1)">Last</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            </div><!-- /salesOrderTabContent -->
         </div>
     </div>
 
     <!-- Product Info Modal -->
     <div class="modal fade" id="productInfoModal" tabindex="-1">
-        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-dialog modal-xl order-details-wide-modal">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title"><i class="bi bi-box-seam me-2"></i><span id="modalProductName">Product Details</span></h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" onclick="amgcCloseOrderDetailsModal && amgcCloseOrderDetailsModal()"></button>
                 </div>
                 <div class="modal-body p-0">
                     <div class="product-info-container">
@@ -4776,17 +9330,29 @@ input[type="number"]::-webkit-outer-spin-button {
             <div class="modal-body">
                 <div class="customer-selection">
                     <h6><i class="bi bi-person-check"></i> Select Customer</h6>
-                    <select class="form-select" id="modalCustomerSelect" <?php echo $is_customer_locked ? 'disabled' : ''; ?>>
+                    <select class="form-select grouped-native-select" id="modalCustomerSelect" <?php echo $is_customer_locked ? 'disabled' : ''; ?>>
                         <option value="">-- Choose Customer --</option>
-                        <?php foreach ($customers as $customer): ?>
-                            <option value="<?php echo $customer['customer_id']; ?>" 
-                                    data-email="<?php echo htmlspecialchars($customer['email'] ?? ''); ?>"
-                                    data-phone="<?php echo htmlspecialchars($customer['phone_number'] ?? ''); ?>"
-                                    data-address="<?php echo htmlspecialchars($customer['address'] ?? ''); ?>"
-                                    data-price-level="<?php echo htmlspecialchars($customer['price_level'] ?? 'Standard'); ?>"
-                                    <?php echo ($pre_selected_customer_id == $customer['customer_id']) ? 'selected' : ''; ?>>
-                                <?php echo htmlspecialchars($customer['customer_name']); ?>
-                            </option>
+                        <?php
+                        $customers_by_group = [];
+                        foreach ($customers as $customer) {
+                            $group_name = trim((string)($customer['customer_group'] ?? ''));
+                            if ($group_name === '') { $group_name = 'General'; }
+                            if (!isset($customers_by_group[$group_name])) { $customers_by_group[$group_name] = []; }
+                            $customers_by_group[$group_name][] = $customer;
+                        }
+                        ksort($customers_by_group, SORT_NATURAL | SORT_FLAG_CASE);
+                        ?>
+                        <?php foreach ($customers_by_group as $group_name => $group_customers): ?>
+                            <option value="" class="customer-group-header-option dropdown-group-header-option" disabled><?php echo htmlspecialchars($group_name); ?></option>
+                            <?php foreach ($group_customers as $customer): ?>
+                                <option value="<?php echo $customer['customer_id']; ?>"
+                                        data-email="<?php echo htmlspecialchars($customer['email'] ?? ''); ?>"
+                                        data-phone="<?php echo htmlspecialchars($customer['phone_number'] ?? ''); ?>"
+                                        data-address="<?php echo htmlspecialchars($customer['address'] ?? ''); ?>"
+                                        data-price-level="<?php echo htmlspecialchars($customer['price_level'] ?? 'Standard'); ?>"
+                                        data-customer-group="<?php echo htmlspecialchars($group_name); ?>"
+                                        <?php echo ($pre_selected_customer_id == $customer['customer_id']) ? 'selected' : ''; ?>><?php echo htmlspecialchars($customer['customer_name']); ?></option>
+                            <?php endforeach; ?>
                         <?php endforeach; ?>
                     </select>
                     <?php if ($is_customer_locked): ?>
@@ -4856,33 +9422,6 @@ input[type="number"]::-webkit-outer-spin-button {
                     <small class="text-muted">This will be saved to the selected customer's address after submitting the order.</small>
                 </div>
 
-                <!-- Delivery Type Selection -->
-<div id="deliveryTypeSection">
-    <h6 class="mb-3"><i class="bi bi-truck"></i> Delivery Type</h6>
-    <div class="alert bg-light mb-3">
-        <div class="row">
-            <div class="col-md-6">
-                <div class="form-check mb-2">
-                    <input class="form-check-input" type="radio" name="deliveryType" id="deliveryPickup" value="pickup" checked>
-                    <label class="form-check-label" for="deliveryPickup">
-                        <i class="bi bi-box-seam"></i> Pick Up
-                        <small class="d-block text-muted">Customer will pick up the order</small>
-                    </label>
-                </div>
-            </div>
-            <div class="col-md-6">
-                <div class="form-check mb-2">
-                    <input class="form-check-input" type="radio" name="deliveryType" id="deliveryDeliver" value="delivery">
-                    <label class="form-check-label" for="deliveryDeliver">
-                        <i class="bi bi-truck"></i> Delivery
-                        <small class="d-block text-muted">Order will be delivered to customer</small>
-                    </label>
-                </div>
-            </div>
-        </div>
-    </div>
-</div>
-
                 <div id="deliveryAssignmentSection" class="mb-3" style="display:none;">
                     <h6 class="mb-3"><i class="bi bi-person-badge"></i> Driver & Vehicle Assignment</h6>
                     <div class="alert bg-light mb-3">
@@ -4919,11 +9458,6 @@ input[type="number"]::-webkit-outer-spin-button {
                                     <i class="bi bi-person-plus"></i> Add New Driver
                                 </button>
                             </div>
-                            <div class="col-md-6">
-                                <button type="button" class="btn btn-sm btn-outline-success w-100" onclick="toggleNewVehicleFields()">
-                                    <i class="bi bi-truck-front"></i> Add New Vehicle
-                                </button>
-                            </div>
                         </div>
 
                         <div id="newDriverFields" class="row g-3 mt-2" style="display:none;">
@@ -4957,10 +9491,7 @@ input[type="number"]::-webkit-outer-spin-button {
                             </div>
                         </div>
 
-                        <div id="newVehicleFields" class="row g-2 mt-2" style="display:none;">
-                            <div class="col-md-6"><label class="form-label small mb-1">Vehicle Type</label><input type="text" class="form-control form-control-sm" id="newVehicleType" placeholder="Truck, Van, L300"></div>
-                            <div class="col-md-6"><label class="form-label small mb-1">Plate Number</label><input type="text" class="form-control form-control-sm" id="newVehiclePlate" placeholder="Plate number"></div>
-                        </div>
+                        <div id="newVehicleFields" class="row g-2 mt-2" style="display:none;"></div>
                     </div>
                 </div>
 
@@ -4993,12 +9524,13 @@ input[type="number"]::-webkit-outer-spin-button {
                             <div class="row g-2 mt-2 pickup-check-fields" style="display:none;">
                                 <div class="col-md-6"><label class="form-label small mb-1">Check Date</label><input type="date" class="form-control form-control-sm" id="pickupCheckDate"></div>
                                 <div class="col-md-6"><label class="form-label small mb-1">Check Number</label><input type="text" class="form-control form-control-sm" id="pickupCheckNumber"></div>
-                                <div class="col-md-6"><label class="form-label small mb-1">Bank Name</label><input type="text" class="form-control form-control-sm" id="pickupBankName"></div>
-                                <div class="col-md-6"><label class="form-label small mb-1">Bank Branch</label><input type="text" class="form-control form-control-sm" id="pickupBankBranch"></div>
+                                <div class="col-md-6"><label class="form-label small mb-1">Payment Amount (₱)</label><input type="text" inputmode="decimal" class="form-control form-control-sm no-spinner money-input" id="pickupCheckPaymentAmount" placeholder="0.00"></div>
+                                <div class="col-md-12"><label class="form-label small mb-1">Bank/Branch</label><input type="text" class="form-control form-control-sm" id="pickupBankBranch" placeholder="e.g. BDO - Tanauan Branch"></div>
                             </div>
                             <div class="row g-2 mt-2 pickup-online-fields" style="display:none;">
                                 <div class="col-md-6"><label class="form-label small mb-1">Reference Number</label><input type="text" class="form-control form-control-sm" id="pickupReferenceNumber"></div>
                                 <div class="col-md-6"><label class="form-label small mb-1">Bank/Wallet</label><input type="text" class="form-control form-control-sm" id="pickupOnlineBankName" placeholder="GCash, Maya, BPI, etc."></div>
+                                <div class="col-md-6"><label class="form-label small mb-1">Payment Amount (₱)</label><input type="text" inputmode="decimal" class="form-control form-control-sm no-spinner money-input" id="pickupOnlinePaymentAmount" placeholder="0.00"></div>
                                 <div class="col-md-12"><label class="form-label small mb-1">Branch / Account Note</label><input type="text" class="form-control form-control-sm" id="pickupOnlineBankBranch" placeholder="Optional"></div>
                             </div>
                         </div>
@@ -5009,7 +9541,21 @@ input[type="number"]::-webkit-outer-spin-button {
                 <div class="mb-3" id="documentTypeSection">
                     <h6 class="mb-3"><i class="bi bi-receipt"></i> Document Type</h6>
                     <div class="alert bg-light mb-3">
-                        <div class="row g-2">
+                        <div class="row g-2" style="display:none;">
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="billingType" id="billingTypeInvoice" value="invoice" checked onchange="toggleBillingTypeFields()">
+                                    <label class="form-check-label" for="billingTypeInvoice">Invoice <small class="d-block text-muted">Regular invoice transaction</small></label>
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="billingType" id="billingTypeCredit" value="credit" onchange="toggleBillingTypeFields()">
+                                    <label class="form-check-label" for="billingTypeCredit">Credit <small class="d-block text-muted">Credit transaction, no payment collection</small></label>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row g-2 mt-2">
                             <div class="col-md-6">
                                 <div class="form-check">
                                     <input class="form-check-input" type="radio" name="documentType" id="docTypeSO" value="SO" checked onchange="toggleSIDetails()">
@@ -5023,16 +9569,49 @@ input[type="number"]::-webkit-outer-spin-button {
                                 </div>
                             </div>
                         </div>
-                        <div class="row g-2 mt-2">
-                            <div class="col-md-6">
-                                <label class="form-label small mb-1">ATW No. <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control form-control-sm" id="atwNo" name="atw_no" placeholder="Enter ATW No." maxlength="6" pattern="[0-9]{1,6}" inputmode="numeric" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 6)" required>
+                        <div class="row g-2 mt-2" id="documentTransportFields">
+                            <div class="col-md-4">
+                                <label class="form-label small mb-1">ATW No.</label>
+                                <input type="text" class="form-control form-control-sm" id="atwNo" name="atw_no" placeholder="Enter ATW No. (Optional)" maxlength="6" pattern="[0-9]{0,6}" inputmode="numeric" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 6)">
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-4">
                                 <label class="form-label small mb-1">Gatepass No. <span class="text-danger">*</span></label>
                                 <input type="text" class="form-control form-control-sm" id="gatepassNo" name="gatepass_no" placeholder="Enter Gatepass No." maxlength="6" pattern="[0-9]{1,6}" inputmode="numeric" oninput="this.value = this.value.replace(/[^0-9]/g, '').slice(0, 6)" required>
                             </div>
+                            <div class="col-md-4">
+                                <label class="form-label small mb-1">Delivery Type</label>
+                                <select class="form-select form-select-sm" name="deliveryType" id="deliveryType">
+                                    <option value="pickup" selected>Pick Up</option>
+                                    <option value="delivery">Delivery</option>
+                                </select>
+                            </div>
                         </div>
+                        <div class="order-recurring-section classic-recurring-section mb-3">
+                    <label class="order-recurring-toggle" for="orderRecurringEnabled">
+                        <input type="checkbox" id="orderRecurringEnabled" onchange="toggleOrderRecurring('order')" onclick="toggleOrderRecurring('order')">
+                        <span>Recurring invoice / schedule</span>
+                    </label>
+                    <div class="order-recurring-fields" id="orderRecurringFields" style="display:none;">
+                        <div class="order-recurring-field">
+                            <label for="orderRecurringEvery">Every</label>
+                            <input type="number" id="orderRecurringEvery" min="1" step="1" value="1">
+                        </div>
+                        <div class="order-recurring-field">
+                            <label for="orderRecurringPeriod">Period</label>
+                            <select id="orderRecurringPeriod">
+                                <option value="day">Day(s)</option>
+                                <option value="week">Week(s)</option>
+                                <option value="month" selected>Month(s)</option>
+                                <option value="year">Year(s)</option>
+                            </select>
+                        </div>
+                        <div class="order-recurring-field">
+                            <label for="orderRecurringUntil">Until Date</label>
+                            <input type="date" id="orderRecurringUntil">
+                        </div>
+                    </div>
+                        </div>
+
                         <div id="siDetailsFields" class="row g-2 mt-2" style="display:none;">
                             <div class="col-md-6"><label class="form-label small mb-1">SI Number <span class="text-danger si-required-marker" style="display:none;">*</span></label><input type="text" class="form-control form-control-sm" id="siNumber" name="si_number" placeholder="Enter SI number"></div>
                             <div class="col-md-6"><label class="form-label small mb-1">Registered Business Name <span class="text-danger si-required-marker" style="display:none;">*</span></label><input type="text" class="form-control form-control-sm" id="registeredBusinessName" name="registered_business_name" placeholder="Business name"></div>
@@ -5222,19 +9801,38 @@ input[type="number"]::-webkit-outer-spin-button {
     <div class="modal fade" id="profileModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title"><i class="bi bi-person-circle me-2"></i>User Profile</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body text-center"><div class="user-avatar-large mb-3"><?php echo $user_initials; ?></div><h4 class="mb-1"><?php echo htmlspecialchars($user_name); ?></h4><p class="text-muted mb-3"><span class="badge bg-success"><?php echo ucfirst($user_role); ?></span></p><?php if (!$view_all_branches && $branch_id > 0): ?><div class="branch-info mb-3"><i class="bi bi-building me-1"></i><span><?php echo htmlspecialchars($branch_name); ?></span></div><?php endif; ?><div class="user-id text-muted small mb-4"><i class="bi bi-hash"></i> User ID: <?php echo $user_id; ?></div><button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()"><i class="bi bi-box-arrow-right me-2"></i>Logout</button></div></div></div></div>
 
     <!-- Order Details Modal -->
-<div class="modal fade no-print" id="orderDetailsModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+<div class="modal fade no-print" id="orderDetailsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered order-details-wide-modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Order Details</h5>
+                <h5 class="modal-title"><i class="bi bi-receipt-cutoff me-2"></i>Invoice Details</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body" id="orderDetailsContent">
                 <!-- Content loaded via AJAX -->
             </div>
-            <div class="modal-footer">
+            <div class="modal-footer d-none">
                 <button type="button" class="btn btn-danger" id="cancelOrderBtn" style="display: none;" onclick="cancelOrderFromOrderProduct()">Cancel Order</button>
                 <button type="button" class="btn btn-primary" id="printOrderFromDetails" style="display: none;" onclick="printOrderFromOrderProduct()">Print Order</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- SI Attachment Preview Modal -->
+<div class="modal fade no-print" id="siAttachmentPreviewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-paperclip me-2"></i><span id="siAttachmentPreviewTitle">SI Attachment</span></h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-0" id="siAttachmentPreviewBody" style="height:75vh; background:#f8f9fa; overflow:auto;">
+                <div class="d-flex align-items-center justify-content-center h-100 text-muted">Select an attachment to preview.</div>
+            </div>
+            <div class="modal-footer">
+                <a href="#" id="siAttachmentDownloadBtn" class="btn btn-outline-success" download><i class="bi bi-download me-1"></i>Download</a>
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
             </div>
         </div>
     </div>
@@ -5243,6 +9841,46 @@ input[type="number"]::-webkit-outer-spin-button {
     <!-- JavaScript -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
    <script>
+    function openSIAttachmentPreview(filePath, fileName) {
+        filePath = String(filePath || '').trim();
+        fileName = String(fileName || 'SI Attachment').trim();
+        if (!filePath) return;
+
+        const titleEl = document.getElementById('siAttachmentPreviewTitle');
+        const bodyEl = document.getElementById('siAttachmentPreviewBody');
+        const downloadBtn = document.getElementById('siAttachmentDownloadBtn');
+        if (!titleEl || !bodyEl || !downloadBtn) return;
+
+        titleEl.textContent = fileName;
+        downloadBtn.href = filePath;
+        downloadBtn.setAttribute('download', fileName);
+
+        const cleanPath = filePath.split('?')[0].toLowerCase();
+        const imageExt = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp'];
+        const officeExt = ['.doc', '.docx', '.xls', '.xlsx'];
+
+        if (imageExt.some(ext => cleanPath.endsWith(ext))) {
+            bodyEl.innerHTML = `<div class="w-100 h-100 d-flex align-items-center justify-content-center p-3"><img src="${escapeHtml(filePath)}" alt="${escapeHtml(fileName)}" class="img-fluid rounded shadow-sm" style="max-height:72vh;"></div>`;
+        } else if (cleanPath.endsWith('.pdf')) {
+            bodyEl.innerHTML = `<iframe src="${escapeHtml(filePath)}" title="${escapeHtml(fileName)}" style="width:100%; height:75vh; border:0;"></iframe>`;
+        } else if (officeExt.some(ext => cleanPath.endsWith(ext))) {
+            bodyEl.innerHTML = `<div class="d-flex flex-column align-items-center justify-content-center h-100 text-center p-4"><i class="bi bi-file-earmark-text" style="font-size:3rem;"></i><h5 class="mt-3 mb-2">Preview is not available for this file type.</h5><p class="text-muted mb-3">Click Download below to view this attachment.</p><a href="${escapeHtml(filePath)}" class="btn btn-success" download="${escapeHtml(fileName)}"><i class="bi bi-download me-1"></i>Download Attachment</a></div>`;
+        } else {
+            bodyEl.innerHTML = `<iframe src="${escapeHtml(filePath)}" title="${escapeHtml(fileName)}" style="width:100%; height:75vh; border:0;"></iframe>`;
+        }
+
+        const modalEl = document.getElementById('siAttachmentPreviewModal');
+        const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
+        modal.show();
+    }
+
+    document.addEventListener('click', function(e) {
+        const btn = e.target.closest('.si-attachment-view-btn');
+        if (!btn) return;
+        e.preventDefault();
+        openSIAttachmentPreview(btn.getAttribute('data-file-path'), btn.getAttribute('data-file-name'));
+    });
+
     // Inventory data from PHP (reads item_unit_inventory, same as Sales orderproduct)
     const inventory = <?php echo $inventory_json; ?>;
     
@@ -5539,6 +10177,59 @@ function formatStockDisplay(stockValue, unitType) {
             }
         }
 
+        if (document.getElementById('invoiceCollectPayment')?.checked) {
+            const method = document.getElementById('invoicePaymentMethod')?.value || 'cash';
+            const subtotal = getCartSubtotal();
+            const discount = computeCartDiscount(subtotal);
+            const total = discount.total;
+
+            if (method === 'cash') {
+                const cashTendered = parseFloat(String(document.getElementById('invoiceCashTendered')?.value || '0').replace(/[^0-9.]/g, '')) || 0;
+                if (cashTendered <= 0) {
+                    showToast('Cash tendered is required');
+                    document.getElementById('invoiceCashTendered')?.focus();
+                    return false;
+                }
+                if (cashTendered + 0.009 < total) {
+                    showToast('Cash tendered cannot be lower than grand total');
+                    document.getElementById('invoiceCashTendered')?.focus();
+                    return false;
+                }
+            } else if (method === 'check') {
+                const paymentAmount = parseFloat(String(document.getElementById('invoiceCheckPaymentAmount')?.value || '0').replace(/[^0-9.]/g, '')) || 0;
+                if (!document.getElementById('invoiceCheckDate')?.value || !document.getElementById('invoiceCheckNumber')?.value.trim() || !document.getElementById('invoiceBankBranch')?.value.trim()) {
+                    showToast('All check details are required');
+                    return false;
+                }
+                if (paymentAmount <= 0) {
+                    showToast('Payment Amount is required');
+                    document.getElementById('invoiceCheckPaymentAmount')?.focus();
+                    return false;
+                }
+                if (Math.abs(paymentAmount - total) > 0.01) {
+                    showToast('Payment Amount must be equal to the grand total');
+                    document.getElementById('invoiceCheckPaymentAmount')?.focus();
+                    return false;
+                }
+            } else if (method === 'online_transfer') {
+                const paymentAmount = parseFloat(String(document.getElementById('invoiceOnlinePaymentAmount')?.value || '0').replace(/[^0-9.]/g, '')) || 0;
+                if (!document.getElementById('invoiceReferenceNumber')?.value.trim() || !document.getElementById('invoiceOnlineBankName')?.value.trim()) {
+                    showToast('Reference number and Bank/Wallet are required');
+                    return false;
+                }
+                if (paymentAmount <= 0) {
+                    showToast('Payment Amount is required');
+                    document.getElementById('invoiceOnlinePaymentAmount')?.focus();
+                    return false;
+                }
+                if (Math.abs(paymentAmount - total) > 0.01) {
+                    showToast('Payment Amount must be equal to the grand total');
+                    document.getElementById('invoiceOnlinePaymentAmount')?.focus();
+                    return false;
+                }
+            }
+        }
+
         return true;
     }
     
@@ -5683,9 +10374,52 @@ function formatStockDisplay(stockValue, unitType) {
         return Promise.all(promises).then(() => { hideProductsLoading(); renderProducts(); });
     }
     
+    function protectProductSearchFromGoogleAutofill() {
+        const searchInput = document.getElementById('productSearch');
+        if (!searchInput) return;
+
+        const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const clearAutofilledEmail = () => {
+            const value = (searchInput.value || '').trim();
+            if (emailPattern.test(value)) {
+                searchInput.value = '';
+                searchTerm = '';
+                const resetBtn = document.getElementById('searchReset');
+                if (resetBtn) resetBtn.classList.remove('visible');
+                if (typeof filterProducts === 'function') filterProducts();
+            }
+        };
+
+        searchInput.setAttribute('autocomplete', 'off');
+        searchInput.setAttribute('data-form-type', 'other');
+        searchInput.setAttribute('data-lpignore', 'true');
+        searchInput.setAttribute('data-1p-ignore', 'true');
+        searchInput.setAttribute('data-bwignore', 'true');
+        searchInput.setAttribute('data-no-autofill', 'true');
+
+        searchInput.addEventListener('input', clearAutofilledEmail);
+        searchInput.addEventListener('change', clearAutofilledEmail);
+        searchInput.addEventListener('focus', () => setTimeout(clearAutofilledEmail, 0));
+        window.addEventListener('pageshow', clearAutofilledEmail);
+
+        const autofillObserver = new MutationObserver(clearAutofilledEmail);
+        autofillObserver.observe(searchInput, {
+            attributes: true,
+            attributeFilter: ['value', 'autocomplete', 'name']
+        });
+
+        [0, 50, 150, 300, 700, 1200, 2000].forEach(delay => {
+            setTimeout(clearAutofilledEmail, delay);
+        });
+
+        requestAnimationFrame(clearAutofilledEmail);
+    }
+
     function setupSearch() {
-        const searchInput = document.getElementById('searchInput');
+        protectProductSearchFromGoogleAutofill();
+        const searchInput = document.getElementById('productSearch');
         const resetBtn = document.getElementById('searchReset');
+        if (!searchInput) return;
         searchInput.addEventListener('input', function() {
             searchTerm = this.value.toLowerCase();
             resetBtn.classList.toggle('visible', searchTerm.length > 0);
@@ -5694,8 +10428,9 @@ function formatStockDisplay(stockValue, unitType) {
     }
     
     function resetSearch() {
-        const searchInput = document.getElementById('searchInput');
+        const searchInput = document.getElementById('productSearch');
         const resetBtn = document.getElementById('searchReset');
+        if (!searchInput) return;
         searchInput.value = '';
         searchTerm = '';
         resetBtn.classList.remove('visible');
@@ -5810,7 +10545,7 @@ function formatStockDisplay(stockValue, unitType) {
             html += `<tr id="row-${p.id}" onclick="showProductInfo(${p.id})" style="cursor: pointer;">
                 <td class="product-image-cell"><img src="${img}" class="product-thumbnail" onerror="this.src='${placeholder}'"></td>
                 <td class="product-cell"><div class="product-info"><span class="product-name">${p.name}</span><span id="stock-${p.id}" class="${convertedStock < 0 ? 'stock-warning' : 'stock-info'}">Stock: ${stockDisplay}</span>
-                <div class="mobile-price-display" onclick="event.stopPropagation();"><span class="mobile-price-label">Price:</span><div class="input-group input-group-sm" style="width: auto;"><span class="input-group-text" style="padding: 2px 6px;">₱</span><input type="number" class="form-control mobile-price-input" id="mobile-price-input-${p.id}" value="${currPrice.toFixed(2)}" min="0" step="0.01" style="width: 90px; text-align: right;" onclick="event.stopPropagation();"></div><span class="mobile-price-unit" id="mobile-unit-${p.id}">/${currUnit}</span></div></div></td>
+                <div class="mobile-price-display" onclick="event.stopPropagation();"><span class="mobile-price-label">Price:</span><div class="input-group input-group-sm" style="width: auto;"><span class="input-group-text" style="padding: 2px 6px;">₱</span><input type="text" inputmode="decimal" class="form-control mobile-price-input" id="mobile-price-input-${p.id}" value="${currPrice.toFixed(2)}" style="width: 90px; text-align: right;" onclick="event.stopPropagation();" autocomplete="off"></div><span class="mobile-price-unit" id="mobile-unit-${p.id}">/${currUnit}</span></div></div></td>
                 <td class="unit-column"><div class="unit-buttons desktop-only">${unitButtonsHtml}</div>
                 <div class="mobile-unit-qty-container mobile-only"><select class="unit-dropdown" id="unit-dropdown-${p.id}" onchange="event.stopPropagation(); setActiveUnitFromDropdown(${p.id}, this.value)" onclick="event.stopPropagation()">${unitDropdownOptions}</select>
                 <div class="quantity-controls"><button class="qty-btn" onclick="event.stopPropagation(); decQty(${p.id})"><i class="bi bi-dash"></i></button><input type="number" class="qty-input" id="qty-${p.id}" min="0" value="0" onchange="validateQuantity(${p.id})" onclick="event.stopPropagation()"><button class="qty-btn" onclick="event.stopPropagation(); incQty(${p.id})"><i class="bi bi-plus"></i></button></div></div></td>
@@ -5822,7 +10557,7 @@ function formatStockDisplay(stockValue, unitType) {
                 <td class="price-cell desktop-price-cell" id="price-display-${p.id}" onclick="event.stopPropagation()">
                     <div class="input-group input-group-sm" style="width: 130px;">
                         <span class="input-group-text">₱</span>
-                        <input type="number" class="form-control price-input" id="price-${p.id}" value="${currPrice.toFixed(2)}" min="0" step="0.01" onclick="event.stopPropagation()">
+                        <input type="text" inputmode="decimal" class="form-control price-input" id="price-${p.id}" value="${currPrice.toFixed(2)}" onclick="event.stopPropagation()" autocomplete="off">
                     </div>
                     <small class="d-block text-muted" style="font-size: 0.75rem; color: #2E7D32 !important;">/${currUnit}</small>
                 </td>
@@ -5942,8 +10677,8 @@ function formatStockDisplay(stockValue, unitType) {
     }
     
     function escapeHtml(str) {
-        if (!str) return '';
-        return str.replace(/[&<>]/g, function(m) {
+        if (str === null || str === undefined) return '';
+        return String(str).replace(/[&<>]/g, function(m) {
             if (m === '&') return '&amp;';
             if (m === '<') return '&lt;';
             if (m === '>') return '&gt;';
@@ -5951,12 +10686,69 @@ function formatStockDisplay(stockValue, unitType) {
         });
     }
     
+    function getDeliveryTypeValue() {
+        const dropdown = document.getElementById('deliveryType');
+        if (dropdown) return dropdown.value || 'pickup';
+        const checkedRadio = document.querySelector('input[name="deliveryType"]:checked');
+        return checkedRadio ? checkedRadio.value : 'pickup';
+    }
+
+    function setDeliveryTypeValue(value) {
+        const normalized = value === 'delivery' ? 'delivery' : 'pickup';
+        const dropdown = document.getElementById('deliveryType');
+        if (dropdown) dropdown.value = normalized;
+        const pickupRadio = document.getElementById('deliveryPickup');
+        const deliverRadio = document.getElementById('deliveryDeliver');
+        if (pickupRadio) pickupRadio.checked = normalized === 'pickup';
+        if (deliverRadio) deliverRadio.checked = normalized === 'delivery';
+
+        const help = document.getElementById('deliveryTypeHelp');
+        if (help) {
+            help.textContent = normalized === 'delivery'
+                ? 'Order will be delivered to customer'
+                : 'Customer will pick up the order';
+        }
+    }
+
+    function getInvoiceDeliveryTypeValue() {
+        const dropdown = document.getElementById('invoiceDeliveryType');
+        if (dropdown) return dropdown.value || 'pickup';
+        return getInvoiceDeliveryTypeValue();
+    }
+
+    function setInvoiceDeliveryTypeValue(value) {
+        const normalized = value === 'delivery' ? 'delivery' : 'pickup';
+        const dropdown = document.getElementById('invoiceDeliveryType');
+        if (dropdown) dropdown.value = normalized;
+        const pickupRadio = document.getElementById('invoiceDeliveryPickup');
+        const deliverRadio = document.getElementById('invoiceDeliveryDeliver');
+        if (pickupRadio) pickupRadio.checked = normalized === 'pickup';
+        if (deliverRadio) deliverRadio.checked = normalized === 'delivery';
+    }
+
+    function refreshDeliveryTypeDependentFields() {
+        const selectedDeliveryType = getDeliveryTypeValue();
+        const deliveryAddressGroup = document.getElementById('deliveryAddressGroup');
+        if (deliveryAddressGroup) {
+            deliveryAddressGroup.style.display = selectedDeliveryType === 'delivery' ? 'block' : 'none';
+        }
+        if (selectedDeliveryType === 'delivery') {
+            const collectPickupPayment = document.getElementById('collectPickupPayment');
+            if (collectPickupPayment) collectPickupPayment.checked = false;
+            updateCustomerAddressInputVisibility();
+            updateDeliveryAddressDisplay();
+        }
+        updatePickupPaymentVisibility();
+        updateDeliveryAssignmentVisibility();
+    }
+
     // Check if customer is walk-in and hide delivery options
     function checkIfWalkinCustomer() {
         const select = document.getElementById('modalCustomerSelect');
         const deliveryTypeSection = document.getElementById('deliveryTypeSection');
+        const deliveryTypeDropdown = document.getElementById('deliveryType');
         
-        if (!select || !deliveryTypeSection) return;
+        if (!select) return;
         
         const isLocked = <?php echo $is_customer_locked ? 'true' : 'false'; ?>;
         let isWalkin = false;
@@ -5974,16 +10766,17 @@ function formatStockDisplay(stockValue, unitType) {
         }
         
         if (isWalkin) {
-            // For walk-in customer, hide delivery section and force pickup
-            deliveryTypeSection.style.display = 'none';
-            const pickupRadio = document.getElementById('deliveryPickup');
-            if (pickupRadio) pickupRadio.checked = true;
+            // For walk-in customer, force pickup and disable the dropdown
+            if (deliveryTypeSection) deliveryTypeSection.style.display = 'none';
+            if (deliveryTypeDropdown) deliveryTypeDropdown.disabled = true;
+            setDeliveryTypeValue('pickup');
             const deliveryAddressGroup = document.getElementById('deliveryAddressGroup');
             if (deliveryAddressGroup) deliveryAddressGroup.style.display = 'none';
         updateDeliveryAssignmentVisibility();
         } else {
-            // For regular customers, show delivery section
-            deliveryTypeSection.style.display = 'block';
+            // For regular customers, enable delivery type dropdown
+            if (deliveryTypeSection) deliveryTypeSection.style.display = 'block';
+            if (deliveryTypeDropdown) deliveryTypeDropdown.disabled = false;
         }
         updatePickupPaymentVisibility();
     }
@@ -6074,33 +10867,28 @@ function formatStockDisplay(stockValue, unitType) {
 
     // Setup delivery type listeners
     function setupDeliveryTypeListeners() {
-        const pickupRadio = document.getElementById('deliveryPickup');
-        const deliverRadio = document.getElementById('deliveryDeliver');
-        const deliveryAddressGroup = document.getElementById('deliveryAddressGroup');
-        
-        if (pickupRadio) {
-            pickupRadio.addEventListener('change', function() {
-                if (this.checked) {
-                    if (deliveryAddressGroup) deliveryAddressGroup.style.display = 'none';
-                    updatePickupPaymentVisibility();
-                    updateDeliveryAssignmentVisibility();
-                }
+        const dropdown = document.getElementById('deliveryType');
+        if (dropdown) {
+            dropdown.addEventListener('change', function() {
+                setDeliveryTypeValue(this.value);
+                refreshDeliveryTypeDependentFields();
+                toggleBillingTypeFields();
+        syncOriginalDeliveryTypeToInvoice();
             });
         }
-        if (deliverRadio) {
-            deliverRadio.addEventListener('change', function() {
+
+        document.querySelectorAll('input[name="deliveryType"]').forEach(el => {
+            el.addEventListener('change', function() {
                 if (this.checked) {
-                    const collectPickupPayment = document.getElementById('collectPickupPayment');
-                    if (collectPickupPayment) collectPickupPayment.checked = false;
-                    updatePickupPaymentVisibility();
-                    updateDeliveryAssignmentVisibility();
-                    updateCustomerAddressInputVisibility();
-                    updateDeliveryAddressDisplay();
-                    if (deliveryAddressGroup) deliveryAddressGroup.style.display = 'block';
+                    setDeliveryTypeValue(this.value);
+                    refreshDeliveryTypeDependentFields();
+                    syncOriginalDeliveryTypeToInvoice();
                 }
             });
-        }
-        updateDeliveryAssignmentVisibility();
+        });
+
+        setDeliveryTypeValue(getDeliveryTypeValue());
+        refreshDeliveryTypeDependentFields();
     }
 
     function toggleNewDriverFields() {
@@ -6123,7 +10911,7 @@ function formatStockDisplay(stockValue, unitType) {
 
     function updateDeliveryAssignmentVisibility() {
         const section = document.getElementById('deliveryAssignmentSection');
-        const selectedDeliveryType = document.querySelector('input[name="deliveryType"]:checked')?.value || 'pickup';
+        const selectedDeliveryType = getDeliveryTypeValue();
         if (section) section.style.display = selectedDeliveryType === 'delivery' ? 'block' : 'none';
     }
 
@@ -6132,8 +10920,8 @@ function formatStockDisplay(stockValue, unitType) {
         const fields = document.getElementById('pickupPaymentFields');
         const collect = document.getElementById('collectPickupPayment');
         const method = document.getElementById('pickupPaymentMethod')?.value || 'cash';
-        const selectedDeliveryType = document.querySelector('input[name="deliveryType"]:checked')?.value || 'pickup';
-        const shouldShow = selectedDeliveryType === 'pickup';
+        const selectedDeliveryType = getDeliveryTypeValue();
+        const shouldShow = selectedDeliveryType === 'pickup' && !isCreditOrderSelected();
 
         if (!shouldShow) {
             if (collect) collect.checked = false;
@@ -6157,6 +10945,68 @@ function formatStockDisplay(stockValue, unitType) {
         if (changeEl) changeEl.textContent = formatCurrency(change);
     }
 
+
+    function updateInvoicePaymentVisibility() {
+        const collect = document.getElementById('invoiceCollectPayment');
+        const fields = document.getElementById('invoicePaymentFields');
+        const method = document.getElementById('invoicePaymentMethod')?.value || 'cash';
+        const isCredit = isCreditOrderSelected();
+        const panel = document.getElementById('invoicePaymentPanel');
+        if (panel) panel.style.display = isCredit ? 'none' : '';
+        if (isCredit && collect) collect.checked = false;
+
+        if (fields) fields.style.display = (!isCredit && collect && collect.checked) ? 'block' : 'none';
+        document.querySelectorAll('.invoice-cash-field').forEach(el => el.style.display = method === 'cash' ? '' : 'none');
+        document.querySelectorAll('.invoice-check-fields').forEach(el => el.style.display = method === 'check' ? 'grid' : 'none');
+        document.querySelectorAll('.invoice-online-fields').forEach(el => el.style.display = method === 'online_transfer' ? 'grid' : 'none');
+
+        const subtotal = getCartSubtotal();
+        const discount = computeCartDiscount(subtotal);
+        const total = discount.total;
+        const tenderedInput = document.getElementById('invoiceCashTendered');
+        const tendered = parseFloat(String(tenderedInput?.value || '0').replace(/[^0-9.]/g, '')) || 0;
+        const change = Math.max(tendered - total, 0);
+        const changeEl = document.getElementById('invoiceCashChange');
+        if (changeEl) changeEl.textContent = formatCurrency(change);
+    }
+
+    function setupInvoicePaymentListeners() {
+        document.getElementById('invoiceCollectPayment')?.addEventListener('change', updateInvoicePaymentVisibility);
+        document.getElementById('invoicePaymentMethod')?.addEventListener('change', updateInvoicePaymentVisibility);
+        document.getElementById('invoiceCashTendered')?.addEventListener('input', updateInvoicePaymentVisibility);
+        updateInvoicePaymentVisibility();
+    }
+
+    function syncInvoicePaymentToOriginalForm() {
+        const collect = document.getElementById('invoiceCollectPayment');
+        if (!collect) return;
+
+        const originalCollect = document.getElementById('collectPickupPayment');
+        const originalMethod = document.getElementById('pickupPaymentMethod');
+        const originalCash = document.getElementById('pickupCashTendered');
+        const originalCheckDate = document.getElementById('pickupCheckDate');
+        const originalCheckNumber = document.getElementById('pickupCheckNumber');
+        const originalBankBranch = document.getElementById('pickupBankBranch');
+        const originalCheckPaymentAmount = document.getElementById('pickupCheckPaymentAmount');
+        const originalReference = document.getElementById('pickupReferenceNumber');
+        const originalOnlineBankName = document.getElementById('pickupOnlineBankName');
+        const originalOnlinePaymentAmount = document.getElementById('pickupOnlinePaymentAmount');
+        const originalOnlineBankBranch = document.getElementById('pickupOnlineBankBranch');
+
+        if (originalCollect) originalCollect.checked = isCreditOrderSelected() ? false : collect.checked;
+        if (originalMethod) originalMethod.value = document.getElementById('invoicePaymentMethod')?.value || 'cash';
+        if (originalCash) originalCash.value = document.getElementById('invoiceCashTendered')?.value || '';
+        if (originalCheckDate) originalCheckDate.value = document.getElementById('invoiceCheckDate')?.value || '';
+        if (originalCheckNumber) originalCheckNumber.value = document.getElementById('invoiceCheckNumber')?.value || '';
+        if (originalBankBranch) originalBankBranch.value = document.getElementById('invoiceBankBranch')?.value || '';
+        if (originalCheckPaymentAmount) originalCheckPaymentAmount.value = document.getElementById('invoiceCheckPaymentAmount')?.value || '';
+        if (originalReference) originalReference.value = document.getElementById('invoiceReferenceNumber')?.value || '';
+        if (originalOnlineBankName) originalOnlineBankName.value = document.getElementById('invoiceOnlineBankName')?.value || '';
+        if (originalOnlinePaymentAmount) originalOnlinePaymentAmount.value = document.getElementById('invoiceOnlinePaymentAmount')?.value || '';
+        if (originalOnlineBankBranch) originalOnlineBankBranch.value = document.getElementById('invoiceOnlineBankBranch')?.value || '';
+
+        if (typeof updatePickupPaymentVisibility === 'function') updatePickupPaymentVisibility();
+    }
     function setupPickupPaymentListeners() {
         document.getElementById('collectPickupPayment')?.addEventListener('change', updatePickupPaymentVisibility);
         document.getElementById('pickupPaymentMethod')?.addEventListener('change', updatePickupPaymentVisibility);
@@ -6441,8 +11291,7 @@ function formatStockDisplay(stockValue, unitType) {
                 const customerSelect = document.getElementById('modalCustomerSelect');
                 if (customerSelect) customerSelect.value = '';
                 // Reset delivery type
-                const pickupRadio = document.getElementById('deliveryPickup');
-                if (pickupRadio) pickupRadio.checked = true;
+                setDeliveryTypeValue('pickup');
                 const deliveryAddressGroup = document.getElementById('deliveryAddressGroup');
                 if (deliveryAddressGroup) deliveryAddressGroup.style.display = 'none';
                 const cartModal = bootstrap.Modal.getInstance(document.getElementById('cartModal'));
@@ -6666,6 +11515,116 @@ function formatStockDisplay(stockValue, unitType) {
 
     
 
+    document.addEventListener('DOMContentLoaded', function () {
+        const applyRecurringPosition = function () {
+            positionInvoiceRecurringSection();
+            window.requestAnimationFrame(positionInvoiceRecurringSection);
+        };
+
+        applyRecurringPosition();
+
+        const creditCheckbox = document.getElementById('invoiceCreditCheckbox');
+        if (creditCheckbox) {
+            creditCheckbox.addEventListener('change', applyRecurringPosition);
+            creditCheckbox.addEventListener('click', applyRecurringPosition);
+        }
+    });
+
+    function getBillingTypeValue() {
+        const creditCheckbox = document.getElementById('invoiceCreditCheckbox');
+        if (creditCheckbox) {
+            return creditCheckbox.checked ? 'credit' : 'invoice';
+        }
+        return document.querySelector('input[name="billingType"]:checked')?.value === 'credit' ? 'credit' : 'invoice';
+    }
+
+    function setBillingTypeValue(value) {
+        const normalized = value === 'credit' ? 'credit' : 'invoice';
+        const creditCheckbox = document.getElementById('invoiceCreditCheckbox');
+        if (creditCheckbox) creditCheckbox.checked = normalized === 'credit';
+        const invoiceRadio = document.getElementById('billingTypeInvoice');
+        const creditRadio = document.getElementById('billingTypeCredit');
+        if (invoiceRadio) invoiceRadio.checked = normalized === 'invoice';
+        if (creditRadio) creditRadio.checked = normalized === 'credit';
+    }
+
+    function isCreditOrderSelected() {
+        return getBillingTypeValue() === 'credit';
+    }
+
+    function updateInvoiceDocumentTitle() {
+        const titleEl = document.getElementById('invoiceDocumentTitle');
+        if (!titleEl) return;
+        titleEl.textContent = isCreditOrderSelected() ? 'Credit' : 'Invoice';
+    }
+
+    function positionInvoiceRecurringSection() {
+        const section = document.getElementById('invoiceRecurringSection');
+        const invoiceSlot = document.querySelector('.invoice-recurring-lower-slot');
+        const creditSlot = document.getElementById('invoiceRecurringCreditSlot');
+
+        if (!section || !invoiceSlot || !creditSlot) return;
+
+        const creditMode = isCreditOrderSelected();
+        document.body.classList.toggle('credit-recurring-mode', creditMode);
+
+        const destination = creditMode ? creditSlot : invoiceSlot;
+        if (section.parentElement !== destination) {
+            destination.appendChild(section);
+        }
+    }
+
+    function toggleBillingTypeFields() {
+        updateInvoiceDocumentTitle();
+        positionInvoiceRecurringSection();
+        const isCredit = isCreditOrderSelected();
+        const transportFields = document.getElementById('documentTransportFields');
+        if (transportFields) transportFields.style.display = isCredit ? 'none' : 'flex';
+
+        ['atwNo', 'gatepassNo', 'invoiceAtwNo', 'invoiceGatepassNo'].forEach(id => {
+            const input = document.getElementById(id);
+            if (!input) return;
+            if (isCredit) {
+                input.value = '';
+                input.classList.remove('is-invalid');
+            }
+        });
+
+        const gatepass = document.getElementById('gatepassNo');
+        if (gatepass) gatepass.required = !isCredit;
+
+        const deliveryType = document.getElementById('deliveryType');
+        if (deliveryType && isCredit) {
+            deliveryType.value = 'pickup';
+            setDeliveryTypeValue('pickup');
+        }
+        const invoiceDeliveryType = document.getElementById('invoiceDeliveryType');
+        if (invoiceDeliveryType && isCredit) {
+            invoiceDeliveryType.value = 'pickup';
+            setInvoiceDeliveryTypeValue('pickup');
+        }
+
+        const pickupPaymentSection = document.getElementById('pickupPaymentSection');
+        const pickupPaymentFields = document.getElementById('pickupPaymentFields');
+        const collectPickupPayment = document.getElementById('collectPickupPayment');
+        if (collectPickupPayment && isCredit) collectPickupPayment.checked = false;
+        if (pickupPaymentSection) pickupPaymentSection.style.display = isCredit ? 'none' : '';
+        if (pickupPaymentFields && isCredit) pickupPaymentFields.style.display = 'none';
+
+        const invoicePaymentPanel = document.getElementById('invoicePaymentPanel');
+        const invoicePaymentFields = document.getElementById('invoicePaymentFields');
+        const invoiceCollectPayment = document.getElementById('invoiceCollectPayment');
+        if (invoiceCollectPayment && isCredit) invoiceCollectPayment.checked = false;
+        if (invoicePaymentPanel) invoicePaymentPanel.style.display = isCredit ? 'none' : '';
+        if (invoicePaymentFields && isCredit) invoicePaymentFields.style.display = 'none';
+
+        updateInvoiceDeliveryFieldVisibility?.();
+        refreshDeliveryTypeDependentFields?.();
+        updatePickupPaymentVisibility?.();
+        updateInvoicePaymentVisibility?.();
+        setTimeout(positionInvoiceRecurringSection, 0);
+    }
+
     function toggleSIDetails() {
         const isSI = document.querySelector('input[name="documentType"]:checked')?.value === 'SI';
         const box = document.getElementById('siDetailsFields');
@@ -6684,7 +11643,7 @@ function formatStockDisplay(stockValue, unitType) {
         });
     }
 
-    document.addEventListener('DOMContentLoaded', toggleSIDetails);
+    document.addEventListener('DOMContentLoaded', function() { toggleSIDetails(); toggleBillingTypeFields(); updateInvoiceDocumentTitle(); setupRecurringScheduleControls(); });
 
 
     function showBeyondCreditApprovalModal(data, onApprove, onCancel) {
@@ -6692,18 +11651,23 @@ function formatStockDisplay(stockValue, unitType) {
             icon: 'warning',
             title: data.title || 'Beyond Credit Limit Approval Required',
             html: `
-                ${data.html || ''}
-                <div class="text-start mt-3">
-                    <label class="form-label fw-bold" for="beyondCreditExplanationInput">Explanation <span class="text-danger">*</span></label>
-                    <textarea id="beyondCreditExplanationInput" class="form-control" rows="4" placeholder="Enter reason why this order is being allowed."></textarea>
-                    <div class="form-check mt-3">
-                        <input class="form-check-input" type="checkbox" value="1" id="beyondCreditAcknowledgeInput">
-                        <label class="form-check-label fw-semibold" for="beyondCreditAcknowledgeInput">
-                            I understand this order requires approval, I am allowing this order to proceed.
-                        </label>
+                <div class="outstanding-approval-body">
+                    <div class="outstanding-approval-summary">
+                        ${data.html || ''}
+                    </div>
+                    <div class="text-start mt-3">
+                        <label class="form-label fw-bold" for="beyondCreditExplanationInput">Explanation <span class="text-danger">*</span></label>
+                        <textarea id="beyondCreditExplanationInput" class="form-control" rows="3" placeholder="Enter reason why this order is being allowed."></textarea>
+                        <div class="form-check mt-3">
+                            <input class="form-check-input" type="checkbox" value="1" id="beyondCreditAcknowledgeInput">
+                            <label class="form-check-label fw-semibold" for="beyondCreditAcknowledgeInput">
+                                I understand this order requires approval, I am allowing this order to proceed.
+                            </label>
+                        </div>
                     </div>
                 </div>
             `,
+            width: '560px',
             showCancelButton: true,
             confirmButtonText: 'Allow & Confirm Order',
             cancelButtonText: 'Cancel',
@@ -6712,7 +11676,24 @@ function formatStockDisplay(stockValue, unitType) {
             focusConfirm: false,
             allowEscapeKey: true,
             keydownListenerCapture: true,
+            customClass: {
+                popup: 'outstanding-approval-swal'
+            },
             didOpen: () => {
+                // Keep this approval modal compact and prevent page/right/bottom scrollbars.
+                const popup = Swal.getPopup();
+                if (popup) {
+                    popup.style.maxHeight = 'calc(100vh - 32px)';
+                    popup.style.overflow = 'hidden';
+                }
+
+                const htmlContainer = Swal.getHtmlContainer();
+                if (htmlContainer) {
+                    htmlContainer.style.maxHeight = 'none';
+                    htmlContainer.style.overflow = 'visible';
+                    htmlContainer.style.paddingRight = '0';
+                }
+
                 const input = document.getElementById('beyondCreditExplanationInput');
                 if (input) setTimeout(() => input.focus(), 80);
             },
@@ -6738,7 +11719,111 @@ function formatStockDisplay(stockValue, unitType) {
         });
     }
 
-    function submitOrder() {
+
+    // Global digit sanitizer used by both Classic and Default invoice style.
+    // This is intentionally placed before submitOrder so Save & Close / Save & New
+    // will not fail when the Default Style calls it.
+    function sanitizeDigits(value, maxLen) {
+        return String(value || '').replace(/\D/g, '').slice(0, maxLen || 6);
+    }
+
+    
+function validateInvoiceStylePricesBeforeSubmit() {
+    const activeOrderStyle = (typeof window.getOrderProductStyle === 'function') ? window.getOrderProductStyle() : 'classic';
+    if (activeOrderStyle !== 'invoice') return true;
+
+    const rows = Array.from(document.querySelectorAll('#invoiceItemsBody tr[data-invoice-row]'));
+    for (const row of rows) {
+        const productId = row.querySelector('.invoice-item-select')?.value || '';
+        const unitName = row.querySelector('.invoice-unit-select')?.value || '';
+        const qty = parseInt(row.querySelector('.invoice-qty')?.value || '0', 10) || 0;
+        const priceInput = row.querySelector('.invoice-price');
+        if (!productId || !unitName || qty <= 0) continue;
+
+        const minPrice = getInvoiceUnitPrice(productId, unitName);
+        const raw = String(priceInput?.value || '').replace(/,/g, '');
+        const typedPrice = parseFloat(raw);
+
+        if (raw === '' || isNaN(typedPrice)) {
+            priceInput?.classList.add('is-invalid');
+            showToast('Please enter a price before saving the invoice.');
+            priceInput?.focus();
+            return false;
+        }
+
+        if (typedPrice + 0.009 < minPrice) {
+            priceInput?.classList.add('is-invalid');
+            showToast(`Price cannot be lower than declared price ${formatCurrency(minPrice)}.`);
+            priceInput?.focus();
+            return false;
+        }
+        priceInput?.classList.remove('is-invalid');
+    }
+    return true;
+}
+
+
+function toggleOrderRecurring(prefix) {
+    const checkbox = document.getElementById(prefix + 'RecurringEnabled');
+    const fields = document.getElementById(prefix + 'RecurringFields');
+    const until = document.getElementById(prefix + 'RecurringUntil');
+    if (!checkbox || !fields) return;
+
+    const enabled = checkbox.checked === true;
+    fields.hidden = false;
+    fields.style.setProperty('display', enabled ? 'grid' : 'none', 'important');
+    fields.classList.toggle('is-open', enabled);
+    fields.setAttribute('aria-hidden', enabled ? 'false' : 'true');
+
+    if (until) {
+        until.required = enabled;
+        const baseDate = document.getElementById('invoiceOrderDate')?.value
+            || document.getElementById('orderDate')?.value
+            || new Date().toISOString().slice(0, 10);
+        until.min = baseDate;
+    }
+}
+
+function setupRecurringScheduleControls() {
+    ['invoice', 'order'].forEach(prefix => {
+        const checkbox = document.getElementById(prefix + 'RecurringEnabled');
+        if (!checkbox) return;
+        checkbox.removeEventListener('change', checkbox._amgcRecurringHandler || (() => {}));
+        checkbox._amgcRecurringHandler = () => toggleOrderRecurring(prefix);
+        checkbox.addEventListener('change', checkbox._amgcRecurringHandler);
+        toggleOrderRecurring(prefix);
+    });
+}
+
+function getRecurringSchedulePayload() {
+    const useInvoiceStyle = (typeof window.getOrderProductStyle === 'function')
+        ? window.getOrderProductStyle() === 'invoice'
+        : !!document.getElementById('invoiceRecurringEnabled');
+    const prefix = useInvoiceStyle ? 'invoiceRecurring' : 'orderRecurring';
+    const enabled = !!document.getElementById(prefix + 'Enabled')?.checked;
+    return {
+        is_recurring: enabled ? '1' : '0',
+        recurring_every: enabled ? (document.getElementById(prefix + 'Every')?.value || '1') : '',
+        recurring_period: enabled ? (document.getElementById(prefix + 'Period')?.value || 'month') : '',
+        recurring_until: enabled ? (document.getElementById(prefix + 'Until')?.value || '') : ''
+    };
+}
+
+function validateRecurringSchedule() {
+    const schedule = getRecurringSchedulePayload();
+    if (schedule.is_recurring !== '1') return schedule;
+    const every = parseInt(schedule.recurring_every || '0', 10);
+    if (!every || every < 1) { showToast('Every must be at least 1.'); return false; }
+    if (!['day', 'week', 'month', 'year'].includes(schedule.recurring_period)) { showToast('Please select a valid recurring period.'); return false; }
+    if (!schedule.recurring_until) { showToast('Please select the Until Date.'); return false; }
+    const invoiceDate = document.getElementById('invoiceOrderDate')?.value || new Date().toISOString().slice(0, 10);
+    if (schedule.recurring_until < invoiceDate) { showToast('Until Date cannot be earlier than the invoice date.'); return false; }
+    return schedule;
+}
+
+function submitOrder() {
+    const recurringSchedule = validateRecurringSchedule();
+    if (recurringSchedule === false) return;
 const select = document.getElementById('modalCustomerSelect');
 const lockedCustomerId = document.getElementById('lockedCustomerId')?.value || '';
 const custId = select?.value ? parseInt(select.value) : parseInt(lockedCustomerId || 0);
@@ -6765,7 +11850,7 @@ if (!custId) {
     let deliveryAddress = '';
     
     if (!isWalkin) {
-        deliveryType = document.querySelector('input[name="deliveryType"]:checked')?.value || 'pickup';
+        deliveryType = getDeliveryTypeValue();
         
         if (deliveryType === 'delivery') {
             deliveryAddress = getSelectedCustomerAddress() || getTypedCustomerAddress();
@@ -6816,6 +11901,8 @@ if (!custId) {
     // Low or zero stock should not block order placement.
     // The order will still be submitted and saved as confirmed.
 
+    const billingType = getBillingTypeValue();
+    const isCreditOrder = billingType === 'credit';
     const documentType = document.querySelector('input[name="documentType"]:checked')?.value || 'SO';
     const siNumber = (document.getElementById('siNumber')?.value || '').trim();
     const atwNo = (document.getElementById('atwNo')?.value || '').trim();
@@ -6823,32 +11910,33 @@ if (!custId) {
     const registeredBusinessName = (document.getElementById('registeredBusinessName')?.value || '').trim();
     const businessTin = (document.getElementById('businessTin')?.value || '').trim();
     const businessAddress = (document.getElementById('businessAddress')?.value || '').trim();
-    const requiredDocumentFields = [
-        { id: 'atwNo', value: atwNo },
-        { id: 'gatepassNo', value: gatepassNo }
+    const documentFields = [
+        { id: 'atwNo', value: atwNo, required: false },
+        { id: 'gatepassNo', value: gatepassNo, required: !isCreditOrder }
     ];
-    const missingDocumentField = requiredDocumentFields.find(field => !field.value);
-    if (missingDocumentField) {
-        requiredDocumentFields.forEach(field => {
+
+    if (!isCreditOrder && !gatepassNo) {
+        documentFields.forEach(field => {
             const input = document.getElementById(field.id);
-            if (input) input.classList.toggle('is-invalid', !field.value);
+            if (input) input.classList.toggle('is-invalid', field.required && !field.value);
         });
-        showToast('Please enter ATW No. and Gatepass No.');
-        document.getElementById(missingDocumentField.id)?.focus();
+        showToast('Please enter Gatepass No.');
+        document.getElementById('gatepassNo')?.focus();
         return;
     }
-    requiredDocumentFields.forEach(field => document.getElementById(field.id)?.classList.remove('is-invalid'));
 
     const documentNumberPattern = /^\d{1,6}$/;
-    if (!documentNumberPattern.test(atwNo) || !documentNumberPattern.test(gatepassNo)) {
-        requiredDocumentFields.forEach(field => {
+    if (!isCreditOrder && ((atwNo && !documentNumberPattern.test(atwNo)) || !documentNumberPattern.test(gatepassNo))) {
+        documentFields.forEach(field => {
             const input = document.getElementById(field.id);
-            if (input) input.classList.toggle('is-invalid', !documentNumberPattern.test(field.value));
+            const invalid = field.value ? !documentNumberPattern.test(field.value) : field.required;
+            if (input) input.classList.toggle('is-invalid', invalid);
         });
         showToast('ATW No. and Gatepass No. must be numbers only with a maximum of 6 digits.');
-        (!documentNumberPattern.test(atwNo) ? document.getElementById('atwNo') : document.getElementById('gatepassNo'))?.focus();
+        (atwNo && !documentNumberPattern.test(atwNo) ? document.getElementById('atwNo') : document.getElementById('gatepassNo'))?.focus();
         return;
     }
+    documentFields.forEach(field => document.getElementById(field.id)?.classList.remove('is-invalid'));
 
     if (documentType === 'SI') {
         const requiredSiFields = [
@@ -6874,7 +11962,7 @@ if (!custId) {
     const discountDetails = computeCartDiscount(subtotal);
     const orderStatus = (isWalkin || deliveryType === 'pickup') ? 'delivered' : 'pending';
     
-    const collectPickupPayment = (isWalkin || deliveryType === 'pickup') && document.getElementById('collectPickupPayment')?.checked;
+    const collectPickupPayment = !isCreditOrder && (isWalkin || deliveryType === 'pickup') && document.getElementById('collectPickupPayment')?.checked;
     const pickupPaymentMethod = document.getElementById('pickupPaymentMethod')?.value || 'cash';
     const grandTotalForPayment = discountDetails.total;
 
@@ -6884,21 +11972,27 @@ if (!custId) {
             if (cashTendered <= 0) { showToast('Cash tendered is required'); return; }
             if (cashTendered + 0.009 < grandTotalForPayment) { showToast('Cash tendered cannot be lower than grand total'); return; }
         } else if (pickupPaymentMethod === 'check') {
-            if (!document.getElementById('pickupCheckDate')?.value || !document.getElementById('pickupCheckNumber')?.value.trim() || !document.getElementById('pickupBankName')?.value.trim() || !document.getElementById('pickupBankBranch')?.value.trim()) {
+            const paymentAmount = parseFloat(String(document.getElementById('pickupCheckPaymentAmount')?.value || '0').replace(/[^0-9.]/g, '')) || 0;
+            if (!document.getElementById('pickupCheckDate')?.value || !document.getElementById('pickupCheckNumber')?.value.trim() || !document.getElementById('pickupBankBranch')?.value.trim()) {
                 showToast('All check details are required');
                 return;
             }
+            if (paymentAmount <= 0) { showToast('Payment Amount is required'); document.getElementById('pickupCheckPaymentAmount')?.focus(); return; }
+            if (Math.abs(paymentAmount - grandTotalForPayment) > 0.01) { showToast('Payment Amount must be equal to the grand total'); document.getElementById('pickupCheckPaymentAmount')?.focus(); return; }
         } else if (pickupPaymentMethod === 'online_transfer') {
+            const paymentAmount = parseFloat(String(document.getElementById('pickupOnlinePaymentAmount')?.value || '0').replace(/[^0-9.]/g, '')) || 0;
             if (!document.getElementById('pickupReferenceNumber')?.value.trim() || !document.getElementById('pickupOnlineBankName')?.value.trim()) {
                 showToast('Reference number and Bank/Wallet are required');
                 return;
             }
+            if (paymentAmount <= 0) { showToast('Payment Amount is required'); document.getElementById('pickupOnlinePaymentAmount')?.focus(); return; }
+            if (Math.abs(paymentAmount - grandTotalForPayment) > 0.01) { showToast('Payment Amount must be equal to the grand total'); document.getElementById('pickupOnlinePaymentAmount')?.focus(); return; }
         }
     }
 
     const isDeliveryOrder = !isWalkin && deliveryType === 'delivery';
     const newDriverVisible = document.getElementById('newDriverFields')?.style.display !== 'none';
-    const newVehicleVisible = document.getElementById('newVehicleFields')?.style.display !== 'none';
+    const newVehicleVisible = false;
     if (isDeliveryOrder) {
         if (newDriverVisible) {
             if (!document.getElementById('newDriverFirstName')?.value.trim() || !document.getElementById('newDriverLastName')?.value.trim() || !document.getElementById('newDriverEmail')?.value.trim() || !document.getElementById('newDriverPassword')?.value.trim() || !document.getElementById('newDriverLicense')?.value.trim()) {
@@ -6910,13 +12004,8 @@ if (!custId) {
             return;
         }
 
-        if (newVehicleVisible) {
-            if (!document.getElementById('newVehicleType')?.value.trim() || !document.getElementById('newVehiclePlate')?.value.trim()) {
-                showToast('Please complete the new vehicle details.');
-                return;
-            }
-        } else if (!document.getElementById('deliveryVehicleSelect')?.value) {
-            showToast('Please select a vehicle or add a new vehicle.');
+        if (!document.getElementById('deliveryVehicleSelect')?.value) {
+            showToast('Please select a registered Motorpool vehicle.');
             return;
         }
     }
@@ -6932,9 +12021,37 @@ if (!custId) {
     const submitWithSoSuffix = (manualSoSuffix, approvalExplanation = '', approvalAcknowledged = false, approvalType = 'credit_limit') => {
         if (!manualSoSuffix) return;
         const btn = document.getElementById('confirmOrderBtn');
-        const orig = btn.innerHTML;
-        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Processing...';
-        btn.disabled = true;
+        const invoiceSubmitModeForLoading = window.invoiceOrderSubmitMode || '';
+        const invoiceSaveCloseBtn = document.getElementById('invoiceSaveCloseBtn');
+        const invoiceSaveNewBtn = document.getElementById('invoiceSaveNewBtn');
+        const activeInvoiceSubmitBtn = invoiceSubmitModeForLoading === 'close'
+            ? invoiceSaveCloseBtn
+            : (invoiceSubmitModeForLoading === 'new' ? invoiceSaveNewBtn : null);
+        const buttonsToLock = [btn, invoiceSaveCloseBtn, invoiceSaveNewBtn].filter(Boolean);
+        const submitLoadingHtml = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Saving...';
+
+        buttonsToLock.forEach(button => {
+            if (!button.dataset.originalHtml) {
+                button.dataset.originalHtml = button.innerHTML;
+            }
+            button.disabled = true;
+        });
+
+        if (btn) {
+            btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>Processing...';
+        }
+        if (activeInvoiceSubmitBtn) {
+            activeInvoiceSubmitBtn.innerHTML = submitLoadingHtml;
+        }
+
+        const restoreSubmitButtons = () => {
+            buttonsToLock.forEach(button => {
+                button.disabled = false;
+                if (button.dataset.originalHtml) {
+                    button.innerHTML = button.dataset.originalHtml;
+                }
+            });
+        };
         
         const postData = { 
             action: 'submit_order', 
@@ -6951,7 +12068,7 @@ if (!custId) {
             discount_based_amount: customerDiscount.type === 'amount_based' ? (customerDiscount.basedAmount || customerDiscount.calculatedAmount || 0) : 0,
             agent_location: deliveryType === 'delivery' ? deliveryAddress : '',
             order_status: orderStatus,
-            fulfillment_type: (isWalkin || deliveryType === 'pickup') ? 'pickup' : 'delivery',
+            fulfillment_type: isCreditOrder ? 'pickup' : ((isWalkin || deliveryType === 'pickup') ? 'pickup' : 'delivery'),
             delivery_driver_mode: newDriverVisible ? 'new' : 'select',
             delivery_driver_id: document.getElementById('deliveryDriverSelect')?.value || '',
             new_driver_first_name: document.getElementById('newDriverFirstName')?.value || '',
@@ -6966,20 +12083,28 @@ if (!custId) {
             delivery_vehicle_id: document.getElementById('deliveryVehicleSelect')?.value || '',
             new_vehicle_type: document.getElementById('newVehicleType')?.value || '',
             new_vehicle_plate: document.getElementById('newVehiclePlate')?.value || '',
-            collect_payment: collectPickupPayment ? '1' : '0',
+            collect_payment: (!isCreditOrder && collectPickupPayment) ? '1' : '0',
             payment_method: pickupPaymentMethod,
             cash_tendered: document.getElementById('pickupCashTendered')?.value || '',
             check_date: document.getElementById('pickupCheckDate')?.value || '',
             check_number: document.getElementById('pickupCheckNumber')?.value || '',
-            bank_name: document.getElementById('pickupBankName')?.value || '',
+            bank_name: '',
             bank_branch: document.getElementById('pickupBankBranch')?.value || '',
+            payment_amount: pickupPaymentMethod === 'check'
+                ? (document.getElementById('pickupCheckPaymentAmount')?.value || '')
+                : (pickupPaymentMethod === 'online_transfer' ? (document.getElementById('pickupOnlinePaymentAmount')?.value || '') : ''),
             reference_number: document.getElementById('pickupReferenceNumber')?.value || '',
             online_bank_name: document.getElementById('pickupOnlineBankName')?.value || '',
             online_bank_branch: document.getElementById('pickupOnlineBankBranch')?.value || '',
             document_type: documentType,
+            billing_type: billingType,
+            is_recurring: recurringSchedule.is_recurring,
+            recurring_every: recurringSchedule.recurring_every,
+            recurring_period: recurringSchedule.recurring_period,
+            recurring_until: recurringSchedule.recurring_until,
             si_number: siNumber,
-            atw_no: atwNo,
-            gatepass_no: gatepassNo,
+            atw_no: isCreditOrder ? '' : atwNo,
+            gatepass_no: isCreditOrder ? '' : gatepassNo,
             registered_business_name: registeredBusinessName,
             tin: businessTin,
             business_address: businessAddress,
@@ -6994,10 +12119,7 @@ if (!custId) {
         fetch(window.location.href, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' }, body: formBody })
             .then(r => r.text()).then(t => { if (!t || t.trim().startsWith('<')) throw new Error('Invalid response'); return JSON.parse(t); })
             .then(d => {
-                // Hide modal first
-                const cartModal = bootstrap.Modal.getInstance(document.getElementById('cartModal'));
-                if (cartModal) cartModal.hide();
-                
+                // Keep order/invoice modal open after saving. User will close it manually.
                 if (d.success) {
                     if (d.updated_stock) {
                         d.updated_stock.forEach(i => {
@@ -7073,88 +12195,204 @@ if (!custId) {
                     `;
                     
                     // Show alert
-                    Swal.fire({
-                        icon: 'success',
-                        title: isWalkin ? 'Order Completed!' : 'Order Submitted!',
-                        html: alertHtml,
-                        showDenyButton: true,
-                    
-                        confirmButtonText: 'View Order',
-                        denyButtonText: 'New Order',
-                    
-                        confirmButtonColor: '#047857',
-                        denyButtonColor: '#649f86',
-                        cancelButtonColor: '#6c757d',
-                    
-                        background: '#ffffff',
-                        backdrop: `rgba(0,0,0,0.4)`,
-                        allowOutsideClick: false,
-                    
-                        customClass: {
-                            popup: 'animated-order-alert',
-                            confirmButton: 'order-confirm-btn',
-                            denyButton: 'order-confirm-btn',
-                            cancelButton: 'order-cancel-btn'
-                        }
-                    
-                    }).then((result) => {
-                    
-                        // VIEW ORDER
-                        if (result.isConfirmed) {
-                    
-                            Swal.close();
-                    
-                            setTimeout(() => {
-                    
-                                const swalBackdrop =
-                                    document.querySelector('.swal2-container');
-                    
-                                if (swalBackdrop) {
-                                    swalBackdrop.remove();
+                    const invoiceSubmitMode = window.invoiceOrderSubmitMode || '';
+                    const isInvoiceSaveClose = invoiceSubmitMode === 'close';
+                    const isInvoiceSaveNew = invoiceSubmitMode === 'new';
+
+                    if (isInvoiceSaveClose || isInvoiceSaveNew) {
+                        window.invoiceOrderSubmitMode = '';
+                        Swal.fire({
+                            icon: 'success',
+                            title: isWalkin ? 'Order Completed!' : 'Order Submitted!',
+                            html: alertHtml + `
+                                <div style="margin-top: 14px; padding: 10px; background: #e8f5e9; border-radius: 10px; color: #047857; font-weight: 700;">
+                                    Saved successfully. Use the Close button when you are done.
+                                </div>
+                            `,
+                            confirmButtonText: 'OK',
+                            confirmButtonColor: '#047857',
+                            background: '#ffffff',
+                            backdrop: `rgba(0,0,0,0.4)`,
+                            allowOutsideClick: false,
+                            allowEscapeKey: true,
+                            allowEnterKey: true,
+                            focusConfirm: true,
+                            heightAuto: false,
+                            scrollbarPadding: false,
+                            target: document.body,
+                            customClass: {
+                                popup: 'animated-order-alert',
+                                confirmButton: 'order-confirm-btn'
+                            },
+                            didOpen: () => {
+                                const swalContainer = document.querySelector('.swal2-container');
+                                const okButton = Swal.getConfirmButton();
+                                if (swalContainer) {
+                                    swalContainer.style.zIndex = '2147483000';
+                                    swalContainer.style.pointerEvents = 'auto';
                                 }
-                    
-                                document.body.classList.remove(
-                                    'swal2-shown'
-                                );
-                    
-                                document.body.classList.remove(
-                                    'swal2-height-auto'
-                                );
-                    
+                                if (okButton) {
+                                    okButton.disabled = false;
+                                    okButton.style.pointerEvents = 'auto';
+                                    okButton.style.cursor = 'pointer';
+                                    okButton.focus();
+
+                                    // AMGC FIX: Bootstrap modal/focus layers can sometimes keep the SweetAlert
+                                    // visible after OK is clicked. Force-close and clean only the SweetAlert layer.
+                                    okButton.onclick = function() {
+                                        setTimeout(function() {
+                                            if (typeof Swal !== 'undefined' && Swal.isVisible()) {
+                                                Swal.close({ isConfirmed: true, value: true });
+                                            }
+                                            document.querySelectorAll('.swal2-container').forEach(function(el) { el.remove(); });
+                                            document.body.classList.remove('swal2-shown', 'swal2-height-auto');
+                                        }, 0);
+                                    };
+                                }
+                            }
+                        }).then(() => {
+                            window.invoiceOrderSubmitMode = '';
+                            if (typeof window.clearOrderProductFieldsAfterSubmit === 'function') {
+                                window.clearOrderProductFieldsAfterSubmit();
+                            }
+                            const swalContainer = document.querySelector('.swal2-container');
+                            if (swalContainer && !Swal.isVisible()) {
+                                swalContainer.remove();
+                            }
+                            document.body.classList.remove('swal2-shown', 'swal2-height-auto');
+                        });
+                    } else {
+                        Swal.fire({
+                            icon: 'success',
+                            title: isWalkin ? 'Order Completed!' : 'Order Submitted!',
+                            html: alertHtml,
+                            showDenyButton: true,
+
+                            confirmButtonText: 'View Order',
+                            denyButtonText: 'New Order',
+
+                            confirmButtonColor: '#047857',
+                            denyButtonColor: '#649f86',
+                            cancelButtonColor: '#6c757d',
+
+                            background: '#ffffff',
+                            backdrop: `rgba(0,0,0,0.4)`,
+                            allowOutsideClick: false,
+                            allowEscapeKey: true,
+                            allowEnterKey: true,
+                            focusConfirm: true,
+                            target: document.body,
+                            didOpen: () => {
+                                const swalContainer = document.querySelector('.swal2-container');
+                                const confirmButton = Swal.getConfirmButton();
+                                const denyButton = Swal.getDenyButton();
+                                if (swalContainer) {
+                                    swalContainer.style.zIndex = '2147483000';
+                                    swalContainer.style.pointerEvents = 'auto';
+                                }
+                                [confirmButton, denyButton].forEach((btn) => {
+                                    if (btn) {
+                                        btn.disabled = false;
+                                        btn.style.pointerEvents = 'auto';
+                                        btn.style.cursor = 'pointer';
+                                    }
+                                });
+
+                                // AMGC FIX: make sure the success alert disappears immediately on OK/View Order.
+                                if (confirmButton) {
+                                    confirmButton.onclick = function() {
+                                        setTimeout(function() {
+                                            if (typeof Swal !== 'undefined' && Swal.isVisible()) {
+                                                Swal.close({ isConfirmed: true, value: true });
+                                            }
+                                        }, 0);
+                                    };
+                                }
+                            },
+
+                            customClass: {
+                                popup: 'animated-order-alert',
+                                confirmButton: 'order-confirm-btn',
+                                denyButton: 'order-confirm-btn',
+                                cancelButton: 'order-cancel-btn'
+                            }
+
+                        }).then((result) => {
+
+                            if (typeof window.clearOrderProductFieldsAfterSubmit === 'function') {
+                                window.clearOrderProductFieldsAfterSubmit();
+                            }
+
+                            // VIEW ORDER
+                            if (result.isConfirmed) {
+
+                                Swal.close();
+
                                 setTimeout(() => {
-                                    viewOrderFromOrderProduct(d.so_id);
-                                },100);
-                    
-                            },300);
-                    
-                        }
-                    
-                        // NEW ORDER
-                        else if (result.isDenied) {
-                    
-                            window.location.href =
-                                'customer_list.php';
-                    
-                        }
-                    
-                        // CLOSE
-                        else {
-                    
-                            location.reload();
-                    
-                        }
-                    
-                    });
+
+                                    const swalBackdrop =
+                                        document.querySelector('.swal2-container');
+
+                                    if (swalBackdrop) {
+                                        swalBackdrop.remove();
+                                    }
+
+                                    document.body.classList.remove(
+                                        'swal2-shown'
+                                    );
+
+                                    document.body.classList.remove(
+                                        'swal2-height-auto'
+                                    );
+
+                                    setTimeout(() => {
+                                        viewOrderFromOrderProduct(d.so_id);
+                                    },100);
+
+                                },300);
+
+                            }
+
+                            // NEW ORDER
+                            else if (result.isDenied) {
+
+                                window.location.href =
+                                    'customer_list.php';
+
+                            }
+
+                            // CLOSE / dismissed: stay on the invoice/order modal. Manual close button na lang.
+                            else {
+                                window.invoiceOrderSubmitMode = '';
+                            }
+
+                        });
+                    }
+
                 } else {
                     if (d.type === 'credit_limit_required' || d.type === 'outstanding_balance_required') {
-                        btn.innerHTML = orig;
-                        btn.disabled = false;
+                        restoreSubmitButtons();
                         const cartModalEl = document.getElementById('cartModal');
                         const cartModalInstance = cartModalEl ? bootstrap.Modal.getInstance(cartModalEl) : null;
                         const openApproval = () => showBeyondCreditApprovalModal(
                             d,
                             (explanation) => submitWithSoSuffix(manualSoSuffix, explanation, true, d.type === 'outstanding_balance_required' ? 'outstanding_balance' : 'credit_limit'),
                             () => {
+                                // Default Style uses the invoice layout directly.
+                                // Kapag kinancel ang Outstanding Balance / Credit approval,
+                                // huwag ibalik o ipakita ang Classic Review & Confirm modal.
+                                const currentStyle = (typeof window.getOrderProductStyle === 'function') ? window.getOrderProductStyle() : activeOrderStyle;
+                                if (currentStyle === 'invoice') {
+                                    if (cartModalEl && cartModalEl.classList.contains('show')) {
+                                        bootstrap.Modal.getInstance(cartModalEl)?.hide();
+                                    }
+                                    document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.remove());
+                                    document.body.classList.remove('modal-open');
+                                    document.body.style.removeProperty('overflow');
+                                    document.body.style.removeProperty('padding-right');
+                                    return;
+                                }
+
                                 if (cartModalEl && !cartModalEl.classList.contains('show')) {
                                     bootstrap.Modal.getOrCreateInstance(cartModalEl, { keyboard: true }).show();
                                 }
@@ -7179,8 +12417,7 @@ if (!custId) {
                         // Keep the user on this page, so they can correct the SO number or order details
                     });
                 }
-                btn.innerHTML = orig;
-                btn.disabled = false;
+                restoreSubmitButtons();
             })
             .catch(e => { 
                 console.error('Submit error:', e); 
@@ -7192,13 +12429,19 @@ if (!custId) {
                 }).then(() => {
                     // Keep the user on this page
                 });
-                btn.innerHTML = orig; 
-                btn.disabled = false; 
+                restoreSubmitButtons(); 
             });
     };
 
+    const invoiceNumberVisualValue = sanitizeDigits(document.getElementById('invoiceNumberVisual')?.value || '', 6);
+    const activeOrderStyle = (typeof window.getOrderProductStyle === 'function') ? window.getOrderProductStyle() : 'classic';
+
     if (documentType === 'SI') {
-        submitWithSoSuffix(autoSoSuffix);
+        submitWithSoSuffix(invoiceNumberVisualValue || autoSoSuffix);
+    } else if (activeOrderStyle === 'invoice') {
+        // Default Style uses the Invoice # field directly.
+        // If blank, it will still use the existing auto-generated suffix.
+        submitWithSoSuffix(invoiceNumberVisualValue || autoSoSuffix);
     } else {
         showSONumberForm(soPrefix, (manualSoSuffix) => submitWithSoSuffix(manualSoSuffix));
     }
@@ -7250,6 +12493,34 @@ if (!custId) {
             .catch(e => { console.error('Error:', e); showToast('Error loading details'); modal.hide(); });
     }
     
+    // Keep Employees and Tasks badges synchronized with the dropdown state.
+    function updateEmployeesTaskBadge() {
+        const employeesMenu = document.getElementById('employeesMenu');
+        const employeesDropdown = employeesMenu
+            ? employeesMenu.closest('.employees-dropdown')
+            : null;
+
+        if (!employeesMenu || !employeesDropdown) {
+            return;
+        }
+
+        const isOpen = employeesMenu.classList.contains('show');
+        const parentBadge = employeesDropdown.querySelector('.task-parent-badge');
+        const childBadge = employeesDropdown.querySelector('.task-child-badge');
+
+        employeesDropdown.classList.toggle('employees-menu-open', isOpen);
+
+        if (parentBadge) {
+            parentBadge.style.display = isOpen ? 'none' : 'inline-flex';
+        }
+
+        if (childBadge) {
+            childBadge.style.display = isOpen ? 'inline-flex' : 'none';
+        }
+    }
+
+    window.updateEmployeesTaskBadge = updateEmployeesTaskBadge;
+
     // Sidebar functions
     function toggleSidebarDropdown(event, targetId) {
         event.preventDefault(); event.stopPropagation();
@@ -7260,13 +12531,56 @@ if (!custId) {
         if (sidebar.classList.contains('collapsed')) {
             sidebar.classList.remove('collapsed');
             localStorage.setItem('sidebarCollapsed', 'false');
-            setTimeout(() => { document.querySelectorAll('.sidebar .collapse.show').forEach(collapse => { if (collapse.id !== targetId) collapse.classList.remove('show'); }); target.classList.add('show'); if (arrow) arrow.style.transform = 'translateY(-50%) rotate(180deg)'; }, 50);
+            setTimeout(() => {
+                document.querySelectorAll('.sidebar .collapse.show').forEach(collapse => {
+                    if (collapse.id !== targetId) {
+                        collapse.classList.remove('show');
+                    }
+                });
+
+                target.classList.add('show');
+
+                if (typeof window.updateEmployeesTaskBadge === 'function') {
+                    window.updateEmployeesTaskBadge();
+                }
+
+                if (arrow) {
+                    arrow.style.transform = 'translateY(-50%) rotate(180deg)';
+                }
+            }, 50);
             return;
         }
         if (target.classList.contains('show')) { target.classList.remove('show'); if (arrow) arrow.style.transform = 'translateY(-50%) rotate(0deg)'; }
-        else { document.querySelectorAll('.sidebar .collapse.show').forEach(collapse => collapse.classList.remove('show')); target.classList.add('show'); if (arrow) arrow.style.transform = 'translateY(-50%) rotate(180deg)'; }
+        else { document.querySelectorAll('.sidebar .collapse.show').forEach(collapse => collapse.classList.remove('show')); target.classList.add('show'); if (typeof window.updateEmployeesTaskBadge === 'function') { window.updateEmployeesTaskBadge(); } if (arrow) arrow.style.transform = 'translateY(-50%) rotate(180deg)'; }
+        if (typeof window.updateEmployeesTaskBadge === 'function') {
+            window.updateEmployeesTaskBadge();
+        }
     }
     
+
+    document.addEventListener('DOMContentLoaded', function () {
+        if (typeof window.updateEmployeesTaskBadge === 'function') {
+            window.updateEmployeesTaskBadge();
+        }
+
+        const employeesMenu = document.getElementById('employeesMenu');
+
+        if (employeesMenu && !employeesMenu.dataset.taskBadgeObserverAttached) {
+            employeesMenu.dataset.taskBadgeObserverAttached = '1';
+
+            const taskBadgeObserver = new MutationObserver(function () {
+                if (typeof window.updateEmployeesTaskBadge === 'function') {
+                    window.updateEmployeesTaskBadge();
+                }
+            });
+
+            taskBadgeObserver.observe(employeesMenu, {
+                attributes: true,
+                attributeFilter: ['class']
+            });
+        }
+    });
+
     function closeAllMobileDropdowns() {
         document.querySelectorAll('.mobile-nav .more-dropdown, .more-dropdown').forEach(function(dropdown) {
             dropdown.classList.remove('show');
@@ -7442,6 +12756,7 @@ if (!custId) {
         // Setup delivery type listeners
         setupDeliveryTypeListeners();
         setupPickupPaymentListeners();
+            setupInvoicePaymentListeners();
         updateCustomerAddressInputVisibility();
         updateDeliveryAddressDisplay();
         ['customerAddressInput', 'deliveryAddressInput'].forEach(function(inputId) {
@@ -7595,145 +12910,237 @@ if (!custId) {
             const finalGrandTotal = headerGrandTotal > 0 ? headerGrandTotal : computedGrandTotal;
             const finalSubtotal = (parseFloat(order.order_subtotal || 0) || computedSubtotal || (finalGrandTotal + finalDiscount));
 
-            const siDetailsHtml = (orderSINumber || registeredBusinessName || tin || businessAddress) ? `
-                <div class="card mb-3">
-                    <div class="card-header bg-light"><h6 class="mb-0 fw-bold"><i class="bi bi-receipt-cutoff me-2"></i>SI Details</h6></div>
-                    <div class="card-body">
-                        <table class="table table-sm table-borderless mb-0">
-                            ${orderSINumber ? `<tr><td width="40%">SI Number:</td><td><strong>${escapeHtml(orderSINumber)}</strong></td></tr>` : ''}
-                            ${registeredBusinessName ? `<tr><td width="40%">Registered Business Name:</td><td><strong>${escapeHtml(registeredBusinessName)}</strong></td></tr>` : ''}
-                            ${tin ? `<tr><td width="40%">TIN:</td><td>${escapeHtml(tin)}</td></tr>` : ''}
-                            ${businessAddress ? `<tr><td width="40%">Business Address:</td><td>${escapeHtml(businessAddress)}</td></tr>` : ''}
-                        </table>
-                    </div>
-                </div>
-            ` : '';
+            const customerGroup = String(order.customer_group || '').trim();
+            const contactNumber = String(order.phone_number || '').trim();
+            const customerAddress = String(order.address || '').trim();
+            const invoiceNumber = invoice ? String(invoice.si_number || invoice.invoice_number || '').trim() : orderSINumber;
+            const termsDays = invoice && invoice.due_date && invoice.invoice_date
+                ? Math.max(0, Math.round((new Date(invoice.due_date) - new Date(invoice.invoice_date)) / (1000 * 60 * 60 * 24)))
+                : '';
+            const dueDate = invoice && invoice.due_date ? invoice.due_date : '';
+            const payments = Array.isArray(data.payments) ? data.payments : [];
+            const paymentTotal = parseFloat(order.payment_total || 0) || 0;
+            const balanceDue = parseFloat(order.balance_due || (finalGrandTotal - paymentTotal)) || 0;
+            const deliveryType = String(order.fulfillment_type || '').toLowerCase() === 'delivery' ? 'Delivery' : 'Pick Up';
+            const creditLimit = parseFloat(order.credit_limit || 0) || 0;
+            const outstandingBalance = Math.max(parseFloat(order.outstanding_balance_amount || 0) || 0, parseFloat(order.credit_used || 0) || 0);
+            const customerDisplay = order.store_name || order.customer_name || '';
+            const docTitle = (documentType === 'SI' || invoiceNumber) ? 'Invoice' : 'Sales Order';
+            const cleanDateForInput = order.order_date ? String(order.order_date).substring(0, 10) : '';
+            const cleanDueForInput = dueDate ? String(dueDate).substring(0, 10) : cleanDateForInput;
+            const termsText = termsDays ? (termsDays + ' days') : (invoice && invoice.terms ? invoice.terms : '');
 
-            const outstandingAmount = parseFloat(order.outstanding_balance_amount || 0) || 0;
-            const outstandingRequired = parseInt(order.outstanding_balance_approval_required || 0) === 1;
-            const outstandingApproved = parseInt(order.outstanding_balance_approved || 0) === 1;
-            const outstandingApprovedBy = String(order.outstanding_balance_approved_by_name || '').trim();
-            const outstandingApprovedAt = order.outstanding_balance_approved_at ? new Date(order.outstanding_balance_approved_at).toLocaleString('en-US', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
-            const outstandingReason = String(order.outstanding_balance_reason || '').trim();
-            const outstandingApprovalHtml = (outstandingRequired || outstandingAmount > 0) ? `
-                <div class="card mb-3">
-                    <div class="card-header bg-light"><h6 class="mb-0 fw-bold"><i class="bi bi-exclamation-triangle me-2"></i>Outstanding Balance Approval</h6></div>
-                    <div class="card-body">
-                        <table class="table table-sm table-borderless mb-0">
-                            <tr><td width="40%">Outstanding Balance:</td><td><strong class="text-danger">${formatCurrency(outstandingAmount)}</strong></td></tr>
-                            <tr><td width="40%">Approval Status:</td><td><span class="badge ${outstandingApproved ? 'bg-success' : 'bg-warning text-dark'}">${outstandingApproved ? 'Approved' : 'Required'}</span></td></tr>
-                            ${outstandingApprovedBy ? `<tr><td width="40%">Approved By:</td><td><strong>${escapeHtml(outstandingApprovedBy)}</strong></td></tr>` : ''}
-                            ${outstandingApprovedAt ? `<tr><td width="40%">Approved Date:</td><td>${escapeHtml(outstandingApprovedAt)}</td></tr>` : ''}
-                            ${outstandingReason ? `<tr><td width="40%">Reason:</td><td>${escapeHtml(outstandingReason)}</td></tr>` : ''}
-                        </table>
-                    </div>
-                </div>
-            ` : '';
-
-            const orderInfoHtml = `
-                <div class="row mt-2">
-                    <div class="col-md-12">
-                        <div class="card mb-3">
-                            <div class="card-header bg-light"><h6 class="mb-0 fw-bold"><i class="bi bi-receipt me-2"></i>Order Information</h6></div>
-                            <div class="card-body">
-                                <table class="table table-sm table-borderless mb-0">
-                                    <tr><td width="40%">Order Number:</td><td><strong>${escapeHtml(order.so_number || '')}</strong></td></tr>
-                                    <tr><td width="40%">Document Type:</td><td><strong>${escapeHtml(documentType)}</strong></td></tr>
-                                    ${orderSINumber ? `<tr><td width="40%">SI Number:</td><td><strong>${escapeHtml(orderSINumber)}</strong></td></tr>` : ''}
-                                    <tr><td width="40%">ATW No.:</td><td><strong>${escapeHtml(atwNo || '-')}</strong></td></tr>
-                                    <tr><td width="40%">Gatepass No.:</td><td><strong>${escapeHtml(gatepassNo || '-')}</strong></td></tr>
-                                    <tr><td width="40%">Order Date:</td><td>${formattedDate}</td></tr>
-                                    <tr><td width="40%">Customer:</td><td><strong>${escapeHtml(order.customer_name || 'N/A')}</strong></td></tr>
-                                    ${order.address ? `<tr><td width="40%">Address:</td><td>${escapeHtml(order.address)}</td></tr>` : ''}
-                                    ${order.phone_number ? `<tr><td width="40%">Contact:</td><td>${escapeHtml(order.phone_number)}</td></tr>` : ''}
-                                    ${order.branch_name ? `<tr><td width="40%">Branch:</td><td><span class="badge bg-info">${escapeHtml(order.branch_name)}</span></td></tr>` : ''}
-                                    <tr><td width="40%">Order Status:</td><td><span class="badge ${statusBadge}">${statusText}</span></td></tr>
-                                    <tr><td width="40%">Encoded By:</td><td><strong>${escapeHtml(encodedBy)}</strong></td></tr>
-                                    ${invoice && invoice.invoice_status ? `<tr><td width="40%">Payment Status:</td><td><span class="badge ${invoice.invoice_status === 'paid' ? 'bg-success' : (invoice.invoice_status === 'overdue' ? 'bg-danger' : 'bg-warning text-dark')}">${escapeHtml(invoice.invoice_status === 'overdue' ? 'Overdue' : invoice.invoice_status)}</span></td></tr>` : ''}
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-
-            const orderSummaryHtml = `
-                <div class="row">
-                    <div class="col-md-12">
-                        <div class="card mb-3">
-                            <div class="card-header bg-light"><h6 class="mb-0 fw-bold"><i class="bi bi-calculator me-2"></i>Order Summary</h6></div>
-                            <div class="card-body">
-                                <table class="table table-sm table-borderless mb-0">
-                                    <tr><td width="40%">Total Items:</td><td>${order.total_items || items.length || 0}</td></tr>
-                                    <tr><td width="40%">Total Quantity:</td><td>${order.total_quantity || items.reduce((sum, item) => sum + (parseFloat(item.quantity_ordered || 0) || 0), 0)}</td></tr>
-                                    <tr><td width="40%">Subtotal:</td><td>${formatCurrency(finalSubtotal)}</td></tr>
-                                    <tr><td width="40%">Discount:</td><td class="text-danger">-${formatCurrency(finalDiscount)}</td></tr>
-                                    <tr><td width="40%">Grand Total:</td><td class="fw-bold fs-5 text-success">${formatCurrency(finalGrandTotal)}</td></tr>
-                                </table>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            `;
-
-            let documentsHtml = '';
-            if (documents.pick_list_number || documents.driver_name || documents.vehicle || documents.trip_ticket_number || order.assigned_driver) {
-                documentsHtml = `
-                    <div class="card mb-3">
-                        <div class="card-header bg-light"><h6 class="mb-0 fw-bold"><i class="bi bi-file-earmark-text me-2"></i>Generated Documents</h6></div>
-                        <div class="card-body">
-                            <div class="row g-2">
-                                ${documents.pick_list_number ? `<div class="col-md-6"><div class="border rounded p-2 bg-light"><small class="text-muted">Pick List</small><br><strong>${escapeHtml(documents.pick_list_number)}</strong></div></div>` : ''}
-                                ${(documents.driver_name || order.assigned_driver) ? `<div class="col-md-6"><div class="border rounded p-2 bg-light"><small class="text-muted">Assigned Driver</small><br><strong><i class="bi bi-person-badge"></i> ${escapeHtml(documents.driver_name || order.assigned_driver)}</strong></div></div>` : ''}
-                                ${documents.vehicle ? `<div class="col-md-6"><div class="border rounded p-2 bg-light"><small class="text-muted">Assigned Vehicle</small><br><strong><i class="bi bi-truck"></i> ${escapeHtml(documents.vehicle)}</strong></div></div>` : ''}
-                                ${documents.trip_ticket_number ? `<div class="col-md-6"><div class="border rounded p-2 bg-light"><small class="text-muted">Trip Ticket</small><br><strong>${escapeHtml(documents.trip_ticket_number)}</strong></div></div>` : ''}
-                            </div>
-                        </div>
-                    </div>
-                `;
+            let invoiceRowsHtml = '';
+            let totalQtyForDisplay = 0;
+            if (items.length > 0) {
+                items.forEach((item, idx) => {
+                    const qty = parseFloat(item.quantity_ordered || item.quantity || 0) || 0;
+                    const unitPrice = parseFloat(item.net_price || item.unit_price || item.gross_price || 0) || 0;
+                    const lineTotal = parseFloat(item.order_amount || item.line_total || (qty * unitPrice) || 0) || 0;
+                    totalQtyForDisplay += qty;
+                    invoiceRowsHtml += `
+                        <tr class="${idx % 2 === 1 ? 'op-invoice-alt-row' : ''}">
+                            <td>
+                                <strong>${escapeHtml(item.item_name || item.item_description || '')}</strong>
+                                <div class="op-invoice-muted">${escapeHtml(item.item_code || '')}</div>
+                            </td>
+                            <td class="text-center">${escapeHtml(item.unit_type || '')}</td>
+                            <td class="text-center">${Number.isInteger(qty) ? parseInt(qty) : qty}</td>
+                            <td class="text-end">${formatCurrency(unitPrice)}</td>
+                            <td class="text-end fw-semibold">${formatCurrency(lineTotal)}</td>
+                        </tr>
+                    `;
+                });
+            }
+            while (items.length > 0 && invoiceRowsHtml.split('<tr').length <= 10) {
+                invoiceRowsHtml += `<tr><td>&nbsp;</td><td></td><td></td><td></td><td></td></tr>`;
+            }
+            if (!items.length) {
+                for (let i = 0; i < 10; i++) {
+                    invoiceRowsHtml += `<tr class="${i % 2 === 1 ? 'op-invoice-alt-row' : ''}"><td>&nbsp;</td><td></td><td></td><td></td><td></td></tr>`;
+                }
             }
 
-            const orderItemsHtml = `
-                <div class="card mt-3">
-                    <div class="card-header bg-light"><h6 class="mb-0 fw-bold"><i class="bi bi-box-seam me-2"></i>Order Items</h6></div>
-                    <div class="card-body p-0">
-                        <div class="table-responsive" style="max-height: 420px; overflow-y: auto;">
-                            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; background: white; border: 1px solid #dee2e6; border-radius: 8px; overflow: hidden;">
+            const paymentsHtml = payments.length ? payments.map(pay => {
+                const payDate = pay.payment_date ? new Date(pay.payment_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : '-';
+                const method = String(pay.payment_method || '').replace('_', ' ');
+                const ref = pay.reference_number || pay.check_number || pay.si_number || '-';
+                return `<div class="op-payment-line"><span>${escapeHtml(method || 'Payment')} • ${escapeHtml(payDate)} • Ref: ${escapeHtml(ref)}</span><strong>${formatCurrency(pay.amount || 0)}</strong></div>`;
+            }).join('') : `<div class="op-invoice-empty-line">No payment recorded</div>`;
+
+            const buildSIAttachmentsHtml = (attachments) => {
+                if (!Array.isArray(attachments) || attachments.length === 0) {
+                    return '<div class="text-muted small">No SI attachment uploaded.</div>';
+                }
+                return `<div class="d-flex flex-column gap-2">${attachments.map((file, index) => {
+                    const fileName = String(file.name || ('SI Attachment ' + (index + 1))).trim();
+                    const filePath = String(file.path || '').trim();
+                    const uploadedAt = String(file.uploaded_at || '').trim();
+                    if (!filePath) return '';
+                    return `<button type="button" class="btn btn-sm btn-outline-success text-start si-attachment-view-btn" data-file-path="${escapeHtml(filePath)}" data-file-name="${escapeHtml(fileName)}"><i class="bi bi-paperclip me-1"></i>${escapeHtml(fileName)}${uploadedAt ? `<span class="d-block text-muted small">${escapeHtml(uploadedAt)}</span>` : ''}</button>`;
+                }).join('')}</div>`;
+            };
+            const siAttachments = Array.isArray(order.si_attachments_list) && order.si_attachments_list.length ? order.si_attachments_list : (invoice && Array.isArray(invoice.si_attachments_list) ? invoice.si_attachments_list : []);
+
+            const deliveryInfoHtml = (documents.pick_list_number || documents.driver_name || documents.vehicle || documents.trip_ticket_number || order.assigned_driver) ? `
+                <div class="op-invoice-panel mt-3">
+                    <div class="op-section-label">DELIVERY INFORMATION</div>
+                    <div class="row g-2">
+                        <div class="col-md-6"><div class="op-readonly-field"><small>Driver</small><strong>${escapeHtml(documents.driver_name || order.assigned_driver || '-')}</strong></div></div>
+                        <div class="col-md-6"><div class="op-readonly-field"><small>Vehicle</small><strong>${escapeHtml(documents.vehicle || '-')}</strong></div></div>
+                        <div class="col-md-6"><div class="op-readonly-field"><small>Trip Ticket No.</small><strong>${escapeHtml(documents.trip_ticket_number || '-')}</strong></div></div>
+                        <div class="col-md-6"><div class="op-readonly-field"><small>Pick List No.</small><strong>${escapeHtml(documents.pick_list_number || '-')}</strong></div></div>
+                    </div>
+                </div>
+            ` : '';
+
+            const siDetailsReadonlyHtml = (orderSINumber || registeredBusinessName || tin || businessAddress || siAttachments.length) ? `
+                <div class="op-invoice-panel mt-3">
+                    <div class="op-section-label">SI DETAILS</div>
+                    <div class="row g-2">
+                        <div class="col-md-6"><div class="op-readonly-field"><small>SI Number</small><strong>${escapeHtml(orderSINumber || '-')}</strong></div></div>
+                        <div class="col-md-6"><div class="op-readonly-field"><small>Registered Business Name</small><strong>${escapeHtml(registeredBusinessName || '-')}</strong></div></div>
+                        <div class="col-md-4"><div class="op-readonly-field"><small>TIN</small><strong>${escapeHtml(tin || '-')}</strong></div></div>
+                        <div class="col-md-8"><div class="op-readonly-field"><small>Business Address</small><strong>${escapeHtml(businessAddress || '-')}</strong></div></div>
+                        <div class="col-12"><div class="op-readonly-field"><small>SI Attachments</small>${buildSIAttachmentsHtml(siAttachments)}</div></div>
+                    </div>
+                </div>
+            ` : '';
+
+            const invoiceDateDisplay = cleanDateForInput || '-';
+            const dueDateDisplay = cleanDueForInput || invoiceDateDisplay;
+            const paymentMethodDisplay = payments.length ? String(payments[0].payment_method || '').replace('_', ' ') : '-';
+            const cashTenderedDisplay = payments.length ? formatCurrency(payments[0].cash_tendered || payments[0].amount || 0) : '-';
+            const showCredit = String(order.billing_type || '').toLowerCase() === 'credit';
+            const arLabel = 'Accounts Receivable';
+            const customerMessage = order.customer_message || order.remarks || order.notes || '';
+            const detailSoId = Number(order.so_id || orderId) || 0;
+            const detailStatusLower = String(order.order_status || '').toLowerCase().trim();
+            const isDetailDelivered = detailStatusLower === 'delivered' || detailStatusLower === 'completed';
+            const detailFooterButtons = isDetailDelivered
+                ? `
+                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal" onclick="amgcCloseOrderDetailsModal && amgcCloseOrderDetailsModal()">Close</button>
+                    <button type="button" class="btn btn-success" onclick="printSingleOrderFromOrderProduct(${detailSoId})"><i class="bi bi-printer me-1"></i> Print</button>
+                `
+                : `
+                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal" onclick="amgcCloseOrderDetailsModal && amgcCloseOrderDetailsModal()">Close</button>
+                    <button type="button" class="btn btn-success" onclick="editOrderFromDetails(${detailSoId})"><i class="bi bi-pencil-square me-1"></i> Edit Order</button>
+                    <button type="button" class="btn btn-danger" onclick="deleteOrderFromDetails(${detailSoId})"><i class="bi bi-trash me-1"></i> Delete Order</button>
+                `;
+
+            orderDetailsContent.innerHTML = `
+                <div class="op-invoice-form-view">
+                    <div class="op-invoice-main">
+                        <div class="op-invoice-sheet-head">
+                            <div>
+                                <div class="op-invoice-title">Invoice</div>
+                                <div class="op-customer-readonly">
+                                    <div class="name">${escapeHtml(customerDisplay || '-')}</div>
+                                    <div><strong>Contact No:</strong> ${escapeHtml(contactNumber || '-')}</div>
+                                    <div><strong>Address:</strong> ${escapeHtml(customerAddress || '-')}</div>
+                                    <div><strong>Customer Group:</strong> ${escapeHtml(customerGroup || '-')}</div>
+                                    <div><strong>Credit Limit:</strong> ${formatCurrency(creditLimit)}</div>
+                                    <div><strong>Outstanding Balance:</strong> ${formatCurrency(outstandingBalance)}</div>
+                                </div>
+                            </div>
+
+                            <div class="op-right-fields">
+                                <div class="op-field">
+                                    <label>DATE</label>
+                                    <input class="op-detail-control" value="${escapeHtml(invoiceDateDisplay)}" readonly>
+                                </div>
+                                <div class="op-field">
+                                    <label>INVOICE #</label>
+                                    <input class="op-detail-control" value="${escapeHtml(invoiceNumber || 'Auto')}" readonly>
+                                </div>
+                                <div class="op-field">
+                                    <label>TERMS</label>
+                                    <select class="op-detail-select" disabled><option>${escapeHtml(termsText || '-')}</option></select>
+                                </div>
+                                <div class="op-field">
+                                    <label>DUE DATE</label>
+                                    <input class="op-detail-control" value="${escapeHtml(dueDateDisplay)}" readonly>
+                                </div>
+                                <div class="op-field op-field-wide">
+                                    <label>ATW NO.</label>
+                                    <input class="op-detail-control" value="${escapeHtml(atwNo || 'Optional')}" readonly>
+                                </div>
+                                <div class="op-field op-field-wide">
+                                    <label>GATEPASS NO.</label>
+                                    <input class="op-detail-control" value="${escapeHtml(gatepassNo || 'Required')}" readonly>
+                                </div>
+                                <div class="op-field op-field-wide">
+                                    <label>SO #</label>
+                                    <input class="op-detail-control" value="${escapeHtml(order.so_number || '-')}" readonly>
+                                </div>
+                                <div class="op-field op-field-wide">
+                                    <label>DELIVERY TYPE</label>
+                                    <select class="op-detail-select" disabled><option>${escapeHtml(deliveryType)}</option></select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="op-items-wrap">
+                            <table class="op-items-table">
                                 <thead>
-                                    <tr style="background-color: #f8f9fa;">
-                                        <th style="padding: 10px 12px; font-weight: 600; border-bottom: 1px solid #dee2e6; text-align: left;">Code</th>
-                                        <th style="padding: 10px 12px; font-weight: 600; border-bottom: 1px solid #dee2e6; text-align: left;">Product</th>
-                                        <th style="padding: 10px 12px; font-weight: 600; border-bottom: 1px solid #dee2e6; text-align: center;">Unit</th>
-                                        <th style="padding: 10px 12px; font-weight: 600; border-bottom: 1px solid #dee2e6; text-align: center;">Qty</th>
-                                        <th style="padding: 10px 12px; font-weight: 600; border-bottom: 1px solid #dee2e6; text-align: right;">Unit Price</th>
-                                        <th style="padding: 10px 12px; font-weight: 600; border-bottom: 1px solid #dee2e6; text-align: right;">Total</th>
+                                    <tr>
+                                        <th style="width:34%;">PRODUCT</th>
+                                        <th style="width:18%;">UNIT</th>
+                                        <th style="width:12%;">QTY</th>
+                                        <th style="width:18%;">PRICE</th>
+                                        <th style="width:18%;">TOTAL</th>
                                     </tr>
                                 </thead>
-                                <tbody>${rowsHtml}</tbody>
-                                <tfoot>
-                                    <tr style="background-color: #ffffff; border-top: 2px solid #dee2e6;">
-                                        <td colspan="5" style="padding: 9px 12px; text-align: right; font-weight: 700; color: #212529;">SUBTOTAL</td>
-                                        <td style="padding: 9px 12px; text-align: right; font-weight: 700; color: #212529;">${formatCurrency(finalSubtotal)}</td>
-                                    </tr>
-                                    <tr style="background-color: #ffffff;">
-                                        <td colspan="5" style="padding: 9px 12px; text-align: right; font-weight: 700; color: #dc3545;">DISCOUNT</td>
-                                        <td style="padding: 9px 12px; text-align: right; font-weight: 700; color: #dc3545;">-${formatCurrency(finalDiscount)}</td>
-                                    </tr>
-                                    <tr style="background-color: #f8f9fa; border-top: 1px solid #dee2e6;">
-                                        <td colspan="5" style="padding: 10px 12px; text-align: right; font-weight: 800; color: #047857;">GRAND TOTAL</td>
-                                        <td style="padding: 10px 12px; text-align: right; font-weight: 800; color: #047857; font-size: 1rem;">${formatCurrency(finalGrandTotal)}</td>
-                                    </tr>
-                                </tfoot>
+                                <tbody>${invoiceRowsHtml}</tbody>
                             </table>
+                        </div>
+
+                        <div class="op-lower-area">
+                            <div>
+                                <div class="op-section-label">CUSTOMER MESSAGE</div>
+                                <textarea class="form-control op-message-box" readonly>${escapeHtml(customerMessage)}</textarea>
+
+                                <div class="op-payment-box">
+                                    <div class="op-payment-toggle-line">
+                                        <input type="checkbox" ${payments.length ? 'checked' : ''} disabled>
+                                        <span>COLLECT PAYMENT NOW</span>
+                                    </div>
+                                    <div class="op-payment-detail-line">
+                                        <div class="op-field">
+                                            <label>PAYMENT METHOD</label>
+                                            <select class="op-detail-select" disabled><option>${escapeHtml(paymentMethodDisplay)}</option></select>
+                                        </div>
+                                        <div class="op-field">
+                                            <label>CASH TENDERED</label>
+                                            <input class="op-detail-control" value="${escapeHtml(cashTenderedDisplay)}" readonly>
+                                            <div class="small text-muted mt-1">Change: ${formatCurrency(payments.length ? (payments[0].cash_change || 0) : 0)}</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                ${deliveryInfoHtml}
+                                ${siDetailsReadonlyHtml}
+                            </div>
+
+                            <div>
+                                <div class="op-summary-box">
+                                    <div><span>(${(parseFloat(order.discount_percent || 0) || 0).toFixed(1)}%)</span><strong>${formatCurrency(finalDiscount)}</strong></div>
+                                    <div><span>TOTAL</span><strong>${formatCurrency(finalGrandTotal)}</strong></div>
+                                    <div><span>PAYMENTS APPLIED</span><strong>${formatCurrency(paymentTotal)}</strong></div>
+                                    <div class="op-balance-due"><span>BALANCE DUE</span><strong>${formatCurrency(balanceDue)}</strong></div>
+                                </div>
+
+                                <div class="op-detail-footer">
+                                    ${detailFooterButtons}
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
             `;
 
-            orderDetailsContent.innerHTML = siDetailsHtml + orderInfoHtml + orderSummaryHtml + documentsHtml + orderItemsHtml;
-
-            if (printBtn) printBtn.style.display = 'inline-block';
-            if (cancelBtn) cancelBtn.style.display = (String(order.order_status || '').toLowerCase() === 'pending') ? 'inline-block' : 'none';
+            if (printBtn) printBtn.style.display = 'none';
+            if (cancelBtn) cancelBtn.style.display = 'none';
         })
         .catch(error => {
             console.error('Error fetching order details:', error);
@@ -7748,6 +13155,43 @@ if (!custId) {
             if (printBtn) printBtn.style.display = 'none';
             if (cancelBtn) cancelBtn.style.display = 'none';
         });
+    }
+
+    function editOrderFromDetails(orderId) {
+        const detailsModalEl = document.getElementById('orderDetailsModal');
+        const openEditModal = function() {
+            document.body.classList.remove('modal-open');
+            document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.remove());
+
+            if (typeof editOrder === 'function') {
+                editOrder(orderId);
+                return;
+            }
+
+            if (typeof editOrderFromOrderProduct === 'function') {
+                editOrderFromOrderProduct(orderId);
+            }
+        };
+
+        if (detailsModalEl) {
+            const detailsModal = bootstrap.Modal.getInstance(detailsModalEl) || bootstrap.Modal.getOrCreateInstance(detailsModalEl);
+            detailsModalEl.addEventListener('hidden.bs.modal', openEditModal, { once: true });
+            detailsModal.hide();
+
+            setTimeout(() => {
+                if (!detailsModalEl.classList.contains('show')) {
+                    openEditModal();
+                }
+            }, 350);
+        } else {
+            openEditModal();
+        }
+    }
+
+    function deleteOrderFromDetails(orderId) {
+        const detailsModal = bootstrap.Modal.getInstance(document.getElementById('orderDetailsModal'));
+        if (detailsModal) detailsModal.hide();
+        deleteOrderFromOrderProduct(orderId);
     }
 
     function printOrderFromOrderProduct() {
@@ -7839,6 +13283,186 @@ if (!custId) {
                 });
             }
         });
+    }
+
+
+    function editOrderFromOrderProduct(orderId) {
+        const modalEl = document.getElementById('opEditSalesOrderModal');
+        const body = document.getElementById('opEditSalesOrderItemsBody');
+        if (!modalEl || !body) return;
+        body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">Loading...</td></tr>';
+        bootstrap.Modal.getOrCreateInstance(modalEl).show();
+
+        fetch('orderproduct.php', {
+            method: 'POST',
+            headers: {'Content-Type':'application/x-www-form-urlencoded','X-Requested-With':'XMLHttpRequest'},
+            body: 'action=get_order_details&order_id=' + encodeURIComponent(orderId)
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (!data.success) throw new Error(data.message || 'Unable to load sales order.');
+            const order = data.order || {};
+            document.getElementById('opEditSoId').value = order.so_id || orderId;
+            document.getElementById('opEditSoNumber').value = order.so_number || '';
+            document.getElementById('opEditOrderDate').value = (order.order_date || '').substring(0, 10) || new Date().toISOString().substring(0, 10);
+            document.getElementById('opEditOrderStatus').value = (order.order_status || 'pending').toLowerCase();
+            document.getElementById('opEditSiNumber').value = order.si_number || '';
+            document.getElementById('opEditRegisteredBusinessName').value = order.registered_business_name || '';
+            document.getElementById('opEditTin').value = order.tin || '';
+            document.getElementById('opEditBusinessAddress').value = order.business_address || '';
+            renderEditOrderItemsFromOrderProduct(data.items || []);
+        })
+        .catch(err => {
+            body.innerHTML = '<tr><td colspan="5" class="text-center text-danger py-4">' + escapeHtml(err.message || 'Failed to load order.') + '</td></tr>';
+        });
+    }
+
+    function renderEditOrderItemsFromOrderProduct(items) {
+        const body = document.getElementById('opEditSalesOrderItemsBody');
+        if (!body) return;
+        if (!items.length) {
+            body.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">No items found.</td></tr>';
+            recalcEditOrderFromOrderProductTotal();
+            return;
+        }
+        body.innerHTML = items.map(item => {
+            const qty = parseFloat(item.quantity_ordered || 0) || 0;
+            const price = parseFloat(item.net_price || item.unit_price || item.gross_price || 0) || 0;
+            const name = item.item_name || item.item_description || item.item_code || 'Item';
+            const unit = item.unit_type || '';
+            return `
+                <tr data-so-item-id="${escapeHtml(item.so_item_id || '')}">
+                    <td class="text-center"><strong>${escapeHtml(name)}</strong><div class="small text-muted">${escapeHtml(item.item_code || '')}</div></td>
+                    <td class="text-center">${escapeHtml(unit)}</td>
+                    <td><input type="number" min="0" step="0.01" class="form-control form-control-sm text-center op-edit-item-qty" value="${qty}" oninput="recalcEditOrderFromOrderProductTotal()"></td>
+                    <td><input type="number" min="0" step="0.01" class="form-control form-control-sm text-end op-edit-item-price" value="${price.toFixed(2)}" oninput="recalcEditOrderFromOrderProductTotal()"></td>
+                    <td class="text-end fw-bold op-edit-item-total">${formatCurrency(qty * price)}</td>
+                </tr>
+            `;
+        }).join('');
+        recalcEditOrderFromOrderProductTotal();
+    }
+
+    function recalcEditOrderFromOrderProductTotal() {
+        let total = 0;
+        document.querySelectorAll('#opEditSalesOrderItemsBody tr[data-so-item-id]').forEach(row => {
+            const qty = parseFloat(row.querySelector('.op-edit-item-qty')?.value || 0) || 0;
+            const price = parseFloat(row.querySelector('.op-edit-item-price')?.value || 0) || 0;
+            const lineTotal = qty * price;
+            total += lineTotal;
+            const totalCell = row.querySelector('.op-edit-item-total');
+            if (totalCell) totalCell.textContent = formatCurrency(lineTotal);
+        });
+        const grand = document.getElementById('opEditSalesOrderGrandTotal');
+        if (grand) grand.textContent = formatCurrency(total);
+    }
+
+    function getEditedOrderItemsFromOrderProduct() {
+        const items = [];
+        document.querySelectorAll('#opEditSalesOrderItemsBody tr[data-so-item-id]').forEach(row => {
+            items.push({
+                so_item_id: row.getAttribute('data-so-item-id'),
+                quantity_ordered: parseFloat(row.querySelector('.op-edit-item-qty')?.value || 0) || 0,
+                unit_price: parseFloat(row.querySelector('.op-edit-item-price')?.value || 0) || 0
+            });
+        });
+        return items;
+    }
+
+    function saveEditedOrderFromOrderProduct(event) {
+        event.preventDefault();
+        const soId = document.getElementById('opEditSoId')?.value || '';
+        const formData = new FormData();
+        formData.append('action', 'update_sales_order_from_tab');
+        formData.append('so_id', soId);
+        formData.append('order_date', document.getElementById('opEditOrderDate')?.value || '');
+        formData.append('order_status', document.getElementById('opEditOrderStatus')?.value || 'pending');
+        formData.append('si_number', document.getElementById('opEditSiNumber')?.value || '');
+        formData.append('registered_business_name', document.getElementById('opEditRegisteredBusinessName')?.value || '');
+        formData.append('tin', document.getElementById('opEditTin')?.value || '');
+        formData.append('business_address', document.getElementById('opEditBusinessAddress')?.value || '');
+        formData.append('edited_items', JSON.stringify(getEditedOrderItemsFromOrderProduct()));
+
+        fetch('orderproduct.php', { method: 'POST', body: formData, headers: {'X-Requested-With':'XMLHttpRequest'} })
+            .then(r => r.json())
+            .then(data => {
+                if (!data.success) throw new Error(data.message || 'Failed to update sales order.');
+                Swal.fire({icon:'success', title:'Updated', text:data.message || 'Sales order updated successfully.', timer:1300, showConfirmButton:false})
+                    .then(() => window.location.href = 'orderproduct.php?tab=salesOrder');
+            })
+            .catch(err => Swal.fire('Error', err.message || 'Failed to update sales order.', 'error'));
+    }
+
+    function deleteOrderFromOrderProduct(orderId) {
+        Swal.fire({
+            title: 'Delete Sales Order?',
+            text: 'Only pending sales orders without related documents can be deleted.',
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#dc3545',
+            confirmButtonText: 'Yes, delete it'
+        }).then(result => {
+            if (!result.isConfirmed) return;
+            const formData = new FormData();
+            formData.append('action', 'delete_sales_order_from_tab');
+            formData.append('so_id', orderId);
+            fetch('orderproduct.php', { method: 'POST', body: formData, headers: {'X-Requested-With':'XMLHttpRequest'} })
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.success) throw new Error(data.message || 'Failed to delete sales order.');
+                    Swal.fire({icon:'success', title:'Deleted', text:data.message || 'Sales order deleted successfully.', timer:1300, showConfirmButton:false})
+                        .then(() => window.location.href = 'orderproduct.php?tab=salesOrder');
+                })
+                .catch(err => Swal.fire('Error', err.message || 'Failed to delete sales order.', 'error'));
+        });
+    }
+
+
+    // ===== Sales Order tab function aliases =====
+    // These keep the Sales Order tab using the same function names as sales_order.php.
+    function viewOrder(id) {
+        return viewOrderFromOrderProduct(id);
+    }
+
+    function printSingleOrder(id) {
+        return printSingleOrderFromOrderProduct(id);
+    }
+
+    function editOrder(id) {
+        return editOrderFromOrderProduct(id);
+    }
+
+    
+// Extra safety: bind the Update Order button and form submit directly.
+// This fixes cases where inline onclick does not fire because of modal/form/script loading order.
+document.addEventListener('DOMContentLoaded', function() {
+    const updateBtn = document.getElementById('updateOrderBtn');
+    if (updateBtn) {
+        updateBtn.addEventListener('click', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            updateOrder();
+        });
+    }
+    const editForm = document.getElementById('editOrderForm');
+    if (editForm) {
+        editForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            updateOrder();
+        });
+    }
+});
+
+function deleteOrder(id) {
+        return deleteOrderFromOrderProduct(id);
+    }
+
+    function editFromView() {
+        const modal = bootstrap.Modal.getInstance(document.getElementById('orderDetailsModal'));
+        if (modal) modal.hide();
+        setTimeout(() => {
+            if (currentOrderIdFromOrderProduct) editOrder(currentOrderIdFromOrderProduct);
+        }, 250);
     }
 
     function createPrintFrame() {
@@ -8060,7 +13684,183 @@ html, body {
         padding: 3mm;
     }
 }
+
+
+/* ===== AMGC REAL FINAL FIX: DEFAULT STYLE FULL PAGE SCROLL =====
+   This fixes the cut bottom issue in Default Invoice Style.
+   Default style now uses normal page scrolling, while Classic keeps the old cart/table behavior.
+*/
+html,
+body {
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: 100% !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+}
+
+#appPage {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 100vh !important;
+    max-height: none !important;
+    overflow: visible !important;
+}
+
+body.order-product-invoice-style,
+body.order-product-invoice-style #appPage {
+    height: auto !important;
+    min-height: 100vh !important;
+    max-height: none !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+}
+
+body.order-product-invoice-style .main-content {
+    height: auto !important;
+    min-height: 100vh !important;
+    max-height: none !important;
+    overflow: visible !important;
+    display: block !important;
+    padding-bottom: 170px !important;
+}
+
+body.order-product-invoice-style .navbar-top {
+    position: relative !important;
+    z-index: 10000 !important;
+    overflow: visible !important;
+}
+
+body.order-product-invoice-style .order-style-navbar-dropdown,
+body.order-product-invoice-style .order-style-navbar-dropdown .dropdown-menu,
+body.order-product-invoice-style .order-style-menu {
+    overflow: visible !important;
+    z-index: 10001 !important;
+}
+
+body.order-product-invoice-style .order-style-navbar-dropdown .dropdown-menu,
+body.order-product-invoice-style .order-style-menu {
+    position: absolute !important;
+    top: calc(100% + 8px) !important;
+    left: 0 !important;
+    right: auto !important;
+    transform: none !important;
+}
+
+body.order-product-invoice-style .invoice-style-workspace {
+    display: block !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin-bottom: 170px !important;
+}
+
+body.order-product-invoice-style .invoice-sheet {
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding-bottom: 140px !important;
+}
+
+body.order-product-invoice-style .invoice-table-wrap {
+    max-height: none !important;
+    height: auto !important;
+    overflow-y: visible !important;
+    overflow-x: auto !important;
+}
+
+body.order-product-invoice-style .invoice-bottom-area {
+    margin-bottom: 80px !important;
+}
+
+body.order-product-invoice-style .classic-cart-btn,
+body.order-product-invoice-style [data-cart-button="true"] {
+    display: none !important;
+}
+
+body.order-product-classic-style {
+    height: 100vh !important;
+    overflow: hidden !important;
+}
+
+body.order-product-classic-style #appPage {
+    height: 100vh !important;
+    max-height: 100vh !important;
+    overflow: hidden !important;
+}
+
+body.order-product-classic-style .main-content {
+    height: 100vh !important;
+    max-height: 100vh !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+body.order-product-classic-style .product-table-container {
+    overflow-y: auto !important;
+    overflow-x: auto !important;
+    padding-bottom: 130px !important;
+}
+
+@media (max-width: 992px) {
+    body.order-product-invoice-style .main-content {
+        padding-bottom: 190px !important;
+    }
+    body.order-product-invoice-style .invoice-sheet {
+        min-width: 980px;
+        padding-bottom: 170px !important;
+    }
+    body.order-product-invoice-style .invoice-style-workspace {
+        overflow-x: auto !important;
+        margin-bottom: 190px !important;
+    }
+}
+
 </style>
+
+<style id="amgc-default-invoice-table-green-final-override">
+/* FINAL OVERRIDE: Default Style invoice table alternating green/white rows */
+body.order-product-invoice-style .invoice-entry-table tbody tr:nth-child(odd),
+body.order-product-invoice-style .invoice-entry-table tbody tr:nth-child(odd) td {
+    background-color: #E6F4E6 !important;
+}
+
+body.order-product-invoice-style .invoice-entry-table tbody tr:nth-child(even),
+body.order-product-invoice-style .invoice-entry-table tbody tr:nth-child(even) td {
+    background-color: #FFFFFF !important;
+}
+
+body.order-product-invoice-style .invoice-entry-table tbody td,
+body.order-product-invoice-style .invoice-entry-table tbody select,
+body.order-product-invoice-style .invoice-entry-table tbody input {
+    background: transparent !important;
+    background-color: transparent !important;
+}
+
+body.order-product-invoice-style .invoice-entry-table tbody tr:nth-child(odd) select,
+body.order-product-invoice-style .invoice-entry-table tbody tr:nth-child(odd) input {
+    background-color: transparent !important;
+}
+
+body.order-product-invoice-style .invoice-entry-table tbody tr:nth-child(even) select,
+body.order-product-invoice-style .invoice-entry-table tbody tr:nth-child(even) input {
+    background-color: transparent !important;
+}
+
+/* Sales Order tab action buttons, same behavior/style names as sales_order.php */
+.action-buttons{display:flex;align-items:center;justify-content:center;gap:6px;flex-wrap:nowrap;}
+.btn-action{width:32px;height:32px;border:0;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;font-size:.9rem;transition:all .18s ease;cursor:pointer;}
+.btn-action:hover{transform:translateY(-1px);box-shadow:0 4px 10px rgba(0,0,0,.12);}
+.btn-view{background:#e0f2fe;color:#0369a1;}
+.btn-print{background:#dcfce7;color:#047857;}
+.btn-edit{background:#fef3c7;color:#b45309;}
+.btn-delete{background:#fee2e2;color:#b91c1c;}
+</style>
+
 </head>
 <body>
     <div class="print-wrapper">
@@ -8113,6 +13913,188 @@ window.onload = function () {
     }, 500);
 };
 <\/script>
+
+<style id="amgc-default-invoice-delivery-type-fix">
+/* Default Invoice Style: Pick Up / Delivery with conditional Driver and Vehicle fields */
+body.order-product-invoice-style .invoice-right-fields {
+    grid-template-columns: repeat(5, minmax(92px, 1fr)) !important;
+    gap: 18px 20px !important;
+}
+
+body.order-product-invoice-style .invoice-fulfillment-field {
+    min-width: 190px;
+}
+
+body.order-product-invoice-style .invoice-delivery-type-options {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    height: 32px;
+}
+
+body.order-product-invoice-style .invoice-delivery-type-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: #052A47;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+body.order-product-invoice-style .invoice-delivery-type-option input {
+    width: 16px !important;
+    height: 16px !important;
+    margin: 0 !important;
+    accent-color: #2563eb;
+}
+
+body.order-product-invoice-style .invoice-delivery-field[style*="display: none"] {
+    display: none !important;
+}
+
+@media (max-width: 1200px) {
+    body.order-product-invoice-style .invoice-sheet-head {
+        grid-template-columns: 1fr minmax(620px, 1fr) !important;
+    }
+    body.order-product-invoice-style .invoice-right-fields {
+        grid-template-columns: repeat(4, minmax(150px, 1fr)) !important;
+    }
+    body.order-product-invoice-style .invoice-fulfillment-field {
+        grid-column: span 2;
+    }
+}
+
+@media (max-width: 768px) {
+    body.order-product-invoice-style .invoice-right-fields {
+        grid-template-columns: repeat(2, minmax(130px, 1fr)) !important;
+    }
+    body.order-product-invoice-style .invoice-fulfillment-field {
+        grid-column: span 2;
+    }
+}
+</style>
+
+
+<style id="amgc-orderproduct-top-spacing-fix">
+/* Final visible spacing above the Order Products card */
+.main-content,
+body.order-product-invoice-style .main-content,
+body.order-product-classic-style .main-content {
+    padding-top: 18px !important;
+}
+
+.navbar-top {
+    margin-top: 0 !important;
+    margin-bottom: 16px !important;
+}
+
+@media (max-width: 992px) {
+    .main-content,
+    .sidebar.collapsed ~ .main-content,
+    body.order-product-invoice-style .main-content,
+    body.order-product-classic-style .main-content {
+        padding-top: 14px !important;
+    }
+}
+</style>
+
+
+<style>
+/* Wider invoice-format Order Details modal so the form fits like the invoice page */
+#orderDetailsModal .order-details-wide-modal,
+#orderDetailsModal .modal-dialog {
+    width: calc(100vw - 24px) !important;
+    max-width: calc(100vw - 24px) !important;
+    height: calc(100vh - 24px) !important;
+    max-height: calc(100vh - 24px) !important;
+    margin: 12px auto !important;
+}
+#orderDetailsModal .modal-content {
+    width: 100% !important;
+    height: 100% !important;
+    max-height: none !important;
+    border-radius: 8px !important;
+}
+#orderDetailsModal .modal-header {
+    padding: .55rem .85rem !important;
+}
+#orderDetailsModal .modal-body {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding: 0 !important;
+    background: #fff !important;
+}
+#orderDetailsModal .op-invoice-form-view .op-invoice-main {
+    padding: 18px 22px 16px !important;
+}
+#orderDetailsModal .op-invoice-form-view .op-invoice-sheet-head {
+    grid-template-columns: minmax(360px, 1fr) minmax(760px, 820px) !important;
+    gap: 18px !important;
+}
+#orderDetailsModal .op-invoice-form-view .op-right-fields {
+    grid-template-columns: repeat(4, minmax(120px, 1fr)) !important;
+    gap: 14px 16px !important;
+}
+#orderDetailsModal .op-invoice-form-view .op-invoice-title {
+    font-size: 2.75rem !important;
+    margin: 8px 0 14px !important;
+}
+#orderDetailsModal .op-invoice-form-view .op-detail-control,
+#orderDetailsModal .op-invoice-form-view .op-detail-select {
+    min-height: 32px !important;
+    padding: 4px 9px !important;
+    font-size: .9rem !important;
+}
+#orderDetailsModal .op-invoice-items-table thead th,
+#orderDetailsModal .op-invoice-items-table td,
+#orderDetailsModal .op-invoice-items-table tfoot td {
+    padding: 7px 9px !important;
+}
+#orderDetailsModal .op-invoice-items-table {
+    font-size: .9rem !important;
+}
+#orderDetailsModal .op-message-box {
+    min-height: 44px !important;
+}
+#orderDetailsModal .op-payment-view-box {
+    padding: 12px 14px !important;
+}
+#orderDetailsModal .op-summary-box > div {
+    margin-bottom: 5px !important;
+}
+#orderDetailsModal .op-invoice-topbar {
+    padding: 6px 10px !important;
+}
+#orderDetailsModal .op-invoice-form-view .op-invoice-topbar {
+    grid-template-columns: minmax(430px, 1fr) 150px minmax(430px, .95fr) !important;
+    gap: 18px !important;
+}
+@media (max-width: 1200px) {
+    #orderDetailsModal .op-invoice-form-view .op-invoice-sheet-head {
+        grid-template-columns: 1fr !important;
+    }
+    #orderDetailsModal .op-invoice-form-view .op-right-fields {
+        grid-template-columns: repeat(3, minmax(130px, 1fr)) !important;
+    }
+}
+@media (max-width: 768px) {
+    #orderDetailsModal .order-details-wide-modal,
+    #orderDetailsModal .modal-dialog {
+        width: calc(100vw - 8px) !important;
+        max-width: calc(100vw - 8px) !important;
+        height: calc(100vh - 8px) !important;
+        max-height: calc(100vh - 8px) !important;
+        margin: 4px auto !important;
+    }
+    #orderDetailsModal .op-invoice-form-view .op-right-fields {
+        grid-template-columns: 1fr 1fr !important;
+    }
+}
+</style>
+
 </body>
 </html>
         `;
@@ -8155,7 +14137,3536 @@ document.addEventListener('DOMContentLoaded', function() {
     // Add this line at the end of your DOMContentLoaded function:
     setTimeout(expandCustomerDropdown, 150);
 });
+    document.addEventListener('DOMContentLoaded', function () {
+    updateEmployeesTaskBadge();
+});
 
+/* ===== AMGC ORDER PRODUCT DUAL STYLE UPDATE SCRIPT ===== */
+(function() {
+    const ORDER_STYLE_KEY = 'amgc_order_product_style';
+
+    function getStyleFromUrl() {
+        const params = new URLSearchParams(window.location.search);
+        const style = (params.get('style') || '').toLowerCase();
+        if (style === 'classic' || style === 'current') return 'classic';
+        if (style === 'invoice' || style === 'default') return 'invoice';
+        return '';
+    }
+
+    window.getOrderProductStyle = function() {
+        return getStyleFromUrl() || localStorage.getItem(ORDER_STYLE_KEY) || 'invoice';
+    };
+
+    window.setOrderProductStyle = function(style) {
+        style = style === 'classic' ? 'classic' : 'invoice';
+        localStorage.setItem(ORDER_STYLE_KEY, style);
+        applyOrderProductStyle(style);
+    };
+
+    function applyOrderProductStyle(style) {
+        document.body.classList.toggle('order-product-classic-style', style === 'classic');
+        document.body.classList.toggle('order-product-invoice-style', style !== 'classic');
+
+        const invoiceBtn = document.getElementById('invoiceStyleBtn');
+        const classicBtn = document.getElementById('classicStyleBtn');
+        if (invoiceBtn) invoiceBtn.classList.toggle('active', style !== 'classic');
+        if (classicBtn) classicBtn.classList.toggle('active', style === 'classic');
+
+        if (style !== 'classic') {
+            buildInvoiceStyleRows();
+            syncInvoiceCustomerOptions();
+            updateInvoiceTotals();
+        }
+    }
+
+    function sanitizeDigits(value, maxLen) {
+        return String(value || '').replace(/\D/g, '').slice(0, maxLen || 6);
+    }
+
+    function todayYmd() {
+        const d = new Date();
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    function addDaysYmd(days) {
+        const d = new Date();
+        d.setDate(d.getDate() + Number(days || 0));
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    }
+
+    function getInvoiceProductOptions(selectedId) {
+        let html = '<option value=""></option>';
+        const groupedProducts = {};
+        [...inventory].sort((a, b) => {
+            const catA = String(a.category || 'General').toLowerCase();
+            const catB = String(b.category || 'General').toLowerCase();
+            if (catA !== catB) return catA.localeCompare(catB);
+            return String(a.name || '').localeCompare(String(b.name || ''));
+        }).forEach(p => {
+            const category = String(p.category || 'General').trim() || 'General';
+            if (!groupedProducts[category]) groupedProducts[category] = [];
+            groupedProducts[category].push(p);
+        });
+
+        Object.keys(groupedProducts).sort((a, b) => a.localeCompare(b)).forEach(category => {
+            html += `<option value="" class="invoice-product-category-header-option dropdown-group-header-option" disabled>${escapeHtml(category)}</option>`;
+            groupedProducts[category].forEach(p => {
+                html += `<option value="${p.id}" data-category="${escapeHtml(category)}" ${String(selectedId || '') === String(p.id) ? 'selected' : ''}>${escapeHtml(p.name || '')}</option>`;
+            });
+        });
+        return html;
+    }
+
+    function getInvoiceProductCategory(productId) {
+        const product = inventory.find(p => Number(p.id) === Number(productId));
+        return product && String(product.category || '').trim() ? String(product.category).trim() : 'General';
+    }
+
+    function setInvoiceRowCategory(row, productId) {
+        const categoryEl = row?.querySelector('.invoice-selected-category');
+        if (!categoryEl) return;
+        if (!productId) {
+            categoryEl.textContent = '';
+            categoryEl.classList.remove('show');
+            return;
+        }
+        categoryEl.textContent = getInvoiceProductCategory(productId);
+        categoryEl.classList.add('show');
+    }
+
+    function getInvoiceUnitOptions(productId, selectedUnit) {
+        const product = inventory.find(p => Number(p.id) === Number(productId));
+        if (!product) return '<option value=""></option>';
+
+        const units = productUnitTypes[productId] && productUnitTypes[productId].length
+            ? productUnitTypes[productId]
+            : [{ unit_type_name: product.default_unit_type_name || product.unit_type || 'Piece', unit_price: product.unit_price || 0 }];
+
+        let html = '';
+        units.forEach((ut, idx) => {
+            const name = ut.unit_type_name || product.default_unit_type_name || product.unit_type || 'Piece';
+            const selected = selectedUnit ? String(selectedUnit).toLowerCase() === String(name).toLowerCase() : idx === 0;
+            html += `<option value="${escapeHtml(name)}" ${selected ? 'selected' : ''}>${escapeHtml(name)}</option>`;
+        });
+        return html || '<option value="Piece">Piece</option>';
+    }
+
+    function getInvoiceUnitPrice(productId, unitName) {
+        const product = inventory.find(p => Number(p.id) === Number(productId));
+        if (!product) return 0;
+
+        const units = productUnitTypes[productId] || [];
+        const matched = units.find(ut => String(ut.unit_type_name || '').toLowerCase() === String(unitName || '').toLowerCase());
+        if (matched) return parseFloat(matched.unit_price || 0) || 0;
+
+        return parseFloat(product.unit_price || 0) || 0;
+    }
+
+    function getNextInvoiceRowIndex() {
+        const rows = document.querySelectorAll('#invoiceItemsBody tr[data-invoice-row]');
+        let maxIndex = -1;
+        rows.forEach(row => {
+            const index = parseInt(row.dataset.invoiceRow || '-1', 10);
+            if (!isNaN(index) && index > maxIndex) maxIndex = index;
+        });
+        return maxIndex + 1;
+    }
+
+    function getInvoiceRowHtml(index) {
+        return `
+            <tr data-invoice-row="${index}">
+                <td class="invoice-product-cell">
+                    <div class="invoice-product-wrap">
+                        <select class="invoice-item-select grouped-native-select" onchange="invoiceRowProductChanged(${index})">
+                            ${getInvoiceProductOptions('')}
+                        </select>
+                        <span class="invoice-selected-category"></span>
+                    </div>
+                </td>
+                <td><select class="invoice-unit-select" onchange="invoiceRowUnitChanged(${index})"><option value=""></option></select></td>
+                <td><input type="number" class="invoice-qty" min="0" step="1" value="" oninput="invoiceRowQtyChanged(${index})"></td>
+                <td><input type="text" inputmode="decimal" class="invoice-price" value="" data-min-price="0" oninput="invoiceRowPriceChanged(${index})" onblur="invoiceRowPriceBlur(${index})" autocomplete="off"></td>
+                <td><input type="text" class="invoice-amount" readonly></td>
+            </tr>
+        `;
+    }
+
+    function appendInvoiceStyleRow() {
+        const body = document.getElementById('invoiceItemsBody');
+        if (!body) return;
+        body.insertAdjacentHTML('beforeend', getInvoiceRowHtml(getNextInvoiceRowIndex()));
+    }
+
+    function ensureInvoiceStyleHasBlankRow() {
+        const body = document.getElementById('invoiceItemsBody');
+        if (!body) return;
+        const rows = Array.from(body.querySelectorAll('tr[data-invoice-row]'));
+        if (!rows.length) {
+            appendInvoiceStyleRow();
+            return;
+        }
+
+        const hasBlankRow = rows.some(row => {
+            const productId = row.querySelector('.invoice-item-select')?.value || '';
+            const qty = parseInt(row.querySelector('.invoice-qty')?.value || '0', 10) || 0;
+            const unitName = row.querySelector('.invoice-unit-select')?.value || '';
+            return !productId && qty <= 0 && !unitName;
+        });
+
+        if (!hasBlankRow) appendInvoiceStyleRow();
+    }
+
+    function buildInvoiceStyleRows() {
+        const body = document.getElementById('invoiceItemsBody');
+        if (!body || body.dataset.ready === '1') return;
+
+        let rows = '';
+        for (let i = 0; i < 10; i++) {
+            rows += getInvoiceRowHtml(i);
+        }
+        body.innerHTML = rows;
+        body.dataset.ready = '1';
+    }
+
+    window.invoiceRowProductChanged = function(index) {
+        const row = document.querySelector(`[data-invoice-row="${index}"]`);
+        if (!row) return;
+
+        const productId = row.querySelector('.invoice-item-select')?.value || '';
+        const unitSelect = row.querySelector('.invoice-unit-select');
+        const qty = row.querySelector('.invoice-qty');
+        const priceInput = row.querySelector('.invoice-price');
+        const amount = row.querySelector('.invoice-amount');
+
+        if (!productId) {
+            setInvoiceRowCategory(row, '');
+            if (unitSelect) unitSelect.innerHTML = '<option value=""></option>';
+            if (qty) qty.value = '';
+            if (priceInput) priceInput.value = '';
+            if (amount) amount.value = '';
+            syncInvoiceRowsToCart();
+            ensureInvoiceStyleHasBlankRow();
+            return;
+        }
+
+        setInvoiceRowCategory(row, productId);
+        if (unitSelect) {
+            unitSelect.innerHTML = getInvoiceUnitOptions(productId, '');
+        }
+        if (qty && !qty.value) qty.value = 1;
+        if (priceInput) priceInput.value = '';
+
+        invoiceRecomputeRow(index, true);
+        ensureInvoiceStyleHasBlankRow();
+    };
+
+    window.invoiceRowUnitChanged = function(index) {
+        const row = document.querySelector(`[data-invoice-row="${index}"]`);
+        if (!row) return;
+        const productId = row.querySelector('.invoice-item-select')?.value || '';
+        setInvoiceRowCategory(row, productId);
+        const unitName = row.querySelector('.invoice-unit-select')?.value || '';
+        const priceInput = row.querySelector('.invoice-price');
+        const defaultPrice = getInvoiceUnitPrice(productId, unitName);
+        if (priceInput) {
+            priceInput.dataset.minPrice = String(defaultPrice || 0);
+            priceInput.value = defaultPrice > 0 ? defaultPrice.toFixed(2) : '';
+            priceInput.classList.remove('is-invalid');
+        }
+        invoiceRecomputeRow(index, true);
+        ensureInvoiceStyleHasBlankRow();
+    };
+
+    window.invoiceRowQtyChanged = function(index) {
+        const row = document.querySelector(`[data-invoice-row="${index}"]`);
+        const qty = row?.querySelector('.invoice-qty');
+        if (qty) {
+            let v = parseInt(qty.value || '0', 10);
+            if (isNaN(v) || v < 0) v = 0;
+            qty.value = v || '';
+        }
+        invoiceRecomputeRow(index, false);
+        ensureInvoiceStyleHasBlankRow();
+    };
+
+    function sanitizeDecimalInputWithCaret(input) {
+        if (!input) return '';
+
+        const originalValue = String(input.value || '');
+        const originalCaret = typeof input.selectionStart === 'number' ? input.selectionStart : originalValue.length;
+        let cleaned = '';
+        let dotSeen = false;
+        let newCaret = 0;
+
+        for (let i = 0; i < originalValue.length; i++) {
+            const ch = originalValue.charAt(i);
+            let keep = false;
+
+            if (ch >= '0' && ch <= '9') {
+                keep = true;
+            } else if (ch === '.' && !dotSeen) {
+                keep = true;
+                dotSeen = true;
+            }
+
+            if (keep) cleaned += ch;
+            if (i < originalCaret && keep) newCaret++;
+        }
+
+        if (input.value !== cleaned) {
+            input.value = cleaned;
+            requestAnimationFrame(() => {
+                try {
+                    input.setSelectionRange(newCaret, newCaret);
+                } catch (e) {}
+            });
+        }
+
+        return cleaned;
+    }
+
+    window.invoiceRowPriceChanged = function(index) {
+        const row = document.querySelector(`[data-invoice-row="${index}"]`);
+        const priceInput = row?.querySelector('.invoice-price');
+        if (priceInput) {
+            const rawValue = sanitizeDecimalInputWithCaret(priceInput);
+
+            const productId = row?.querySelector('.invoice-item-select')?.value || '';
+            const unitName = row?.querySelector('.invoice-unit-select')?.value || '';
+            const minPrice = getInvoiceUnitPrice(productId, unitName);
+            priceInput.dataset.minPrice = String(minPrice || 0);
+            const typedPrice = parseFloat(rawValue);
+            if (rawValue !== '' && rawValue !== '.' && !isNaN(typedPrice) && typedPrice + 0.009 < minPrice) {
+                priceInput.classList.add('is-invalid');
+            } else {
+                priceInput.classList.remove('is-invalid');
+            }
+        }
+        invoiceRecomputeRow(index, false);
+        ensureInvoiceStyleHasBlankRow();
+    };
+
+    window.invoiceRowPriceBlur = function(index) {
+        const row = document.querySelector(`[data-invoice-row="${index}"]`);
+        const priceInput = row?.querySelector('.invoice-price');
+        if (!priceInput) return;
+
+        const productId = row?.querySelector('.invoice-item-select')?.value || '';
+        const unitName = row?.querySelector('.invoice-unit-select')?.value || '';
+        if (!productId || !unitName) return;
+
+        const minPrice = getInvoiceUnitPrice(productId, unitName);
+        priceInput.dataset.minPrice = String(minPrice || 0);
+        const raw = String(priceInput.value || '').replace(/,/g, '');
+
+        if (raw === '' || raw === '.') {
+            priceInput.classList.remove('is-invalid');
+            invoiceRecomputeRow(index, false);
+            return;
+        }
+
+        const typedPrice = parseFloat(raw);
+        if (isNaN(typedPrice) || typedPrice + 0.009 < minPrice) {
+            priceInput.value = minPrice > 0 ? minPrice.toFixed(2) : '';
+            priceInput.classList.remove('is-invalid');
+            showToast(`Price cannot be lower than declared price ${formatCurrency(minPrice)}.`);
+        } else {
+            priceInput.value = typedPrice.toFixed(2);
+            priceInput.classList.remove('is-invalid');
+        }
+        invoiceRecomputeRow(index, false);
+    };
+
+    function getInvoiceEditedPrice(row, productId, unitName) {
+        const priceInput = row?.querySelector('.invoice-price');
+        const raw = String(priceInput?.value || '').replace(/,/g, '');
+        if (raw === '') return NaN;
+        const editedPrice = parseFloat(raw);
+        if (!isNaN(editedPrice) && editedPrice >= 0) return editedPrice;
+        return NaN;
+    }
+
+    function invoiceRecomputeRow(index, resetPriceToDefault = false) {
+        const row = document.querySelector(`[data-invoice-row="${index}"]`);
+        if (!row) return;
+
+        const productId = row.querySelector('.invoice-item-select')?.value || '';
+        const unitName = row.querySelector('.invoice-unit-select')?.value || '';
+        const qty = parseInt(row.querySelector('.invoice-qty')?.value || '0', 10) || 0;
+        const priceInput = row.querySelector('.invoice-price');
+        const amountInput = row.querySelector('.invoice-amount');
+
+        if (!productId || !unitName) {
+            if (amountInput) amountInput.value = '';
+            syncInvoiceRowsToCart();
+            return;
+        }
+
+        const defaultPrice = getInvoiceUnitPrice(productId, unitName);
+        if (priceInput) {
+            priceInput.dataset.minPrice = String(defaultPrice || 0);
+            if (resetPriceToDefault) {
+                priceInput.value = defaultPrice > 0 ? defaultPrice.toFixed(2) : '';
+                priceInput.classList.remove('is-invalid');
+            }
+        }
+
+        const price = getInvoiceEditedPrice(row, productId, unitName);
+        if (isNaN(price)) {
+            if (amountInput) amountInput.value = '';
+            syncInvoiceRowsToCart();
+            return;
+        }
+
+        if (price + 0.009 < defaultPrice) {
+            if (priceInput) priceInput.classList.add('is-invalid');
+            if (amountInput) amountInput.value = '';
+            syncInvoiceRowsToCart();
+            return;
+        }
+
+        const amount = qty * price;
+        if (amountInput) amountInput.value = amount > 0 ? amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '';
+
+        syncInvoiceRowsToCart();
+    }
+
+    window.syncInvoiceRowsToCart = function() {
+        const rows = document.querySelectorAll('#invoiceItemsBody tr[data-invoice-row]');
+        const invoiceItems = [];
+
+        rows.forEach(row => {
+            const productId = row.querySelector('.invoice-item-select')?.value || '';
+            const qty = parseInt(row.querySelector('.invoice-qty')?.value || '0', 10) || 0;
+            const unitName = row.querySelector('.invoice-unit-select')?.value || '';
+            if (!productId || qty <= 0 || !unitName) return;
+
+            const product = inventory.find(p => Number(p.id) === Number(productId));
+            if (!product) return;
+
+            const price = getInvoiceEditedPrice(row, productId, unitName);
+            const minPrice = getInvoiceUnitPrice(productId, unitName);
+            const priceInput = row.querySelector('.invoice-price');
+            if (isNaN(price)) return;
+            if (price + 0.009 < minPrice) {
+                if (priceInput) priceInput.classList.add('is-invalid');
+                return;
+            }
+            if (priceInput) priceInput.classList.remove('is-invalid');
+            invoiceItems.push({
+                id: Number(product.id),
+                name: product.name,
+                price: price,
+                quantity: qty,
+                sku: product.sku,
+                unit_type: unitName
+            });
+        });
+
+        cart = invoiceItems;
+        updateCartBadge();
+        updateInvoiceTotals();
+    };
+
+    function updateInvoiceTotals() {
+        const subtotal = getCartSubtotal();
+        const discount = computeCartDiscount(subtotal);
+        const discountLabel = document.getElementById('invoiceDiscountLabel');
+        const discountAmount = document.getElementById('invoiceDiscountAmount');
+        const totalAmount = document.getElementById('invoiceTotalAmount');
+        const balanceDue = document.getElementById('invoiceBalanceDue');
+
+        if (discountLabel) discountLabel.textContent = discount.note ? `(${discount.note})` : '(0.0%)';
+        if (discountAmount) discountAmount.textContent = discount.amount > 0 ? discount.amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00';
+        if (totalAmount) totalAmount.textContent = discount.total.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        if (balanceDue) balanceDue.textContent = discount.total.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        if (typeof toggleBillingTypeFields === 'function') toggleBillingTypeFields();
+        if (typeof updateInvoicePaymentVisibility === 'function') updateInvoicePaymentVisibility();
+    }
+
+    function syncInvoiceCustomerOptions() {
+        const source = document.getElementById('modalCustomerSelect');
+        const target = document.getElementById('invoiceCustomerSelect');
+        if (!source || !target) return;
+
+        const isLocked = <?php echo $is_customer_locked ? 'true' : 'false'; ?>;
+        const lockedCustomerId = document.getElementById('lockedCustomerId')?.value || '';
+        const lockedCustomerName = document.getElementById('lockedCustomerName')?.value || '';
+
+        if (!target.dataset.loaded) {
+            target.innerHTML = source.innerHTML;
+            target.dataset.loaded = '1';
+
+            if (isLocked && lockedCustomerId) {
+                target.value = lockedCustomerId;
+                target.disabled = true;
+                target.classList.add('locked-customer-select');
+            } else {
+                target.value = source.value || '';
+                target.disabled = false;
+                target.addEventListener('change', function() {
+                    source.value = this.value;
+                    source.dispatchEvent(new Event('change', { bubbles: true }));
+                    if (this.value) {
+                        loadCustomerDiscount(this.value);
+                        loadCustomerOutstandingSnapshot(this.value);
+                    }
+                    const selectedDisplay = document.getElementById('selectedCustomerNameDisplay');
+                    if (selectedDisplay) {
+                        const opt = this.options[this.selectedIndex];
+                        selectedDisplay.textContent = opt && opt.value ? opt.text.trim() : 'No customer selected';
+                    }
+                });
+            }
+        }
+
+        if (isLocked && lockedCustomerId) {
+            target.value = lockedCustomerId;
+            target.disabled = true;
+            if (source.value !== lockedCustomerId) {
+                source.value = lockedCustomerId;
+            }
+            const selectedDisplay = document.getElementById('selectedCustomerNameDisplay');
+            if (selectedDisplay) selectedDisplay.textContent = lockedCustomerName || 'No customer selected';
+            return;
+        }
+
+        if (source.value && target.value !== source.value) {
+            target.value = source.value;
+        }
+    }
+
+    function updateInvoiceDeliveryFieldVisibility() {
+        const selectedType = getInvoiceDeliveryTypeValue();
+        const isCredit = isCreditOrderSelected();
+        const isDelivery = !isCredit && selectedType === 'delivery';
+
+        document.querySelectorAll('.invoice-delivery-field').forEach(field => {
+            field.style.display = isDelivery ? '' : 'none';
+        });
+        document.querySelectorAll('.invoice-atw-field, .invoice-gatepass-field, .invoice-fulfillment-field').forEach(field => {
+            field.style.display = isCredit ? 'none' : '';
+        });
+
+        if (!isDelivery) {
+            const invoiceDriver = document.getElementById('invoiceDriverSelect');
+            const invoiceVehicle = document.getElementById('invoiceVehicleSelect');
+            const originalDriver = document.getElementById('deliveryDriverSelect');
+            const originalVehicle = document.getElementById('deliveryVehicleSelect');
+
+            if (invoiceDriver) invoiceDriver.value = '';
+            if (invoiceVehicle) invoiceVehicle.value = '';
+            if (originalDriver) originalDriver.value = '';
+            if (originalVehicle) originalVehicle.value = '';
+        }
+    }
+
+    function syncInvoiceDeliveryTypeToOriginal() {
+        const selectedType = getInvoiceDeliveryTypeValue();
+        setDeliveryTypeValue(selectedType);
+
+        if (typeof refreshDeliveryTypeDependentFields === 'function') {
+            refreshDeliveryTypeDependentFields();
+        }
+    }
+
+    function syncOriginalDeliveryTypeToInvoice() {
+        const selectedOriginal = getDeliveryTypeValue();
+        setInvoiceDeliveryTypeValue(selectedOriginal);
+        updateInvoiceDeliveryFieldVisibility();
+    }
+
+    function syncInvoiceFieldsToOriginalForm() {
+        const customerSelect = document.getElementById('invoiceCustomerSelect');
+        const modalCustomer = document.getElementById('modalCustomerSelect');
+        const isLocked = <?php echo $is_customer_locked ? 'true' : 'false'; ?>;
+        const lockedCustomerId = document.getElementById('lockedCustomerId')?.value || '';
+        if (customerSelect && modalCustomer) {
+            if (isLocked && lockedCustomerId) {
+                customerSelect.value = lockedCustomerId;
+                customerSelect.disabled = true;
+                modalCustomer.value = lockedCustomerId;
+            } else {
+                modalCustomer.value = customerSelect.value;
+                modalCustomer.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }
+
+        const isCredit = isCreditOrderSelected();
+        const atw = isCredit ? '' : sanitizeDigits(document.getElementById('invoiceAtwNo')?.value || '', 6);
+        const gatepass = isCredit ? '' : sanitizeDigits(document.getElementById('invoiceGatepassNo')?.value || '', 6);
+
+        const originalAtw = document.getElementById('atwNo');
+        const originalGatepass = document.getElementById('gatepassNo');
+        if (originalAtw) originalAtw.value = atw;
+        if (originalGatepass) originalGatepass.value = gatepass;
+
+        const invoiceNo = document.getElementById('invoiceNumberVisual');
+        if (invoiceNo) invoiceNo.value = sanitizeDigits(invoiceNo.value || '', 6);
+
+        syncInvoiceDeliveryTypeToOriginal();
+        updateInvoiceDeliveryFieldVisibility();
+
+        const selectedType = getInvoiceDeliveryTypeValue();
+        const invoiceDriver = document.getElementById('invoiceDriverSelect');
+        const invoiceVehicle = document.getElementById('invoiceVehicleSelect');
+        const originalDriver = document.getElementById('deliveryDriverSelect');
+        const originalVehicle = document.getElementById('deliveryVehicleSelect');
+
+        if (selectedType === 'delivery') {
+            if (invoiceDriver && originalDriver) originalDriver.value = invoiceDriver.value || '';
+            if (invoiceVehicle && originalVehicle) originalVehicle.value = invoiceVehicle.value || '';
+        } else {
+            if (invoiceDriver) invoiceDriver.value = '';
+            if (invoiceVehicle) invoiceVehicle.value = '';
+            if (originalDriver) originalDriver.value = '';
+            if (originalVehicle) originalVehicle.value = '';
+        }
+
+        syncInvoicePaymentToOriginalForm();
+        syncInvoiceRowsToCart();
+    }
+
+    function validateInvoiceBeforeSubmit() {
+        syncInvoiceFieldsToOriginalForm();
+
+        if (!cart.length) {
+            showToast('Please add at least one item.');
+            return false;
+        }
+
+        const customerId = document.getElementById('invoiceCustomerSelect')?.value || document.getElementById('modalCustomerSelect')?.value || '';
+        if (!customerId) {
+            showToast('Please select a customer.');
+            document.getElementById('invoiceCustomerSelect')?.focus();
+            return false;
+        }
+
+        const isCredit = isCreditOrderSelected();
+        const atw = document.getElementById('atwNo')?.value || '';
+        const gatepass = document.getElementById('gatepassNo')?.value || '';
+        const documentNumberPattern = /^\d{1,6}$/;
+        if (!isCredit && !gatepass) {
+            showToast('Please enter Gatepass No.');
+            document.getElementById('invoiceGatepassNo')?.focus();
+            return false;
+        }
+        if (!isCredit && ((atw && !documentNumberPattern.test(atw)) || !documentNumberPattern.test(gatepass))) {
+            showToast('Please enter valid ATW No. and Gatepass No. numbers.');
+            if (atw && !documentNumberPattern.test(atw)) document.getElementById('invoiceAtwNo')?.focus();
+            else document.getElementById('invoiceGatepassNo')?.focus();
+            return false;
+        }
+
+        return true;
+    }
+
+    window.invoiceSaveAndClose = function() {
+        if (!validateInvoiceBeforeSubmit()) return;
+        window.invoiceOrderSubmitMode = 'close';
+        submitOrder();
+    };
+
+    window.invoiceSaveAndNew = function() {
+        if (!validateInvoiceBeforeSubmit()) return;
+        window.invoiceOrderSubmitMode = 'new';
+        submitOrder();
+    };
+
+    function resetInvoiceStyleForNextOrder() {
+        const isLocked = <?php echo $is_customer_locked ? 'true' : 'false'; ?>;
+        const lockedCustomerId = document.getElementById('lockedCustomerId')?.value || '';
+
+        const body = document.getElementById('invoiceItemsBody');
+        if (body) {
+            let rowsHtml = '';
+            for (let i = 0; i < 10; i++) {
+                rowsHtml += getInvoiceRowHtml(i);
+            }
+            body.innerHTML = rowsHtml;
+            body.dataset.ready = '1';
+        }
+
+        cart = [];
+        customerDiscount = { percent: 0, type: 'percentage', basedAmount: 0, calculatedAmount: 0 };
+
+        const invoiceCustomer = document.getElementById('invoiceCustomerSelect');
+        const modalCustomer = document.getElementById('modalCustomerSelect');
+        if (isLocked && lockedCustomerId) {
+            if (invoiceCustomer) {
+                invoiceCustomer.value = lockedCustomerId;
+                invoiceCustomer.disabled = true;
+            }
+            if (modalCustomer) modalCustomer.value = lockedCustomerId;
+            loadCustomerDiscount(lockedCustomerId);
+            loadCustomerOutstandingSnapshot(lockedCustomerId);
+        } else {
+            if (invoiceCustomer) {
+                invoiceCustomer.value = '';
+                invoiceCustomer.disabled = false;
+            }
+            if (modalCustomer) modalCustomer.value = '';
+            const selectedDisplay = document.getElementById('selectedCustomerNameDisplay');
+            if (selectedDisplay) selectedDisplay.textContent = 'No customer selected';
+        }
+
+        const today = todayYmd();
+        const invoiceDate = document.getElementById('invoiceOrderDate');
+        const invoiceDueDate = document.getElementById('invoiceDueDate');
+        if (invoiceDate) invoiceDate.value = today;
+        if (invoiceDueDate) invoiceDueDate.value = today;
+
+        ['invoiceNumberVisual', 'invoiceAtwNo', 'invoiceGatepassNo', 'atwNo', 'gatepassNo', 'siNumber', 'registeredBusinessName', 'businessTin', 'businessAddress'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+
+        const terms = document.getElementById('invoiceTerms');
+        if (terms) terms.value = '';
+
+        ['invoiceRecurringEnabled', 'orderRecurringEnabled'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.checked = false;
+        });
+        ['invoiceRecurringEvery', 'orderRecurringEvery'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '1';
+        });
+        ['invoiceRecurringPeriod', 'orderRecurringPeriod'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = 'month';
+        });
+        ['invoiceRecurringUntil', 'orderRecurringUntil'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        ['invoiceRecurringFields', 'orderRecurringFields'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.hidden = true;
+        });
+        toggleOrderRecurring('invoice');
+        toggleOrderRecurring('order');
+
+        setBillingTypeValue('invoice');
+        const soRadio = document.querySelector('input[name="documentType"][value="SO"]');
+        if (soRadio) soRadio.checked = true;
+        if (typeof toggleSIDetails === 'function') toggleSIDetails();
+
+        setInvoiceDeliveryTypeValue('pickup');
+        setDeliveryTypeValue('pickup');
+        ['invoiceDriverSelect', 'invoiceVehicleSelect', 'deliveryDriverSelect', 'deliveryVehicleSelect'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        updateInvoiceDeliveryFieldVisibility();
+        if (typeof refreshDeliveryTypeDependentFields === 'function') refreshDeliveryTypeDependentFields();
+
+        const invoiceCollect = document.getElementById('invoiceCollectPayment');
+        const pickupCollect = document.getElementById('collectPickupPayment');
+        if (invoiceCollect) invoiceCollect.checked = false;
+        if (pickupCollect) pickupCollect.checked = false;
+
+        const invoiceMethod = document.getElementById('invoicePaymentMethod');
+        const pickupMethod = document.getElementById('pickupPaymentMethod');
+        if (invoiceMethod) invoiceMethod.value = 'cash';
+        if (pickupMethod) pickupMethod.value = 'cash';
+        [
+            'invoiceCashTendered', 'pickupCashTendered',
+            'invoiceCheckDate', 'invoiceCheckNumber', 'invoiceCheckPaymentAmount', 'invoiceBankBranch',
+            'invoiceReferenceNumber', 'invoiceOnlineBankName', 'invoiceOnlinePaymentAmount', 'invoiceOnlineBankBranch',
+            'pickupCheckDate', 'pickupCheckNumber', 'pickupCheckPaymentAmount', 'pickupBankBranch',
+            'pickupReferenceNumber', 'pickupOnlineBankName', 'pickupOnlinePaymentAmount', 'pickupOnlineBankBranch',
+            'productSearch', 'opSoSearch'
+        ].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.value = '';
+        });
+        const searchReset = document.getElementById('searchReset');
+        if (searchReset) searchReset.style.display = 'none';
+        const cashChange = document.getElementById('invoiceCashChange');
+        if (cashChange) cashChange.textContent = '₱0.00';
+
+        const reviewItems = document.getElementById('reviewItems');
+        if (reviewItems) reviewItems.innerHTML = '<p class="text-muted text-center">No items in cart</p>';
+        ['reviewCustomer', 'reviewEmail', 'reviewPhone', 'reviewAddress'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = '-';
+        });
+
+        updateCartBadge();
+        updateInvoiceTotals();
+        if (typeof updateReviewTotals === 'function') updateReviewTotals();
+        if (typeof toggleBillingTypeFields === 'function') toggleBillingTypeFields();
+        if (typeof updateInvoicePaymentVisibility === 'function') updateInvoicePaymentVisibility();
+        if (typeof updatePickupPaymentVisibility === 'function') updatePickupPaymentVisibility();
+        if (typeof renderProducts === 'function') renderProducts();
+    }
+
+    window.clearOrderProductFieldsAfterSubmit = function() {
+        try {
+            if (typeof resetInvoiceStyleForNextOrder === 'function') {
+                resetInvoiceStyleForNextOrder();
+            }
+
+            document.querySelectorAll('.modal.show').forEach(modalEl => {
+                const modalInstance = bootstrap.Modal.getInstance(modalEl);
+                if (modalInstance) modalInstance.hide();
+            });
+            document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.remove());
+            document.body.classList.remove('modal-open');
+            document.body.style.removeProperty('overflow');
+            document.body.style.removeProperty('padding-right');
+
+            cart = [];
+            customerDiscount = { percent: 0, type: 'percentage', basedAmount: 0, calculatedAmount: 0 };
+            customerCreditSnapshot = { hasCreditLimit: false, creditLimit: 0, outstandingBalance: 0, orderAmount: 0, requiresOutstandingApproval: false };
+
+            const reviewItems = document.getElementById('reviewItems');
+            if (reviewItems) reviewItems.innerHTML = '<p class="text-muted text-center">No items in cart</p>';
+            ['reviewCustomer', 'reviewEmail', 'reviewPhone', 'reviewAddress'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = '-';
+            });
+
+            const selectedDisplay = document.getElementById('selectedCustomerNameDisplay');
+            if (selectedDisplay) selectedDisplay.textContent = 'No customer selected';
+
+            ['modalCustomerSelect', 'invoiceCustomerSelect', 'deliveryDriverSelect', 'deliveryVehicleSelect', 'invoiceDriverSelect', 'invoiceVehicleSelect'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el && !el.disabled) el.value = '';
+            });
+
+            ['siAttachmentInput', 'si_attachments'].forEach(id => {
+                const fileInput = document.getElementById(id);
+                if (fileInput) fileInput.value = '';
+            });
+
+            if (typeof updateCartBadge === 'function') updateCartBadge();
+            if (typeof updateReviewTotals === 'function') updateReviewTotals();
+            if (typeof updateInvoiceTotals === 'function') updateInvoiceTotals();
+            if (typeof updateOutstandingBalanceDisplay === 'function') updateOutstandingBalanceDisplay();
+            if (typeof updateInvoicePaymentVisibility === 'function') updateInvoicePaymentVisibility();
+            if (typeof updatePickupPaymentVisibility === 'function') updatePickupPaymentVisibility();
+            if (typeof renderProducts === 'function') renderProducts();
+        } catch (resetError) {
+            console.warn('Unable to clear Order Product fields after submit:', resetError);
+        }
+    };
+
+    window.clearInvoiceStyleRows = function() {
+        resetInvoiceStyleForNextOrder();
+    };
+
+    window.resetOrderFormForNewInvoice = function() {
+        resetInvoiceStyleForNextOrder();
+    };
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const dateInput = document.getElementById('invoiceOrderDate');
+        const dueInput = document.getElementById('invoiceDueDate');
+        if (dateInput && !dateInput.value) dateInput.value = todayYmd();
+        if (dueInput && !dueInput.value) dueInput.value = todayYmd();
+
+        ['invoiceAtwNo', 'invoiceGatepassNo', 'invoiceNumberVisual'].forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('input', function() {
+                this.value = sanitizeDigits(this.value, 6);
+                syncInvoiceFieldsToOriginalForm();
+            });
+        });
+
+        ['invoiceDriverSelect', 'invoiceVehicleSelect'].forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('change', function() {
+                syncInvoiceFieldsToOriginalForm();
+            });
+        });
+
+        const invoiceCreditCheckbox = document.getElementById('invoiceCreditCheckbox');
+        if (invoiceCreditCheckbox) {
+            invoiceCreditCheckbox.addEventListener('change', function() {
+                setBillingTypeValue(this.checked ? 'credit' : 'invoice');
+                syncInvoiceFieldsToOriginalForm();
+                toggleBillingTypeFields();
+                updateInvoiceDocumentTitle();
+            });
+        }
+
+        document.querySelectorAll('input[name="billingType"]').forEach(el => {
+            el.addEventListener('change', function() {
+                if (this.checked) {
+                    setBillingTypeValue(this.value);
+                    syncInvoiceFieldsToOriginalForm();
+                    toggleBillingTypeFields();
+                    updateInvoiceDocumentTitle();
+                }
+            });
+        });
+
+        const invoiceDeliveryTypeSelect = document.getElementById('invoiceDeliveryType');
+        if (invoiceDeliveryTypeSelect) {
+            invoiceDeliveryTypeSelect.addEventListener('change', function() {
+                setInvoiceDeliveryTypeValue(this.value);
+                updateInvoiceDeliveryFieldVisibility();
+                syncInvoiceFieldsToOriginalForm();
+            });
+        }
+
+        document.querySelectorAll('input[name="invoiceDeliveryType"]').forEach(el => {
+            el.addEventListener('change', function() {
+                if (this.checked) {
+                    setInvoiceDeliveryTypeValue(this.value);
+                    updateInvoiceDeliveryFieldVisibility();
+                    syncInvoiceFieldsToOriginalForm();
+                }
+            });
+        });
+
+        const originalDeliveryTypeSelect = document.getElementById('deliveryType');
+        if (originalDeliveryTypeSelect) {
+            originalDeliveryTypeSelect.addEventListener('change', function() {
+                setDeliveryTypeValue(this.value);
+                refreshDeliveryTypeDependentFields();
+                syncOriginalDeliveryTypeToInvoice();
+            });
+        }
+
+        document.querySelectorAll('input[name="deliveryType"]').forEach(el => {
+            el.addEventListener('change', function() {
+                if (this.checked) {
+                    setDeliveryTypeValue(this.value);
+                    refreshDeliveryTypeDependentFields();
+                    syncOriginalDeliveryTypeToInvoice();
+                }
+            });
+        });
+
+        syncOriginalDeliveryTypeToInvoice();
+
+        setTimeout(function() {
+            syncOriginalDeliveryTypeToInvoice();
+            applyOrderProductStyle(getOrderProductStyle());
+        }, 250);
+    });
+
+    document.addEventListener('customerDiscountLoaded', updateInvoiceTotals);
+})();
+
+</script>
+
+
+<!-- AMGC FORCE SCROLL FIX - DEFAULT/CLASSIC ORDER PRODUCT -->
+<style id="amgc-force-scroll-fix">
+/*
+   Final scroll fix:
+   The page previously had mixed rules: body hidden, main-content visible,
+   and invoice area with fixed heights. This makes the main content the only
+   scrolling container so the bottom buttons/totals will always be reachable.
+*/
+html,
+body {
+    width: 100% !important;
+    height: 100% !important;
+    min-height: 100% !important;
+    max-height: 100% !important;
+    overflow: hidden !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
+#appPage {
+    width: 100% !important;
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    max-height: 100dvh !important;
+    overflow: hidden !important;
+    display: block !important;
+    position: relative !important;
+}
+
+.sidebar {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    bottom: 0 !important;
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    overflow: hidden !important;
+    z-index: 1000 !important;
+}
+
+.sidebar-content {
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    min-height: 0 !important;
+}
+
+.main-content {
+    position: fixed !important;
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: 250px !important;
+    width: auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    margin-left: 0 !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    display: block !important;
+    padding: 18px 18px 230px 18px !important;
+    -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior: contain !important;
+    background: #f5f5f5 !important;
+}
+
+.sidebar.collapsed ~ .main-content {
+    left: 80px !important;
+    margin-left: 0 !important;
+}
+
+.navbar-top {
+    position: relative !important;
+    z-index: 2000 !important;
+    overflow: visible !important;
+    margin: 0 0 16px 0 !important;
+    flex-shrink: 0 !important;
+}
+
+.order-style-navbar-dropdown,
+.order-style-navbar-dropdown .dropdown,
+.order-style-navbar-dropdown .dropdown-menu,
+.order-style-menu {
+    overflow: visible !important;
+    z-index: 999999 !important;
+}
+
+.order-style-navbar-dropdown .dropdown-menu,
+.order-style-menu {
+    position: absolute !important;
+    top: calc(100% + 8px) !important;
+    left: 0 !important;
+    right: auto !important;
+    transform: none !important;
+    min-width: 190px !important;
+    background: #ffffff !important;
+    border: 1px solid #d7dce2 !important;
+    box-shadow: 0 12px 28px rgba(5, 42, 71, 0.18) !important;
+}
+
+body.order-product-invoice-style .classic-cart-btn {
+    display: none !important;
+}
+
+body.order-product-classic-style .classic-cart-btn {
+    display: inline-flex !important;
+}
+
+body.order-product-invoice-style .invoice-style-workspace {
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin-bottom: 50px !important;
+}
+
+body.order-product-invoice-style .invoice-sheet {
+    height: auto !important;
+    min-height: 760px !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding-bottom: 80px !important;
+}
+
+body.order-product-invoice-style .invoice-table-wrap {
+    max-height: none !important;
+    overflow-y: visible !important;
+    overflow-x: auto !important;
+}
+
+body.order-product-invoice-style .invoice-bottom-area,
+body.order-product-invoice-style .invoice-actions,
+body.order-product-invoice-style .invoice-totals {
+    position: relative !important;
+    z-index: 1 !important;
+}
+
+body.order-product-classic-style .products-section {
+    flex: 1 1 auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+body.order-product-classic-style .product-table-container {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    max-height: calc(100dvh - 275px) !important;
+    overflow-y: auto !important;
+    overflow-x: auto !important;
+    padding-bottom: 40px !important;
+    -webkit-overflow-scrolling: touch !important;
+}
+
+@media (max-width: 992px) {
+    .sidebar {
+        transform: translateX(-100%);
+    }
+    .sidebar.active {
+        transform: translateX(0);
+    }
+    .main-content,
+    .sidebar.collapsed ~ .main-content {
+        left: 0 !important;
+        padding: 0 12px 240px 12px !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .invoice-blue-strip,
+    .invoice-sheet-head,
+    .invoice-bottom-area {
+        grid-template-columns: 1fr !important;
+        gap: 14px !important;
+    }
+    .invoice-right-fields {
+        grid-template-columns: repeat(2, minmax(130px, 1fr)) !important;
+        justify-content: stretch !important;
+    }
+    body.order-product-invoice-style .invoice-sheet {
+        min-height: 920px !important;
+        padding-bottom: 120px !important;
+    }
+}
+</style>
+
+<script id="amgc-force-scroll-script">
+document.addEventListener('DOMContentLoaded', function () {
+    const mainContent = document.querySelector('.main-content');
+    const sidebar = document.getElementById('sidebar');
+
+    function forceScrollableLayout() {
+        if (!mainContent) return;
+        mainContent.style.position = 'fixed';
+        mainContent.style.top = '0';
+        mainContent.style.right = '0';
+        mainContent.style.bottom = '0';
+        mainContent.style.height = 'auto';
+        mainContent.style.maxHeight = 'none';
+        mainContent.style.overflowY = 'auto';
+        mainContent.style.overflowX = 'hidden';
+        mainContent.style.marginLeft = '0';
+
+        if (window.innerWidth <= 992) {
+            mainContent.style.left = '0';
+        } else if (sidebar && sidebar.classList.contains('collapsed')) {
+            mainContent.style.left = '80px';
+        } else {
+            mainContent.style.left = '250px';
+        }
+    }
+
+    forceScrollableLayout();
+    window.addEventListener('resize', forceScrollableLayout);
+
+    const desktopToggle = document.getElementById('desktopToggleBtn');
+    if (desktopToggle) {
+        desktopToggle.addEventListener('click', function () {
+            setTimeout(forceScrollableLayout, 80);
+            setTimeout(forceScrollableLayout, 250);
+        });
+    }
+
+    const styleButtons = document.querySelectorAll('#invoiceStyleBtn, #classicStyleBtn');
+    styleButtons.forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            setTimeout(function() {
+                forceScrollableLayout();
+                if (mainContent) mainContent.scrollTop = 0;
+            }, 80);
+        });
+    });
+});
+</script>
+
+<style id="amgc-default-invoice-delivery-type-fix">
+/* Default Invoice Style: Pick Up / Delivery with conditional Driver and Vehicle fields */
+body.order-product-invoice-style .invoice-right-fields {
+    grid-template-columns: repeat(5, minmax(92px, 1fr)) !important;
+    gap: 18px 20px !important;
+}
+
+body.order-product-invoice-style .invoice-fulfillment-field {
+    min-width: 190px;
+}
+
+body.order-product-invoice-style .invoice-delivery-type-options {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    height: 32px;
+}
+
+body.order-product-invoice-style .invoice-delivery-type-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+    font-size: 0.86rem;
+    font-weight: 600;
+    color: #052A47;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+body.order-product-invoice-style .invoice-delivery-type-option input {
+    width: 16px !important;
+    height: 16px !important;
+    margin: 0 !important;
+    accent-color: #2563eb;
+}
+
+body.order-product-invoice-style .invoice-delivery-field[style*="display: none"] {
+    display: none !important;
+}
+
+@media (max-width: 1200px) {
+    body.order-product-invoice-style .invoice-sheet-head {
+        grid-template-columns: 1fr minmax(620px, 1fr) !important;
+    }
+    body.order-product-invoice-style .invoice-right-fields {
+        grid-template-columns: repeat(4, minmax(150px, 1fr)) !important;
+    }
+    body.order-product-invoice-style .invoice-fulfillment-field {
+        grid-column: span 2;
+    }
+}
+
+@media (max-width: 768px) {
+    body.order-product-invoice-style .invoice-right-fields {
+        grid-template-columns: repeat(2, minmax(130px, 1fr)) !important;
+    }
+    body.order-product-invoice-style .invoice-fulfillment-field {
+        grid-column: span 2;
+    }
+}
+</style>
+
+
+
+<!-- AMGC FINAL NAVBAR TOP GAP FIX -->
+<style id="amgc-navbar-top-gap-final-fix">
+/* This is placed last so it overrides the force-scroll layout. */
+.main-content {
+    padding-top: 18px !important;
+}
+
+body.order-product-invoice-style .main-content,
+body.order-product-classic-style .main-content {
+    padding-top: 18px !important;
+}
+
+.navbar-top {
+    margin-top: 0 !important;
+    margin-bottom: 16px !important;
+}
+
+@media (max-width: 992px) {
+    .main-content,
+    body.order-product-invoice-style .main-content,
+    body.order-product-classic-style .main-content {
+        padding-top: 14px !important;
+    }
+}
+</style>
+
+
+<!-- AMGC CLASSIC TABLE SCROLL RESTORE FIX -->
+<style id="amgc-final-classic-style-scroll-fix">
+/* Classic Style scroll fix
+   Keeps navbar, tabs, category bar, and action bar visible while the product table/content scrolls correctly. */
+body.order-product-classic-style,
+body.order-product-classic-style #appPage {
+    height: 100dvh !important;
+    max-height: 100dvh !important;
+    overflow: hidden !important;
+}
+
+body.order-product-classic-style .main-content {
+    position: fixed !important;
+    top: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    left: 250px !important;
+    width: auto !important;
+    height: auto !important;
+    max-height: none !important;
+    min-height: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    padding: 18px 18px 18px 18px !important;
+    margin-left: 0 !important;
+}
+
+.sidebar.collapsed ~ .main-content {
+    left: 80px !important;
+}
+
+body.order-product-classic-style .navbar-top,
+body.order-product-classic-style .op-main-tabs-wrap,
+body.order-product-classic-style .category-tabs-container,
+body.order-product-classic-style .product-action-bar {
+    flex: 0 0 auto !important;
+}
+
+body.order-product-classic-style #createOrderTabContent.order-main-tab-pane.active {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+}
+
+body.order-product-classic-style #salesOrderTabContent.order-main-tab-pane.active {
+    display: flex !important;
+    flex-direction: column !important;
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    overflow: auto !important;
+    padding-bottom: 35px !important;
+    -webkit-overflow-scrolling: touch !important;
+}
+
+body.order-product-classic-style .invoice-style-workspace {
+    display: none !important;
+}
+
+body.order-product-classic-style .category-tabs-container {
+    display: block !important;
+}
+
+body.order-product-classic-style .products-section {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+body.order-product-classic-style .product-table-container {
+    flex: 1 1 auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    height: auto !important;
+    overflow-y: auto !important;
+    overflow-x: auto !important;
+    padding-bottom: 45px !important;
+    -webkit-overflow-scrolling: touch !important;
+    overscroll-behavior: contain !important;
+}
+
+body.order-product-classic-style .product-table thead {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 25 !important;
+}
+
+@media (max-width: 992px) {
+    body.order-product-classic-style .main-content,
+    .sidebar.collapsed ~ .main-content {
+        left: 0 !important;
+        padding: 14px 12px 95px 12px !important;
+    }
+
+    body.order-product-classic-style .product-table-container {
+        padding-bottom: 90px !important;
+    }
+}
+</style>
+
+<script id="op-main-tabs-script">
+function switchOrderProductMainTab(tabId){
+    document.querySelectorAll('.order-main-tab-pane').forEach(function(pane){pane.classList.remove('active');});
+    document.querySelectorAll('.op-main-tab-btn').forEach(function(btn){btn.classList.remove('active');});
+    var pane=document.getElementById(tabId); if(pane) pane.classList.add('active');
+    var btn=document.querySelector('.op-main-tab-btn[data-tab="'+tabId+'"]'); if(btn) btn.classList.add('active');
+    var title=document.querySelector('.navbar-top .page-title h2');
+    var sub=document.querySelector('.navbar-top .page-title p');
+    if(tabId==='salesOrderTabContent'){
+        if(title) title.textContent='Sales Orders';
+        if(sub) sub.textContent='Manage and track all sales orders';
+        filterEmbeddedSalesOrders();
+    } else {
+        if(title) title.textContent='Order Products';
+        if(sub) sub.textContent='Select products and quantities to create an order';
+    }
+}
+function toggleOpSalesOrderFilters(){
+    var card=document.getElementById('opSoFilterCard');
+    var body=document.getElementById('opSoFilterBody');
+    if(!card || !body) return;
+    var collapsed=card.classList.toggle('collapsed');
+    body.style.display=collapsed?'none':'';
+}
+function setEmbeddedSalesOrderWeekFilter(){
+    var start=document.getElementById('opSoStartDate');
+    var end=document.getElementById('opSoEndDate');
+    var now=new Date();
+    var day=now.getDay();
+    var diffToMonday=(day===0?-6:1-day);
+    var monday=new Date(now);
+    monday.setDate(now.getDate()+diffToMonday);
+    var sunday=new Date(monday);
+    sunday.setDate(monday.getDate()+6);
+    function fmt(d){
+        var m=String(d.getMonth()+1).padStart(2,'0');
+        var dd=String(d.getDate()).padStart(2,'0');
+        return d.getFullYear()+'-'+m+'-'+dd;
+    }
+    if(start) start.value=fmt(monday);
+    if(end) end.value=fmt(sunday);
+    filterEmbeddedSalesOrders();
+}
+
+function openSalesOrderRowDetails(event, orderId){
+    if(event && event.target && event.target.closest('button, a, input, select, textarea, .btn, .dropdown-menu')) return;
+    viewOrder(orderId);
+}
+
+var opSoCurrentPage = 1;
+var opSoTotalPages = 1;
+var opSoPageLength = 10;
+
+function getEmbeddedSalesOrderPageLength(){
+    var select = document.getElementById('opSoPageLength');
+    var value = parseInt(select?.value || '10', 10);
+    if (![10, 20, 50, 100].includes(value)) value = 10;
+    opSoPageLength = value;
+    return value;
+}
+
+function changeEmbeddedSalesOrderPageLength(value){
+    opSoPageLength = parseInt(value || '10', 10);
+    if (![10, 20, 50, 100].includes(opSoPageLength)) opSoPageLength = 10;
+    opSoCurrentPage = 1;
+    filterEmbeddedSalesOrders(false);
+}
+
+function setEmbeddedSalesOrderPage(page){
+    page = parseInt(page || 1, 10);
+    if (page < 1) page = 1;
+    if (page > opSoTotalPages) page = opSoTotalPages;
+    opSoCurrentPage = page;
+    filterEmbeddedSalesOrders(false);
+}
+
+function filterEmbeddedSalesOrders(resetPage){
+    var table=document.getElementById('opSalesOrderTable'); if(!table) return;
+    if (resetPage !== false) opSoCurrentPage = 1;
+
+    var keyword=(document.getElementById('opSoSearch')?.value||'').trim().toLowerCase();
+    var status=(document.getElementById('opSoStatus')?.value||'').trim().toLowerCase();
+    var customer=(document.getElementById('opSoCustomer')?.value||'').trim();
+    var startDate=document.getElementById('opSoStartDate')?.value||'';
+    var endDate=document.getElementById('opSoEndDate')?.value||'';
+    var pageLength=getEmbeddedSalesOrderPageLength();
+    var matchedRows=[];
+
+    table.querySelectorAll('tbody tr[data-search]').forEach(function(row){
+        var rowSearch=row.getAttribute('data-search')||'';
+        var rowStatus=row.getAttribute('data-status')||'';
+        var rowCustomer=row.getAttribute('data-customer')||'';
+        var rowDate=row.getAttribute('data-date')||'';
+        var show=true;
+        if(keyword && rowSearch.indexOf(keyword)===-1) show=false;
+        if(status && rowStatus!==status) show=false;
+        if(customer && rowCustomer!==customer) show=false;
+        if(startDate && rowDate && rowDate<startDate) show=false;
+        if(endDate && rowDate && rowDate>endDate) show=false;
+        row.style.display='none';
+        if(show) matchedRows.push(row);
+    });
+
+    var total=matchedRows.length;
+    opSoTotalPages=Math.max(1, Math.ceil(total / pageLength));
+    if(opSoCurrentPage > opSoTotalPages) opSoCurrentPage = opSoTotalPages;
+    if(opSoCurrentPage < 1) opSoCurrentPage = 1;
+
+    var startIndex=(opSoCurrentPage - 1) * pageLength;
+    var endIndex=Math.min(startIndex + pageLength, total);
+    matchedRows.slice(startIndex, endIndex).forEach(function(row){
+        row.style.display='';
+    });
+
+    var empty=table.querySelector('.op-so-empty-row');
+    if(empty) empty.style.display=total===0?'':'none';
+
+    var info=document.getElementById('opSoPaginationInfo');
+    if(info){
+        if(total===0){
+            info.textContent='Showing 0 to 0 of 0 entries';
+        } else {
+            info.textContent='Showing ' + (startIndex + 1) + ' to ' + endIndex + ' of ' + total + ' entries';
+        }
+    }
+
+    var indicator=document.getElementById('opSoPageIndicator');
+    if(indicator) indicator.textContent='Page ' + opSoCurrentPage + ' of ' + opSoTotalPages;
+
+    var first=document.getElementById('opSoFirstPage');
+    var prev=document.getElementById('opSoPrevPage');
+    var next=document.getElementById('opSoNextPage');
+    var last=document.getElementById('opSoLastPage');
+    if(first) first.disabled = opSoCurrentPage <= 1 || total === 0;
+    if(prev) prev.disabled = opSoCurrentPage <= 1 || total === 0;
+    if(next) next.disabled = opSoCurrentPage >= opSoTotalPages || total === 0;
+    if(last) last.disabled = opSoCurrentPage >= opSoTotalPages || total === 0;
+}
+function resetEmbeddedSalesOrderFilters(){
+    ['opSoSearch','opSoStatus','opSoCustomer','opSoStartDate','opSoEndDate'].forEach(function(id){var el=document.getElementById(id); if(el) el.value='';});
+    opSoCurrentPage = 1;
+    filterEmbeddedSalesOrders(false);
+}
+
+window.addEventListener('DOMContentLoaded', function(){
+    if (document.getElementById('opSalesOrderTable')) {
+        filterEmbeddedSalesOrders(false);
+    }
+});
+function exportEmbeddedSalesOrders(){
+    const startDate = document.getElementById('opSoStartDate')?.value || '';
+    const endDate = document.getElementById('opSoEndDate')?.value || '';
+    const status = document.getElementById('opSoStatus')?.value || '';
+    const customer = document.getElementById('opSoCustomer')?.value || '';
+    const search = document.getElementById('opSoSearch')?.value || '';
+
+    if (typeof XLSX === 'undefined') {
+        Swal.fire('Error', 'Excel export library is still loading. Please try again.', 'error');
+        return;
+    }
+
+    if (typeof showLoading === 'function') {
+        showLoading();
+    } else if (typeof Swal !== 'undefined') {
+        Swal.fire({title:'Preparing export...', allowOutsideClick:false, didOpen:()=>Swal.showLoading()});
+    }
+
+    const formData = new FormData();
+    formData.append('action', 'export_all_orders');
+    formData.append('start_date', startDate);
+    formData.append('end_date', endDate);
+    formData.append('status', status);
+    formData.append('customer', customer);
+    formData.append('search', search);
+
+    fetch('orderproduct.php', { method: 'POST', body: formData })
+        .then(response => response.text())
+        .then(text => {
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                throw new Error(text.substring(0, 300) || 'Invalid server response');
+            }
+            if (typeof Swal !== 'undefined') Swal.close();
+            if (data.success && data.data && data.data.length > 0) {
+                const headers = [
+                    'Date Encoded', 'SO Order Number', 'Customer Code', 'Store Name',
+                    'Customer Name', 'Item Code', 'Item Description', 'Unit of Measurement',
+                    'Quantity', 'Gross Price', 'Discount', 'Net Price', 'Order Amount',
+                    'Total Discount', 'Ave. Cost', 'COGS', 'Gross Profit', 'Encoded by'
+                ];
+                const rows = data.data.map(row => [
+                    row.date_encoded || '',
+                    row.so_order_number || '',
+                    row.customer_code || '',
+                    row.store_name || '',
+                    row.customer_name || '',
+                    row.item_code || '',
+                    row.item_description || '',
+                    row.unit_of_measurement || '',
+                    Number(row.quantity || 0),
+                    Number(row.gross_price || 0),
+                    Number(row.discount || 0),
+                    Number(row.net_price || 0),
+                    Number(row.order_amount || 0),
+                    Number(row.total_discount || 0),
+                    Number(row.ave_cost || 0),
+                    Number(row.cogs || 0),
+                    Number(row.gross_profit || 0),
+                    row.encoded_by || ''
+                ]);
+
+                const wsData = [headers, ...rows];
+                const ws = XLSX.utils.aoa_to_sheet(wsData);
+                const moneyCols = ['J','K','L','M','N','O','P','Q'];
+                moneyCols.forEach(col => {
+                    for (let r = 2; r <= wsData.length; r++) {
+                        const cell = ws[`${col}${r}`];
+                        if (cell) cell.z = '#,##0.00';
+                    }
+                });
+                for (let r = 2; r <= wsData.length; r++) {
+                    const cell = ws[`I${r}`];
+                    if (cell) cell.z = '#,##0.00';
+                }
+                ws['!cols'] = headers.map(h => ({ wch: Math.max(14, h.length + 2) }));
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Sales Orders');
+                XLSX.writeFile(wb, `sales_orders_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.xlsx`);
+                Swal.fire('Success', 'Export completed', 'success');
+            } else if (data.success && (!data.data || data.data.length === 0)) {
+                Swal.fire('Info', 'No orders found for the selected filters', 'info');
+            } else {
+                Swal.fire('Error', data.message || 'Export failed', 'error');
+            }
+        })
+        .catch(error => {
+            if (typeof Swal !== 'undefined') Swal.close();
+            Swal.fire('Error', error.message || 'An error occurred during export', 'error');
+        });
+}
+function printEmbeddedSalesOrders(){
+    const startDate = document.getElementById('opSoStartDate')?.value || '';
+    const endDate = document.getElementById('opSoEndDate')?.value || '';
+    const status = document.getElementById('opSoStatus')?.value || '';
+    const customer = document.getElementById('opSoCustomer')?.value || '';
+    const search = document.getElementById('opSoSearch')?.value || '';
+
+    if (typeof showLoading === 'function') {
+        showLoading();
+    } else if (typeof Swal !== 'undefined') {
+        Swal.fire({title:'Preparing print...', allowOutsideClick:false, didOpen:()=>Swal.showLoading()});
+    }
+
+    const formData = new FormData();
+    formData.append('action', 'print_all_orders');
+    formData.append('start_date', startDate);
+    formData.append('end_date', endDate);
+    formData.append('status', status);
+    formData.append('customer', customer);
+    formData.append('search', search);
+
+    fetch('orderproduct.php', { method: 'POST', body: formData })
+        .then(response => response.text())
+        .then(text => {
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                throw new Error(text.substring(0, 300) || 'Invalid server response');
+            }
+            if (typeof Swal !== 'undefined') Swal.close();
+            if (data.success && data.html) {
+                const iframe = document.getElementById('printFrame') || createPrintFrame();
+                const iframeDoc = iframe.contentWindow.document;
+                iframeDoc.open();
+                iframeDoc.write(data.html);
+                iframeDoc.close();
+                setTimeout(() => {
+                    iframe.contentWindow.focus();
+                    iframe.contentWindow.print();
+                }, 200);
+            } else {
+                Swal.fire('Error', data.message || 'Failed to generate print view', 'error');
+            }
+        })
+        .catch(error => {
+            if (typeof Swal !== 'undefined') Swal.close();
+            Swal.fire('Error', error.message || 'An error occurred while preparing print', 'error');
+        });
+}
+</script>
+
+<!-- Edit Sales Order Modal for embedded Sales Order tab -->
+
+<script>
+// ===== ORIGINAL SALES_ORDER.PHP EDIT MODAL/FUNCTIONS FOR EMBEDDED SALES ORDER TAB =====
+// Uses the same modal IDs and function names from sales_order.php, but posts back to orderproduct.php.
+let currentOrderId = window.currentOrderId || null;
+let currentEditOrderData = null;
+
+function onOrderStatusChange() {
+    const status = document.getElementById('editOrderStatus')?.value || '';
+    const driverContainer = document.getElementById('driverSelectionContainer');
+    const vehicleContainer = document.getElementById('vehicleSelectionContainer');
+    const paymentNotice = document.getElementById('paymentNotice');
+    if (driverContainer) driverContainer.style.display = ['confirmed','processing','ready','in_transit','delivered'].includes(status) ? 'block' : 'none';
+    if (vehicleContainer) vehicleContainer.style.display = ['confirmed','processing','ready','in_transit','delivered'].includes(status) ? 'block' : 'none';
+    if (paymentNotice) paymentNotice.style.display = status === 'delivered' ? 'block' : 'none';
+}
+
+function toggleEditSIFields() {
+    const enabled = document.getElementById('enableSIFields')?.checked;
+    const fields = document.getElementById('editSIFields');
+    if (fields) fields.style.display = enabled ? 'flex' : 'none';
+}
+
+function recalculateEditOrderItemsTotal() {
+    let totalQty = 0;
+    let totalAmount = 0;
+    document.querySelectorAll('#editOrderItemsTableBody tr[data-so-item-id]').forEach(row => {
+        const qtyEl = row.querySelector('.edit-item-qty');
+        const priceEl = row.querySelector('.edit-item-price');
+        let qty = parseFloat(qtyEl?.value || 0) || 0;
+        const maxQty = parseFloat(qtyEl?.dataset.maxQty || qty) || qty;
+        if (qty > maxQty) {
+            qty = maxQty;
+            qtyEl.value = maxQty;
+            Swal.fire('Warning', 'Quantity cannot be higher than the original ordered quantity.', 'warning');
+        }
+        if (qty < 0) {
+            qty = 0;
+            qtyEl.value = 0;
+        }
+        let price = parseFloat(priceEl?.value || 0) || 0;
+        if (price < 0) {
+            price = 0;
+            priceEl.value = '0.00';
+        }
+        const subtotal = qty * price;
+        totalQty += qty;
+        totalAmount += subtotal;
+        const subtotalCell = row.querySelector('.edit-item-subtotal');
+        if (subtotalCell) subtotalCell.textContent = formatCurrency(subtotal);
+    });
+    const qtyCell = document.getElementById('editItemsTotalQty');
+    const amtCell = document.getElementById('editItemsTotalAmount');
+    const totalInput = document.getElementById('editTotalAmount');
+    if (qtyCell) qtyCell.textContent = Number.isInteger(totalQty) ? String(totalQty) : totalQty.toFixed(2);
+    if (amtCell) amtCell.textContent = formatCurrency(totalAmount);
+    if (totalInput) totalInput.value = totalAmount.toFixed(2);
+}
+
+function getEditedOrderItemsPayload() {
+    const items = [];
+    document.querySelectorAll('#editOrderItemsTableBody tr[data-so-item-id]').forEach(row => {
+        items.push({
+            so_item_id: row.getAttribute('data-so-item-id'),
+            quantity_ordered: parseFloat(row.querySelector('.edit-item-qty')?.value || 0) || 0,
+            unit_price: parseFloat(row.querySelector('.edit-item-price')?.value || 0) || 0
+        });
+    });
+    return items;
+}
+
+function renderEditOrderItemsTable(items) {
+    const tbody = document.getElementById('editOrderItemsTableBody');
+    if (!tbody) return;
+    if (!items || !items.length) {
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">No items found.</td></tr>';
+        recalculateEditOrderItemsTotal();
+        return;
+    }
+    tbody.innerHTML = items.map(item => {
+        const soItemId = item.so_item_id || '';
+        const qty = parseFloat(item.quantity_ordered || item.quantity || 0) || 0;
+        const originalQty = qty;
+        const unitPrice = parseFloat(item.net_price || item.unit_price || item.gross_price || 0) || 0;
+        const subtotal = qty * unitPrice;
+        const itemName = item.item_name || item.item_description || 'Item';
+        const itemCode = item.item_code ? `<div class="small text-muted">${escapeHtml(item.item_code)}</div>` : '';
+        return `
+            <tr data-so-item-id="${escapeHtml(soItemId)}">
+                <td><div class="fw-semibold">${escapeHtml(itemName)}</div>${itemCode}</td>
+                <td class="text-center">${escapeHtml(item.unit_type || '')}</td>
+                <td class="text-center">
+                    <input type="text" inputmode="numeric" class="form-control form-control-sm edit-item-qty" value="${qty}" data-max-qty="${originalQty}" oninput="recalculateEditOrderItemsTotal()" autocomplete="off">
+                </td>
+                <td class="text-center"><input type="text" inputmode="decimal" class="form-control form-control-sm edit-item-price" value="${unitPrice.toFixed(2)}" oninput="recalculateEditOrderItemsTotal()" autocomplete="off"></td>
+                <td class="text-end fw-bold edit-item-subtotal">${formatCurrency(subtotal)}</td>
+            </tr>`;
+    }).join('');
+    recalculateEditOrderItemsTotal();
+}
+
+function openSIActionModal(orderId) {
+    const modalEl = document.getElementById('siActionModal');
+    if (!modalEl) return;
+    const form = document.getElementById('siActionForm');
+    if (form) form.reset();
+    document.getElementById('siActionSoId').value = orderId || '';
+    document.getElementById('siActionSoNumber').value = 'Loading...';
+    document.getElementById('siActionCustomerName').value = 'Loading...';
+    bootstrap.Modal.getOrCreateInstance(modalEl, { keyboard: true }).show();
+    const formData = new FormData();
+    formData.append('action', 'get_order_details');
+    formData.append('order_id', orderId);
+    fetch('orderproduct.php', { method: 'POST', body: formData, headers: {'X-Requested-With':'XMLHttpRequest'} })
+        .then(async response => {
+            const text = await response.text();
+            try { return JSON.parse(text); } catch (e) { throw new Error(text ? text.substring(0, 300) : 'Invalid server response.'); }
+        })
+        .then(data => {
+            if (!data.success) throw new Error(data.message || 'Unable to load sales order.');
+            const order = data.order || {};
+            const invoice = data.invoice || {};
+            const status = String(order.order_status || 'pending').toLowerCase();
+            if (!['pending', 'confirmed', 'delivered'].includes(status)) {
+                bootstrap.Modal.getInstance(modalEl)?.hide();
+                Swal.fire('Not allowed', 'SI can only be added to Pending, Confirmed, or Delivered sales orders.', 'warning');
+                return;
+            }
+            const existingSINumber = String(order.si_number || invoice.si_number || '').trim();
+            if (existingSINumber !== '') {
+                bootstrap.Modal.getInstance(modalEl)?.hide();
+                Swal.fire('SI Locked', 'This sales order already has an SI number and can no longer be edited.', 'info');
+                return;
+            }
+            document.getElementById('siActionSoId').value = order.so_id || orderId;
+            document.getElementById('siActionSoNumber').value = order.so_number || '';
+            document.getElementById('siActionCustomerName').value = order.customer_name || 'Walk-in Customer';
+            document.getElementById('siActionNumber').value = order.si_number || invoice.si_number || '';
+            document.getElementById('siActionRegisteredBusinessName').value = order.registered_business_name || invoice.registered_business_name || '';
+            document.getElementById('siActionTin').value = order.tin || invoice.tin || '';
+            document.getElementById('siActionBusinessAddress').value = order.business_address || invoice.business_address || '';
+        })
+        .catch(error => {
+            bootstrap.Modal.getInstance(modalEl)?.hide();
+            Swal.fire('Error', error.message || 'Failed to load SI details.', 'error');
+        });
+}
+
+function saveSIActionFromSalesOrder(event) {
+    event.preventDefault();
+    const soId = document.getElementById('siActionSoId')?.value || '';
+    const siNumber = document.getElementById('siActionNumber')?.value.trim() || '';
+    const registeredBusinessName = document.getElementById('siActionRegisteredBusinessName')?.value.trim() || '';
+    const tin = document.getElementById('siActionTin')?.value.trim() || '';
+    const businessAddress = document.getElementById('siActionBusinessAddress')?.value.trim() || '';
+    if (!soId || !siNumber || !registeredBusinessName || !tin || !businessAddress) {
+        Swal.fire('Missing SI details', 'Please complete SI Number, Registered Business Name, TIN, and Address.', 'warning');
+        return;
+    }
+    const attachmentInput = document.getElementById('siActionAttachments');
+    if (!attachmentInput || !attachmentInput.files || attachmentInput.files.length === 0) {
+        Swal.fire('Missing SI Attachments', 'Please upload at least one SI attachment before saving.', 'warning');
+        return;
+    }
+    const saveBtn = document.getElementById('saveSIActionBtn');
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.dataset.originalText = saveBtn.innerHTML;
+        saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Saving...';
+    }
+    const formData = new FormData();
+    formData.append('action', 'update_sales_order_si_from_tab');
+    formData.append('so_id', soId);
+    formData.append('si_number', siNumber);
+    formData.append('registered_business_name', registeredBusinessName);
+    formData.append('tin', tin);
+    formData.append('business_address', businessAddress);
+    if (attachmentInput && attachmentInput.files && attachmentInput.files.length) {
+        Array.from(attachmentInput.files).forEach(file => formData.append('si_attachments[]', file));
+    }
+    fetch('orderproduct.php', { method: 'POST', body: formData, headers: {'X-Requested-With':'XMLHttpRequest'} })
+        .then(async response => {
+            const text = await response.text();
+            try { return JSON.parse(text); } catch (e) { throw new Error(text ? text.substring(0, 300) : 'Invalid server response.'); }
+        })
+        .then(data => {
+            if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = saveBtn.dataset.originalText || 'Save SI'; }
+            if (!data.success) throw new Error(data.message || 'Failed to save SI details.');
+            const modal = bootstrap.Modal.getInstance(document.getElementById('siActionModal'));
+            if (modal) modal.hide();
+            Swal.fire({ icon: 'success', title: 'SI Saved', text: data.message || 'SI details saved successfully.', timer: 1300, showConfirmButton: false })
+                .then(() => window.location.href = 'orderproduct.php?tab=salesOrder');
+        })
+        .catch(error => {
+            if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = saveBtn.dataset.originalText || 'Save SI'; }
+            Swal.fire('Error', error.message || 'Failed to save SI details.', 'error');
+        });
+}
+
+function editOrder(id) {
+    currentOrderId = id;
+    const modalEl = document.getElementById('editOrderModal');
+    const tbody = document.getElementById('editOrderItemsTableBody');
+    if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-3">Loading items...</td></tr>';
+    if (modalEl) bootstrap.Modal.getOrCreateInstance(modalEl, { keyboard: true }).show();
+
+    const formData = new FormData();
+    formData.append('action', 'get_order_details');
+    formData.append('order_id', id);
+
+    fetch('orderproduct.php', { method: 'POST', body: formData, headers: {'X-Requested-With':'XMLHttpRequest'} })
+        .then(async response => {
+            const text = await response.text();
+            try { return JSON.parse(text); }
+            catch (e) { throw new Error(text ? text.substring(0, 300) : 'Invalid server response.'); }
+        })
+        .then(data => {
+            if (!data.success) throw new Error(data.message || 'Unable to load sales order.');
+            const order = data.order || {};
+            const invoice = data.invoice || {};
+            const documents = data.documents || {};
+            currentEditOrderData = data;
+            document.getElementById('editOrderId').value = order.so_id || id;
+            document.getElementById('editOrderNumber').value = order.so_number || '';
+            document.getElementById('editOrderDate').value = (order.order_date || '').substring(0, 10) || new Date().toISOString().substring(0, 10);
+            document.getElementById('editCustomerName').value = order.customer_name || 'Walk-in Customer';
+            document.getElementById('editOrderStatus').value = (order.order_status || 'pending').toLowerCase();
+            document.getElementById('editTotalAmount').value = parseFloat(order.total_amount || order.order_amount || 0).toFixed(2);
+
+            const outstandingAmount = parseFloat(order.outstanding_balance_amount || 0) || 0;
+            const outstandingBox = document.getElementById('editOutstandingBalanceBox');
+            if (outstandingBox) outstandingBox.style.display = outstandingAmount > 0 ? 'block' : 'none';
+            const outstandingText = document.getElementById('editOutstandingBalanceAmount');
+            if (outstandingText) outstandingText.textContent = formatCurrency(outstandingAmount);
+
+            const driverSelect = document.getElementById('editDriverSelect');
+            const vehicleSelect = document.getElementById('editVehicleSelect');
+            if (driverSelect) driverSelect.value = documents.driver_id || order.driver_id || '';
+            if (vehicleSelect) vehicleSelect.value = documents.vehicle_id || order.vehicle_id || '';
+            try { if (window.jQuery && driverSelect && jQuery(driverSelect).data('select2')) jQuery(driverSelect).trigger('change'); } catch(e) {}
+            try { if (window.jQuery && vehicleSelect && jQuery(vehicleSelect).data('select2')) jQuery(vehicleSelect).trigger('change'); } catch(e) {}
+
+            renderEditOrderItemsTable(data.items || []);
+            onOrderStatusChange();
+        })
+        .catch(error => {
+            if (tbody) tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-3">${escapeHtml(error.message || 'Failed to load order.')}</td></tr>`;
+            Swal.fire('Error', error.message || 'Failed to load sales order.', 'error');
+        });
+}
+
+function updateOrder() {
+    const orderId = document.getElementById('editOrderId')?.value || currentOrderId;
+    const orderDate = document.getElementById('editOrderDate')?.value || '';
+    const orderStatus = document.getElementById('editOrderStatus')?.value || 'pending';
+    const totalAmount = document.getElementById('editTotalAmount')?.value || '0';
+    const items = getEditedOrderItemsPayload();
+
+    if (!orderId) { Swal.fire('Error', 'Invalid sales order.', 'error'); return; }
+    if (!orderDate) { Swal.fire('Warning', 'Order date is required.', 'warning'); return; }
+    if (!items.length) { Swal.fire('Warning', 'Sales order must have at least one item.', 'warning'); return; }
+
+    const updateBtn = document.getElementById('updateOrderBtn');
+    if (updateBtn) {
+        updateBtn.disabled = true;
+        updateBtn.dataset.originalText = updateBtn.innerHTML;
+        updateBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Updating...';
+    }
+    if (typeof Swal !== 'undefined') {
+        Swal.fire({
+            title: 'Updating order...',
+            text: 'Please wait while the sales order is being saved.',
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            didOpen: () => Swal.showLoading()
+        });
+    }
+    const formData = new FormData();
+    formData.append('action', 'update_order');
+    formData.append('so_id', orderId);
+    formData.append('order_date', orderDate);
+    formData.append('created_at', orderDate);
+    formData.append('order_status', orderStatus);
+    formData.append('total_amount', totalAmount);
+    formData.append('edited_items', JSON.stringify(items));
+    formData.append('driver_id', document.getElementById('editDriverSelect')?.value || '');
+    formData.append('vehicle_id', document.getElementById('editVehicleSelect')?.value || '');
+
+    // SI is intentionally not submitted here. Use the Sales Order action button to add/edit SI details.
+
+    fetch('orderproduct.php', { method: 'POST', body: formData, headers: {'X-Requested-With':'XMLHttpRequest'} })
+        .then(async response => {
+            const text = await response.text();
+            try { return JSON.parse(text); }
+            catch (e) { throw new Error(text ? text.substring(0, 300) : 'Invalid server response.'); }
+        })
+        .then(data => {
+            if (typeof Swal !== 'undefined') Swal.close();
+            if (updateBtn) {
+                updateBtn.disabled = false;
+                updateBtn.innerHTML = updateBtn.dataset.originalText || 'Update Order';
+            }
+            if (data.success) {
+                const modal = bootstrap.Modal.getInstance(document.getElementById('editOrderModal'));
+                if (modal) modal.hide();
+                Swal.fire({ icon: 'success', title: 'Updated!', text: data.message || 'Sales order updated successfully.', timer: 1500, showConfirmButton: false })
+                    .then(() => window.location.href = 'orderproduct.php?tab=salesOrder');
+            } else {
+                Swal.fire('Error', data.message || 'Failed to update sales order.', 'error');
+            }
+        })
+        .catch(error => {
+            if (typeof Swal !== 'undefined') Swal.close();
+            if (updateBtn) {
+                updateBtn.disabled = false;
+                updateBtn.innerHTML = updateBtn.dataset.originalText || 'Update Order';
+            }
+            Swal.fire('Error', error.message || 'An error occurred while updating the order.', 'error');
+        });
+}
+
+function deleteOrder(id) {
+    currentOrderId = id;
+    const orderCell = document.querySelector(`button[onclick="deleteOrder(${id})"]`)?.closest('tr')?.querySelector('td');
+    const orderNo = orderCell ? orderCell.textContent.trim() : ('#' + id);
+    const deleteNo = document.getElementById('deleteOrderNumber');
+    if (deleteNo) deleteNo.textContent = orderNo;
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('deleteOrderModal'), { keyboard: true }).show();
+}
+
+function confirmDelete() {
+    if (!currentOrderId) { Swal.fire('Error', 'Invalid sales order.', 'error'); return; }
+    showLoading();
+    const formData = new FormData();
+    formData.append('action', 'delete_order');
+    formData.append('so_id', currentOrderId);
+    fetch('orderproduct.php', { method: 'POST', body: formData, headers: {'X-Requested-With':'XMLHttpRequest'} })
+        .then(async response => {
+            const text = await response.text();
+            try { return JSON.parse(text); }
+            catch (e) { throw new Error(text ? text.substring(0, 300) : 'Invalid server response.'); }
+        })
+        .then(data => {
+            Swal.close();
+            if (data.success) {
+                const modal = bootstrap.Modal.getInstance(document.getElementById('deleteOrderModal'));
+                if (modal) modal.hide();
+                Swal.fire({ icon: 'success', title: 'Deleted!', text: data.message || 'Sales order deleted successfully.', timer: 1500, showConfirmButton: false })
+                    .then(() => window.location.href = 'orderproduct.php?tab=salesOrder');
+            } else {
+                Swal.fire('Error', data.message || 'Failed to delete sales order.', 'error');
+            }
+        })
+        .catch(() => { Swal.close(); Swal.fire('Error', 'An error occurred while deleting the order.', 'error'); });
+}
+
+function editFromView() {
+    const modal = bootstrap.Modal.getInstance(document.getElementById('orderDetailsModal'));
+    if (modal) modal.hide();
+    setTimeout(() => { if (window.currentOrderIdFromOrderProduct || currentOrderId) editOrder(window.currentOrderIdFromOrderProduct || currentOrderId); }, 250);
+}
+</script>
+
+
+    <style>
+        /* Embedded Sales Order Edit modal, copied visually from sales_order.php */
+        #editOrderModal .modal-dialog { max-width: 1120px; }
+        #editOrderModal .modal-header {
+            background: linear-gradient(135deg, #047857 0%, #008060 100%) !important;
+            color: #fff !important;
+            border-bottom: none;
+            border-radius: 14px 14px 0 0;
+        }
+        #editOrderModal .modal-content {
+            border: none;
+            border-radius: 14px;
+            overflow: hidden;
+        }
+        #editOrderModal .modal-body { background: #f8fafc; }
+        #editOrderModal .form-label {
+            font-weight: 700;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: .02em;
+            font-size: .85rem;
+        }
+        #editOrderModal .form-control,
+        #editOrderModal .form-select {
+            border-radius: 12px;
+            border: 1px solid #d9e2ec;
+            min-height: 52px;
+        }
+        #editOrderModal .edit-si-card {
+            border: 1px solid #d9e2ec !important;
+            background: #fff !important;
+            border-radius: 12px !important;
+        }
+        #editOrderModal .edit-order-items-table {
+            border-collapse: separate;
+            border-spacing: 0;
+            overflow: hidden;
+            border: 1px solid #bdebd5;
+            border-radius: 5px;
+        }
+        #editOrderModal .edit-order-items-table thead th {
+            background: #047857 !important;
+            color: #fff !important;
+            border: none !important;
+            padding: 18px 26px;
+            font-weight: 800;
+            text-transform: uppercase;
+            letter-spacing: .02em;
+            text-align: center;
+        }
+        #editOrderModal .edit-order-items-table thead th:first-child { text-align: left; }
+        #editOrderModal .edit-order-items-table tbody td {
+            border: none !important;
+            border-bottom: 1px solid #bdebd5 !important;
+            padding: 18px 26px;
+            background: #ffffff;
+            vertical-align: middle;
+        }
+        #editOrderModal .edit-order-items-table tbody tr:nth-child(even) td {
+            background: #d6f8e7 !important;
+        }
+        #editOrderModal .edit-order-items-table .edit-item-qty,
+        #editOrderModal .edit-order-items-table .edit-item-price {
+            min-height: 50px;
+            max-width: 95px;
+            margin: 0 auto;
+            text-align: center !important;
+            border-radius: 12px;
+            background: #fff;
+        }
+        #editOrderModal .edit-order-items-table tfoot th {
+            background: #047857 !important;
+            color: #fff !important;
+            border: none !important;
+            padding: 10px 6px;
+            font-weight: 800;
+            text-align: center !important;
+            font-size: 1rem;
+        }
+        #editOrderModal #editTotalAmount {
+            background: #fff;
+            border-radius: 14px;
+            min-height: 62px;
+            font-size: 1rem;
+        }
+        #editOrderModal .modal-footer {
+            border-top: none;
+            background: #f8fafc;
+            padding: 18px 28px;
+        }
+        #editOrderModal .modal-footer .btn {
+            border-radius: 12px;
+            padding: 12px 28px;
+            font-weight: 700;
+        }
+        #editOrderModal #updateOrderBtn {
+            background: linear-gradient(135deg, #047857 0%, #22c55e 100%) !important;
+            border: none !important;
+        }
+    </style>
+
+    <!-- ADD / EDIT SI MODAL -->
+    <div class="modal fade no-print" id="siActionModal" tabindex="-1" data-bs-backdrop="true" data-bs-keyboard="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-receipt-cutoff me-2"></i>Issue SI</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <form id="siActionForm" onsubmit="saveSIActionFromSalesOrder(event)">
+                    <div class="modal-body">
+                        <input type="hidden" id="siActionSoId">
+                        <div class="alert alert-info py-2 mb-3">
+                            <i class="bi bi-info-circle"></i> SI can be added only once for Pending, Confirmed, and Delivered sales orders. Once saved, SI details are locked.
+                        </div>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label small mb-1">SO Number</label>
+                                <input type="text" class="form-control form-control-sm" id="siActionSoNumber" readonly>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small mb-1">Customer</label>
+                                <input type="text" class="form-control form-control-sm" id="siActionCustomerName" readonly>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small mb-1">SI Number <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control form-control-sm" id="siActionNumber" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small mb-1">Registered Business Name <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control form-control-sm" id="siActionRegisteredBusinessName" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small mb-1">TIN <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control form-control-sm" id="siActionTin" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label small mb-1">Business Address <span class="text-danger">*</span></label>
+                                <input type="text" class="form-control form-control-sm" id="siActionBusinessAddress" required>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label small mb-1">SI Attachments <span class="text-danger">*</span></label>
+                                <input type="file" class="form-control form-control-sm" id="siActionAttachments" multiple required accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx">
+                                <small class="text-muted">Required. Allowed: PDF, images, Word, and Excel files. Max 15MB each.</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-success" id="saveSIActionBtn"><i class="bi bi-save me-1"></i>Save SI</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- EDIT ORDER MODAL -->
+    <div class="modal fade no-print" id="editOrderModal" tabindex="-1" data-bs-backdrop="true" data-bs-keyboard="true">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title"><i class="bi bi-pencil me-2"></i>Edit Sales Order</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <form id="editOrderForm">
+                        <input type="hidden" id="editOrderId">
+                        <?php if (!empty($orderproduct_so_branch_column_exists) && !$view_all_branches): ?>
+                            <input type="hidden" name="branch_id" value="<?= (int)$branch_id ?>">
+                        <?php endif; ?>
+                        
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label for="editOrderNumber" class="form-label">Order Number</label>
+                                <input type="text" class="form-control" id="editOrderNumber" readonly>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="editOrderDate" class="form-label">Order Date *</label>
+                                <input type="date" class="form-control" id="editOrderDate" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="editCustomerName" class="form-label">Customer</label>
+                                <input type="text" class="form-control" id="editCustomerName" readonly>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="editOrderStatus" class="form-label">Order Status *</label>
+                                <select class="form-select" id="editOrderStatus" onchange="onOrderStatusChange()" required>
+                                    <option value="pending">Pending</option>
+                                    <option value="confirmed">Confirm Order (Generate Documents)</option>
+                                    <option value="delivered">Mark as Delivered</option>
+                                    <option value="cancelled">Cancel Order</option>
+                                </select>
+                            </div>
+                            <div class="col-md-12" id="editOutstandingBalanceBox" style="display:none;">
+                                <div class="alert alert-warning mb-0 d-flex align-items-start gap-2">
+                                    <i class="bi bi-exclamation-triangle-fill mt-1"></i>
+                                    <div>
+                                        <div class="fw-bold">Customer has no credit limit and has an outstanding balance.</div>
+                                        <div class="small">Outstanding Balance: <span id="editOutstandingBalanceAmount" class="fw-bold">₱0.00</span></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- SI details moved to the Sales Order action button. -->
+                            
+                            <div class="col-md-6" id="driverSelectionContainer" style="display: none;">
+                                <label for="editDriverSelect" class="form-label fw-bold">Select Driver *</label>
+                                <select class="form-select select2-driver" id="editDriverSelect" style="width: 100%;">
+                                    <option value="">-- Choose Driver --</option>
+
+                                    <?php if (!empty($drivers_with_pending)): ?>
+                                    <optgroup label="Drivers with existing deliveries (can be assigned)">
+                                        <?php foreach ($drivers_with_pending as $driver): ?>
+                                            <option value="<?= $driver['driver_id'] ?>" data-pending="<?= $driver['pending_deliveries'] ?>">
+                                                <?= htmlspecialchars($driver['driver_name']) ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </optgroup>
+                                    <?php endif; ?>
+
+                                    <?php if (!empty($available_drivers_without_pending)): ?>
+                                    <optgroup label="Available Drivers">
+                                        <?php foreach ($available_drivers_without_pending as $driver): ?>
+                                            <option value="<?= $driver['driver_id'] ?>" data-pending="0">
+                                                <?= htmlspecialchars($driver['driver_name']) ?>
+                                            </option>
+                                        <?php endforeach; ?>
+                                    </optgroup>
+                                    <?php endif; ?>
+                                </select>
+                                <div class="driver-info-tooltip">
+                                    <i class="bi bi-info-circle"></i> 
+                                    Drivers with existing deliveries can still be assigned. They will be delivered together in one trip.
+                                </div>
+                            </div>
+
+                            <div class="col-md-6" id="vehicleSelectionContainer" style="display: none;">
+                                <label for="editVehicleSelect" class="form-label fw-bold">Select Vehicle *</label>
+                                <select class="form-select select2-vehicle" id="editVehicleSelect" style="width: 100%;">
+                                    <option value="">-- Choose Vehicle --</option>
+                                    <?php foreach ($available_vehicles as $vehicle): ?>
+                                        <option value="<?= $vehicle['vehicle_id'] ?>"
+                                                data-type="<?= htmlspecialchars($vehicle['vehicle_type']) ?>"
+                                                data-plate="<?= htmlspecialchars($vehicle['plate_number']) ?>">
+                                            <?= htmlspecialchars($vehicle['vehicle_type'] . ' - ' . $vehicle['plate_number']) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+
+                            <div class="col-12">
+                                <label class="form-label">Ordered Items</label>
+                                <div class="table-responsive">
+                                    <table class="table table-sm align-middle mb-0 edit-order-items-table">
+                                        <thead>
+                                            <tr>
+                                                <th style="width: 44%;">Item</th>
+                                                <th class="text-center" style="width: 14%;">Unit</th>
+                                                <th class="text-end" style="width: 14%;">Quantity</th>
+                                                <th class="text-end" style="width: 14%;">Price</th>
+                                                <th class="text-end" style="width: 14%;">Subtotal</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="editOrderItemsTableBody">
+                                            <tr>
+                                                <td colspan="5" class="text-center text-muted py-3">Loading items...</td>
+                                            </tr>
+                                        </tbody>
+                                        <tfoot>
+                                            <tr>
+                                                <th colspan="2" class="text-end">Total</th>
+                                                <th class="text-end" id="editItemsTotalQty">0</th>
+                                                <th></th>
+                                                <th class="text-end" id="editItemsTotalAmount">₱0.00</th>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+                            </div>
+                            <div class="col-md-4 ms-auto">
+                                <label for="editTotalAmount" class="form-label">Total Amount (₱) *</label>
+                                <input type="number" class="form-control" id="editTotalAmount" step="0.01" min="0" required readonly>
+                            </div>
+                        </div>
+                        
+                        <div class="alert alert-info mt-3" id="stockCheckMessage" style="display: none;">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <span id="stockCheckText"></span>
+                        </div>
+                        
+                        <div class="alert alert-warning mt-3" id="noDriversMessage" style="display: none;">
+                            <i class="bi bi-exclamation-triangle me-2"></i>
+                            <strong>No available drivers found for your branch.</strong> 
+                            Please add drivers or mark existing drivers as active.
+                        </div>
+                        
+                        <div class="alert alert-success mt-3" id="paymentNotice" style="display: none;">
+                            <i class="bi bi-info-circle me-2"></i>
+                            <span id="paymentNoticeText"></span>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" onclick="updateOrder(); return false;" id="updateOrderBtn">Update Order</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- DELETE CONFIRMATION MODAL -->
+    <div class="modal fade no-print" id="deleteOrderModal" tabindex="-1" data-bs-backdrop="true" data-bs-keyboard="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title"><i class="bi bi-trash me-2"></i>Confirm Delete</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Are you sure you want to delete this sales order?</p>
+                    <p class="fw-bold" id="deleteOrderNumber"></p>
+                    <div class="alert alert-warning">
+                        <i class="bi bi-exclamation-triangle me-2"></i>
+                        This action cannot be undone and will remove all associated order items.
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-danger" onclick="confirmDelete()">Delete Order</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+
+
+<style id="amgc-create-invoice-button-final-fix-css">
+#invoiceSaveCloseBtn,
+#invoiceSaveNewBtn {
+    pointer-events: auto !important;
+    position: relative !important;
+    z-index: 50 !important;
+    opacity: 1 !important;
+    cursor: pointer !important;
+}
+.invoice-actions {
+    position: relative !important;
+    z-index: 50 !important;
+    pointer-events: auto !important;
+}
+</style>
+
+<script id="amgc-create-invoice-button-final-fix">
+(function () {
+    function amgcShowOrderProductMessage(message) {
+        if (typeof showToast === 'function') {
+            showToast(message);
+            return;
+        }
+        if (window.Swal && typeof Swal.fire === 'function') {
+            Swal.fire({ icon: 'warning', title: 'Notice', text: message, confirmButtonColor: '#047857' });
+            return;
+        }
+        alert(message);
+    }
+
+    function amgcEnableCreateInvoiceButtons() {
+        ['invoiceSaveCloseBtn', 'invoiceSaveNewBtn'].forEach(function (id) {
+            var btn = document.getElementById(id);
+            if (!btn) return;
+            btn.disabled = false;
+            btn.removeAttribute('disabled');
+            btn.style.pointerEvents = 'auto';
+            btn.style.opacity = '1';
+            btn.style.cursor = 'pointer';
+        });
+    }
+
+    function amgcRunInvoiceSync() {
+        try { if (typeof syncInvoiceFieldsToOriginalForm === 'function') syncInvoiceFieldsToOriginalForm(); } catch (e) { console.warn(e); }
+        try { if (typeof syncInvoiceRowsToCart === 'function') syncInvoiceRowsToCart(); } catch (e) { console.warn(e); }
+        try { if (typeof syncInvoicePaymentToOriginalForm === 'function') syncInvoicePaymentToOriginalForm(); } catch (e) { console.warn(e); }
+        try { if (typeof updateCartBadge === 'function') updateCartBadge(); } catch (e) { console.warn(e); }
+    }
+
+    function amgcBasicInvoiceValidate() {
+        amgcRunInvoiceSync();
+
+        var customerId = '';
+        var invoiceCustomer = document.getElementById('invoiceCustomerSelect');
+        var modalCustomer = document.getElementById('modalCustomerSelect');
+        var lockedCustomer = document.getElementById('lockedCustomerId');
+        if (invoiceCustomer && invoiceCustomer.value) customerId = invoiceCustomer.value;
+        if (!customerId && modalCustomer && modalCustomer.value) customerId = modalCustomer.value;
+        if (!customerId && lockedCustomer && lockedCustomer.value) customerId = lockedCustomer.value;
+
+        if (!customerId) {
+            amgcShowOrderProductMessage('Please select a customer.');
+            if (invoiceCustomer) invoiceCustomer.focus();
+            return false;
+        }
+
+        var hasItems = false;
+        try {
+            if (typeof cart !== 'undefined' && Array.isArray(cart) && cart.length > 0) hasItems = true;
+        } catch (e) {}
+        if (!hasItems) {
+            var invoiceRows = document.querySelectorAll('#invoiceItemsBody tr');
+            invoiceRows.forEach(function (row) {
+                var product = row.querySelector('.invoice-product-select, select[data-field="product"], select');
+                var qty = row.querySelector('.invoice-qty-input, input[data-field="qty"], input[name*="qty"], input[type="number"]');
+                if (product && product.value && qty && parseFloat(qty.value || '0') > 0) hasItems = true;
+            });
+        }
+        if (!hasItems) {
+            amgcShowOrderProductMessage('Please add at least one item.');
+            return false;
+        }
+
+        return true;
+    }
+
+    function amgcSubmitInvoice(mode) {
+        amgcEnableCreateInvoiceButtons();
+        window.invoiceOrderSubmitMode = mode;
+
+        if (!amgcBasicInvoiceValidate()) {
+            window.invoiceOrderSubmitMode = '';
+            amgcEnableCreateInvoiceButtons();
+            return;
+        }
+
+        try {
+            if (typeof submitOrder === 'function') {
+                submitOrder();
+                return;
+            }
+        } catch (err) {
+            console.error('Create Invoice submit error:', err);
+            amgcEnableCreateInvoiceButtons();
+            amgcShowOrderProductMessage(err && err.message ? err.message : 'Unable to submit order.');
+            return;
+        }
+
+        amgcShowOrderProductMessage('Submit function was not loaded. Please refresh the page and try again.');
+    }
+
+    window.invoiceSaveAndClose = function () {
+        amgcSubmitInvoice('close');
+    };
+
+    window.invoiceSaveAndNew = function () {
+        amgcSubmitInvoice('new');
+    };
+
+    document.addEventListener('DOMContentLoaded', amgcEnableCreateInvoiceButtons);
+    window.addEventListener('load', amgcEnableCreateInvoiceButtons);
+
+    document.addEventListener('click', function (event) {
+        var btn = event.target && event.target.closest ? event.target.closest('#invoiceSaveCloseBtn, #invoiceSaveNewBtn') : null;
+        if (!btn) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.stopImmediatePropagation) event.stopImmediatePropagation();
+        amgcEnableCreateInvoiceButtons();
+        amgcSubmitInvoice(btn.id === 'invoiceSaveCloseBtn' ? 'close' : 'new');
+    }, true);
+})();
+</script>
+
+
+<!-- AMGC FIX: Invoice Details Modal clean centered view only -->
+<style id="amgc-order-details-clean-centered-modal-final">
+/* Invoice Details modal only. Create Invoice tab and other modals are untouched. */
+#orderDetailsModal.show {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 16px !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+}
+
+#orderDetailsModal.modal {
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+}
+
+#orderDetailsModal .modal-dialog,
+#orderDetailsModal .modal-dialog.order-details-wide-modal,
+#orderDetailsModal .modal-fullscreen {
+    position: relative !important;
+    inset: auto !important;
+    width: min(1180px, 96vw) !important;
+    max-width: min(1180px, 96vw) !important;
+    min-width: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: 92vh !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    transform: none !important;
+}
+
+#orderDetailsModal .modal-content {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: 92vh !important;
+    border: 0 !important;
+    border-radius: 14px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    overflow: hidden !important;
+    background: #ffffff !important;
+    box-shadow: 0 18px 50px rgba(15, 23, 42, .28) !important;
+}
+
+#orderDetailsModal .modal-header {
+    flex: 0 0 auto !important;
+    height: 48px !important;
+    min-height: 48px !important;
+    padding: 8px 16px !important;
+    background: linear-gradient(90deg, #047857 0%, #36d34a 100%) !important;
+    color: #ffffff !important;
+    border: 0 !important;
+}
+
+#orderDetailsModal .modal-title {
+    font-size: 1.08rem !important;
+    line-height: 1.1 !important;
+    font-weight: 500 !important;
+}
+
+#orderDetailsModal .btn-close {
+    width: 30px !important;
+    height: 30px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    border-radius: 50% !important;
+    background-color: rgba(255,255,255,.45) !important;
+    opacity: 1 !important;
+    transition: background-color .16s ease, transform .16s ease, opacity .16s ease !important;
+}
+
+#orderDetailsModal .btn-close:hover {
+    background-color: rgba(255,255,255,.7) !important;
+    transform: scale(1.04) !important;
+}
+
+#orderDetailsModal .modal-body,
+#orderDetailsModal #orderDetailsContent {
+    flex: 1 1 auto !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: calc(92vh - 48px) !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+}
+
+#orderDetailsModal .modal-footer {
+    display: none !important;
+}
+
+#orderDetailsModal .op-invoice-form-view {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    display: block !important;
+    position: relative !important;
+    font-size: 13px !important;
+}
+
+#orderDetailsModal .op-invoice-main {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    transform: none !important;
+    padding: 18px 22px 16px !important;
+    display: block !important;
+    overflow: visible !important;
+    box-sizing: border-box !important;
+}
+
+#orderDetailsModal .op-invoice-sheet-head {
+    display: grid !important;
+    grid-template-columns: minmax(260px, .85fr) minmax(520px, 1.15fr) !important;
+    gap: 16px !important;
+    align-items: start !important;
+}
+
+#orderDetailsModal .op-invoice-title {
+    font-size: 2.35rem !important;
+    line-height: 1 !important;
+    margin: 0 0 8px !important;
+    font-weight: 300 !important;
+}
+
+#orderDetailsModal .op-customer-readonly {
+    max-width: none !important;
+    padding: 8px 10px !important;
+    line-height: 1.15 !important;
+    font-size: .9rem !important;
+}
+
+#orderDetailsModal .op-customer-readonly .name {
+    font-size: 1.08rem !important;
+    margin-bottom: 3px !important;
+}
+
+#orderDetailsModal .op-right-fields {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(150px, 1fr)) !important;
+    gap: 8px 12px !important;
+}
+
+#orderDetailsModal .op-field label,
+#orderDetailsModal .op-section-label {
+    font-size: .75rem !important;
+    margin-bottom: 3px !important;
+    line-height: 1 !important;
+    font-weight: 500 !important;
+}
+
+#orderDetailsModal .op-detail-control,
+#orderDetailsModal .op-detail-select {
+    height: 32px !important;
+    min-height: 32px !important;
+    padding: 4px 8px !important;
+    font-size: .88rem !important;
+    line-height: 1.1 !important;
+}
+
+#orderDetailsModal .op-items-wrap,
+#orderDetailsModal .op-invoice-items-wrap {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    margin-top: 12px !important;
+}
+
+#orderDetailsModal .op-items-table,
+#orderDetailsModal .op-invoice-items-table {
+    width: 100% !important;
+    height: auto !important;
+    table-layout: fixed !important;
+    font-size: .86rem !important;
+    margin: 0 !important;
+}
+
+#orderDetailsModal .op-items-table thead th,
+#orderDetailsModal .op-invoice-items-table thead th {
+    padding: 6px 7px !important;
+    font-size: .78rem !important;
+    line-height: 1.1 !important;
+    white-space: normal !important;
+    font-weight: 500 !important;
+}
+
+#orderDetailsModal .op-items-table td,
+#orderDetailsModal .op-invoice-items-table td,
+#orderDetailsModal .op-invoice-items-table tfoot td {
+    height: auto !important;
+    min-height: 0 !important;
+    padding: 6px 7px !important;
+    line-height: 1.15 !important;
+    font-size: .86rem !important;
+    white-space: normal !important;
+    word-break: normal !important;
+    overflow-wrap: anywhere !important;
+}
+
+#orderDetailsModal .op-invoice-muted,
+#orderDetailsModal .small {
+    font-size: .78rem !important;
+    line-height: 1.1 !important;
+}
+
+#orderDetailsModal .op-lower-area {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 350px) !important;
+    gap: 16px !important;
+    margin-top: 14px !important;
+    min-height: 0 !important;
+    align-items: start !important;
+    overflow: visible !important;
+}
+
+#orderDetailsModal .op-lower-area > div:first-child,
+#orderDetailsModal .op-lower-area > div:last-child {
+    min-width: 0 !important;
+}
+
+#orderDetailsModal .op-message-box {
+    min-height: 42px !important;
+    height: 42px !important;
+    padding: 5px 8px !important;
+    resize: none !important;
+    font-size: .86rem !important;
+    line-height: 1.15 !important;
+}
+
+#orderDetailsModal .op-payment-box,
+#orderDetailsModal .op-payment-view-box {
+    width: 100% !important;
+    margin-top: 8px !important;
+    padding: 9px 11px !important;
+}
+
+#orderDetailsModal .op-payment-toggle-line {
+    margin-bottom: 6px !important;
+    font-size: .82rem !important;
+    line-height: 1.1 !important;
+}
+
+#orderDetailsModal .op-payment-detail-line {
+    display: grid !important;
+    grid-template-columns: minmax(180px, 1fr) minmax(210px, 1fr) !important;
+    gap: 10px !important;
+    align-items: start !important;
+}
+
+#orderDetailsModal .op-payment-detail-line .op-field {
+    min-width: 0 !important;
+    width: 100% !important;
+    margin: 0 !important;
+}
+
+#orderDetailsModal .op-payment-detail-line .op-detail-control,
+#orderDetailsModal .op-payment-detail-line .op-detail-select {
+    width: 100% !important;
+    display: block !important;
+}
+
+#orderDetailsModal .op-summary-box {
+    width: 100% !important;
+    max-width: 350px !important;
+    margin-left: auto !important;
+    font-size: .88rem !important;
+}
+
+#orderDetailsModal .op-summary-box > div {
+    margin-bottom: 5px !important;
+    gap: 8px !important;
+    grid-template-columns: 1fr minmax(90px, 125px) !important;
+    line-height: 1.1 !important;
+}
+
+#orderDetailsModal .op-balance-due span,
+#orderDetailsModal .op-balance-due strong {
+    font-size: 1.06rem !important;
+    line-height: 1.1 !important;
+}
+
+#orderDetailsModal .op-detail-footer {
+    margin-top: 12px !important;
+    gap: 8px !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    justify-content: flex-end !important;
+}
+
+#orderDetailsModal .op-detail-footer .btn {
+    min-width: 100px !important;
+    min-height: 34px !important;
+    padding: 6px 12px !important;
+    font-size: .88rem !important;
+    font-weight: 500 !important;
+    line-height: 1.1 !important;
+    border-radius: 7px !important;
+    transition: transform .16s ease, box-shadow .16s ease, background-color .16s ease, border-color .16s ease !important;
+}
+
+#orderDetailsModal .op-detail-footer .btn:hover {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 5px 12px rgba(15, 23, 42, .14) !important;
+}
+
+@media (max-width: 1100px) {
+    #orderDetailsModal.show {
+        align-items: flex-start !important;
+    }
+
+    #orderDetailsModal .modal-dialog,
+    #orderDetailsModal .modal-dialog.order-details-wide-modal,
+    #orderDetailsModal .modal-fullscreen {
+        width: 96vw !important;
+        max-width: 96vw !important;
+        margin-top: 10px !important;
+        margin-bottom: 10px !important;
+    }
+
+    #orderDetailsModal .op-invoice-sheet-head {
+        grid-template-columns: 1fr !important;
+    }
+
+    #orderDetailsModal .op-right-fields {
+        grid-template-columns: repeat(2, minmax(130px, 1fr)) !important;
+    }
+
+    #orderDetailsModal .op-lower-area {
+        grid-template-columns: 1fr !important;
+    }
+
+    #orderDetailsModal .op-summary-box {
+        margin-left: 0 !important;
+        max-width: none !important;
+    }
+}
+</style>
+
+<script id="amgc-order-details-smooth-buttons-final-script">
+(function () {
+    function cleanupModalState() {
+        var visibleModal = document.querySelector('.modal.show');
+        if (!visibleModal) {
+            document.body.classList.remove('modal-open');
+            document.body.style.removeProperty('overflow');
+            document.body.style.removeProperty('padding-right');
+            document.querySelectorAll('.modal-backdrop').forEach(function (backdrop) {
+                backdrop.remove();
+            });
+        }
+    }
+
+    function closeOrderDetailsModal() {
+        var modalEl = document.getElementById('orderDetailsModal');
+        if (!modalEl) return;
+
+        try {
+            var modalInstance = bootstrap.Modal.getInstance(modalEl) || bootstrap.Modal.getOrCreateInstance(modalEl, {
+                backdrop: true,
+                keyboard: true,
+                focus: true
+            });
+            modalInstance.hide();
+        } catch (err) {
+            modalEl.classList.remove('show');
+            modalEl.style.display = 'none';
+            modalEl.setAttribute('aria-hidden', 'true');
+            modalEl.removeAttribute('aria-modal');
+            modalEl.removeAttribute('role');
+            cleanupModalState();
+        }
+    }
+
+    window.amgcCloseOrderDetailsModal = closeOrderDetailsModal;
+
+    document.addEventListener('click', function (event) {
+        var modalEl = document.getElementById('orderDetailsModal');
+        if (!modalEl || !modalEl.classList.contains('show')) return;
+
+        var closeBtn = event.target.closest('#orderDetailsModal .btn-close, #orderDetailsModal .op-detail-footer .btn-light');
+        if (!closeBtn) return;
+
+        event.preventDefault();
+        closeOrderDetailsModal();
+    });
+
+    document.addEventListener('hidden.bs.modal', function (event) {
+        if (event.target && event.target.id === 'orderDetailsModal') {
+            setTimeout(cleanupModalState, 40);
+        }
+    });
+})();
+</script>
+
+
+
+<!-- AMGC INVOICE DETAILS MODAL CLEAN SIZE + SMOOTH BUTTON FIX -->
+<style id="amgc-order-details-clean-modal-final-fix">
+/* Invoice Details modal in Sales Order tab only: clean centered modal, not fullscreen. */
+#orderDetailsModal .modal-dialog,
+#orderDetailsModal .modal-dialog.order-details-wide-modal,
+#orderDetailsModal.show .modal-dialog.order-details-wide-modal {
+    width: min(1440px, calc(100vw - 28px)) !important;
+    max-width: min(1440px, calc(100vw - 28px)) !important;
+    min-width: 0 !important;
+    height: auto !important;
+    max-height: calc(100dvh - 28px) !important;
+    margin: 14px auto !important;
+    padding: 0 !important;
+    position: relative !important;
+    inset: auto !important;
+    transform: none !important;
+}
+
+#orderDetailsModal .modal-content {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: calc(100dvh - 28px) !important;
+    border-radius: 18px !important;
+    border: 0 !important;
+    overflow: hidden !important;
+    display: flex !important;
+    flex-direction: column !important;
+    box-shadow: 0 18px 46px rgba(5, 42, 71, .24) !important;
+    background: #fff !important;
+}
+
+#orderDetailsModal .modal-header {
+    height: 52px !important;
+    min-height: 52px !important;
+    flex: 0 0 52px !important;
+    padding: 10px 18px !important;
+    background: linear-gradient(135deg, #047857 0%, #44D34E 100%) !important;
+    color: #fff !important;
+    border-bottom: 0 !important;
+}
+
+#orderDetailsModal .modal-title,
+#orderDetailsModal .modal-header .modal-title {
+    color: #fff !important;
+    font-size: 1.08rem !important;
+    font-weight: 500 !important;
+    line-height: 1.2 !important;
+}
+
+#orderDetailsModal .modal-body,
+#orderDetailsModal #orderDetailsContent {
+    flex: 1 1 auto !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: calc(100dvh - 80px) !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    padding: 0 !important;
+    background: #f8fafc !important;
+    -webkit-overflow-scrolling: touch !important;
+}
+
+#orderDetailsModal .modal-footer {
+    display: none !important;
+}
+
+#orderDetailsModal .op-invoice-form-view {
+    width: 100% !important;
+    max-width: none !important;
+    min-height: 0 !important;
+    height: auto !important;
+    font-size: 14px !important;
+    background: #f8fafc !important;
+}
+
+#orderDetailsModal .op-invoice-main {
+    width: 100% !important;
+    max-width: 1368px !important;
+    margin: 0 auto !important;
+    padding: 14px 20px 16px !important;
+    background: #fff !important;
+}
+
+#orderDetailsModal .op-invoice-sheet-head {
+    display: grid !important;
+    grid-template-columns: minmax(360px, .82fr) minmax(720px, 1.18fr) !important;
+    gap: 14px !important;
+    align-items: start !important;
+}
+
+#orderDetailsModal .op-right-fields {
+    display: grid !important;
+    grid-template-columns: repeat(4, minmax(150px, 1fr)) !important;
+    gap: 8px 12px !important;
+}
+
+#orderDetailsModal .op-invoice-title {
+    font-size: clamp(2rem, 3vw, 3rem) !important;
+    line-height: .95 !important;
+    margin: 4px 0 10px !important;
+    font-weight: 400 !important;
+}
+
+#orderDetailsModal .op-detail-label,
+#orderDetailsModal .op-field label,
+#orderDetailsModal .op-section-label {
+    font-size: .78rem !important;
+    font-weight: 400 !important;
+    margin-bottom: 3px !important;
+}
+
+#orderDetailsModal .op-detail-control,
+#orderDetailsModal .op-detail-select {
+    height: 32px !important;
+    min-height: 32px !important;
+    padding: 5px 8px !important;
+    font-size: .86rem !important;
+}
+
+#orderDetailsModal .op-invoice-items-table,
+#orderDetailsModal .op-items-table {
+    font-size: .86rem !important;
+    margin-top: 8px !important;
+}
+
+#orderDetailsModal .op-invoice-items-table thead th,
+#orderDetailsModal .op-items-table thead th {
+    font-size: .82rem !important;
+    padding: 6px 7px !important;
+    font-weight: 500 !important;
+}
+
+#orderDetailsModal .op-invoice-items-table td,
+#orderDetailsModal .op-invoice-items-table tfoot td,
+#orderDetailsModal .op-items-table td {
+    padding: 6px 7px !important;
+    font-size: .85rem !important;
+}
+
+#orderDetailsModal .op-lower-area {
+    display: grid !important;
+    grid-template-columns: minmax(620px, 1fr) minmax(360px, 400px) !important;
+    gap: 14px !important;
+    margin-top: 10px !important;
+    align-items: start !important;
+}
+
+#orderDetailsModal .op-message-box {
+    min-height: 38px !important;
+    height: auto !important;
+    font-size: .86rem !important;
+}
+
+#orderDetailsModal .op-payment-box,
+#orderDetailsModal .op-payment-view-box,
+#orderDetailsModal .op-summary-box {
+    font-size: .86rem !important;
+}
+
+#orderDetailsModal .op-detail-footer,
+#orderDetailsModal .op-details-action-bar,
+#orderDetailsModal .op-invoice-actions {
+    gap: 10px !important;
+    justify-content: flex-end !important;
+    flex-wrap: nowrap !important;
+    margin-top: 10px !important;
+}
+
+#orderDetailsModal .op-detail-footer .btn,
+#orderDetailsModal .op-details-action-bar .btn,
+#orderDetailsModal .op-invoice-actions .btn {
+    min-width: 120px !important;
+    min-height: 34px !important;
+    height: 34px !important;
+    font-size: .9rem !important;
+    font-weight: 400 !important;
+    border-radius: 8px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 6px !important;
+    transition: background-color .16s ease, border-color .16s ease, transform .08s ease, box-shadow .16s ease !important;
+}
+
+#orderDetailsModal .op-detail-footer .btn:hover,
+#orderDetailsModal .op-details-action-bar .btn:hover,
+#orderDetailsModal .op-invoice-actions .btn:hover {
+    transform: translateY(-1px) !important;
+}
+
+#orderDetailsModal .op-detail-footer .btn:active,
+#orderDetailsModal .op-details-action-bar .btn:active,
+#orderDetailsModal .op-invoice-actions .btn:active {
+    transform: translateY(0) !important;
+}
+
+#orderDetailsModal .modal-header .btn-close,
+#orderDetailsModal .btn-close {
+    width: 32px !important;
+    height: 32px !important;
+    min-width: 32px !important;
+    border-radius: 50% !important;
+    opacity: 1 !important;
+    margin: 0 0 0 auto !important;
+    padding: 0 !important;
+    background-color: rgba(255,255,255,.22) !important;
+    background-size: 12px 12px !important;
+    transition: background-color .16s ease, transform .08s ease !important;
+}
+
+#orderDetailsModal .modal-header .btn-close:hover,
+#orderDetailsModal .btn-close:hover {
+    background-color: rgba(255,255,255,.36) !important;
+    transform: none !important;
+}
+
+#orderDetailsModal .modal-header .btn-close:active,
+#orderDetailsModal .btn-close:active {
+    transform: scale(.96) !important;
+}
+
+
+
+/* Wider fit patch: prevent invoice fields and action buttons from wrapping/cutting off. */
+#orderDetailsModal .op-detail-control,
+#orderDetailsModal .op-detail-select {
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+}
+
+#orderDetailsModal .op-detail-footer .btn,
+#orderDetailsModal .op-details-action-bar .btn,
+#orderDetailsModal .op-invoice-actions .btn {
+    white-space: nowrap !important;
+    flex: 0 0 auto !important;
+}
+
+#orderDetailsModal .op-summary-box {
+    min-width: 360px !important;
+    width: 100% !important;
+    max-width: 400px !important;
+    margin-left: auto !important;
+}
+
+#orderDetailsModal .op-summary-box > div {
+    grid-template-columns: minmax(145px, 1fr) minmax(105px, 150px) !important;
+    column-gap: 10px !important;
+}
+
+@media (max-width: 992px) {
+    #orderDetailsModal .modal-dialog,
+    #orderDetailsModal .modal-dialog.order-details-wide-modal {
+        width: calc(100vw - 20px) !important;
+        max-width: calc(100vw - 20px) !important;
+        margin: 10px auto !important;
+        max-height: calc(100dvh - 20px) !important;
+    }
+
+    #orderDetailsModal .modal-content {
+        max-height: calc(100dvh - 20px) !important;
+    }
+
+    #orderDetailsModal .modal-body,
+    #orderDetailsModal #orderDetailsContent {
+        max-height: calc(100dvh - 72px) !important;
+    }
+
+    #orderDetailsModal .op-invoice-sheet-head,
+    #orderDetailsModal .op-lower-area {
+        grid-template-columns: 1fr !important;
+    }
+
+    #orderDetailsModal .op-right-fields {
+        grid-template-columns: repeat(2, minmax(110px, 1fr)) !important;
+    }
+}
+</style>
+
+<script id="amgc-order-details-button-smooth-fix">
+(function(){
+    function cleanupModalBackdrops(){
+        if (!document.querySelector('.modal.show')) {
+            document.body.classList.remove('modal-open');
+            document.body.style.removeProperty('overflow');
+            document.body.style.removeProperty('padding-right');
+            document.querySelectorAll('.modal-backdrop').forEach(function(backdrop){ backdrop.remove(); });
+        }
+    }
+
+    document.addEventListener('click', function(e){
+        var closeBtn = e.target.closest('#orderDetailsModal [data-bs-dismiss="modal"], #orderDetailsModal .btn-close, #orderDetailsModal .op-close-details-btn');
+        if (!closeBtn) return;
+        var modalEl = document.getElementById('orderDetailsModal');
+        if (!modalEl) return;
+        e.preventDefault();
+        var modalInstance = bootstrap.Modal.getInstance(modalEl) || new bootstrap.Modal(modalEl, {backdrop:true, keyboard:true});
+        modalInstance.hide();
+        window.setTimeout(cleanupModalBackdrops, 220);
+    }, true);
+
+    var modalEl = document.getElementById('orderDetailsModal');
+    if (modalEl && !modalEl.dataset.smoothCloseFixed) {
+        modalEl.dataset.smoothCloseFixed = '1';
+        modalEl.addEventListener('hidden.bs.modal', cleanupModalBackdrops);
+    }
+})();
 </script>
 </body>
 </html>
+
+<!-- AMGC FINAL PATCH: Invoice Details modal only, click-safe and slightly wider -->
+<style id="amgc-order-details-click-safe-only-final">
+body.amgc-order-details-open .modal-backdrop,
+body.amgc-order-details-open .modal-backdrop.show {
+    z-index: 2090 !important;
+    pointer-events: auto !important;
+}
+
+#orderDetailsModal {
+    z-index: 2100 !important;
+    pointer-events: auto !important;
+}
+
+#orderDetailsModal.show {
+    display: block !important;
+    pointer-events: auto !important;
+}
+
+#orderDetailsModal .modal-dialog,
+#orderDetailsModal .modal-dialog.order-details-wide-modal,
+#orderDetailsModal.show .modal-dialog.order-details-wide-modal {
+    width: min(1460px, calc(100vw - 16px)) !important;
+    max-width: min(1460px, calc(100vw - 16px)) !important;
+    margin: 8px auto !important;
+    height: auto !important;
+    max-height: calc(100dvh - 16px) !important;
+    transform: none !important;
+    pointer-events: auto !important;
+}
+
+#orderDetailsModal .modal-content {
+    max-height: calc(100dvh - 16px) !important;
+    border-radius: 16px !important;
+    pointer-events: auto !important;
+}
+
+#orderDetailsModal .modal-header {
+    height: 50px !important;
+    min-height: 50px !important;
+    flex-basis: 50px !important;
+    pointer-events: auto !important;
+}
+
+#orderDetailsModal .modal-body,
+#orderDetailsModal #orderDetailsContent {
+    max-height: calc(100dvh - 66px) !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    pointer-events: auto !important;
+}
+
+#orderDetailsModal .op-invoice-form-view,
+#orderDetailsModal .op-invoice-main,
+#orderDetailsModal .op-invoice-sheet-head,
+#orderDetailsModal .op-lower-area,
+#orderDetailsModal .op-detail-footer,
+#orderDetailsModal .op-details-action-bar,
+#orderDetailsModal .op-invoice-actions {
+    pointer-events: auto !important;
+}
+
+#orderDetailsModal .op-invoice-main {
+    max-width: 1418px !important;
+    padding: 12px 18px 14px !important;
+}
+
+#orderDetailsModal .op-invoice-sheet-head {
+    grid-template-columns: minmax(390px, .86fr) minmax(760px, 1.14fr) !important;
+    gap: 14px !important;
+}
+
+#orderDetailsModal .op-right-fields {
+    grid-template-columns: repeat(4, minmax(160px, 1fr)) !important;
+    gap: 8px 12px !important;
+}
+
+#orderDetailsModal .op-detail-control,
+#orderDetailsModal .op-detail-select {
+    height: 34px !important;
+    min-height: 34px !important;
+    font-size: .9rem !important;
+    pointer-events: auto !important;
+}
+
+#orderDetailsModal .op-lower-area {
+    grid-template-columns: minmax(660px, 1fr) minmax(390px, 420px) !important;
+    gap: 16px !important;
+}
+
+#orderDetailsModal .op-summary-box {
+    min-width: 390px !important;
+    max-width: 420px !important;
+}
+
+#orderDetailsModal .op-detail-footer,
+#orderDetailsModal .op-details-action-bar,
+#orderDetailsModal .op-invoice-actions {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    flex-wrap: nowrap !important;
+    gap: 10px !important;
+}
+
+#orderDetailsModal button,
+#orderDetailsModal .btn,
+#orderDetailsModal .btn-close,
+#orderDetailsModal .op-detail-footer .btn,
+#orderDetailsModal .op-details-action-bar .btn,
+#orderDetailsModal .op-invoice-actions .btn {
+    position: relative !important;
+    z-index: 5 !important;
+    pointer-events: auto !important;
+    cursor: pointer !important;
+}
+
+#orderDetailsModal .op-detail-footer .btn,
+#orderDetailsModal .op-details-action-bar .btn,
+#orderDetailsModal .op-invoice-actions .btn {
+    min-width: 126px !important;
+    height: 36px !important;
+    min-height: 36px !important;
+    white-space: nowrap !important;
+    flex: 0 0 auto !important;
+}
+
+#orderDetailsModal .modal-header .btn-close,
+#orderDetailsModal .btn-close {
+    z-index: 20 !important;
+}
+
+@media (max-width: 1200px) {
+    #orderDetailsModal .op-invoice-sheet-head,
+    #orderDetailsModal .op-lower-area {
+        grid-template-columns: 1fr !important;
+    }
+    #orderDetailsModal .op-right-fields {
+        grid-template-columns: repeat(2, minmax(160px, 1fr)) !important;
+    }
+    #orderDetailsModal .op-summary-box {
+        max-width: none !important;
+        width: 100% !important;
+        min-width: 0 !important;
+    }
+}
+</style>
+
+<script id="amgc-order-details-click-safe-only-final-script">
+(function () {
+    function getOrderDetailsModal() {
+        return document.getElementById('orderDetailsModal');
+    }
+
+    function cleanupOrderDetailsState() {
+        var modalEl = getOrderDetailsModal();
+        var isOrderDetailsOpen = modalEl && modalEl.classList.contains('show');
+        if (!isOrderDetailsOpen) {
+            document.body.classList.remove('amgc-order-details-open');
+        }
+    }
+
+    function closeOrderDetailsModalSafely() {
+        var modalEl = getOrderDetailsModal();
+        if (!modalEl) return;
+        try {
+            var instance = bootstrap.Modal.getInstance(modalEl) || bootstrap.Modal.getOrCreateInstance(modalEl, {
+                backdrop: true,
+                keyboard: true,
+                focus: true
+            });
+            instance.hide();
+        } catch (err) {
+            modalEl.classList.remove('show');
+            modalEl.style.display = 'none';
+            modalEl.setAttribute('aria-hidden', 'true');
+            modalEl.removeAttribute('aria-modal');
+            modalEl.removeAttribute('role');
+            document.body.classList.remove('modal-open', 'amgc-order-details-open');
+            document.body.style.removeProperty('overflow');
+            document.body.style.removeProperty('padding-right');
+            document.querySelectorAll('.modal-backdrop').forEach(function (backdrop) {
+                backdrop.remove();
+            });
+        }
+    }
+
+    window.amgcCloseOrderDetailsModal = closeOrderDetailsModalSafely;
+
+    document.addEventListener('shown.bs.modal', function (event) {
+        if (event.target && event.target.id === 'orderDetailsModal') {
+            document.body.classList.add('amgc-order-details-open');
+        }
+    });
+
+    document.addEventListener('hidden.bs.modal', function (event) {
+        if (event.target && event.target.id === 'orderDetailsModal') {
+            window.setTimeout(function () {
+                document.body.classList.remove('amgc-order-details-open');
+                if (!document.querySelector('.modal.show')) {
+                    document.body.classList.remove('modal-open');
+                    document.body.style.removeProperty('overflow');
+                    document.body.style.removeProperty('padding-right');
+                    document.querySelectorAll('.modal-backdrop').forEach(function (backdrop) {
+                        backdrop.remove();
+                    });
+                }
+            }, 80);
+        }
+    });
+
+    document.addEventListener('click', function (event) {
+        var modalEl = getOrderDetailsModal();
+        if (!modalEl || !modalEl.classList.contains('show')) return;
+
+        var closeBtn = event.target.closest('#orderDetailsModal .btn-close, #orderDetailsModal .op-detail-footer .btn-light, #orderDetailsModal [data-amgc-close-order-details]');
+        if (!closeBtn) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        closeOrderDetailsModalSafely();
+    }, true);
+
+    window.setInterval(cleanupOrderDetailsState, 1000);
+})();
+
+
+// ===== AMGC Journal Auto Open/Edit Patch =====
+(function(){
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('from_journal_entries') !== '1' && params.get('journal_edit') !== '1') return;
+    function run(){
+        const id = params.get('so_id') || params.get('sales_order_id') || params.get('source_id') || params.get('invoice_id') || '';
+        if(!id) return;
+        if (typeof editOrder === 'function') { editOrder(id); return; }
+        if (typeof editOrderFromOrderProduct === 'function') { editOrderFromOrderProduct(id); return; }
+        if (window.Swal) Swal.fire('Transaction opened','Source page opened but edit function was not ready.','info');
+    }
+    document.addEventListener('DOMContentLoaded', ()=>setTimeout(run, 900));
+})();
+
+</script>
+
+<!-- AMGC PATCH: SI Attachment Preview modal must always appear above Invoice Details modal -->
+<style id="amgc-si-attachment-modal-on-top-final">
+/* Keep Invoice Details open, but make SI Attachment Preview the front modal. */
+#siAttachmentPreviewModal {
+    z-index: 2400 !important;
+    pointer-events: auto !important;
+}
+
+#siAttachmentPreviewModal.show {
+    display: block !important;
+    pointer-events: auto !important;
+}
+
+#siAttachmentPreviewModal .modal-dialog {
+    z-index: 2405 !important;
+    pointer-events: auto !important;
+}
+
+#siAttachmentPreviewModal .modal-content,
+#siAttachmentPreviewModal .modal-header,
+#siAttachmentPreviewModal .modal-body,
+#siAttachmentPreviewModal .modal-footer,
+#siAttachmentPreviewModal button,
+#siAttachmentPreviewModal .btn,
+#siAttachmentPreviewModal iframe,
+#siAttachmentPreviewModal img {
+    pointer-events: auto !important;
+}
+
+/* Backdrop created for the SI Attachment modal should sit above Invoice Details but below SI modal. */
+body.amgc-si-attachment-open .modal-backdrop:last-of-type,
+body.amgc-si-attachment-open .modal-backdrop.show:last-of-type {
+    z-index: 2390 !important;
+    pointer-events: auto !important;
+}
+
+/* Invoice Details stays underneath while attachment preview is open. */
+body.amgc-si-attachment-open #orderDetailsModal {
+    z-index: 2100 !important;
+}
+</style>
+
+<script id="amgc-si-attachment-modal-on-top-final-script">
+(function () {
+    function setSIAttachmentModalOnTop() {
+        var modalEl = document.getElementById('siAttachmentPreviewModal');
+        if (!modalEl) return;
+
+        modalEl.style.zIndex = '2400';
+        document.body.classList.add('amgc-si-attachment-open');
+
+        window.setTimeout(function () {
+            var backdrops = document.querySelectorAll('.modal-backdrop');
+            if (backdrops.length) {
+                backdrops[backdrops.length - 1].style.zIndex = '2390';
+            }
+            modalEl.style.zIndex = '2400';
+        }, 10);
+    }
+
+    function restoreInvoiceDetailsAfterAttachmentClose() {
+        document.body.classList.remove('amgc-si-attachment-open');
+        var orderModal = document.getElementById('orderDetailsModal');
+        if (orderModal && orderModal.classList.contains('show')) {
+            document.body.classList.add('modal-open', 'amgc-order-details-open');
+            document.body.style.overflow = 'hidden';
+        }
+    }
+
+        if (event.target && event.target.id === 'siAttachmentPreviewModal') {
+            setSIAttachmentModalOnTop();
+        }
+    });
+
+    document.addEventListener('shown.bs.modal', function (event) {
+        if (event.target && event.target.id === 'siAttachmentPreviewModal') {
+            setSIAttachmentModalOnTop();
+        }
+    });
+
+    document.addEventListener('hidden.bs.modal', function (event) {
+        if (event.target && event.target.id === 'siAttachmentPreviewModal') {
+            window.setTimeout(restoreInvoiceDetailsAfterAttachmentClose, 30);
+        }
+    });
+})();
+</script>

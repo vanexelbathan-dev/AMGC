@@ -1986,7 +1986,7 @@ a:hover {
     background: linear-gradient(135deg, var(--dark-green) 0%, var(--primary-green) 100%) !important;
     color: white !important;
     border-bottom: none !important;
-    padding: 1.5rem 2rem !important;
+    padding: 0.6rem 2rem !important;
     position: relative;
     overflow: hidden;
 }
@@ -2005,7 +2005,7 @@ a:hover {
 
 .modal-header .modal-title {
     font-weight: 700 !important;
-    font-size: 1.5rem !important;
+    font-size: 1rem !important;
     display: flex;
     align-items: center;
     gap: 1rem;
@@ -2029,8 +2029,8 @@ a:hover {
     filter: brightness(0) invert(1);
     opacity: 0.9;
     transition: all 0.3s ease;
-    width: 40px;
-    height: 40px;
+    width: 30px;
+    height: 30px;
     border-radius: 12px;
     background-color: rgba(255, 255, 255, 0.15);
     padding: 10px;
@@ -3334,4 +3334,675 @@ a:hover {
     .form-card {
         margin-top: 0.5rem;
     }
+}
+
+/* ============================================ */
+/* ===== VEHICLE DETAILS MODAL - FUEL MONITORING ===== */
+/* ============================================ */
+
+/* Base modal styles */
+#vehicleDetailsModal .modal-dialog {
+    margin: 1rem auto !important;
+    max-width: 95% !important;
+}
+
+@media (max-width: 768px) {
+    #vehicleDetailsModal .modal-dialog {
+        margin: 0.75rem auto !important;
+        max-width: calc(100% - 1.5rem) !important;
+        width: calc(100% - 1.5rem) !important;
+    }
+}
+
+@media (max-width: 576px) {
+    #vehicleDetailsModal .modal-dialog {
+        margin: 0.5rem auto !important;
+        max-width: calc(100% - 1rem) !important;
+        width: calc(100% - 1rem) !important;
+    }
+}
+
+#vehicleDetailsModal .modal-content {
+    border: none !important;
+    border-radius: 20px !important;
+    overflow: hidden !important;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2) !important;
+    max-height: 90vh !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+/* Modal Header - REDUCED HEIGHT */
+#vehicleDetailsModal .modal-header {
+    background: linear-gradient(135deg, #047857 0%, #44D34E 100%) !important;
+    color: white !important;
+    border-bottom: none !important;
+    padding: 0.6rem 1.25rem !important;
+    flex-shrink: 0 !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 10 !important;
+}
+
+@media (max-width: 768px) {
+    #vehicleDetailsModal .modal-header {
+        padding: 0.5rem 1rem !important;
+    }
+}
+
+#vehicleDetailsModal .modal-header .modal-title {
+    font-weight: 600 !important;
+    font-size: 1rem !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    color: white !important;
+}
+
+#vehicleDetailsModal .modal-header .modal-title i {
+    color: white !important;
+    font-size: 1rem !important;
+}
+
+/* Close button - smaller */
+#vehicleDetailsModal .modal-header .btn-close {
+    background: rgba(255, 255, 255, 0.25) !important;
+    border-radius: 50% !important;
+    width: 28px !important;
+    height: 28px !important;
+    padding: 0 !important;
+    margin: -0.3rem -0.3rem -0.3rem auto !important;
+    opacity: 1 !important;
+    transition: all 0.2s ease !important;
+}
+
+#vehicleDetailsModal .modal-header .btn-close:hover {
+    background: rgba(255, 255, 255, 0.4) !important;
+    transform: rotate(90deg) !important;
+}
+
+/* Modal Body */
+#vehicleDetailsModal .modal-body {
+    padding: 1rem 1.25rem !important;
+    overflow-y: auto !important;
+    flex: 1 !important;
+    background: #f8fafc !important;
+    max-height: calc(90vh - 110px) !important;
+}
+
+@media (max-width: 768px) {
+    #vehicleDetailsModal .modal-body {
+        padding: 0.875rem !important;
+        max-height: calc(90vh - 100px) !important;
+    }
+}
+
+/* Scrollbar styling */
+#vehicleDetailsModal .modal-body::-webkit-scrollbar {
+    width: 5px;
+}
+
+#vehicleDetailsModal .modal-body::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+#vehicleDetailsModal .modal-body::-webkit-scrollbar-thumb {
+    background: #44D34E;
+    border-radius: 3px;
+}
+
+/* Modal Footer */
+#vehicleDetailsModal .modal-footer {
+    border-top: 1px solid #e9ecef !important;
+    padding: 0.7rem 1.25rem !important;
+    background: #ffffff !important;
+    flex-shrink: 0 !important;
+    gap: 0.75rem !important;
+}
+
+#vehicleDetailsModal .modal-footer .btn-secondary {
+    background: #6c757d !important;
+    border: none !important;
+    color: white !important;
+    padding: 0.4rem 1rem !important;
+    font-size: 0.8rem !important;
+    border-radius: 8px !important;
+    transition: all 0.2s ease !important;
+}
+
+#vehicleDetailsModal .modal-footer .btn-secondary:hover {
+    background: #5a6268 !important;
+    transform: translateY(-1px) !important;
+}
+
+/* ===== DETAIL GRID STYLES ===== */
+#vehicleDetailsModal .detail-grid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)) !important;
+    gap: 0.75rem 1.5rem !important;
+    background: white !important;
+    padding: 0.875rem !important;
+    border-radius: 12px !important;
+    border: 1px solid #e9ecef !important;
+}
+
+#vehicleDetailsModal .detail-item {
+    border-bottom: 1px solid #eef2f6 !important;
+    padding-bottom: 0.4rem !important;
+}
+
+#vehicleDetailsModal .detail-label {
+    font-size: 0.6rem !important;
+    font-weight: 600 !important;
+    color: #6c757d !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+    margin-bottom: 0.2rem !important;
+}
+
+#vehicleDetailsModal .detail-value {
+    font-size: 0.85rem !important;
+    font-weight: 600 !important;
+    color: #1e293b !important;
+    word-break: break-word !important;
+}
+
+/* ===== TABS STYLES ===== */
+#vehicleDetailsModal .nav-tabs {
+    border-bottom: 2px solid #e9ecef !important;
+    gap: 0.25rem !important;
+    margin-top: 0.75rem !important;
+    background: transparent !important;
+}
+
+#vehicleDetailsModal .nav-tabs .nav-link {
+    border: none !important;
+    background: transparent !important;
+    color: #6c757d !important;
+    font-weight: 600 !important;
+    font-size: 0.8rem !important;
+    padding: 0.5rem 1rem !important;
+    border-radius: 10px 10px 0 0 !important;
+    transition: all 0.2s ease-in-out !important;
+    cursor: pointer !important;
+}
+
+#vehicleDetailsModal .nav-tabs .nav-link:hover {
+    color: #047857 !important;
+    background: rgba(4, 120, 87, 0.05) !important;
+}
+
+#vehicleDetailsModal .nav-tabs .nav-link.active {
+    color: #047857 !important;
+    border-bottom: 3px solid #047857 !important;
+    font-weight: 700 !important;
+}
+
+/* ===== FUEL TABLE STYLES ===== */
+#vehicleDetailsModal .fuel-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    font-size: 0.72rem !important;
+    table-layout: auto !important;
+}
+
+#vehicleDetailsModal .fuel-table thead th {
+    background: #047857 !important;
+    color: white !important;
+    font-weight: 600 !important;
+    font-size: 0.65rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+    padding: 0.55rem 0.4rem !important;
+    white-space: nowrap !important;
+    text-align: center !important;
+    border-bottom: none !important;
+}
+
+#vehicleDetailsModal .fuel-table thead th:first-child {
+    border-radius: 8px 0 0 0 !important;
+}
+
+#vehicleDetailsModal .fuel-table thead th:last-child {
+    border-radius: 0 8px 0 0 !important;
+}
+
+#vehicleDetailsModal .fuel-table tbody td {
+    padding: 0.45rem 0.4rem !important;
+    border-bottom: 1px solid #e9ecef !important;
+    vertical-align: middle !important;
+    color: #334155 !important;
+    text-align: center !important;
+    font-size: 0.72rem !important;
+    background: white !important;
+}
+
+#vehicleDetailsModal .fuel-table tbody tr:hover td {
+    background: #f8fafc !important;
+}
+
+/* Fuel efficiency highlight */
+#vehicleDetailsModal .fuel-table td:nth-child(8) {
+    font-weight: 700 !important;
+    color: #047857 !important;
+}
+
+/* Attachment link styling */
+#vehicleDetailsModal .fuel-table .attachment-link {
+    color: #047857 !important;
+    text-decoration: none !important;
+    font-size: 0.65rem !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    gap: 0.2rem !important;
+    padding: 0.15rem 0.4rem !important;
+    background: #ecfdf5 !important;
+    border-radius: 6px !important;
+    transition: all 0.2s ease !important;
+}
+
+#vehicleDetailsModal .fuel-table .attachment-link:hover {
+    background: #d1fae5 !important;
+}
+
+/* Empty state in fuel table */
+#vehicleDetailsModal .fuel-table td[colspan] {
+    text-align: center !important;
+}
+
+/* ===== ADD FUEL BUTTON ===== */
+#detailsFuelBtn {
+    background: linear-gradient(135deg, #059669, #047857) !important;
+    border: none !important;
+    padding: 0.4rem 1rem !important;
+    border-radius: 8px !important;
+    font-weight: 500 !important;
+    font-size: 0.8rem !important;
+    white-space: nowrap !important;
+    transition: all 0.2s ease !important;
+}
+
+#detailsFuelBtn:hover {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3) !important;
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+    #vehicleDetailsModal .detail-grid {
+        grid-template-columns: 1fr !important;
+        gap: 0.5rem !important;
+    }
+    
+    #vehicleDetailsModal .nav-tabs .nav-link {
+        padding: 0.4rem 0.8rem !important;
+        font-size: 0.7rem !important;
+    }
+    
+    /* Make fuel table scrollable on mobile */
+    #vehicleDetailsModal .table-responsive {
+        overflow-x: auto !important;
+    }
+    
+    #vehicleDetailsModal .fuel-table {
+        min-width: 800px !important;
+    }
+}
+
+@media (max-width: 576px) {
+    #vehicleDetailsModal .modal-body {
+        padding: 0.75rem !important;
+    }
+    
+    #vehicleDetailsModal .detail-label {
+        font-size: 0.55rem !important;
+    }
+    
+    #vehicleDetailsModal .detail-value {
+        font-size: 0.75rem !important;
+    }
+    
+    #vehicleDetailsModal .nav-tabs .nav-link {
+        flex: 1 !important;
+        text-align: center !important;
+        padding: 0.35rem 0.4rem !important;
+        font-size: 0.65rem !important;
+    }
+    
+    #detailsFuelBtn {
+        padding: 0.35rem 0.8rem !important;
+        font-size: 0.7rem !important;
+    }
+}
+
+/* Animation */
+#vehicleDetailsModal.fade .modal-dialog {
+    transform: scale(0.95) !important;
+    transition: transform 0.2s ease-out !important;
+}
+
+#vehicleDetailsModal.fade.show .modal-dialog {
+    transform: scale(1) !important;
+}
+
+
+/* ============================================ */
+/* ===== FUEL MONITORING MODAL ===== */
+/* ============================================ */
+
+/* Base modal styles */
+#fuelMonitoringModal .modal-dialog {
+    margin: 1rem auto !important;
+    max-width: 800px !important;
+}
+
+@media (max-width: 768px) {
+    #fuelMonitoringModal .modal-dialog {
+        margin: 0.75rem auto !important;
+        max-width: calc(100% - 1.5rem) !important;
+        width: calc(100% - 1.5rem) !important;
+    }
+}
+
+@media (max-width: 576px) {
+    #fuelMonitoringModal .modal-dialog {
+        margin: 0.5rem auto !important;
+        max-width: calc(100% - 1rem) !important;
+        width: calc(100% - 1rem) !important;
+    }
+}
+
+#fuelMonitoringModal .modal-content {
+    border: none !important;
+    border-radius: 20px !important;
+    overflow: hidden !important;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2) !important;
+    max-height: 90vh !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+/* Modal Header - REDUCED HEIGHT */
+#fuelMonitoringModal .modal-header {
+    background: linear-gradient(135deg, #047857 0%, #44D34E 100%) !important;
+    color: white !important;
+    border-bottom: none !important;
+    padding: 0.6rem 1.25rem !important;
+    flex-shrink: 0 !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 10 !important;
+}
+
+@media (max-width: 768px) {
+    #fuelMonitoringModal .modal-header {
+        padding: 0.5rem 1rem !important;
+    }
+}
+
+#fuelMonitoringModal .modal-header .modal-title {
+    font-weight: 600 !important;
+    font-size: 1rem !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    color: white !important;
+}
+
+#fuelMonitoringModal .modal-header .modal-title i {
+    color: white !important;
+    font-size: 1rem !important;
+}
+
+/* Close button */
+#fuelMonitoringModal .modal-header .btn-close {
+    background: rgba(255, 255, 255, 0.25) !important;
+    border-radius: 50% !important;
+    width: 28px !important;
+    height: 28px !important;
+    padding: 0 !important;
+    margin: -0.3rem -0.3rem -0.3rem auto !important;
+    opacity: 1 !important;
+    transition: all 0.2s ease !important;
+}
+
+#fuelMonitoringModal .modal-header .btn-close:hover {
+    background: rgba(255, 255, 255, 0.4) !important;
+    transform: rotate(90deg) !important;
+}
+
+/* Modal Body */
+#fuelMonitoringModal .modal-body {
+    padding: 1.25rem !important;
+    overflow-y: auto !important;
+    flex: 1 !important;
+    background: #f8fafc !important;
+    max-height: calc(90vh - 110px) !important;
+}
+
+@media (max-width: 768px) {
+    #fuelMonitoringModal .modal-body {
+        padding: 1rem !important;
+        max-height: calc(90vh - 100px) !important;
+    }
+}
+
+/* Scrollbar styling */
+#fuelMonitoringModal .modal-body::-webkit-scrollbar {
+    width: 5px;
+}
+
+#fuelMonitoringModal .modal-body::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+#fuelMonitoringModal .modal-body::-webkit-scrollbar-thumb {
+    background: #44D34E;
+    border-radius: 3px;
+}
+
+/* Modal Footer */
+#fuelMonitoringModal .modal-footer {
+    border-top: 1px solid #e9ecef !important;
+    padding: 0.7rem 1.25rem !important;
+    background: #ffffff !important;
+    flex-shrink: 0 !important;
+    gap: 0.75rem !important;
+}
+
+#fuelMonitoringModal .modal-footer .btn {
+    padding: 0.4rem 1rem !important;
+    font-size: 0.8rem !important;
+    font-weight: 500 !important;
+    border-radius: 8px !important;
+    transition: all 0.2s ease !important;
+}
+
+#fuelMonitoringModal .modal-footer .btn-secondary {
+    background: #6c757d !important;
+    border: none !important;
+    color: white !important;
+}
+
+#fuelMonitoringModal .modal-footer .btn-secondary:hover {
+    background: #5a6268 !important;
+    transform: translateY(-1px) !important;
+}
+
+#fuelMonitoringModal .modal-footer .btn-success {
+    background: linear-gradient(135deg, #059669, #047857) !important;
+    border: none !important;
+    color: white !important;
+}
+
+#fuelMonitoringModal .modal-footer .btn-success:hover {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3) !important;
+}
+
+/* ===== FORM STYLES ===== */
+/* Vehicle info alert box */
+#fuelMonitoringModal .alert-light {
+    background: #f0fdf4 !important;
+    border: 1px solid #bbf7d0 !important;
+    border-radius: 12px !important;
+    padding: 0.75rem 1rem !important;
+    margin-bottom: 1.25rem !important;
+}
+
+#fuelMonitoringModal .alert-light strong {
+    color: #047857 !important;
+    font-size: 0.9rem !important;
+}
+
+#fuelMonitoringModal .alert-light .text-muted {
+    color: #6c757d !important;
+    font-size: 0.75rem !important;
+}
+
+/* Form labels */
+#fuelMonitoringModal .form-label {
+    font-size: 0.7rem !important;
+    font-weight: 600 !important;
+    color: #374151 !important;
+    margin-bottom: 0.35rem !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.35rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+}
+
+#fuelMonitoringModal .form-label i {
+    color: #047857 !important;
+    font-size: 0.75rem !important;
+}
+
+/* Required mark */
+#fuelMonitoringModal .required-mark {
+    color: #dc2626 !important;
+    font-size: 0.75rem !important;
+    font-weight: bold !important;
+}
+
+/* Form controls */
+#fuelMonitoringModal .form-control {
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 10px !important;
+    padding: 0.55rem 0.75rem !important;
+    font-size: 0.85rem !important;
+    transition: all 0.2s ease !important;
+    background-color: #ffffff !important;
+}
+
+#fuelMonitoringModal .form-control:focus {
+    border-color: #44D34E !important;
+    box-shadow: 0 0 0 3px rgba(68, 211, 78, 0.15) !important;
+    outline: none !important;
+}
+
+#fuelMonitoringModal .form-control[type="file"] {
+    padding: 0.4rem 0.65rem !important;
+}
+
+/* Form row spacing */
+#fuelMonitoringModal .row.g-3 {
+    margin: -0.5rem !important;
+}
+
+#fuelMonitoringModal .row.g-3 > [class*="col-"] {
+    padding: 0.5rem !important;
+}
+
+/* File hint (optional - add to HTML if needed) */
+#fuelMonitoringModal .file-hint {
+    font-size: 0.65rem !important;
+    color: #6c757d !important;
+    margin-top: 0.25rem !important;
+}
+
+/* Placeholder styling */
+#fuelMonitoringModal .form-control::placeholder {
+    color: #94a3b8 !important;
+    font-size: 0.75rem !important;
+}
+
+/* Readonly fields */
+#fuelMonitoringModal .form-control[readonly] {
+    background-color: #f1f5f9 !important;
+    cursor: default !important;
+}
+
+/* Disabled fields */
+#fuelMonitoringModal .form-control:disabled {
+    background-color: #f1f5f9 !important;
+    opacity: 0.7 !important;
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+    #fuelMonitoringModal .col-md-4,
+    #fuelMonitoringModal .col-md-6 {
+        flex: 0 0 100% !important;
+        max-width: 100% !important;
+    }
+    
+    #fuelMonitoringModal .modal-footer {
+        flex-wrap: wrap !important;
+    }
+    
+    #fuelMonitoringModal .modal-footer .btn {
+        flex: 1 !important;
+        text-align: center !important;
+    }
+}
+
+@media (max-width: 576px) {
+    #fuelMonitoringModal .modal-body {
+        padding: 0.875rem !important;
+    }
+    
+    #fuelMonitoringModal .form-label {
+        font-size: 0.65rem !important;
+    }
+    
+    #fuelMonitoringModal .form-control {
+        padding: 0.45rem 0.65rem !important;
+        font-size: 0.8rem !important;
+    }
+    
+    #fuelMonitoringModal .alert-light {
+        padding: 0.6rem 0.75rem !important;
+    }
+    
+    #fuelMonitoringModal .alert-light strong {
+        font-size: 0.85rem !important;
+    }
+}
+
+/* Animation for modal */
+#fuelMonitoringModal.fade .modal-dialog {
+    transform: scale(0.95) !important;
+    transition: transform 0.2s ease-out !important;
+}
+
+#fuelMonitoringModal.fade.show .modal-dialog {
+    transform: scale(1) !important;
+}
+
+/* Focus visible for accessibility */
+#fuelMonitoringModal .btn:focus-visible {
+    outline: 2px solid #047857 !important;
+    outline-offset: 2px !important;
+}
+
+/* Validation styles (optional) */
+#fuelMonitoringModal .form-control.is-valid {
+    border-color: #10b981 !important;
+}
+
+#fuelMonitoringModal .form-control.is-invalid {
+    border-color: #dc2626 !important;
 }

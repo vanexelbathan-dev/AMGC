@@ -169,8 +169,10 @@ function getDashboardByRole($role) {
         'admin' => 'Global/dashboard.php',
         'rolling' => 'Rolling/current_inventory.php',
         'super_duper_admin' => 'SuperDuperAdmin/dashboard.php',
-        'motorpool' => 'Motorpool/request_handler.php',
+        'motorpool' => 'Motorpool/motorpool_inventory.php',
         'warehouseman' => 'CentralizeWarehouse/encode_stock.php',
+        'cashier' => 'POS/posdashboard.php',
+        'it' => 'IT/itdashboard.php',
     ];
     
     return isset($redirect_map[$role]) ? $redirect_map[$role] : '';

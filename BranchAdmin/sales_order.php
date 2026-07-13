@@ -495,6 +495,22 @@ if (!$view_all_branches && $branch_id > 0) {
     $vehicles_branch_condition = "AND branch_id = $branch_id";
 }
 
+
+// Motorpool registered vehicles are the only valid delivery vehicles.
+// The legacy `vehicles` table is kept for old data, but new confirmation dropdowns use `motorpool_vehicles`.
+$motorpool_vehicles_table_exists = false;
+$check_motorpool_vehicles = $conn->query("SHOW TABLES LIKE 'motorpool_vehicles'");
+if ($check_motorpool_vehicles && $check_motorpool_vehicles->num_rows > 0) {
+    $motorpool_vehicles_table_exists = true;
+}
+
+$motorpool_vehicle_has_status = false;
+$check_motorpool_vehicle_status = $conn->query("SHOW COLUMNS FROM motorpool_vehicles LIKE 'status'");
+if ($check_motorpool_vehicle_status && $check_motorpool_vehicle_status->num_rows > 0) {
+    $motorpool_vehicle_has_status = true;
+}
+
+
 // Check if inventory_transactions table exists
 $inventory_transactions_exists = false;
 $check_inv_trans = $conn->query("SHOW TABLES LIKE 'inventory_transactions'");
@@ -1463,27 +1479,36 @@ $available_drivers_without_pending = array_filter($available_drivers, function($
     return $d['pending_deliveries'] == 0; 
 });
 
-// ========== GET AVAILABLE VEHICLES FOR DROPDOWN ==========
-$available_vehicles_query = "
-    SELECT 
-        v.vehicle_id,
-        v.vehicle_type,
-        v.plate_number,
-        v.status,
-        (
-            SELECT COUNT(*)
-            FROM trip_tickets tt
-            WHERE tt.vehicle_id = v.vehicle_id
-            AND tt.trip_status = 'in-progress'
-        ) as active_trips
-    FROM vehicles v
-    WHERE v.status = 'active'
-    $vehicles_branch_condition
-    HAVING active_trips = 0
-    ORDER BY v.vehicle_type ASC, v.plate_number ASC
-";
-$available_vehicles_result = $conn->query($available_vehicles_query);
-$available_vehicles = $available_vehicles_result ? $available_vehicles_result->fetch_all(MYSQLI_ASSOC) : [];
+// ========== GET AVAILABLE MOTORPOOL REGISTERED VEHICLES FOR DROPDOWN ==========
+$available_vehicles = [];
+if ($motorpool_vehicles_table_exists) {
+    $motorpool_status_condition = $motorpool_vehicle_has_status ? "AND LOWER(TRIM(COALESCE(mv.status, 'active'))) = 'active'" : "";
+    $motorpool_branch_condition = (!$view_all_branches && $branch_id > 0) ? "AND COALESCE(mv.branch_id, 0) = " . (int)$branch_id : "";
+
+    $available_vehicles_query = "
+        SELECT
+            mv.id AS vehicle_id,
+            COALESCE(NULLIF(mv.vehicle_type, ''), NULLIF(mv.vehicle_category, ''), 'Motorpool Vehicle') AS vehicle_type,
+            COALESCE(NULLIF(mv.plate_no, ''), NULLIF(mv.vehicle_id, ''), CONCAT('Vehicle #', mv.id)) AS plate_number,
+            COALESCE(mv.status, 'active') AS status,
+            COALESCE(mv.make_brand, '') AS make_brand,
+            COALESCE(mv.vehicle_id, '') AS motorpool_vehicle_code,
+            (
+                SELECT COUNT(*)
+                FROM trip_tickets tt
+                WHERE tt.vehicle_id = mv.id
+                  AND tt.trip_status = 'in-progress'
+            ) AS active_trips
+        FROM motorpool_vehicles mv
+        WHERE 1=1
+          $motorpool_status_condition
+          $motorpool_branch_condition
+        HAVING active_trips = 0
+        ORDER BY mv.plate_no ASC, mv.vehicle_type ASC, mv.make_brand ASC
+    ";
+    $available_vehicles_result = $conn->query($available_vehicles_query);
+    $available_vehicles = $available_vehicles_result ? $available_vehicles_result->fetch_all(MYSQLI_ASSOC) : [];
+}
 
 // ========== HANDLE AJAX REQUESTS ==========
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
@@ -1741,9 +1766,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $driver_name = $driver_data['driver_name'];
                 }
 
-                $check_vehicle_query = "SELECT vehicle_id, vehicle_type, plate_number FROM vehicles WHERE vehicle_id = ? AND status = 'active'";
+                if (!$motorpool_vehicles_table_exists) {
+                    throw new Exception('No Motorpool registered vehicle table was found. Please register vehicles in Motorpool first.');
+                }
+
+                $motorpool_status_condition = $motorpool_vehicle_has_status ? " AND LOWER(TRIM(COALESCE(status, 'active'))) = 'active'" : "";
+                $check_vehicle_query = "
+                    SELECT
+                        id AS vehicle_id,
+                        COALESCE(NULLIF(vehicle_type, ''), NULLIF(vehicle_category, ''), 'Motorpool Vehicle') AS vehicle_type,
+                        COALESCE(NULLIF(plate_no, ''), NULLIF(vehicle_id, ''), CONCAT('Vehicle #', id)) AS plate_number,
+                        COALESCE(make_brand, '') AS make_brand
+                    FROM motorpool_vehicles
+                    WHERE id = ?
+                    $motorpool_status_condition
+                ";
                 if (!$view_all_branches) {
-                    $check_vehicle_query .= " AND branch_id = ?";
+                    $check_vehicle_query .= " AND COALESCE(branch_id, 0) = ?";
                     $check_vehicle_stmt = $conn->prepare($check_vehicle_query);
                     $check_vehicle_stmt->bind_param("ii", $selected_vehicle_id, $order_branch_id);
                 } else {
@@ -1753,7 +1792,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $check_vehicle_stmt->execute();
                 $vehicle_result = $check_vehicle_stmt->get_result();
                 if ($vehicle_result->num_rows === 0) {
-                    throw new Exception('Selected vehicle is not available or does not belong to this branch');
+                    throw new Exception('Selected vehicle is not registered in Motorpool or does not belong to this branch');
                 }
                 $vehicle_data = $vehicle_result->fetch_assoc();
                 $vehicle_display = trim(($vehicle_data['vehicle_type'] ?? '') . ' - ' . ($vehicle_data['plate_number'] ?? ''));
@@ -2036,34 +2075,41 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             exit;
         }
         
-        // GET AVAILABLE VEHICLES
+        // GET AVAILABLE MOTORPOOL REGISTERED VEHICLES
         elseif ($_POST['action'] === 'get_available_vehicles') {
             $branch_id_param = (int)$_POST['branch_id'];
+            $vehicles = [];
 
-            $query = "
-                SELECT 
-                    v.vehicle_id,
-                    v.vehicle_type,
-                    v.plate_number,
-                    v.status,
-                    (
-                        SELECT COUNT(*)
-                        FROM trip_tickets tt
-                        WHERE tt.vehicle_id = v.vehicle_id
-                        AND tt.trip_status = 'in-progress'
-                    ) as active_trips
-                FROM vehicles v
-                WHERE v.status = 'active'
-                AND v.branch_id = ?
-                HAVING active_trips = 0
-                ORDER BY v.vehicle_type ASC, v.plate_number ASC
-            ";
+            if ($motorpool_vehicles_table_exists) {
+                $motorpool_status_condition = $motorpool_vehicle_has_status ? "AND LOWER(TRIM(COALESCE(mv.status, 'active'))) = 'active'" : "";
 
-            $stmt = $conn->prepare($query);
-            $stmt->bind_param("i", $branch_id_param);
-            $stmt->execute();
-            $result = $stmt->get_result();
-            $vehicles = $result->fetch_all(MYSQLI_ASSOC);
+                $query = "
+                    SELECT
+                        mv.id AS vehicle_id,
+                        COALESCE(NULLIF(mv.vehicle_type, ''), NULLIF(mv.vehicle_category, ''), 'Motorpool Vehicle') AS vehicle_type,
+                        COALESCE(NULLIF(mv.plate_no, ''), NULLIF(mv.vehicle_id, ''), CONCAT('Vehicle #', mv.id)) AS plate_number,
+                        COALESCE(mv.status, 'active') AS status,
+                        COALESCE(mv.make_brand, '') AS make_brand,
+                        COALESCE(mv.vehicle_id, '') AS motorpool_vehicle_code,
+                        (
+                            SELECT COUNT(*)
+                            FROM trip_tickets tt
+                            WHERE tt.vehicle_id = mv.id
+                              AND tt.trip_status = 'in-progress'
+                        ) AS active_trips
+                    FROM motorpool_vehicles mv
+                    WHERE COALESCE(mv.branch_id, 0) = ?
+                      $motorpool_status_condition
+                    HAVING active_trips = 0
+                    ORDER BY mv.plate_no ASC, mv.vehicle_type ASC, mv.make_brand ASC
+                ";
+
+                $stmt = $conn->prepare($query);
+                $stmt->bind_param("i", $branch_id_param);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                $vehicles = $result->fetch_all(MYSQLI_ASSOC);
+            }
 
             echo json_encode([
                 'success' => true,
@@ -2260,8 +2306,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
                 
                 if ($trip_has_so_id) {
-                    $tt_query = "SELECT tt.trip_number" . ($trip_has_vehicle_id ? ", tt.vehicle_id, v.vehicle_type, v.plate_number" : "") . "
-                                 FROM trip_tickets tt" . ($trip_has_vehicle_id ? " LEFT JOIN vehicles v ON tt.vehicle_id = v.vehicle_id" : "") . "
+                    $tt_query = "SELECT tt.trip_number" . ($trip_has_vehicle_id ? ", tt.vehicle_id, COALESCE(NULLIF(v.vehicle_type, ''), NULLIF(v.vehicle_category, ''), 'Motorpool Vehicle') AS vehicle_type, COALESCE(NULLIF(v.plate_no, ''), NULLIF(v.vehicle_id, ''), CONCAT('Vehicle #', v.id)) AS plate_number" : "") . "
+                                 FROM trip_tickets tt" . ($trip_has_vehicle_id ? " LEFT JOIN motorpool_vehicles v ON tt.vehicle_id = v.id" : "") . "
                                  WHERE tt.so_id = ? LIMIT 1";
                     $tt_stmt = $conn->prepare($tt_query);
                     $tt_stmt->bind_param("i", $so_id);
@@ -2961,11 +3007,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $items = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
             
             $driver_query = "
-                SELECT d.driver_name, v.vehicle_type, v.plate_number
+                SELECT d.driver_name, COALESCE(NULLIF(v.vehicle_type, ''), NULLIF(v.vehicle_category, ''), 'Motorpool Vehicle') AS vehicle_type, COALESCE(NULLIF(v.plate_no, ''), NULLIF(v.vehicle_id, ''), CONCAT('Vehicle #', v.id)) AS plate_number
                 FROM pick_lists pl
                 JOIN drivers d ON pl.driver_id = d.driver_id
                 LEFT JOIN trip_tickets tt ON tt.so_id = pl.so_id
-                LEFT JOIN vehicles v ON tt.vehicle_id = v.vehicle_id
+                LEFT JOIN motorpool_vehicles v ON tt.vehicle_id = v.id
                 WHERE pl.so_id = ?
                 LIMIT 1
             ";
@@ -5076,218 +5122,284 @@ tfoot.table-light th {
 </head>
 <body>
     <div id="appPage">
-        <!-- Sidebar -->
+    <!-- Sidebar -->
 <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
         <h3>
             <button class="desktop-toggle-btn" id="desktopToggleBtn">
                 <i class="bi bi-list" id="toggleIcon"></i>
             </button>
-            <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
+
+            <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon">
+
             <span class="nav-text">Branch Admin</span>
         </h3>
     </div>
-    
+
     <div class="sidebar-content">
         <div class="sidebar-menu">
             <ul class="nav flex-column">
-                <li class="nav-item">
-                <a class="nav-link" href="branchdashboard.php">
-                <i class="bi bi-speedometer2"></i>
-                <span class="nav-text">Dashboard</span></a>
-            </li>
-                <!-- Warehouse Dropdown -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'warehouseMenu')">
-        <i class="bi bi-shop"></i>
-        <span class="nav-text">Warehouse</span>
-        <i class="bi bi-chevron-down dropdown-arrow"></i>
-    </a>
-    <div class="collapse" id="warehouseMenu">
-        <ul class="nav flex-column ps-4">
-            <li class="nav-item">
-                <a class="nav-link active" href="current_inventory.php">
-                        <i class="bi bi-bar-chart-line"></i>
-                        <span class="nav-text">Current Inventory</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="bad_orders.php">
-                    <i class="bi bi-recycle"></i>
-                    <span class="nav-text">Bad Orders</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="pick_list_items.php">
-                    <i class="bi bi-list-check"></i>
-                    <span class="nav-text">Pick List Items</span>
-                </a>
-            </li>
-                                            <li class="nav-item">
-                                    <a class="nav-link" href="warehouses.php">
-                                    <i class="bi bi-shop"></i>
-                                    <span class="nav-text">Warehouses</span></a>
-                                </li>
-        </ul>
-    </div>
-</li>
 
-                
-                <!-- Supplier Dropdown -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'supplierMenu')">
-        <i class="bi bi-building"></i>
-        <span class="nav-text">Supplier</span>
-        <i class="bi bi-chevron-down dropdown-arrow"></i>
-    </a>
-    <div class="collapse" id="supplierMenu">
-        <ul class="nav flex-column ps-4">
-            <li class="nav-item">
-                <a class="nav-link" href="purchase_order.php">
-                    <i class="bi bi-box"></i>
-                    <span class="nav-text">Receive Inventory</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="supplier.php">
-                    <i class="bi bi-people"></i>
-                    <span class="nav-text">Supplier List</span>
-                </a>
-            </li>
-        </ul>
-    </div>
-</li>
+                <!-- Vendor Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'supplierMenu')">
+                        <i class="bi bi-people"></i>
+                        <span class="nav-text">Vendor</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
 
-<li class="nav-item dropdown-nav">
-                            <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'customerMenu')">
-                                <i class="bi bi-people"></i><span class="nav-text">Customer</span><i class="bi bi-chevron-down dropdown-arrow"></i>
-                            </a>
-                            <div class="collapse" id="customerMenu">
-                                <ul class="nav flex-column ps-4">
-                                    <li class="nav-item"><a class="nav-link" href="customer_list.php"><i class="bi bi-person-badge"></i><span class="nav-text">Customer List</span></a></li>
-                                    <li class="nav-item"><a class="nav-link" href="approve_credit_requests.php"><i class="bi bi-pencil-square"></i><span class="nav-text">Approve Credit Request</span></a></li>
-                                    <li class="nav-item"><a class="nav-link" href="sales_order.php"><i class="bi bi-cart"></i><span class="nav-text">Sales Order</span></a></li>
-                                    <li class="nav-item"><a class="nav-link active" href="collections.php"><i class="bi bi-cash-stack"></i><span class="nav-text">Collections</span></a></li>
-                                </ul>
-                            </div>
-                        </li>
+                    <div class="collapse" id="supplierMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="purchase_order.php">
+                                    <i class="bi bi-file-earmark-text"></i>
+                                    <span class="nav-text">Enter Bills</span>
+                                </a>
+                            </li>
 
-<!-- Delivery Dropdown -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'deliveryMenu')">
-        <i class="bi bi-truck"></i>
-        <span class="nav-text">Delivery</span>
-        <i class="bi bi-chevron-down dropdown-arrow"></i>
-    </a>
-    <div class="collapse" id="deliveryMenu">
-        <ul class="nav flex-column ps-4">
-            <li class="nav-item">
-                <a class="nav-link" href="trip_tickets.php">
-                    <i class="bi bi-ticket-perforated"></i>
-                    <span class="nav-text">Trip Tickets</span>
-                </a>
-            </li>
-        </ul>
-    </div>
-</li>
-                     <!-- Banking Dropdown -->
-                    <li class="nav-item dropdown-nav">
-                        <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'bankingMenu')">
-                            <i class="bi bi-bank2"></i>
-                            <span class="nav-text">Banking</span>
-                            <i class="bi bi-chevron-down dropdown-arrow"></i>
-                        </a>
-                        <div class="collapse" id="bankingMenu">
-                            <ul class="nav flex-column ps-4">
-                                <li class="nav-item">
-                                    <a class="nav-link" href="deposit.php">
-                                        <i class="bi bi-arrow-down-circle"></i>
-                                        <span class="nav-text">Deposit</span>
-                                    </a>
-                                </li>
-                            </ul>
-                    
+                            <li class="nav-item">
+                                <a class="nav-link" href="paybills.php">
+                                    <i class="bi bi-currency-dollar"></i>
+                                    <span class="nav-text">Pay Bills</span>
+                                </a>
+                            </li>
 
-                            <ul class="nav flex-column ps-4">
-                                <li class="nav-item">
-                                    <a class="nav-link" href="Withdrawal.php">
-                                        <i class="bi bi-arrow-up-circle"></i>
-                                        <span class="nav-text">Withdrawal</span>
-                                    </a>
-                                </li>
-                            </ul>
+                            <li class="nav-item">
+                                <a class="nav-link" href="supplier.php">
+                                    <i class="bi bi-people"></i>
+                                    <span class="nav-text">Vendor List</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
 
-                            <ul class="nav flex-column ps-4">
-                                <li class="nav-item">
-                                    <a class="nav-link" href="bank_statement.php">
-                                        <i class="bi bi-receipt"></i>
-                                        <span class="nav-text">Bank Statement</span>
-                                    </a>
-                                </li>
-                            </ul>
-                            
-                            <ul class="nav flex-column ps-4">
-                                <li><a class="nav-link" href="expenses.php">
+                <!-- Customer Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'customerMenu')">
+                        <i class="bi bi-people"></i>
+                        <span class="nav-text">Customers</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="customerMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="customer_list.php">
+                                    <i class="bi bi-person-badge"></i>
+                                    <span class="nav-text">Customer List</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="approve_credit_requests.php">
+                                    <i class="bi bi-pencil-square"></i>
+                                    <span class="nav-text">Approve Credit Limit & Terms</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link active" href="sales_order.php">
+                                    <i class="bi bi-cart"></i>
+                                    <span class="nav-text">Sales Order</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="collections.php">
+                                    <i class="bi bi-cash-stack"></i>
+                                    <span class="nav-text">Receive Payment</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+
+                <!-- Employees Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'employeesMenu')">
+                        <i class="bi bi-people"></i>
+                        <span class="nav-text">Employees</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="employeesMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="employeelist.php">
+                                    <i class="bi bi-people"></i>
+                                    <span class="nav-text">Employee List</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="employee.php">
+                                    <i class="bi bi-clock"></i>
+                                    <span class="nav-text">Enter Time</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+
+                <!-- Banking Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'bankingMenu')">
+                        <i class="bi bi-bank2"></i>
+                        <span class="nav-text">Banking</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="bankingMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="deposit.php">
+                                    <i class="bi bi-bank"></i>
+                                    <span class="nav-text">Record Deposit</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="Withdrawal.php">
+                                    <i class="bi bi-journal-check"></i>
+                                    <span class="nav-text">Write Checks</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="bank_statement.php">
+                                    <i class="bi bi-receipt"></i>
+                                    <span class="nav-text">Bank Statement</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item" hidden>
+                                <a class="nav-link" href="expenses.php">
                                     <i class="bi bi-cash-stack"></i>
                                     <span class="nav-text">Expenses</span>
-                                    </a>
-                                </li>
-                            </ul>
-                        </div>
-                    </li>
-                    
-                                    <!-- Shared Services Dropdown -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'sharedServicesMenu')">
-        <i class="bi bi-grid-3x3-gap"></i>
-        <span class="nav-text">Shared Services</span>
-        <i class="bi bi-chevron-down dropdown-arrow"></i>
-    </a>
-    <div class="collapse" id="sharedServicesMenu">
-        <ul class="nav flex-column ps-4">
-            <li class="nav-item">
-                <a class="nav-link" href="motorpool.php">
-                    <i class="bi bi-truck"></i>
-                    <span class="nav-text">Motorpool</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="central_warehouse.php">
-                    <i class="bi bi-box-seam"></i>
-                    <span class="nav-text">Central Warehouse</span>
-                </a>
-            </li>
-        </ul>
-    </div>
-</li>
-                    
-                <!-- Users -->
-                <li class="nav-item">
-                    <a class="nav-link" href="drivers.php">
-                        <i class="bi bi-people-fill"></i>
-                        <span class="nav-text">Users</span>
-                    </a>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
                 </li>
-                
-                
+
+                <!-- Company Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'warehouseMenu')">
+                        <i class="bi bi-building"></i>
+                        <span class="nav-text">Company</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="warehouseMenu">
+                        <ul class="nav flex-column ps-4">
+                            <!-- Dashboard -->
+                            <li class="nav-item">
+                                <a class="nav-link" href="branchdashboard.php">
+                                    <i class="bi bi-speedometer2"></i>
+                                    <span class="nav-text">Dashboard</span>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="current_inventory.php">
+                                    <i class="bi bi-box"></i>
+                                    <span class="nav-text">Items</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="bad_orders.php">
+                                    <i class="bi bi-recycle"></i>
+                                    <span class="nav-text">Bad Orders</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="pick_list_items.php">
+                                    <i class="bi bi-list-check"></i>
+                                    <span class="nav-text">Pick List Items</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="warehouses.php">
+                                    <i class="bi bi-shop"></i>
+                                    <span class="nav-text">Warehouses</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="chartofaccounts.php">
+                                    <i class="bi bi-graph-up"></i>
+                                    <span class="nav-text">Chart of Accounts</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item" hidden>
+                                <a class="nav-link" href="trip_tickets.php">
+                                    <i class="bi bi-ticket-perforated"></i>
+                                    <span class="nav-text">Trip Tickets</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="motorpool.php">
+                                    <i class="bi bi-truck"></i>
+                                    <span class="nav-text">Motorpool</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="central_warehouse.php">
+                                    <i class="bi bi-box-seam"></i>
+                                    <span class="nav-text">Central Warehouse</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="batch_transaction.php">
+                                    <i class="bi bi-collection"></i>
+                                    <span class="nav-text">Batch Transaction</span>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="drivers.php">
+                                    <i class="bi bi-people-fill"></i>
+                                    <span class="nav-text">Users</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+
             </ul>
         </div>
     </div>
-    
+
     <div class="sidebar-footer">
         <div class="user-profile-sidebar">
-            <div class="user-avatar-sidebar"><?php echo $user_initials; ?></div>
+            <div class="user-avatar-sidebar">
+                <?php echo htmlspecialchars($user_initials); ?>
+            </div>
+
             <div class="user-details-sidebar">
-                <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-                <span class="user-role-sidebar"><?php echo ucfirst($user_role); ?></span>
+                <span class="user-name-sidebar">
+                    <?php echo htmlspecialchars($user_name); ?>
+                </span>
+
+                <span class="user-role-sidebar">
+                    <?php echo htmlspecialchars(ucfirst($user_role)); ?>
+                </span>
             </div>
         </div>
+
         <button class="logout-btn-sidebar" onclick="logout()">
             <i class="bi bi-box-arrow-right"></i>
             <span class="logout-text">Logout</span>
         </button>
     </div>
 </div>
+
 
         <!-- Main Content -->
         <div class="main-content" id="mainContent">

@@ -69,7 +69,6 @@ if ($check_discount_value && $check_discount_value->num_rows > 0) {
     $discount_value_column_exists = true;
 }
 
-<<<<<<< HEAD
 // Check and add receive memo column for Receive Inventory notes.
 $receive_memo_column_exists = false;
 $check_receive_memo = $conn->query("SHOW COLUMNS FROM inventory_transactions LIKE 'receive_memo'");
@@ -119,8 +118,437 @@ if (!$check_item_inventory_total_cost || $check_item_inventory_total_cost->num_r
     @$conn->query("UPDATE item_unit_inventory SET total_cost = COALESCE(current_inventory, 0) * COALESCE(unit_cost, 0) WHERE total_cost IS NULL OR total_cost = 0");
 }
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
+
+// ========== EXPENSES TAB SUPPORT ==========
+function ensureBillExpensesTables($conn) {
+    $conn->query("CREATE TABLE IF NOT EXISTS `billexpenses` (
+        `expense_id` int(11) NOT NULL AUTO_INCREMENT,
+        `expense_no` varchar(50) DEFAULT NULL,
+        `branch_id` int(11) NOT NULL DEFAULT 0,
+        `expense_date` date DEFAULT NULL,
+        `transaction_type` enum('bill','credit') NOT NULL DEFAULT 'bill',
+        `bill_received` tinyint(1) NOT NULL DEFAULT 1,
+        `vendor_id` int(11) DEFAULT NULL,
+        `vendor_name` varchar(255) DEFAULT NULL,
+        `vendor_address` text DEFAULT NULL,
+        `terms` varchar(100) DEFAULT NULL,
+        `ref_no` varchar(100) DEFAULT NULL,
+        `bill_due` date DEFAULT NULL,
+        `class_name` varchar(150) DEFAULT NULL,
+        `account` varchar(255) DEFAULT NULL,
+        `payable_account` varchar(255) DEFAULT NULL,
+        `amount` decimal(12,2) NOT NULL DEFAULT 0.00,
+        `total_amount` decimal(12,2) NOT NULL DEFAULT 0.00,
+        `balance` decimal(12,2) NOT NULL DEFAULT 0.00,
+        `memo` text DEFAULT NULL,
+        `status` enum('unpaid','partial','paid','cancelled') NOT NULL DEFAULT 'unpaid',
+        `created_by` int(11) NOT NULL DEFAULT 0,
+        `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+        `updated_at` timestamp NULL DEFAULT NULL ON UPDATE current_timestamp(),
+        PRIMARY KEY (`expense_id`),
+        KEY `branch_id` (`branch_id`),
+        KEY `expense_no` (`expense_no`),
+        KEY `status` (`status`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+
+    $requiredColumns = [
+        'expense_no' => "ALTER TABLE `billexpenses` ADD COLUMN `expense_no` varchar(50) DEFAULT NULL AFTER `expense_id`",
+        'expense_date' => "ALTER TABLE `billexpenses` ADD COLUMN `expense_date` date DEFAULT NULL AFTER `branch_id`",
+        'transaction_type' => "ALTER TABLE `billexpenses` ADD COLUMN `transaction_type` enum('bill','credit') NOT NULL DEFAULT 'bill' AFTER `expense_date`",
+        'bill_received' => "ALTER TABLE `billexpenses` ADD COLUMN `bill_received` tinyint(1) NOT NULL DEFAULT 1 AFTER `transaction_type`",
+        'vendor_id' => "ALTER TABLE `billexpenses` ADD COLUMN `vendor_id` int(11) DEFAULT NULL AFTER `bill_received`",
+        'vendor_name' => "ALTER TABLE `billexpenses` ADD COLUMN `vendor_name` varchar(255) DEFAULT NULL AFTER `vendor_id`",
+        'vendor_address' => "ALTER TABLE `billexpenses` ADD COLUMN `vendor_address` text DEFAULT NULL AFTER `vendor_name`",
+        'terms' => "ALTER TABLE `billexpenses` ADD COLUMN `terms` varchar(100) DEFAULT NULL AFTER `vendor_address`",
+        'ref_no' => "ALTER TABLE `billexpenses` ADD COLUMN `ref_no` varchar(100) DEFAULT NULL AFTER `terms`",
+        'bill_due' => "ALTER TABLE `billexpenses` ADD COLUMN `bill_due` date DEFAULT NULL AFTER `ref_no`",
+        'class_name' => "ALTER TABLE `billexpenses` ADD COLUMN `class_name` varchar(150) DEFAULT NULL AFTER `bill_due`",
+        'account' => "ALTER TABLE `billexpenses` ADD COLUMN `account` varchar(255) DEFAULT NULL AFTER `class_name`",
+        'payable_account' => "ALTER TABLE `billexpenses` ADD COLUMN `payable_account` varchar(255) DEFAULT NULL AFTER `account`",
+        'amount' => "ALTER TABLE `billexpenses` ADD COLUMN `amount` decimal(12,2) NOT NULL DEFAULT 0.00 AFTER `account`",
+        'total_amount' => "ALTER TABLE `billexpenses` ADD COLUMN `total_amount` decimal(12,2) NOT NULL DEFAULT 0.00 AFTER `amount`",
+        'balance' => "ALTER TABLE `billexpenses` ADD COLUMN `balance` decimal(12,2) NOT NULL DEFAULT 0.00 AFTER `total_amount`",
+        'memo' => "ALTER TABLE `billexpenses` ADD COLUMN `memo` text DEFAULT NULL AFTER `balance`"
+    ];
+    foreach ($requiredColumns as $column => $alterSql) {
+        $check = $conn->query("SHOW COLUMNS FROM `billexpenses` LIKE '" . $conn->real_escape_string($column) . "'");
+        if (!$check || $check->num_rows == 0) { @$conn->query($alterSql); }
+    }
+
+    $conn->query("CREATE TABLE IF NOT EXISTS `billexpense_items` (
+        `item_id` int(11) NOT NULL AUTO_INCREMENT,
+        `expense_id` int(11) NOT NULL,
+        `account` varchar(255) NOT NULL,
+        `amount` decimal(12,2) NOT NULL DEFAULT 0.00,
+        `memo` text DEFAULT NULL,
+        `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+        PRIMARY KEY (`item_id`),
+        KEY `expense_id` (`expense_id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+
+    $conn->query("CREATE TABLE IF NOT EXISTS `billexpense_payments` (
+        `expense_payment_id` int(11) NOT NULL AUTO_INCREMENT,
+        `expense_id` int(11) NOT NULL,
+        `branch_id` int(11) NOT NULL DEFAULT 0,
+        `amount` decimal(12,2) NOT NULL DEFAULT 0.00,
+        `payment_date` datetime NOT NULL,
+        `reference_number` varchar(100) DEFAULT NULL,
+        `bank_name` varchar(150) DEFAULT NULL,
+        `bank_id` int(11) DEFAULT NULL,
+        `bank_transaction_id` int(11) DEFAULT NULL,
+        `memo` text DEFAULT NULL,
+        `created_by` int(11) NOT NULL DEFAULT 0,
+        `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+        PRIMARY KEY (`expense_payment_id`),
+        KEY `expense_id` (`expense_id`),
+        KEY `branch_id` (`branch_id`),
+        KEY `bank_transaction_id` (`bank_transaction_id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+
+    @$conn->query("UPDATE billexpenses SET total_amount = amount WHERE COALESCE(total_amount,0) = 0 AND COALESCE(amount,0) > 0");
+    @$conn->query("UPDATE billexpenses SET balance = total_amount WHERE COALESCE(balance,0) = 0 AND LOWER(COALESCE(status,'unpaid')) = 'unpaid'");
+    @$conn->query("UPDATE billexpenses SET expense_date = DATE(created_at) WHERE expense_date IS NULL AND created_at IS NOT NULL");
+    @$conn->query("UPDATE billexpenses SET expense_no = CONCAT('EXP-', LPAD(expense_id, 5, '0')) WHERE expense_no IS NULL OR expense_no = ''");
+    @$conn->query("INSERT INTO billexpense_items (expense_id, account, amount, memo)
+                   SELECT e.expense_id, e.account, e.amount, e.memo
+                   FROM billexpenses e
+                   LEFT JOIN billexpense_items i ON i.expense_id = e.expense_id
+                   WHERE i.expense_id IS NULL AND COALESCE(e.account,'') <> '' AND COALESCE(e.amount,0) > 0");
+}
+
+function generateBillExpenseNo($conn) {
+    $prefix = 'EXP-' . date('Ymd') . '-';
+    $res = $conn->query("SELECT expense_no FROM billexpenses WHERE expense_no LIKE '" . $conn->real_escape_string($prefix) . "%' ORDER BY expense_id DESC LIMIT 1");
+    $next = 1;
+    if ($res && $row = $res->fetch_assoc()) {
+        $last = (int)substr($row['expense_no'], strlen($prefix));
+        $next = $last + 1;
+    }
+    return $prefix . str_pad((string)$next, 4, '0', STR_PAD_LEFT);
+}
+
+
+function ensureChartAccountPostingTables($conn) {
+    $conn->query("CREATE TABLE IF NOT EXISTS `chart_account_transactions` (
+        `transaction_id` int(11) NOT NULL AUTO_INCREMENT,
+        `account_id` int(11) NOT NULL,
+        `branch_id` int(11) NOT NULL DEFAULT 0,
+        `transaction_date` date DEFAULT NULL,
+        `transaction_type` varchar(80) NOT NULL,
+        `transaction_no` varchar(100) DEFAULT NULL,
+        `reference_no` varchar(100) DEFAULT NULL,
+        `memo` text DEFAULT NULL,
+        `source_table` varchar(100) DEFAULT NULL,
+        `source_id` int(11) DEFAULT NULL,
+        `debit` decimal(15,2) NOT NULL DEFAULT 0.00,
+        `credit` decimal(15,2) NOT NULL DEFAULT 0.00,
+        `balance_after` decimal(15,2) NOT NULL DEFAULT 0.00,
+        `created_by` int(11) NOT NULL DEFAULT 0,
+        `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+        PRIMARY KEY (`transaction_id`),
+        KEY `idx_cat_account` (`account_id`),
+        KEY `idx_cat_source` (`source_table`, `source_id`),
+        KEY `idx_cat_date` (`transaction_date`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+
+    $needed = [
+        'transaction_date' => "ALTER TABLE `chart_account_transactions` ADD COLUMN `transaction_date` date DEFAULT NULL AFTER `branch_id`",
+        'transaction_type' => "ALTER TABLE `chart_account_transactions` ADD COLUMN `transaction_type` varchar(80) NOT NULL DEFAULT '' AFTER `transaction_date`",
+        'transaction_no' => "ALTER TABLE `chart_account_transactions` ADD COLUMN `transaction_no` varchar(100) DEFAULT NULL AFTER `transaction_type`",
+        'reference_no' => "ALTER TABLE `chart_account_transactions` ADD COLUMN `reference_no` varchar(100) DEFAULT NULL AFTER `transaction_no`",
+        'memo' => "ALTER TABLE `chart_account_transactions` ADD COLUMN `memo` text DEFAULT NULL AFTER `reference_no`",
+        'source_table' => "ALTER TABLE `chart_account_transactions` ADD COLUMN `source_table` varchar(100) DEFAULT NULL AFTER `memo`",
+        'source_id' => "ALTER TABLE `chart_account_transactions` ADD COLUMN `source_id` int(11) DEFAULT NULL AFTER `source_table`",
+        'debit' => "ALTER TABLE `chart_account_transactions` ADD COLUMN `debit` decimal(15,2) NOT NULL DEFAULT 0.00 AFTER `source_id`",
+        'credit' => "ALTER TABLE `chart_account_transactions` ADD COLUMN `credit` decimal(15,2) NOT NULL DEFAULT 0.00 AFTER `debit`",
+        'balance_after' => "ALTER TABLE `chart_account_transactions` ADD COLUMN `balance_after` decimal(15,2) NOT NULL DEFAULT 0.00 AFTER `credit`",
+        'created_by' => "ALTER TABLE `chart_account_transactions` ADD COLUMN `created_by` int(11) NOT NULL DEFAULT 0 AFTER `balance_after`"
+    ];
+    foreach ($needed as $col => $sql) {
+        $check = $conn->query("SHOW COLUMNS FROM `chart_account_transactions` LIKE '" . $conn->real_escape_string($col) . "'");
+        if (!$check || $check->num_rows === 0) {
+            @$conn->query($sql);
+        }
+    }
+}
+
+function normalizeAccountLabelForLookup($value) {
+    $value = trim((string)$value);
+    if ($value === '') return '';
+    if (strpos($value, ' · ') !== false) $value = trim(substr($value, strpos($value, ' · ') + 3));
+    if (strpos($value, ' - ') !== false) {
+        $parts = explode(' - ', $value, 2);
+        if (count($parts) === 2 && trim($parts[1]) !== '') $value = trim($parts[1]);
+    }
+    return $value;
+}
+
+function resolveChartAccountByTitle($conn, $accountTitle, $branchId = 0) {
+    $accountTitle = normalizeAccountLabelForLookup($accountTitle);
+    if ($accountTitle === '') return null;
+
+    $sql = "SELECT account_id, account_title, account_type, balance
+            FROM chart_of_accounts
+            WHERE status = 'active'
+              AND LOWER(TRIM(account_title)) = LOWER(TRIM(?))";
+    if ((int)$branchId > 0) {
+        $sql .= " AND (branch_id = ? OR branch_id = 0) ORDER BY CASE WHEN branch_id = ? THEN 0 ELSE 1 END, account_title ASC LIMIT 1";
+        $stmt = $conn->prepare($sql);
+        if (!$stmt) return null;
+        $bid = (int)$branchId;
+        $stmt->bind_param('sii', $accountTitle, $bid, $bid);
+    } else {
+        $sql .= " ORDER BY account_title ASC LIMIT 1";
+        $stmt = $conn->prepare($sql);
+        if (!$stmt) return null;
+        $stmt->bind_param('s', $accountTitle);
+    }
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return $row ?: null;
+}
+
+
+function resolveMerchandiseInventoryAccount($conn, $branchId = 0) {
+    $preferred = ['Merchandise Inventory', 'Inventory'];
+    foreach ($preferred as $title) {
+        $account = resolveChartAccountByTitle($conn, $title, $branchId);
+        if ($account) return $account;
+    }
+    return null;
+}
+
+
+function findItemAssetAccountColumn(mysqli $conn): ?string {
+    static $detectedColumn = null;
+    static $checked = false;
+    if ($checked) return $detectedColumn;
+    $checked = true;
+
+    $candidates = [
+        'asset_account_id',
+        'inventory_asset_account_id',
+        'inventory_account_id',
+        'item_asset_account_id',
+        'asset_account',
+        'inventory_asset_account',
+        'inventory_account',
+        'item_asset_account',
+        'asset_account_title',
+        'inventory_asset_account_title'
+    ];
+
+    foreach ($candidates as $candidate) {
+        $safe = $conn->real_escape_string($candidate);
+        $check = $conn->query("SHOW COLUMNS FROM `items` LIKE '{$safe}'");
+        if ($check && $check->num_rows > 0) {
+            $detectedColumn = $candidate;
+            break;
+        }
+    }
+    return $detectedColumn;
+}
+
+function resolveChartAccountById(mysqli $conn, int $accountId, int $branchId = 0): ?array {
+    if ($accountId <= 0) return null;
+    $sql = "SELECT account_id, account_title, account_type, balance
+            FROM chart_of_accounts
+            WHERE status = 'active' AND account_id = ?";
+    if ($branchId > 0) {
+        $sql .= " AND (branch_id = ? OR branch_id = 0 OR branch_id IS NULL) LIMIT 1";
+        $stmt = $conn->prepare($sql);
+        if (!$stmt) return null;
+        $stmt->bind_param('ii', $accountId, $branchId);
+    } else {
+        $sql .= " LIMIT 1";
+        $stmt = $conn->prepare($sql);
+        if (!$stmt) return null;
+        $stmt->bind_param('i', $accountId);
+    }
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+    return $row ?: null;
+}
+
+function resolveItemAssetAccount(mysqli $conn, int $itemId, int $branchId = 0): ?array {
+    if ($itemId <= 0) return resolveMerchandiseInventoryAccount($conn, $branchId);
+
+    $assetColumn = findItemAssetAccountColumn($conn);
+    if ($assetColumn) {
+        $safeColumn = '`' . str_replace('`', '``', $assetColumn) . '`';
+        $stmt = $conn->prepare("SELECT {$safeColumn} AS asset_account_value FROM items WHERE item_id = ? LIMIT 1");
+        if ($stmt) {
+            $stmt->bind_param('i', $itemId);
+            $stmt->execute();
+            $row = $stmt->get_result()->fetch_assoc();
+            $stmt->close();
+
+            $value = trim((string)($row['asset_account_value'] ?? ''));
+            if ($value !== '') {
+                if (preg_match('/_id$/i', $assetColumn) || ctype_digit($value)) {
+                    $accountById = resolveChartAccountById($conn, (int)$value, $branchId);
+                    if ($accountById) return $accountById;
+                }
+
+                $accountByTitle = resolveChartAccountByTitle($conn, $value, $branchId);
+                if ($accountByTitle) return $accountByTitle;
+            }
+        }
+    }
+
+    return resolveMerchandiseInventoryAccount($conn, $branchId);
+}
+
+function chartAccountDebitIncreases($accountType) {
+    $type = strtolower(trim((string)$accountType));
+    $creditNormal = ['accounts payable', 'credit card', 'other current liability', 'long term liability', 'equity', 'income', 'other income'];
+    return !in_array($type, $creditNormal, true);
+}
+
+function postChartAccountEntry($conn, $account, $branchId, $transactionDate, $transactionType, $transactionNo, $memo, $sourceId, $debit, $credit, $createdBy, $referenceNo = null, $sourceTable = 'billexpenses') {
+    ensureChartAccountPostingTables($conn);
+    $accountId = (int)($account['account_id'] ?? 0);
+    if ($accountId <= 0) return;
+
+    $debit = round((float)$debit, 2);
+    $credit = round((float)$credit, 2);
+    if ($debit <= 0 && $credit <= 0) return;
+
+    $debitIncreases = chartAccountDebitIncreases($account['account_type'] ?? '');
+    $delta = $debitIncreases ? ($debit - $credit) : ($credit - $debit);
+
+    $update = $conn->prepare("UPDATE chart_of_accounts SET balance = COALESCE(balance,0) + ? WHERE account_id = ?");
+    if (!$update) throw new Exception('Failed to update Chart of Accounts balance: ' . $conn->error);
+    $update->bind_param('di', $delta, $accountId);
+    if (!$update->execute()) throw new Exception('Failed to update Chart of Accounts balance: ' . $update->error);
+    $update->close();
+
+    $balanceAfter = 0.00;
+    $balStmt = $conn->prepare("SELECT balance FROM chart_of_accounts WHERE account_id = ? LIMIT 1");
+    if ($balStmt) {
+        $balStmt->bind_param('i', $accountId);
+        $balStmt->execute();
+        $balRow = $balStmt->get_result()->fetch_assoc();
+        $balanceAfter = (float)($balRow['balance'] ?? 0);
+        $balStmt->close();
+    }
+
+    $referenceNo = trim((string)($referenceNo ?? ''));
+    if ($referenceNo === '') $referenceNo = $transactionNo;
+    $sourceTable = trim((string)($sourceTable ?: 'billexpenses'));
+    $insert = $conn->prepare("INSERT INTO chart_account_transactions
+        (account_id, branch_id, transaction_date, transaction_type, transaction_no, reference_no, memo, source_table, source_id, debit, credit, balance_after, created_by)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    if (!$insert) throw new Exception('Failed to save Chart of Accounts transaction: ' . $conn->error);
+    $branchId = (int)$branchId;
+    $sourceId = (int)$sourceId;
+    $createdBy = (int)$createdBy;
+    $insert->bind_param('iissssssidddi', $accountId, $branchId, $transactionDate, $transactionType, $transactionNo, $referenceNo, $memo, $sourceTable, $sourceId, $debit, $credit, $balanceAfter, $createdBy);
+    if (!$insert->execute()) throw new Exception('Failed to save Chart of Accounts transaction: ' . $insert->error);
+    $insert->close();
+}
+
+function postBillCreditToChartOfAccounts($conn, $qbMode, $payableAccountTitle, $lineRows, $branchId, $expenseDate, $expenseNo, $headerMemo, $expenseId, $createdBy, $referenceNo = '', $sourceTableForReport = 'billexpenses') {
+    $payableAccount = resolveChartAccountByTitle($conn, $payableAccountTitle, $branchId);
+    if (!$payableAccount) {
+        throw new Exception('Payable Account must be an active account title from Chart of Accounts.');
+    }
+
+    $transactionType = strtolower((string)$qbMode) === 'credit' ? 'Credit' : 'Bill';
+    $referenceNoForReport = trim((string)$referenceNo) !== '' ? trim((string)$referenceNo) : $expenseNo;
+    $totalAmount = 0.00;
+    foreach ($lineRows as $line) {
+        $lineAccount = resolveChartAccountByTitle($conn, $line['account'] ?? '', $branchId);
+        if (!$lineAccount) {
+            throw new Exception('Expense row account must be an active account title from Chart of Accounts: ' . ($line['account'] ?? ''));
+        }
+        $amount = round((float)($line['amount'] ?? 0), 2);
+        if ($amount <= 0) continue;
+        $lineMemo = trim((string)($line['memo'] ?? '')) !== '' ? trim((string)$line['memo']) : $headerMemo;
+
+        if (strtolower((string)$qbMode) === 'credit') {
+            // Vendor Credit: expense/account line is credited, payable account is debited.
+            postChartAccountEntry($conn, $lineAccount, $branchId, $expenseDate, $transactionType, $expenseNo, $lineMemo, $expenseId, 0.00, $amount, $createdBy, $referenceNoForReport, $sourceTableForReport);
+        } else {
+            // Bill: expense/account line is debited, payable account is credited.
+            postChartAccountEntry($conn, $lineAccount, $branchId, $expenseDate, $transactionType, $expenseNo, $lineMemo, $expenseId, $amount, 0.00, $createdBy, $referenceNoForReport, $sourceTableForReport);
+        }
+        $totalAmount += $amount;
+    }
+
+    if ($totalAmount > 0) {
+        if (strtolower((string)$qbMode) === 'credit') {
+            // Requested rule: Credit goes to Debit side of selected Payable Account.
+            postChartAccountEntry($conn, $payableAccount, $branchId, $expenseDate, $transactionType, $expenseNo, $headerMemo, $expenseId, $totalAmount, 0.00, $createdBy, $referenceNoForReport, $sourceTableForReport);
+        } else {
+            // Requested rule: Bill goes to Credit side of selected Payable Account.
+            postChartAccountEntry($conn, $payableAccount, $branchId, $expenseDate, $transactionType, $expenseNo, $headerMemo, $expenseId, 0.00, $totalAmount, $createdBy, $referenceNoForReport, $sourceTableForReport);
+        }
+    }
+}
+
+function getPurchaseOrderExpenses($conn, $view_all_branches, $branch_id) {
+    ensureBillExpensesTables($conn);
+    $sql = "SELECT e.*,
+                   COALESCE(e.total_amount, e.amount, 0) AS display_total_amount,
+                   COALESCE(SUM(ep.amount), 0) AS paid_amount,
+                   (COALESCE(e.total_amount, e.amount, 0) - COALESCE(SUM(ep.amount), 0)) AS computed_balance,
+                   CONCAT(COALESCE(u.first_name, ''), ' ', COALESCE(u.last_name, '')) AS created_by_name
+            FROM billexpenses e
+            LEFT JOIN billexpense_payments ep ON ep.expense_id = e.expense_id
+            LEFT JOIN users u ON u.user_id = e.created_by
+            WHERE COALESCE(e.status, 'unpaid') <> 'cancelled'";
+    if (!$view_all_branches && $branch_id > 0) $sql .= " AND e.branch_id = ?";
+    $sql .= " GROUP BY e.expense_id ORDER BY e.created_at DESC, e.expense_id DESC";
+    $rows = [];
+    $stmt = $conn->prepare($sql);
+    if ($stmt) {
+        if (!$view_all_branches && $branch_id > 0) $stmt->bind_param('i', $branch_id);
+        $stmt->execute();
+        $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+    }
+    foreach ($rows as &$row) {
+        $items = [];
+        $itemStmt = $conn->prepare("SELECT account, amount, memo FROM billexpense_items WHERE expense_id = ? ORDER BY item_id ASC");
+        if ($itemStmt) {
+            $eid = (int)$row['expense_id'];
+            $itemStmt->bind_param('i', $eid);
+            $itemStmt->execute();
+            $items = $itemStmt->get_result()->fetch_all(MYSQLI_ASSOC);
+            $itemStmt->close();
+        }
+        $row['items'] = $items;
+    }
+    unset($row);
+    return $rows;
+}
+
+ensureBillExpensesTables($conn);
+
+function calculateReceiveLineTotalCost($qty, $unitCost, $discountInput) {
+    $qty = (float)$qty;
+    $unitCost = (float)$unitCost;
+    $subtotal = $qty * $unitCost;
+    $discountText = trim((string)$discountInput);
+
+    if ($discountText === '') {
+        return round(max(0, $subtotal), 2);
+    }
+
+    $discountAmount = 0.00;
+    if (substr($discountText, -1) === '%') {
+        $percent = (float)str_replace(['%', ','], '', $discountText);
+        $discountAmount = $subtotal * ($percent / 100);
+    } else {
+        $discountAmount = (float)str_replace([',', '₱'], '', $discountText);
+    }
+
+    return round(max(0, $subtotal - $discountAmount), 2);
+}
+
 // Determine branch filter condition
 $po_branch_condition = "";
 if ($po_branch_column_exists && !$view_all_branches) {
@@ -133,7 +561,7 @@ if ($items_branch_column_exists && !$view_all_branches) {
 }
 
 // ========== FETCH SUPPLIERS ==========
-$suppliers_query = "SELECT supplier_id, supplier_name, supplier_code, contact_person, email, phone_number 
+$suppliers_query = "SELECT supplier_id, supplier_name, supplier_code, contact_person, email, phone_number, address, payment_terms 
                    FROM suppliers 
                    WHERE status = 'active'";
 if (!$view_all_branches && $branch_id > 0) {
@@ -145,6 +573,31 @@ if (!$view_all_branches && $branch_id > 0) {
 $suppliers_query .= " ORDER BY supplier_name ASC";
 $suppliers_result = $conn->query($suppliers_query);
 $suppliers_list = $suppliers_result ? $suppliers_result->fetch_all(MYSQLI_ASSOC) : [];
+
+// ========== FETCH CHART OF ACCOUNTS FOR BILL/CREDIT ACCOUNT LINES ==========
+$chart_accounts_list = [];
+$chart_accounts_table_exists = false;
+$check_chart_accounts_table = $conn->query("SHOW TABLES LIKE 'chart_of_accounts'");
+if ($check_chart_accounts_table && $check_chart_accounts_table->num_rows > 0) {
+    $chart_accounts_table_exists = true;
+    $chart_query = "SELECT account_id, account_code, account_title, account_type, parent_account_id
+                    FROM chart_of_accounts
+                    WHERE status = 'active'";
+    if (!$view_all_branches && $branch_id > 0) {
+        $chart_query .= " AND (branch_id = " . (int)$branch_id . " OR branch_id = 0)";
+    }
+    $chart_query .= " ORDER BY account_code ASC, account_title ASC";
+    $chart_result = $conn->query($chart_query);
+    $chart_accounts_list = $chart_result ? $chart_result->fetch_all(MYSQLI_ASSOC) : [];
+}
+
+// Payable Account dropdown should only show liability accounts based on normal balances.
+// Allowed account types: Accounts Payable, Credit Card, Other Current Liability, Long Term Liability.
+$payable_liability_types = ['Accounts Payable', 'Credit Card', 'Other Current Liability', 'Long Term Liability'];
+$payable_accounts_list = array_values(array_filter($chart_accounts_list, function ($account) use ($payable_liability_types) {
+    return in_array(trim((string)($account['account_type'] ?? '')), $payable_liability_types, true);
+}));
+
 
 // ========== FETCH ITEMS ==========
 $item_unit_pricing_exists = false;
@@ -159,7 +612,6 @@ if ($check_item_unit_types && $check_item_unit_types->num_rows > 0) {
     $item_unit_types_exists = true;
 }
 
-<<<<<<< HEAD
 // Receive Inventory category support.
 $item_category_column = null;
 foreach (['category', 'item_category', 'category_name'] as $category_candidate) {
@@ -171,18 +623,12 @@ foreach (['category', 'item_category', 'category_name'] as $category_candidate) 
 }
 $item_category_select = $item_category_column ? ", `{$item_category_column}` AS category" : ", '' AS category";
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 $items_query = "SELECT 
     item_id, 
     item_code, 
     item_name, 
-<<<<<<< HEAD
     description
     $item_category_select,
-=======
-    description,
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     unit_type,
     unit_price as price_piece,
     price_case,
@@ -197,7 +643,7 @@ $items_query = "SELECT
 FROM items 
 WHERE status = 'active' 
 $items_branch_condition 
-ORDER BY item_name";
+ORDER BY category ASC, item_name ASC";
 
 $items_result = $conn->query($items_query);
 $items_list = $items_result ? $items_result->fetch_all(MYSQLI_ASSOC) : [];
@@ -283,6 +729,18 @@ if (!empty($items_list)) {
         }
     }
     unset($item);
+}
+
+$items_by_category = [];
+foreach ($items_list as $item) {
+    $category = trim((string)($item['category'] ?? ''));
+    if ($category === '') {
+        $category = 'Uncategorized';
+    }
+    if (!isset($items_by_category[$category])) {
+        $items_by_category[$category] = [];
+    }
+    $items_by_category[$category][] = $item;
 }
 
 if (empty($items_list)) {
@@ -447,6 +905,41 @@ function dbTableExists(mysqli $conn, string $tableName): bool {
     return $result && $result->num_rows > 0;
 }
 
+function columnExists(mysqli $conn, string $tableName, string $columnName): bool {
+    $table = preg_replace('/[^A-Za-z0-9_]/', '', $tableName);
+    $column = $conn->real_escape_string($columnName);
+    if ($table === '' || $column === '') return false;
+    $result = $conn->query("SHOW COLUMNS FROM `{$table}` LIKE '{$column}'");
+    return $result && $result->num_rows > 0;
+}
+
+
+function ensurePurchaseOrdersQuickReportColumns(mysqli $conn): void {
+    if (!dbTableExists($conn, 'purchase_orders')) return;
+
+    if (!columnExists($conn, 'purchase_orders', 'address')) {
+        @$conn->query("ALTER TABLE `purchase_orders` ADD COLUMN `address` text DEFAULT NULL AFTER `supplier_name`");
+    }
+    if (!columnExists($conn, 'purchase_orders', 'transaction_type')) {
+        $after = columnExists($conn, 'purchase_orders', 'expected_delivery') ? 'expected_delivery' : 'order_date';
+        @$conn->query("ALTER TABLE `purchase_orders` ADD COLUMN `transaction_type` enum('bill','credit') NOT NULL DEFAULT 'bill' AFTER `{$after}`");
+    }
+    if (!columnExists($conn, 'purchase_orders', 'payable_account')) {
+        $after = columnExists($conn, 'purchase_orders', 'transaction_type') ? 'transaction_type' : 'total_amount';
+        @$conn->query("ALTER TABLE `purchase_orders` ADD COLUMN `payable_account` varchar(255) DEFAULT NULL AFTER `{$after}`");
+    }
+    if (!columnExists($conn, 'purchase_orders', 'ref_no')) {
+        $after = columnExists($conn, 'purchase_orders', 'payable_account') ? 'payable_account' : 'total_amount';
+        @$conn->query("ALTER TABLE `purchase_orders` ADD COLUMN `ref_no` varchar(100) DEFAULT NULL AFTER `{$after}`");
+    }
+    if (!columnExists($conn, 'purchase_orders', 'memo')) {
+        $after = columnExists($conn, 'purchase_orders', 'ref_no') ? 'ref_no' : 'total_amount';
+        @$conn->query("ALTER TABLE `purchase_orders` ADD COLUMN `memo` text DEFAULT NULL AFTER `{$after}`");
+    }
+}
+
+ensurePurchaseOrdersQuickReportColumns($conn);
+
 function dbTableColumns(mysqli $conn, string $tableName): array {
     $columns = [];
     $safe = preg_replace('/[^A-Za-z0-9_]/', '', $tableName);
@@ -498,11 +991,8 @@ function getConfirmedProcessedRmrRequests(mysqli $conn, int $branchId, bool $vie
     $qtyCol = firstExistingColumn($columns, ['return_quantity', 'quantity', 'qty', 'return_qty', 'returned_qty', 'approved_qty', 'processed_qty']);
     $uomCol = firstExistingColumn($columns, ['unit_type', 'uom', 'unit', 'unit_of_measure']);
     $customerCol = firstExistingColumn($columns, ['customer_name', 'store_name', 'client_name']);
-<<<<<<< HEAD
     $customerIdCol = firstExistingColumn($columns, ['customer_id', 'client_id']);
     $deliveryIdCol = firstExistingColumn($columns, ['delivery_id']);
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     $reasonCol = firstExistingColumn($columns, ['reason', 'remarks', 'notes', 'return_reason']);
     $processedAtCol = firstExistingColumn($columns, ['processed_at', 'confirmed_at', 'updated_at', 'created_at']);
 
@@ -514,7 +1004,6 @@ function getConfirmedProcessedRmrRequests(mysqli $conn, int $branchId, bool $vie
     $itemNameExpr = $itemNameCol ? sqlExpr('r', $itemNameCol) : 'i.item_name';
     $itemCodeExpr = $itemCodeCol ? sqlExpr('r', $itemCodeCol) : 'i.item_code';
     $uomExpr = $uomCol ? sqlExpr('r', $uomCol) : 'i.unit_type';
-<<<<<<< HEAD
     $reasonExpr = sqlExpr('r', $reasonCol, "''");
     $processedAtExpr = sqlExpr('r', $processedAtCol, "''");
 
@@ -535,12 +1024,6 @@ function getConfirmedProcessedRmrRequests(mysqli $conn, int $branchId, bool $vie
     }
     $customerExpr = !empty($customerParts) ? "COALESCE(" . implode(', ', $customerParts) . ", '')" : "''";
 
-=======
-    $customerExpr = sqlExpr('r', $customerCol, "''");
-    $reasonExpr = sqlExpr('r', $reasonCol, "''");
-    $processedAtExpr = sqlExpr('r', $processedAtCol, "''");
-
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     $query = "
         SELECT
             {$idExpr} AS rmr_id,
@@ -553,19 +1036,12 @@ function getConfirmedProcessedRmrRequests(mysqli $conn, int $branchId, bool $vie
             r." . sqlIdentifier($qtyCol) . " AS quantity,
             COALESCE({$uomExpr}, i.unit_type, '') AS unit_type,
             COALESCE(i.unit_price, 0) AS unit_price,
-<<<<<<< HEAD
             {$customerExpr} AS customer_name,
-=======
-            COALESCE({$customerExpr}, '') AS customer_name,
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             COALESCE({$reasonExpr}, '') AS reason,
             COALESCE({$processedAtExpr}, '') AS processed_at
         FROM {$tableSql} r
         LEFT JOIN items i ON i.item_id = r." . sqlIdentifier($itemCol) . "
-<<<<<<< HEAD
         {$joins}
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         WHERE LOWER(TRIM(r." . sqlIdentifier($statusCol) . ")) IN ('confirmed', 'processed', 'approved')
           AND r." . sqlIdentifier($itemCol) . " IS NOT NULL
           AND r." . sqlIdentifier($qtyCol) . " > 0
@@ -603,7 +1079,177 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $conn->begin_transaction();
         
         // CREATE PURCHASE ORDER
-        if ($_POST['action'] === 'create_po') {
+        if ($_POST['action'] === 'create_expense') {
+            ensureBillExpensesTables($conn);
+
+            $qbMode = strtolower(trim((string)($_POST['qb_mode'] ?? 'bill')));
+            if (!in_array($qbMode, ['bill', 'credit'], true)) {
+                $qbMode = 'bill';
+            }
+
+            $vendorId = isset($_POST['vendor_id']) && $_POST['vendor_id'] !== '' ? (int)$_POST['vendor_id'] : null;
+            $vendorName = trim((string)($_POST['vendor_name'] ?? ''));
+            $vendorAddress = trim((string)($_POST['vendor_address'] ?? ''));
+            $terms = trim((string)($_POST['terms'] ?? ''));
+            $refNo = trim((string)($_POST['ref_no'] ?? ''));
+            $expenseDate = trim((string)($_POST['expense_date'] ?? date('Y-m-d')));
+            $billDue = trim((string)($_POST['bill_due'] ?? ''));
+            $className = trim((string)($_POST['class_name'] ?? ''));
+            $payableAccount = trim((string)($_POST['payable_account'] ?? ''));
+            $headerMemoInput = trim((string)($_POST['memo'] ?? ''));
+            $billReceived = isset($_POST['bill_received']) && (string)$_POST['bill_received'] === '1' ? 1 : 0;
+
+            if ($vendorId && $vendorName === '') {
+                $vendorLookup = $conn->prepare("SELECT supplier_name, address, payment_terms FROM suppliers WHERE supplier_id = ? LIMIT 1");
+                if ($vendorLookup) {
+                    $vendorLookup->bind_param('i', $vendorId);
+                    $vendorLookup->execute();
+                    $vendorResult = $vendorLookup->get_result();
+                    if ($vendorRow = $vendorResult->fetch_assoc()) {
+                        $vendorName = trim((string)($vendorRow['supplier_name'] ?? ''));
+                        if ($vendorAddress === '') $vendorAddress = trim((string)($vendorRow['address'] ?? ''));
+                        if ($terms === '') $terms = trim((string)($vendorRow['payment_terms'] ?? ''));
+                    }
+                    $vendorLookup->close();
+                }
+            }
+
+            if ($vendorName === '') {
+                throw new Exception('Vendor is required.');
+            }
+            if ($expenseDate === '') {
+                throw new Exception('Date is required.');
+            }
+            if ($payableAccount === '') {
+                throw new Exception('Payable Account is required.');
+            }
+
+            $expenseRowsRaw = $_POST['expense_rows'] ?? '[]';
+            $expenseRows = json_decode($expenseRowsRaw, true);
+            if (!is_array($expenseRows)) throw new Exception('Invalid expense rows.');
+
+            $cleanRows = [];
+            $totalAmount = 0.00;
+            $lineMemoParts = [];
+            foreach ($expenseRows as $row) {
+                $account = trim((string)($row['account'] ?? ''));
+                $amount = (float)str_replace(',', '', (string)($row['amount'] ?? '0'));
+                $memo = trim((string)($row['memo'] ?? ''));
+                if ($account === '' && $amount <= 0 && $memo === '') continue;
+                if ($account === '') throw new Exception('Account is required for every expense row.');
+                if ($amount <= 0) throw new Exception('Amount must be greater than zero for every expense row.');
+                $cleanRows[] = ['account' => $account, 'amount' => $amount, 'memo' => $memo];
+                $totalAmount += $amount;
+                if ($memo !== '') $lineMemoParts[] = $memo;
+            }
+            if (empty($cleanRows)) throw new Exception('Please add at least one expense row.');
+            if ($totalAmount <= 0) throw new Exception('Total amount must be greater than zero.');
+
+            $effective_branch_id = (!$view_all_branches && $branch_id > 0) ? (int)$branch_id : 0;
+            $expenseNoPrefix = $qbMode === 'credit' ? 'CR-' : '';
+            $expenseNo = $expenseNoPrefix . generateBillExpenseNo($conn);
+            $firstAccount = $cleanRows[0]['account'];
+
+            $headerMemo = $headerMemoInput;
+            if ($headerMemo === '') {
+                $headerMemo = implode('; ', array_slice($lineMemoParts, 0, 5));
+            }
+            if (count($cleanRows) > 1 && $headerMemo === '') {
+                $headerMemo = count($cleanRows) . ' expense lines';
+            }
+
+            $stmt = $conn->prepare("INSERT INTO billexpenses
+                (expense_no, branch_id, expense_date, transaction_type, bill_received, vendor_id, vendor_name, vendor_address, terms, ref_no, bill_due, class_name, account, payable_account, amount, total_amount, balance, memo, status, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', ?)");
+            if (!$stmt) throw new Exception('Failed to prepare bill/credit entry: ' . $conn->error);
+
+            $vendorIdForBind = $vendorId ?: 0;
+            $billDueForBind = $billDue !== '' ? $billDue : null;
+            $stmt->bind_param(
+                'sissiissssssssdddsi',
+                $expenseNo,
+                $effective_branch_id,
+                $expenseDate,
+                $qbMode,
+                $billReceived,
+                $vendorIdForBind,
+                $vendorName,
+                $vendorAddress,
+                $terms,
+                $refNo,
+                $billDueForBind,
+                $className,
+                $firstAccount,
+                $payableAccount,
+                $totalAmount,
+                $totalAmount,
+                $totalAmount,
+                $headerMemo,
+                $user_id
+            );
+            if (!$stmt->execute()) throw new Exception('Failed to save bill/credit entry: ' . $stmt->error);
+            $expenseId = (int)$conn->insert_id;
+            $stmt->close();
+
+            $itemStmt = $conn->prepare("INSERT INTO billexpense_items (expense_id, account, amount, memo) VALUES (?, ?, ?, ?)");
+            if (!$itemStmt) throw new Exception('Failed to prepare expense line: ' . $conn->error);
+            foreach ($cleanRows as $line) {
+                $itemStmt->bind_param('isds', $expenseId, $line['account'], $line['amount'], $line['memo']);
+                if (!$itemStmt->execute()) throw new Exception('Failed to save expense line: ' . $itemStmt->error);
+            }
+            $itemStmt->close();
+
+            $chartSourceIdForReport = $expenseId;
+
+            // Also save the typed Ref. No., Memo, and Address into purchase_orders so Chart of Accounts Quick Report can read them from purchase_orders.
+            if (dbTableExists($conn, 'purchase_orders')) {
+                if (!columnExists($conn, 'purchase_orders', 'ref_no')) { @$conn->query("ALTER TABLE `purchase_orders` ADD COLUMN `ref_no` varchar(100) DEFAULT NULL AFTER `total_amount`"); }
+                if (!columnExists($conn, 'purchase_orders', 'memo')) { @$conn->query("ALTER TABLE `purchase_orders` ADD COLUMN `memo` text DEFAULT NULL AFTER `ref_no`"); }
+                if (!columnExists($conn, 'purchase_orders', 'address')) { @$conn->query("ALTER TABLE `purchase_orders` ADD COLUMN `address` text DEFAULT NULL AFTER `supplier_name`"); }
+                if (!columnExists($conn, 'purchase_orders', 'transaction_type')) { @$conn->query("ALTER TABLE `purchase_orders` ADD COLUMN `transaction_type` enum('bill','credit') NOT NULL DEFAULT 'bill' AFTER `expected_delivery`"); }
+                if (!columnExists($conn, 'purchase_orders', 'payable_account')) { @$conn->query("ALTER TABLE `purchase_orders` ADD COLUMN `payable_account` varchar(255) DEFAULT NULL AFTER `transaction_type`"); }
+                $po_status_for_expense = $qbMode === 'credit' ? 'credited' : 'received';
+                $po_number_for_expense = $expenseNo;
+                $poMemoForPurchaseOrder = $headerMemoInput !== '' ? $headerMemoInput : $headerMemo;
+                $po_insert = $conn->prepare("INSERT INTO purchase_orders (po_number, supplier_name, address, order_date, expected_delivery, total_amount, po_status, transaction_type, payable_account, ref_no, memo, created_by, created_at, updated_at" . ($po_branch_column_exists ? ", branch_id" : "") . ($supplier_id_column_exists ? ", supplier_id" : "") . ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW()" . ($po_branch_column_exists ? ", ?" : "") . ($supplier_id_column_exists ? ", ?" : "") . ")");
+                if ($po_insert) {
+                    $po_values = [$po_number_for_expense, $vendorName, $vendorAddress, $expenseDate, $billDueForBind, $totalAmount, $po_status_for_expense, $qbMode, $payableAccount, $refNo, $poMemoForPurchaseOrder, $user_id];
+                    $po_types = 'sssssdsssssi';
+                    if ($po_branch_column_exists) { $po_values[] = $effective_branch_id; $po_types .= 'i'; }
+                    if ($supplier_id_column_exists) { $po_values[] = $vendorIdForBind; $po_types .= 'i'; }
+                    $po_insert->bind_param($po_types, ...$po_values);
+                    if ($po_insert->execute()) {
+                        $chartSourceIdForReport = (int)$conn->insert_id;
+                    }
+                    $po_insert->close();
+                }
+            }
+
+            postBillCreditToChartOfAccounts(
+                $conn,
+                $qbMode,
+                $payableAccount,
+                $cleanRows,
+                $effective_branch_id,
+                $expenseDate,
+                $expenseNo,
+                $headerMemo,
+                $chartSourceIdForReport,
+                $user_id,
+                $refNo,
+                'purchase_orders'
+            );
+
+            $conn->commit();
+            echo json_encode([
+                'success' => true,
+                'message' => ($qbMode === 'credit' ? 'Credit' : 'Bill') . ' saved successfully.',
+                'expense_id' => $expenseId,
+                'expense_no' => $expenseNo
+            ]);
+            exit;
+        }
+        elseif ($_POST['action'] === 'create_po') {
             $po_number = 'PO-' . date('Ymd') . '-' . rand(1000, 9999);
             $supplier_name = $_POST['supplier_name'];
             $supplier_id = isset($_POST['supplier_id']) && !empty($_POST['supplier_id']) ? (int)$_POST['supplier_id'] : null;
@@ -611,16 +1257,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $expected_delivery = !empty($_POST['expected_delivery']) ? $_POST['expected_delivery'] : null;
             $total_amount = (float)$_POST['total_amount'];
             $po_status = $_POST['po_status'] ?? 'draft';
+            $ref_no = trim((string)($_POST['ref_no'] ?? $_POST['reference_no'] ?? ''));
+            $po_memo = trim((string)($_POST['memo'] ?? $_POST['receive_memo'] ?? ''));
+            $po_address = trim((string)($_POST['address'] ?? $_POST['vendor_address'] ?? ''));
+            if (dbTableExists($conn, 'purchase_orders')) {
+                if (!columnExists($conn, 'purchase_orders', 'ref_no')) {
+                    $afterRefColumn = columnExists($conn, 'purchase_orders', 'payable_account') ? 'payable_account' : 'total_amount';
+                    @$conn->query("ALTER TABLE `purchase_orders` ADD COLUMN `ref_no` varchar(100) DEFAULT NULL AFTER `$afterRefColumn`");
+                }
+                if (!columnExists($conn, 'purchase_orders', 'memo')) { @$conn->query("ALTER TABLE `purchase_orders` ADD COLUMN `memo` text DEFAULT NULL AFTER `ref_no`"); }
+                if (!columnExists($conn, 'purchase_orders', 'address')) { @$conn->query("ALTER TABLE `purchase_orders` ADD COLUMN `address` text DEFAULT NULL AFTER `supplier_name`"); }
+            }
             $created_by = $user_id;
 
             // Build insert data dynamically
             $fields = [
                 'po_number' => $po_number,
                 'supplier_name' => $supplier_name,
+                'address' => $po_address,
                 'order_date' => $order_date,
                 'expected_delivery' => $expected_delivery,
                 'total_amount' => $total_amount,
                 'po_status' => $po_status,
+                'ref_no' => $ref_no,
+                'memo' => $po_memo,
                 'created_by' => $created_by,
                 'created_at' => 'NOW()',
                 'updated_at' => 'NOW()'
@@ -718,11 +1378,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $po_number = trim($_POST['poNumber'] ?? '');
             $with_po = isset($_POST['withPO']) && (string)$_POST['withPO'] === '1';
             $receive_date = trim($_POST['receiveDate'] ?? '');
-<<<<<<< HEAD
             $encoded_date = trim($_POST['encodedDate'] ?? '');
+            if ($encoded_date === '') {
+                $encoded_date = $receive_date;
+            }
             $receive_memo = trim((string)($_POST['receive_memo'] ?? ''));
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
+            $receive_ref_no = trim((string)($_POST['ref_no'] ?? $_POST['reference_no'] ?? ''));
+            $receive_address = trim((string)($_POST['address'] ?? $_POST['vendor_address'] ?? ''));
+            $qbMode = strtolower(trim((string)($_POST['qb_mode'] ?? 'bill')));
+            if (!in_array($qbMode, ['bill', 'credit'], true)) {
+                $qbMode = 'bill';
+            }
+            $payableAccount = trim((string)($_POST['payable_account'] ?? ''));
             $items = json_decode($_POST['items'] ?? '[]', true);
             $rmr_id = isset($_POST['rmr_id']) && $_POST['rmr_id'] !== '' ? (int)$_POST['rmr_id'] : 0;
             $upload_field = $source === 'production' ? 'productionAttachments' : 'supplierAttachments';
@@ -737,17 +1404,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             if (!$receive_date) {
                 throw new Exception('Receive date is required.');
             }
-<<<<<<< HEAD
-            if (!$encoded_date) {
-                throw new Exception('Date encoded is required.');
-            }
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
-            if (!is_array($items) || count($items) === 0) {
+                        if (!is_array($items) || count($items) === 0) {
                 throw new Exception('Please add at least one item to receive.');
             }
             if ($source === 'supplier' && $supplier_name === '') {
                 throw new Exception('Please select a supplier.');
+            }
+            if ($source === 'supplier' && $payableAccount === '') {
+                throw new Exception('Please select a Payable/Liability account.');
             }
             if ($source === 'rmr' && $rmr_id <= 0) {
                 throw new Exception('Please select a confirmed or processed RMR request.');
@@ -761,6 +1425,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
             $reference_po_id = null;
             $received_total_amount = 0.00;
+            $item_asset_posting_rows = [];
+            if (dbTableExists($conn, 'purchase_orders')) {
+                if (!columnExists($conn, 'purchase_orders', 'transaction_type')) {
+                    @$conn->query("ALTER TABLE `purchase_orders` ADD COLUMN `transaction_type` enum('bill','credit') NOT NULL DEFAULT 'bill' AFTER `expected_delivery`");
+                }
+                if (!columnExists($conn, 'purchase_orders', 'payable_account')) {
+                    @$conn->query("ALTER TABLE `purchase_orders` ADD COLUMN `payable_account` varchar(255) DEFAULT NULL AFTER `transaction_type`");
+                }
+                if (!columnExists($conn, 'purchase_orders', 'ref_no')) {
+                    @$conn->query("ALTER TABLE `purchase_orders` ADD COLUMN `ref_no` varchar(100) DEFAULT NULL AFTER `payable_account`");
+                }
+                if (!columnExists($conn, 'purchase_orders', 'memo')) {
+                    @$conn->query("ALTER TABLE `purchase_orders` ADD COLUMN `memo` text DEFAULT NULL AFTER `ref_no`");
+                }
+                if (!columnExists($conn, 'purchase_orders', 'address')) {
+                    @$conn->query("ALTER TABLE `purchase_orders` ADD COLUMN `address` text DEFAULT NULL AFTER `supplier_name`");
+                }
+            }
             if ($upload_field !== '' && isset($_FILES[$upload_field]) && is_array($_FILES[$upload_field]['name'] ?? null)) {
                 ensureReceiveAttachmentDirectories();
                 $allowed_extensions = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx'];
@@ -807,7 +1489,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
 
             foreach ($items as $rowItem) {
-                $received_total_amount += ((float)($rowItem['qty'] ?? 0)) * ((float)($rowItem['price'] ?? 0));
+                $row_qty = (float)($rowItem['qty'] ?? 0);
+                $row_unit_cost = (float)($rowItem['price'] ?? 0);
+                $row_discount = $rowItem['discount'] ?? '';
+                $row_total_unit_cost = isset($rowItem['total_unit_cost'])
+                    ? (float)$rowItem['total_unit_cost']
+                    : calculateReceiveLineTotalCost($row_qty, $row_unit_cost, $row_discount);
+                $received_total_amount += $row_total_unit_cost;
             }
 
             if ($source === 'supplier') {
@@ -833,15 +1521,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         throw new Exception('Selected PO was not found.');
                     }
                     $po_lookup_stmt->close();
+                    if ($reference_po_id && ($receive_ref_no !== '' || $receive_memo !== '')) {
+                        if (columnExists($conn, 'purchase_orders', 'ref_no') || columnExists($conn, 'purchase_orders', 'memo')) {
+                            $updateReceivePo = $conn->prepare("UPDATE purchase_orders SET ref_no = COALESCE(NULLIF(?, ''), ref_no), memo = COALESCE(NULLIF(?, ''), memo), address = COALESCE(NULLIF(?, ''), address) WHERE po_id = ?");
+                            if ($updateReceivePo) {
+                                $updateReceivePo->bind_param('sssi', $receive_ref_no, $receive_memo, $receive_address, $reference_po_id);
+                                $updateReceivePo->execute();
+                                $updateReceivePo->close();
+                            }
+                        }
+                    }
                 } else {
                     $generated_po_number = 'PO-RCV-' . date('YmdHis');
                     $fields = [
                         'po_number' => $generated_po_number,
                         'supplier_name' => $supplier_name,
+                        'address' => $receive_address,
                         'order_date' => $receive_date,
                         'expected_delivery' => $receive_date,
                         'total_amount' => $received_total_amount,
-                        'po_status' => 'received',
+                        'po_status' => ($qbMode === 'credit' ? 'credited' : 'received'),
+                        'transaction_type' => $qbMode,
+                        'payable_account' => $payableAccount,
+                        'ref_no' => $receive_ref_no,
+                        'memo' => $receive_memo,
                         'created_by' => $user_id,
                         'created_at' => 'NOW()',
                         'updated_at' => 'NOW()'
@@ -906,21 +1609,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $item_name = trim($rowItem['name'] ?? '');
                 $item_code = trim($rowItem['code'] ?? '');
                 $item_description = trim($rowItem['description'] ?? '');
-<<<<<<< HEAD
                 $item_category = trim($rowItem['category'] ?? '');
                 $item_uom = trim($rowItem['uom'] ?? '');
                 $item_qty = (float)($rowItem['qty'] ?? 0);
-                $item_price = (float)($rowItem['price'] ?? 0);
-                $item_total_cost = $item_qty * $item_price;
-
-                if ($item_name === '' || $item_code === '' || $item_description === '' || $item_category === '' || $item_uom === '' || $item_qty <= 0) {
-=======
-                $item_uom = trim($rowItem['uom'] ?? '');
-                $item_qty = (float)($rowItem['qty'] ?? 0);
-                $item_price = (float)($rowItem['price'] ?? 0);
+                $item_price_raw = (float)($rowItem['price'] ?? 0);
+                $item_discount = $rowItem['discount'] ?? '';
+                $item_total_cost = isset($rowItem['total_unit_cost'])
+                    ? (float)$rowItem['total_unit_cost']
+                    : calculateReceiveLineTotalCost($item_qty, $item_price_raw, $item_discount);
+                $item_price = $item_qty > 0 ? round($item_total_cost / $item_qty, 2) : $item_price_raw;
 
                 if ($item_name === '' || $item_code === '' || $item_description === '' || $item_uom === '' || $item_qty <= 0) {
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     throw new Exception('Please complete all received item details.');
                 }
 
@@ -938,7 +1637,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
 
                 if ($item_id <= 0) {
-<<<<<<< HEAD
                     $item_insert_fields = ['item_code', 'item_name', 'description'];
                     $item_insert_placeholders = ['?', '?', '?'];
                     $item_insert_types = 'sss';
@@ -964,29 +1662,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     }
 
                     $insert_item_query = "INSERT INTO items (" . implode(', ', $item_insert_fields) . ") VALUES (" . implode(', ', $item_insert_placeholders) . ")";
-=======
-                    $insert_item_query = "INSERT INTO items (item_code, item_name, description, unit_type, unit_price, stock, stock_in_default_uom, status, created_at, updated_at" . ($items_branch_column_exists ? ", branch_id" : "") . ") VALUES (?, ?, ?, ?, ?, ?, ?, 'active', NOW(), NOW()" . ($items_branch_column_exists ? ", ?" : "") . ")";
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     $insert_item_stmt = $conn->prepare($insert_item_query);
                     if (!$insert_item_stmt) {
                         throw new Exception('Unable to prepare new item save.');
                     }
-<<<<<<< HEAD
                     $insert_item_stmt->bind_param($item_insert_types, ...$item_insert_values);
-=======
-                    if ($items_branch_column_exists) {
-                        $insert_item_stmt->bind_param("ssssdddi", $item_code, $item_name, $item_description, $item_uom, $item_price, $item_qty, $item_qty, $branch_id);
-                    } else {
-                        $insert_item_stmt->bind_param("ssssddd", $item_code, $item_name, $item_description, $item_uom, $item_price, $item_qty, $item_qty);
-                    }
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     if (!$insert_item_stmt->execute()) {
                         throw new Exception('Failed to create new item: ' . $insert_item_stmt->error);
                     }
                     $item_id = (int)$conn->insert_id;
                     $insert_item_stmt->close();
                 } else {
-<<<<<<< HEAD
                     if ($item_category_column) {
                         $update_item_stmt = $conn->prepare("UPDATE items SET item_name = ?, description = ?, `{$item_category_column}` = ?, unit_type = ?, unit_price = ?, updated_at = NOW() WHERE item_id = ?");
                     } else {
@@ -998,16 +1684,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         } else {
                             $update_item_stmt->bind_param("sssdi", $item_name, $item_description, $item_uom, $item_price, $item_id);
                         }
-=======
-                    $update_item_stmt = $conn->prepare("UPDATE items SET item_name = ?, description = ?, unit_type = ?, unit_price = ?, updated_at = NOW() WHERE item_id = ?");
-                    if ($update_item_stmt) {
-                        $update_item_stmt->bind_param("sssdi", $item_name, $item_description, $item_uom, $item_price, $item_id);
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         if (!$update_item_stmt->execute()) {
                             throw new Exception('Failed to update item details.');
                         }
                         $update_item_stmt->close();
                     }
+                }
+
+                if ($source === 'supplier') {
+                    $item_asset_posting_rows[] = [
+                        'item_id' => (int)$item_id,
+                        'item_name' => $item_name,
+                        'item_code' => $item_code,
+                        'amount' => round((float)$item_total_cost, 2),
+                        'memo' => trim($item_code . ' - ' . $item_name)
+                    ];
                 }
 
                 if ($source === 'supplier' && $reference_po_id) {
@@ -1046,7 +1737,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     }
                 }
 
-<<<<<<< HEAD
                 // NOTE: Don't update 'inventory' table here
                 // The inventory_transactions record below will be synced to item_unit_inventory by current_inventory.php
                 // This ensures a single source of truth for inventory data
@@ -1054,9 +1744,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $reference_type = $source === 'supplier' ? 'purchase_order' : ($source === 'rmr' ? 'rmr' : 'production');
                 $reference_id = $source === 'rmr' ? $reference_rmr_id : ($reference_po_id ?: 0);
                 $transaction_fields = ['branch_id', 'item_id', 'transaction_type', 'quantity_changed', 'unit_cost', 'total_cost'];
-                $transaction_placeholders = ['?', '?', "'in'", '?', '?', '?'];
-                $transaction_types = 'iiddd';
-                $transaction_values = [$branch_id, $item_id, $item_qty, $item_price, $item_total_cost];
+                $transaction_placeholders = ['?', '?', '?', '?', '?', '?'];
+                $transaction_types = 'iisddd';
+                $inventoryTransactionType = ($source === 'supplier' && $qbMode === 'credit') ? 'out' : 'in';
+                $transaction_values = [$branch_id, $item_id, $inventoryTransactionType, $item_qty, $item_price, $item_total_cost];
 
                 if ($receive_date_column_exists) {
                     $transaction_fields[] = 'receive_date';
@@ -1179,8 +1870,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 if ($matched_inventory_id > 0) {
                     // Item and UoM already exist - add only the received quantity to stock.
                     // Total cost is accumulated separately so different unit costs do not change the received quantity.
-                    $new_current_inventory = $matched_current_inventory + (float)$item_qty;
-                    $new_total_cost = $matched_total_cost + $item_total_cost;
+                    if ($source === 'supplier' && $qbMode === 'credit') {
+                        // Vendor Credit from Items tab means items are returned/refunded to supplier, so stock value must go down.
+                        if ($matched_current_inventory < $item_qty) {
+                            throw new Exception('Credit quantity cannot be greater than the current inventory for item: ' . $item_name);
+                        }
+                        $new_current_inventory = $matched_current_inventory - (float)$item_qty;
+                        $new_total_cost = max(0, $matched_total_cost - $item_total_cost);
+                    } else {
+                        $new_current_inventory = $matched_current_inventory + (float)$item_qty;
+                        $new_total_cost = $matched_total_cost + $item_total_cost;
+                    }
                     $new_average_unit_cost = $new_current_inventory > 0 ? ($new_total_cost / $new_current_inventory) : $item_price;
                     $update_existing_unit_inventory = $conn->prepare("\n                        UPDATE item_unit_inventory\n                        SET current_inventory = ?,\n                            unit_cost = ?,\n                            total_cost = ?,\n                            as_of_date = ?,\n                            updated_at = NOW()\n                        WHERE inventory_id = ?\n                        LIMIT 1\n                    ");
                     if (!$update_existing_unit_inventory) {
@@ -1201,6 +1901,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         $sync_default_summary->close();
                     }
                 } else {
+                    if ($source === 'supplier' && $qbMode === 'credit') {
+                        throw new Exception('Cannot process Credit for item with no existing inventory row: ' . $item_name);
+                    }
                     // No matching UoM row exists for this item.
                     // Create a new UoM row for this item since it doesn't exist yet.
                     
@@ -1263,70 +1966,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     }
                 }
 
-=======
-                $inventory_lookup = $conn->prepare("SELECT inventory_id, quantity_on_hand FROM inventory WHERE branch_id = ? AND item_id = ? LIMIT 1");
-                if (!$inventory_lookup) {
-                    throw new Exception('Unable to prepare current inventory lookup.');
-                }
-                $inventory_lookup->bind_param("ii", $branch_id, $item_id);
-                $inventory_lookup->execute();
-                $inventory_result = $inventory_lookup->get_result();
-                if ($inventory_row = $inventory_result->fetch_assoc()) {
-                    $new_qty = (float)$inventory_row['quantity_on_hand'] + $item_qty;
-                    $update_inventory = $conn->prepare("UPDATE inventory SET quantity_on_hand = ?, last_updated_by = ?, updated_at = NOW() WHERE inventory_id = ?");
-                    $update_inventory->bind_param("dii", $new_qty, $user_id, $inventory_row['inventory_id']);
-                    if (!$update_inventory->execute()) {
-                        throw new Exception('Failed to update current inventory stock.');
-                    }
-                    $update_inventory->close();
-                } else {
-                    $insert_inventory = $conn->prepare("INSERT INTO inventory (branch_id, item_id, quantity_on_hand, quantity_reserved, last_updated_by, updated_at) VALUES (?, ?, ?, 0, ?, NOW())");
-                    $insert_inventory->bind_param("iidi", $branch_id, $item_id, $item_qty, $user_id);
-                    if (!$insert_inventory->execute()) {
-                        throw new Exception('Failed to insert current inventory stock.');
-                    }
-                    $insert_inventory->close();
-                }
-                $inventory_lookup->close();
-
-                $update_item_stock = $conn->prepare("UPDATE items SET stock = COALESCE(stock, 0) + ?, stock_in_default_uom = COALESCE(stock_in_default_uom, 0) + ?, updated_at = NOW() WHERE item_id = ?");
-                if ($update_item_stock) {
-                    $update_item_stock->bind_param("ddi", $item_qty, $item_qty, $item_id);
-                    if (!$update_item_stock->execute()) {
-                        throw new Exception('Failed to update item stock.');
-                    }
-                    $update_item_stock->close();
-                }
-
-                $reference_type = $source === 'supplier' ? 'purchase_order' : ($source === 'rmr' ? 'rmr' : 'production');
-                $reference_id = $source === 'rmr' ? $reference_rmr_id : ($reference_po_id ?: 0);
-                $inventory_transaction = $conn->prepare("INSERT INTO inventory_transactions (branch_id, item_id, transaction_type, quantity_changed, reference_type, reference_id, created_by, created_at) VALUES (?, ?, 'in', ?, ?, ?, ?, NOW())");
-                if (!$inventory_transaction) {
-                    throw new Exception('Unable to prepare inventory transaction save.');
-                }
-                $inventory_transaction->bind_param("iidsii", $branch_id, $item_id, $item_qty, $reference_type, $reference_id, $user_id);
-                if (!$inventory_transaction->execute()) {
-                    throw new Exception('Failed to save inventory transaction.');
-                }
-                $saved_transaction_ids[] = (int)$conn->insert_id;
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 $manifest_item_rows[] = [
                     'item_id' => (int)$item_id,
                     'item_name' => $item_name,
                     'item_code' => $item_code,
                     'item_description' => $item_description,
-<<<<<<< HEAD
                     'category' => $item_category,
                     'uom' => $item_uom,
                     'qty' => $item_qty,
                     'unit_price' => $item_price,
                     'unit_cost' => $item_price,
                     'total_cost' => $item_total_cost
-=======
-                    'uom' => $item_uom,
-                    'qty' => $item_qty,
-                    'unit_price' => $item_price
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 ];
                 $inventory_transaction->close();
             }
@@ -1343,11 +1993,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     'reference_type' => $source === 'supplier' ? 'purchase_order' : ($source === 'rmr' ? 'rmr' : 'production'),
                     'reference_id' => (int)($source === 'rmr' ? $reference_rmr_id : ($reference_po_id ?: 0)),
                     'receive_date' => $receive_date,
-<<<<<<< HEAD
                     'encoded_date' => $encoded_date,
                     'receive_memo' => $receive_memo,
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     'created_at' => $manifest_created_at,
                     'created_by' => (int)$user_id,
                     'branch_id' => (int)$branch_id,
@@ -1361,16 +2008,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             if ($source === 'supplier' && $reference_po_id) {
                 if ($supplier_id_column_exists) {
                     $safe_supplier_id = $supplier_id ?: 0;
-                    $update_po_stmt = $conn->prepare("UPDATE purchase_orders SET supplier_name = ?, total_amount = ?, po_status = 'received', supplier_id = ?, updated_at = NOW() WHERE po_id = ?");
-                    $update_po_stmt->bind_param("sdii", $supplier_name, $received_total_amount, $safe_supplier_id, $reference_po_id);
+                    $poReceiveStatus = $qbMode === 'credit' ? 'credited' : 'received';
+                    $update_po_stmt = $conn->prepare("UPDATE purchase_orders SET supplier_name = ?, address = COALESCE(NULLIF(?, ''), address), ref_no = COALESCE(NULLIF(?, ''), ref_no), memo = COALESCE(NULLIF(?, ''), memo), total_amount = ?, po_status = ?, supplier_id = ?, transaction_type = ?, payable_account = ?, updated_at = NOW() WHERE po_id = ?");
+                    $update_po_stmt->bind_param("ssssdsissi", $supplier_name, $receive_address, $receive_ref_no, $receive_memo, $received_total_amount, $poReceiveStatus, $safe_supplier_id, $qbMode, $payableAccount, $reference_po_id);
                 } else {
-                    $update_po_stmt = $conn->prepare("UPDATE purchase_orders SET supplier_name = ?, total_amount = ?, po_status = 'received', updated_at = NOW() WHERE po_id = ?");
-                    $update_po_stmt->bind_param("sdi", $supplier_name, $received_total_amount, $reference_po_id);
+                    $poReceiveStatus = $qbMode === 'credit' ? 'credited' : 'received';
+                    $update_po_stmt = $conn->prepare("UPDATE purchase_orders SET supplier_name = ?, address = COALESCE(NULLIF(?, ''), address), ref_no = COALESCE(NULLIF(?, ''), ref_no), memo = COALESCE(NULLIF(?, ''), memo), total_amount = ?, po_status = ?, transaction_type = ?, payable_account = ?, updated_at = NOW() WHERE po_id = ?");
+                    $update_po_stmt->bind_param("ssssdsssi", $supplier_name, $receive_address, $receive_ref_no, $receive_memo, $received_total_amount, $poReceiveStatus, $qbMode, $payableAccount, $reference_po_id);
                 }
                 if (!$update_po_stmt->execute()) {
                     throw new Exception('Failed to update purchase order after receipt.');
                 }
                 $update_po_stmt->close();
+            }
+
+            if ($source === 'supplier' && $received_total_amount > 0) {
+                $payableCoaAccount = resolveChartAccountByTitle($conn, $payableAccount, $branch_id);
+                if (!$payableCoaAccount) {
+                    throw new Exception('Selected Payable Account must exist in Chart of Accounts.');
+                }
+                $transactionTypeLabel = $qbMode === 'credit' ? 'Credit' : 'Bill';
+                $sourceIdForPosting = (int)($reference_po_id ?: 0);
+                $memoForPosting = $receive_memo !== '' ? $receive_memo : ('Receive Inventory - ' . $supplier_name);
+                $referenceNoForPosting = $receive_ref_no !== '' ? $receive_ref_no : $po_number;
+
+                if ($qbMode === 'credit') {
+                    postChartAccountEntry($conn, $payableCoaAccount, $branch_id, $receive_date, $transactionTypeLabel, $po_number, $memoForPosting, $sourceIdForPosting, $received_total_amount, 0.00, $user_id, $referenceNoForPosting, 'purchase_orders');
+                }
+
+                foreach ($item_asset_posting_rows as $assetRow) {
+                    $lineAmount = round((float)($assetRow['amount'] ?? 0), 2);
+                    if ($lineAmount <= 0) continue;
+
+                    $itemAssetAccount = resolveItemAssetAccount($conn, (int)($assetRow['item_id'] ?? 0), $branch_id);
+                    if (!$itemAssetAccount) {
+                        throw new Exception('Please assign an active Asset account to item: ' . ($assetRow['item_name'] ?? 'Unknown Item'));
+                    }
+
+                    $lineMemo = $memoForPosting;
+                    $itemLabel = trim((string)($assetRow['memo'] ?? ''));
+                    if ($itemLabel !== '') {
+                        $lineMemo .= ' | Item: ' . $itemLabel;
+                    }
+
+                    if ($qbMode === 'credit') {
+                        postChartAccountEntry($conn, $itemAssetAccount, $branch_id, $receive_date, $transactionTypeLabel, $po_number, $lineMemo, $sourceIdForPosting, 0.00, $lineAmount, $user_id, $referenceNoForPosting, 'purchase_orders');
+                    } else {
+                        postChartAccountEntry($conn, $itemAssetAccount, $branch_id, $receive_date, $transactionTypeLabel, $po_number, $lineMemo, $sourceIdForPosting, $lineAmount, 0.00, $user_id, $referenceNoForPosting, 'purchase_orders');
+                    }
+                }
+
+                if ($qbMode !== 'credit') {
+                    postChartAccountEntry($conn, $payableCoaAccount, $branch_id, $receive_date, $transactionTypeLabel, $po_number, $memoForPosting, $sourceIdForPosting, 0.00, $received_total_amount, $user_id, $referenceNoForPosting, 'purchase_orders');
+                }
             }
 
             if ($source === 'rmr' && $reference_rmr_id > 0 && dbTableExists($conn, 'rmr_requests')) {
@@ -1444,11 +2134,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     if ($transaction_id > 0) {
         $lookup_query = "
-<<<<<<< HEAD
             SELECT it.transaction_id, it.branch_id, it.item_id, it.quantity_changed, COALESCE(it.unit_cost,0) AS unit_cost, COALESCE(it.total_cost,0) AS total_cost, it.reference_type, it.reference_id, it.created_at
-=======
-            SELECT it.transaction_id, it.branch_id, it.item_id, it.quantity_changed, it.reference_type, it.reference_id, it.created_at
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             FROM inventory_transactions it
             WHERE it.transaction_id = ? AND it.transaction_type = 'in'
         ";
@@ -1473,11 +2159,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
     if (empty($candidateRows)) {
         $fallback_query = "
-<<<<<<< HEAD
             SELECT it.transaction_id, it.branch_id, it.item_id, it.quantity_changed, COALESCE(it.unit_cost,0) AS unit_cost, COALESCE(it.total_cost,0) AS total_cost, it.reference_type, it.reference_id, it.created_at
-=======
-            SELECT it.transaction_id, it.branch_id, it.item_id, it.quantity_changed, it.reference_type, it.reference_id, it.created_at
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             FROM inventory_transactions it
             WHERE it.transaction_type = 'in'
         ";
@@ -1535,11 +2217,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             if ($mfItemId <= 0) continue;
 
             $mfQuery = "
-<<<<<<< HEAD
                 SELECT it.transaction_id, it.branch_id, it.item_id, it.quantity_changed, COALESCE(it.unit_cost,0) AS unit_cost, COALESCE(it.total_cost,0) AS total_cost, it.reference_type, it.reference_id, it.created_at
-=======
-                SELECT it.transaction_id, it.branch_id, it.item_id, it.quantity_changed, it.reference_type, it.reference_id, it.created_at
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 FROM inventory_transactions it
                 WHERE it.transaction_type = 'in'
                   AND it.item_id = ?
@@ -1601,7 +2279,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         $txBranch = (int)$tx['branch_id'];
         $txCreatedAt = (string)$tx['created_at'];
         $txId = (int)$tx['transaction_id'];
-<<<<<<< HEAD
         $txUnitCost = (float)($tx['unit_cost'] ?? 0);
         $txTotalCost = (float)($tx['total_cost'] ?? 0);
         if ($txTotalCost <= 0 && $txUnitCost > 0) {
@@ -1655,8 +2332,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $unit_inv_lookup->close();
             }
         }
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
         $inv_stmt = $conn->prepare("SELECT inventory_id, quantity_on_hand FROM inventory WHERE branch_id = ? AND item_id = ? LIMIT 1");
         if ($inv_stmt) {
@@ -1687,7 +2362,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
 
         if ($txId > 0) {
-<<<<<<< HEAD
             if ($txId > 0) {
             $delete_receive_dates_stmt = $conn->prepare("DELETE FROM receive_inventory_dates WHERE transaction_id = ?");
             if ($delete_receive_dates_stmt) {
@@ -1698,9 +2372,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
 
         $del_stmt = $conn->prepare("DELETE FROM inventory_transactions WHERE transaction_id = ? LIMIT 1");
-=======
-            $del_stmt = $conn->prepare("DELETE FROM inventory_transactions WHERE transaction_id = ? LIMIT 1");
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             if ($del_stmt) {
                 $del_stmt->bind_param('i', $txId);
                 if (!$del_stmt->execute()) {
@@ -1792,7 +2463,6 @@ elseif ($_POST['action'] === 'get_receive_history_details') {
                         it.item_id,
                         it.transaction_type,
                         it.quantity_changed,
-<<<<<<< HEAD
                         COALESCE(it.unit_cost, 0) AS unit_cost,
                         COALESCE(it.total_cost, 0) AS total_cost,
                         it.reference_type,
@@ -1800,10 +2470,6 @@ elseif ($_POST['action'] === 'get_receive_history_details') {
                         COALESCE(it.receive_date, rid.receive_date) AS receive_date,
                         COALESCE(it.encoded_date, rid.encoded_date) AS encoded_date,
                         it.receive_memo,
-=======
-                        it.reference_type,
-                        it.reference_id,
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         it.created_by,
                         it.created_at,
                         i.item_name,
@@ -1817,7 +2483,6 @@ elseif ($_POST['action'] === 'get_receive_history_details') {
                         po.expected_delivery,
                         po.total_amount,
                         po.po_status,
-<<<<<<< HEAD
                         rr.rmr_number,
                         COALESCE(NULLIF(TRIM(rc.customer_name), ''), NULLIF(TRIM(rdc.customer_name), '')) AS rmr_customer_name,
                         b.branch_name,
@@ -1830,13 +2495,6 @@ elseif ($_POST['action'] === 'get_receive_history_details') {
                     LEFT JOIN customers rc ON rc.customer_id = rr.customer_id
                     LEFT JOIN deliveries rd ON rd.delivery_id = rr.delivery_id
                     LEFT JOIN customers rdc ON rdc.customer_id = rd.customer_id
-=======
-                        b.branch_name,
-                        CONCAT(u.first_name, ' ', u.last_name) AS received_by_name
-                    FROM inventory_transactions it
-                    LEFT JOIN items i ON it.item_id = i.item_id
-                    LEFT JOIN purchase_orders po ON it.reference_type = 'purchase_order' AND it.reference_id = po.po_id
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     LEFT JOIN branches b ON it.branch_id = b.branch_id
                     LEFT JOIN users u ON it.created_by = u.user_id
                     WHERE it.transaction_id = ?
@@ -1866,7 +2524,6 @@ elseif ($_POST['action'] === 'get_receive_history_details') {
                         it.item_id,
                         it.transaction_type,
                         it.quantity_changed,
-<<<<<<< HEAD
                         COALESCE(it.unit_cost, 0) AS unit_cost,
                         COALESCE(it.total_cost, 0) AS total_cost,
                         it.reference_type,
@@ -1874,10 +2531,6 @@ elseif ($_POST['action'] === 'get_receive_history_details') {
                         COALESCE(it.receive_date, rid.receive_date) AS receive_date,
                         COALESCE(it.encoded_date, rid.encoded_date) AS encoded_date,
                         it.receive_memo,
-=======
-                        it.reference_type,
-                        it.reference_id,
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         it.created_by,
                         it.created_at,
                         i.item_name,
@@ -1891,7 +2544,6 @@ elseif ($_POST['action'] === 'get_receive_history_details') {
                         po.expected_delivery,
                         po.total_amount,
                         po.po_status,
-<<<<<<< HEAD
                         rr.rmr_number,
                         COALESCE(NULLIF(TRIM(rc.customer_name), ''), NULLIF(TRIM(rdc.customer_name), '')) AS rmr_customer_name,
                         b.branch_name,
@@ -1904,13 +2556,6 @@ elseif ($_POST['action'] === 'get_receive_history_details') {
                     LEFT JOIN customers rc ON rc.customer_id = rr.customer_id
                     LEFT JOIN deliveries rd ON rd.delivery_id = rr.delivery_id
                     LEFT JOIN customers rdc ON rdc.customer_id = rd.customer_id
-=======
-                        b.branch_name,
-                        CONCAT(u.first_name, ' ', u.last_name) AS received_by_name
-                    FROM inventory_transactions it
-                    LEFT JOIN items i ON it.item_id = i.item_id
-                    LEFT JOIN purchase_orders po ON it.reference_type = 'purchase_order' AND it.reference_id = po.po_id
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     LEFT JOIN branches b ON it.branch_id = b.branch_id
                     LEFT JOIN users u ON it.created_by = u.user_id
                     WHERE it.transaction_type = 'in'
@@ -1963,7 +2608,6 @@ elseif ($_POST['action'] === 'get_receive_history_details') {
                         i.item_id,
                         'in' AS transaction_type,
                         0 AS quantity_changed,
-<<<<<<< HEAD
                         0 AS unit_cost,
                         0 AS total_cost,
                         ? AS reference_type,
@@ -1971,10 +2615,6 @@ elseif ($_POST['action'] === 'get_receive_history_details') {
                         '' AS receive_memo,
                         NULL AS receive_date,
                         NULL AS encoded_date,
-=======
-                        ? AS reference_type,
-                        ? AS reference_id,
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         ? AS created_by,
                         ? AS created_at,
                         i.item_name,
@@ -2021,15 +2661,11 @@ elseif ($_POST['action'] === 'get_receive_history_details') {
                 ]);
             }
 
-<<<<<<< HEAD
             if (empty($detail['receive_memo']) && is_array($manifest ?? null) && !empty($manifest['receive_memo'])) {
                 $detail['receive_memo'] = (string)$manifest['receive_memo'];
             }
 
             if (false && ($detail['reference_type'] ?? '') === 'purchase_order' && !empty($detail['reference_id'])) {
-=======
-            if (($detail['reference_type'] ?? '') === 'purchase_order' && !empty($detail['reference_id'])) {
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 $po_items_stmt = $conn->prepare("
                     SELECT 
                         poi.quantity_ordered,
@@ -2104,6 +2740,7 @@ elseif ($_POST['action'] === 'get_receive_history_details') {
             // Build update data
             $fields = [
                 'supplier_name' => $supplier_name,
+                'address' => $po_address,
                 'order_date' => $order_date,
                 'expected_delivery' => $expected_delivery,
                 'total_amount' => $total_amount,
@@ -2447,6 +3084,7 @@ $po_query = "
 ";
 $po_result = $conn->query($po_query);
 $purchase_orders = $po_result ? $po_result->fetch_all(MYSQLI_ASSOC) : [];
+$billexpenses = getPurchaseOrderExpenses($conn, $view_all_branches, $branch_id);
 
 // STATISTICS
 $total_po = count($purchase_orders);
@@ -2478,7 +3116,6 @@ $receive_history_query = "
         it.transaction_id,
         it.item_id,
         it.quantity_changed,
-<<<<<<< HEAD
         COALESCE(it.unit_cost, 0) AS unit_cost,
         COALESCE(it.total_cost, 0) AS total_cost,
         it.reference_type,
@@ -2486,10 +3123,6 @@ $receive_history_query = "
         COALESCE(it.receive_date, rid.receive_date) AS receive_date,
         COALESCE(it.encoded_date, rid.encoded_date) AS encoded_date,
         it.receive_memo,
-=======
-        it.reference_type,
-        it.reference_id,
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         it.created_by,
         it.created_at,
         i.item_name,
@@ -2498,7 +3131,6 @@ $receive_history_query = "
         i.unit_type,
         po.po_number,
         po.supplier_name,
-<<<<<<< HEAD
         rr.rmr_number,
         COALESCE(NULLIF(TRIM(rc.customer_name), ''), NULLIF(TRIM(rdc.customer_name), '')) AS rmr_customer_name,
         CONCAT(u.first_name, ' ', u.last_name) AS received_by_name
@@ -2513,15 +3145,6 @@ $receive_history_query = "
     LEFT JOIN users u ON it.created_by = u.user_id
     WHERE it.transaction_type = 'in'
       AND it.reference_type IN ('purchase_order', 'production', 'rmr')
-=======
-        CONCAT(u.first_name, ' ', u.last_name) AS received_by_name
-    FROM inventory_transactions it
-    LEFT JOIN items i ON it.item_id = i.item_id
-    LEFT JOIN purchase_orders po ON it.reference_type = 'purchase_order' AND it.reference_id = po.po_id
-    LEFT JOIN users u ON it.created_by = u.user_id
-    WHERE it.transaction_type = 'in'
-      AND it.reference_type IN ('purchase_order', 'production')
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 ";
 if (!$view_all_branches) {
     $receive_history_query .= " AND it.branch_id = " . (int)$branch_id;
@@ -2609,11 +3232,8 @@ function formatDateForInput($dateStr) {
     <!-- SweetAlert2 -->
     <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-<<<<<<< HEAD
         <!-- Session Checker -->
     <script src="../js/session-checker.js"></script>
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     
     <style>
                 /* Branch badge styling */
@@ -2689,7 +3309,6 @@ function formatDateForInput($dateStr) {
             transform: translateY(-2px) !important;
             box-shadow: 0 8px 18px rgba(5, 150, 105, 0.35) !important;
             background: linear-gradient(135deg, #047857, #065f46) !important;
-<<<<<<< HEAD
         }
 
 
@@ -2731,8 +3350,6 @@ function formatDateForInput($dateStr) {
             border-radius: 10px !important;
             padding: 0.65rem 1.25rem !important;
             font-weight: 600 !important;
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         }
         
         @media (max-width: 768px) {
@@ -3318,6 +3935,14 @@ function formatDateForInput($dateStr) {
             padding: 24px;
         }
 
+        .receive-inventory-plain {
+            background: transparent !important;
+            box-shadow: none !important;
+            border: 0 !important;
+            border-radius: 0 !important;
+            padding: 0 !important;
+        }
+
         .receive-inventory-header {
             margin-bottom: 24px;
             border-bottom: 2px solid #f0f0f0;
@@ -3377,6 +4002,45 @@ function formatDateForInput($dateStr) {
             font-size: 0.95rem;
         }
 
+        .supplier-info-title-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .supplier-with-po-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            white-space: nowrap;
+        }
+
+        .supplier-with-po-toggle .form-check {
+            display: flex;
+            align-items: center;
+            min-height: auto;
+            padding-left: 2.5em;
+            margin-bottom: 0;
+        }
+
+        .supplier-with-po-toggle .form-check-input {
+            cursor: pointer;
+            margin-top: 0 !important;
+        }
+
+        .supplier-with-po-toggle .form-check-label {
+            cursor: pointer;
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 0 !important;
+            line-height: 1;
+            display: inline-flex;
+            align-items: center;
+        }
+
         .receive-form label {
             font-weight: 500;
             color: #495057;
@@ -3420,14 +4084,17 @@ function formatDateForInput($dateStr) {
 
         .table-container-receive {
             background-color: white;
-            border: 1px solid #dee2e6;
-            border-radius: 6px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
             overflow-x: auto;
+            width: 100%;
         }
 
         .receive-items-table {
             margin-bottom: 0;
             width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
         }
 
         .receive-items-table thead th {
@@ -3440,10 +4107,13 @@ function formatDateForInput($dateStr) {
             padding: 16px 12px;
             border-bottom: 2px solid #dee2e6;
             white-space: nowrap;
+            vertical-align: middle;
+            text-align: left;
         }
 
         .receive-items-table tbody td {
             padding: 14px 12px;
+            vertical-align: middle;
             border-bottom: 1px solid #e9ecef;
             font-size: 13px;
         }
@@ -3538,7 +4208,6 @@ function formatDateForInput($dateStr) {
             box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3);
         }
 
-<<<<<<< HEAD
 
         .receive-history-filters {
             background: linear-gradient(135deg, #ffffff 0%, #f8fffc 100%);
@@ -3649,8 +4318,6 @@ function formatDateForInput($dateStr) {
             }
         }
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         @media (max-width: 768px) {
             .receive-inventory-card {
                 padding: 16px;
@@ -3670,7 +4337,6 @@ function formatDateForInput($dateStr) {
                 width: 100%;
             }
         }
-<<<<<<< HEAD
     
         .plain-report-header {
             text-align: center;
@@ -3814,7 +4480,66 @@ function formatDateForInput($dateStr) {
     overflow: visible !important;
 }
 
+
+.po-qb-check-attachment-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 300px;
+    gap: 16px;
+    align-items: stretch;
+    margin-bottom: 12px;
+}
+
+.po-qb-check-main {
+    min-width: 0;
+}
+
+.po-qb-check-main .po-qb-bill-card {
+    height: 100%;
+}
+
+.po-qb-transaction-attachment-panel {
+    border: 2px solid #c1dcbc;
+    outline: 1px solid #f1fbee;
+    background-color: #fcfffb;
+    background-image:
+        repeating-linear-gradient(45deg, rgba(150, 190, 155, 0.1) 0 1px, transparent 1px 6px),
+        repeating-linear-gradient(-45deg, rgba(150, 160, 155, .08) 0 1px, transparent 1px 7px);
+    padding: 12px;
+    min-height: 150px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
+}
+
+.po-qb-attachment-title {
+    font-size: 14px;
+    font-weight: 700;
+    color: #052A47;
+    margin: 0 0 10px;
+}
+
+.po-qb-attachment-upload .form-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #495057;
+}
+
+.po-qb-attachment-upload .form-control {
+    font-size: 12px;
+    min-height: 36px;
+}
+
+.po-qb-attachment-upload small {
+    font-size: 11px;
+    line-height: 1.35;
+}
 @media (max-width: 992px) {
+    .po-qb-check-attachment-row {
+        grid-template-columns: 1fr;
+    }
+    .po-qb-transaction-attachment-panel {
+        min-height: auto;
+    }
     .mobile-nav {
         display: block;
     }
@@ -3978,272 +4703,1370 @@ function formatDateForInput($dateStr) {
         font-size: 0.75rem;
     }
 }
+.expense-total-badge {
+    background: rgba(68, 211, 78, .12);
+    border: 1px solid rgba(68, 211, 78, .35);
+    color: #047857;
+    border-radius: 10px;
+    padding: .45rem .8rem;
+    font-size: .9rem;
+}
+
+.expense-entry-table input {
+        min-height:24px;
+    height:24px;
+    padding:2px 6px;
+    font-size:13px;
+
+}
+
+.expense-entry-table tbody tr:nth-child(even) {
+    background: rgba(13, 110, 253, .04);
+}
+
+.expense-entry-table .btn-outline-danger {
+    border-radius: 8px;
+}
+
+.recorded-expense-row {
+    cursor: pointer;
+    transition: background .2s ease;
+}
+
+.recorded-expense-row:hover {
+    background: rgba(68, 211, 78, .08);
+}
+
+.expense-details-list {
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.expense-details-list .expense-detail-line {
+    display: grid;
+    grid-template-columns: 1.1fr .7fr 1.2fr;
+    gap: 12px;
+    padding: 12px 14px;
+    border-bottom: 1px solid #eef2f7;
+    align-items: start;
+}
+
+.expense-details-list .expense-detail-line:last-child {
+    border-bottom: none;
+}
+
+.expense-details-list .expense-detail-head {
+    background: #047857 !important;
+    font-weight: 700;
+    color: #fff !important;
+}
+
+.expense-details-list .expense-detail-head > div {
+    background: #047857 !important;
+    color: #fff !important;
+}
+
+.expense-detail-info-card {
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 12px 14px;
+    height: 100%;
+}
+
+.expense-detail-muted {
+    color: #6b7280;
+    font-size: .875rem;
+}
+
+@media (max-width: 576px) {
+    .expense-details-list .expense-detail-line {
+        grid-template-columns: 1fr;
+    }
+    .expense-details-list .expense-detail-head {
+        display: none;
+    }
+}
+
+.po-qb-shell {
+    background: #f2f2f2;
+    border: 1px solid #cfd3e0;
+    border-radius: 0;
+    padding: 0;
+    padding-bottom: 0;
+    margin-top: 8px;
+    margin-bottom: 8px;
+    box-shadow: none;
+    width: 100%;
+    max-width: none;
+    font-family: Arial, Helvetica, sans-serif;
+}
+
+.po-qb-modebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    height: 26px;
+    padding: 0 4px 4px;
+    background: #f2f2f2;
+}
+
+.po-qb-mode-left,
+.po-qb-mode-right {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+}
+
+.po-qb-mode-center {
+    flex: 1;
+    min-width: 280px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.po-qb-payable-wrap {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    width: 100%;
+    max-width: 470px;
+}
+
+.po-qb-payable-label {
+    margin: 0;
+    white-space: nowrap;
+    font-size: 13px;
+    font-weight: 600;
+    color: #334155;
+}
+
+.po-qb-mode-select {
+    width: 100%;
+    min-width: 250px;
+    height: 22px;
+    border: 1px solid #bfc4ca;
+    border-radius: 2px;
+    background: #fff;
+    color: #111827;
+    font-size: 13px;
+    padding: 1px 6px;
+    outline: none;
+}
+
+.po-qb-mode-select:focus {
+    border-color: #44D34E;
+    box-shadow: 0 0 0 1px rgba(68, 211, 78, .35);
+}
+
+.po-qb-mode-option {
+    min-width: 150px;
+    height: 19px;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 0 6px;
+    background: linear-gradient(to right, #d9d9d9, #eeeeee);
+    color: #333;
+    font-size: 14px;
+    line-height: 1;
+}
+
+.po-qb-mode-option input {
+    width: 12px;
+    height: 12px;
+    margin: 0;
+    accent-color: #6b7280;
+}
+
+.po-qb-bill-card {
+    position: relative;
+    min-height: 150px;
+    border: 2px solid #c1dcbc;
+    outline: 1px solid #f1fbee;
+    background-color: #fcfffb;
+    background-image:
+        repeating-linear-gradient(45deg, rgba(150, 190, 155, 0.1) 0 1px, transparent 1px 6px),
+        repeating-linear-gradient(-45deg, rgba(150, 160, 155, .08) 0 1px, transparent 1px 7px);
+    padding: 7px 16px 7px;
+    overflow: hidden;
+}
+
+.po-qb-title {
+    color: #333;
+    font-size: 30px;
+    font-weight: 400;
+    line-height: 1;
+    margin: 0 0 3px;
+}
+
+.po-qb-bill-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 310px;
+    gap: 16px;
+    align-items: start;
+}
+
+.po-qb-form-row {
+    display: grid;
+    grid-template-columns: 78px minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+    margin-bottom: 3px;
+}
+
+.po-qb-side-row {
+    display: grid;
+    grid-template-columns: 80px minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 3px;
+}
+
+.po-qb-label {
+    font-size: 14px;
+    text-transform: uppercase;
+    color: #3f454f;
+    margin: 0;
+    font-weight: 400;
+    line-height: 28px;
+}
+
+.po-qb-input,
+.po-qb-select,
+.po-qb-textarea {
+    border: 1px solid #c4c7cc;
+    background: #eeeeee;
+    border-radius: 2px;
+    min-height: 23px;
+    padding: 1px 6px;
+    font-size: 13px;
+    color: #111;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, .08);
+    width: 100%;
+}
+
+.po-qb-select {
+    height: 23px;
+}
+
+.po-qb-textarea {
+    height: 42px;
+    resize: none;
+}
+
+.po-qb-address-row {
+    margin-bottom: 5px;
+}
+
+.po-qb-terms-row {
+    max-width: 235px;
+}
+
+.po-qb-after-terms-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(190px, 260px));
+    gap: 3px 14px;
+    align-items: start;
+    margin-top: 0;
+    margin-bottom: 2px;
+}
+
+.po-qb-after-terms-grid .po-qb-form-row {
+    grid-template-columns: 78px minmax(0, 1fr);
+    margin-bottom: 0;
+}
+
+.po-qb-after-terms-grid .po-qb-input,
+.po-qb-after-terms-grid .po-qb-select {
+    max-width: 180px;
+}
+
+.po-qb-memo-row {
+    display: grid;
+    grid-template-columns: 78px minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+    margin-top: 2px;
+    width: 100%;
+}
+
+.po-qb-memo-row .po-qb-input {
+    max-width: 760px;
+}
+
+.po-qb-side-panel {
+    padding-top: 8px;
+}
+
+.po-qb-side-row .po-qb-input,
+.po-qb-side-row .po-qb-select {
+    max-width: 190px;
+}
+
+.po-qb-side-spacer {
+    height: 12px;
+}
+
+
+.po-qb-bill-card.po-qb-credit-mode {
+    min-height: 160px;
+}
+
+.po-qb-bill-card.po-qb-credit-mode .po-qb-bill-grid {
+    grid-template-columns: minmax(0, 1fr) 360px;
+}
+
+.po-qb-bill-card.po-qb-credit-mode .po-qb-address-row,
+.po-qb-bill-card.po-qb-credit-mode .po-qb-terms-row,
+.po-qb-bill-card.po-qb-credit-mode .po-qb-bill-due-row {
+    display: none !important;
+}
+
+.po-qb-credit-class-row {
+    display: none;
+}
+
+.po-qb-bill-card.po-qb-credit-mode .po-qb-credit-class-row {
+    display: grid;
+    max-width: 270px;
+    margin-top: 18px;
+}
+
+.po-qb-bill-card.po-qb-credit-mode .po-qb-side-panel {
+    padding-top: 12px;
+}
+
+.po-qb-bill-card.po-qb-credit-mode .po-qb-side-class-row {
+    display: none !important;
+}
+
+.po-qb-bill-card.po-qb-credit-mode .po-qb-side-spacer {
+    display: none;
+}
+
+.po-qb-bill-card.po-qb-credit-mode .po-qb-memo-row {
+    margin-top: 20px;
+}
+
+.po-qb-bill-card.po-qb-credit-mode .po-qb-memo-row .po-qb-input {
+    max-width: 665px;
+}
+
+
+.po-qb-receive-only {
+    display: grid;
+}
+
+.po-qb-hide-on-expenses.expenses-active,
+.po-qb-receive-only.expenses-active {
+    display: none !important;
+}
+
+
+@media (max-width: 992px) {
+    .po-qb-bill-grid {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+    .po-qb-side-panel {
+        padding-top: 0;
+    }
+    .po-qb-side-row .po-qb-input,
+    .po-qb-side-row .po-qb-select {
+        max-width: none;
+    }
+}
+
+@media (max-width: 576px) {
+    .po-qb-modebar {
+        height: auto;
+        align-items: stretch;
+        flex-direction: column;
+        gap: 6px;
+    }
+    .po-qb-mode-left,
+    .po-qb-mode-right,
+    .po-qb-mode-center {
+        width: 100%;
+        gap: 6px;
+        flex-wrap: wrap;
+    }
+    .po-qb-mode-center {
+        min-width: 0;
+        justify-content: flex-start;
+    }
+    .po-qb-payable-wrap {
+        max-width: none;
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 2px;
+    }
+    .po-qb-mode-select {
+        min-width: 0;
+    }
+    .po-qb-mode-option {
+        min-width: 0;
+        flex: 1;
+    }
+    .po-qb-bill-card {
+        padding: 16px;
+    }
+    .po-qb-title {
+        font-size: 38px;
+    }
+    .po-qb-form-row,
+    .po-qb-side-row,
+    .po-qb-memo-row {
+        grid-template-columns: 1fr;
+        gap: 2px;
+    }
+    .po-qb-label {
+        line-height: 20px;
+    }
+}
+
+.po-qb-tabs {
+    border-bottom: 1px solid #d9d9d9;
+    margin-top: 8px;
+    gap: 0;
+}
+
+.po-qb-tabs .nav-link {
+    border: 1px solid #bfc4ca;
+    border-bottom: 0;
+    border-radius: 0;
+    background: #cfcfcf;
+    color: #111;
+    font-size: 16px;
+    font-weight: 500;
+    height: 30px;
+    line-height: 18px;
+    padding: 5px 10px;
+    margin-right: 2px;
+    min-width: 130px;
+}
+
+.po-qb-tabs .nav-link.active {
+    background: #fff;
+    color: #047857;
+    font-weight: 600;
+}
+
+.po-qb-tab-amount {
+    float: right;
+    margin-left: 25px;
+    font-weight: 400;
+}
+
+.po-qb-sheet {
+    border: 1px solid #d9d9d9;
+    border-top: 0;
+    padding: 0;
+    background: #fff;
+}
+
+.po-qb-grid-wrap{
+    min-height:auto;
+    max-height:none;
+    overflow:visible;
+    border-top:0;
+    margin-top: -30px;
+}
+
+.po-qb-grid {
+    width: 100%;
+    border-collapse: collapse;
+    table-layout: fixed;
+    margin: 0;
+}
+
+.po-qb-grid thead th {
+    height: 34px;
+    background: #fff;
+    color: #6b7280;
+    text-transform: uppercase;
+    font-size: 14px;
+    font-weight: 500;
+    border-right: 1px solid #d8dde3;
+    border-bottom: 1px solid #9ca3af;
+    padding: 5px 7px;
+    text-align: left;
+}
+
+.po-qb-grid tbody tr:nth-child(odd) {
+    background: #fff;
+}
+
+.po-qb-grid tbody tr:nth-child(even) {
+    background: #e8ffe7;
+}
+
+.po-qb-grid tbody td{
+    height:24px;
+    border-right:1px solid #d8dde3;
+    padding:0;
+}
+
+.po-qb-grid input {
+    width: 100%;
+    height: 25px;
+    border: 0;
+    background: transparent;
+    border-radius: 0;
+    padding: 2px 6px;
+    font-size: 14px;
+    outline: none;
+}
+
+.po-qb-grid input:focus {
+    background: #fff;
+    box-shadow: inset 0 0 0 1px #58e84b;
+}
+
+/* Keep Discount field consistent with other item-entry cells */
+.item-entry-table .receive-item-discount,
+.item-entry-table .receive-item-discount:hover,
+.item-entry-table .receive-item-discount:focus,
+.item-entry-table .receive-item-discount:active {
+    border: 0 !important;
+    outline: none !important;
+    box-shadow: none !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    color: #111827 !important;
+}
+
+.item-entry-table .receive-item-discount::selection {
+    background: #dcfce7 !important;
+    color: #111827 !important;
+}
+
+.item-entry-table .receive-item-discount:-webkit-autofill,
+.item-entry-table .receive-item-discount:-webkit-autofill:hover,
+.item-entry-table .receive-item-discount:-webkit-autofill:focus {
+    border: 0 !important;
+    outline: none !important;
+    -webkit-text-fill-color: #111827 !important;
+    -webkit-box-shadow: 0 0 0 1000px transparent inset !important;
+    transition: background-color 9999s ease-in-out 0s !important;
+}
+
+.po-qb-grid select,
+.po-qb-grid .item-entry-select {
+    width: 100%;
+    height: 25px;
+    border: 0;
+    background: transparent;
+    border-radius: 0;
+    padding: 2px 6px;
+    font-size: 14px;
+    outline: none;
+}
+
+.po-qb-grid select:focus,
+.po-qb-grid .item-entry-select:focus {
+    background: #fff;
+    box-shadow: inset 0 0 0 1px #58e84b;
+}
+
+.item-entry-grid-wrap {
+    min-height: auto;
+    max-height: 378px !important; /* 10 initial visible rows, scroll after row 10 */
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+}
+
+.item-entry-grid-wrap .po-qb-grid thead th {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+}
+
+.item-entry-table thead th {
+    background: #fff !important;
+    color: #6b7280 !important;
+    border-right: 1px solid #d8dde3 !important;
+    border-bottom: 1px solid #9ca3af !important;
+}
+
+
+.item-entry-table tbody tr:nth-child(odd) td {
+    background: #fff !important;
+}
+
+.item-entry-table tbody tr:nth-child(even) td {
+    background: #e8ffe7 !important;
+}
+
+.item-entry-table tbody tr:hover td {
+    background: #f0fff0 !important;
+}
+
+.item-entry-row-empty td {
+    background: inherit !important;
+}
+
+.item-entry-table tbody td {
+    height: 32px;
+    vertical-align: middle;
+}
+
+.item-entry-add-btn{
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:6px;
+    text-align:center;
+}
+
+.item-entry-actions {
+    justify-content: flex-end;
+    align-items: center;
+    padding-top: 8px;
+    margin-bottom: 8px;
+}
+
+.item-entry-actions .item-entry-add-btn {
+    width: auto;
+    min-width: 132px;
+    height: 32px;
+    padding: 4px 14px;
+    margin: 0;
+    border-radius: 3px;
+    font-weight: 700;
+}
+
+.item-entry-file-label {
+    width: calc(100% - 8px);
+    height: 25px;
+    margin: 3px 4px;
+    padding: 3px 6px;
+    border: 1px solid #c4c7cc;
+    background: #eeeeee;
+    border-radius: 3px;
+    color: #374151;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.item-entry-file-label:hover {
+    background: #e8ffe7;
+}
+
+.item-entry-file-input {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+}
+
+/* Keep the QuickBooks sheet inside the page width. */
+.po-qb-shell,
+.po-qb-sheet,
+.po-qb-grid-wrap {
+    max-width: 100%;
+    box-sizing: border-box;
+}
+
+.po-qb-grid-wrap {
+    overflow-x: hidden !important;
+}
+
+.po-qb-grid th,
+.po-qb-grid td {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    overflow-x: hidden;
+}
+
+.main-content,
+.content-wrapper,
+.page-content,
+.container-fluid {
+    max-width: 100%;
+}
+
+.item-entry-file-label .item-attachment-text {
+    display: inline-block;
+    max-width: 86px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+.item-entry-file-label.has-file {
+    background: #e8ffe7;
+    border-color: #047857;
+    color: #047857;
+    font-weight: 600;
+}
+
+
+.po-qb-grid td.expense-account-cell {
+    position: relative;
+    overflow: visible;
+}
+
+.po-qb-grid .qb-account-picker {
+    position: relative;
+    width: 100%;
+    height: 25px;
+}
+
+.po-qb-grid .expense-account-input,
+.po-qb-grid .expense-account-select {
+    width: 100%;
+    height: 25px;
+    border: 0;
+    background: transparent;
+    font-size: 13px;
+    color: #111827;
+    outline: none;
+}
+
+.po-qb-grid .expense-account-input {
+    padding-right: 112px;
+    background-image: none !important;
+}
+
+.po-qb-grid .expense-account-select {
+    cursor: pointer;
+    padding: 0 24px 0 6px;
+    appearance: auto;
+    -webkit-appearance: menulist;
+}
+
+.po-qb-grid .expense-account-type-inline {
+    position: absolute;
+    right: 30px;
+    top: 50%;
+    transform: translateY(-50%);
+    max-width: 78px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: #e8ffe7;
+    color: #047857;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+    display: none;
+}
+
+.po-qb-grid .expense-account-type-inline.show {
+    display: inline-block;
+}
+
+.po-qb-grid .expense-account-input:focus {
+    background-color: #fff;
+    border: 0;
+    box-shadow: inset 0 0 0 1px #58e84b, 0 0 0 1px rgba(47, 128, 237, .15);
+}
+
+.qb-account-toggle {
+    position: absolute;
+    right: 1px;
+    top: 1px;
+    width: 26px;
+    height: 23px;
+    border: 0;
+    border-left: 1px solid transparent;
+    background: transparent;
+    color: #64748b;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    border-radius: 2px;
+    z-index: 2;
+    transition: background .15s ease, color .15s ease, transform .15s ease;
+}
+
+.qb-account-toggle:hover,
+.qb-account-toggle.active {
+    background: #eeffee;
+    color: #58e84b;
+}
+
+.qb-account-toggle i {
+    font-size: 12px;
+    line-height: 1;
+    pointer-events: none;
+}
+
+.qb-account-dropdown {
+    position: fixed;
+    z-index: 99999;
+    display: none;
+    min-width: 260px;
+    max-height: 245px;
+    overflow-y: auto;
+    background: #ffffff;
+    border: 1px solid #a3df9d;
+    border-radius: 4px;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, .18);
+    padding: 0;
+    font-size: 13px;
+    color: #1f2937;
+}
+
+.qb-account-dropdown.show {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+    pointer-events: auto !important;
+}
+
+.qb-account-option {
+    width: 100%;
+    min-height: 34px;
+    padding: 8px 14px;
+    margin: 0;
+    border: 0;
+    border-bottom: 1px solid #eef2f7;
+    border-radius: 0;
+    cursor: pointer;
+    line-height: 1.35;
+    background: #fff;
+    color: #111827;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 400;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    box-shadow: none;
+    appearance: none;
+    -webkit-appearance: none;
+}
+
+.qb-account-option:last-child {
+    border-bottom: 0;
+}
+
+.qb-account-option:focus {
+    outline: none;
+}
+
+.qb-account-option-label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.qb-account-option-type {
+    flex: 0 0 auto;
+    max-width: 120px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #e8ffe7;
+    color: #047857;
+    font-size: 10px;
+    font-weight: 700;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.qb-account-option:hover,
+.qb-account-option.active {
+    background: #e7f2ff;
+    color: #0f172a;
+}
+
+.qb-account-empty {
+    padding: 9px 14px;
+    color: #6b7280;
+    font-size: 12px;
+}
+
+.po-qb-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 10px 0 0;
+}
+
+.po-qb-actions .btn {
+    min-width: 132px;
+    border-radius: 3px;
+    font-weight: 700;
+}
+
+.po-qb-actions .btn-primary {
+    background: linear-gradient(#5b8fe9, #315db6);
+    border-color: #315db6;
+}
+
+.po-qb-clear {
+    background: #f4f4f4;
+    border-color: #d6d6d6;
+    color: #444;
+}
+
+
+.po-qb-bill-card.po-qb-credit-mode {
+    min-height: 180px;
+}
+
+.po-qb-bill-card.po-qb-credit-mode .po-qb-bill-grid {
+    grid-template-columns: minmax(0, 1fr) 360px;
+}
+
+.po-qb-bill-card.po-qb-credit-mode .po-qb-address-row,
+.po-qb-bill-card.po-qb-credit-mode .po-qb-terms-row,
+.po-qb-bill-card.po-qb-credit-mode .po-qb-bill-due-row {
+    display: none !important;
+}
+
+.po-qb-credit-class-row {
+    display: none;
+}
+
+.po-qb-bill-card.po-qb-credit-mode .po-qb-credit-class-row {
+    display: grid;
+    max-width: 270px;
+    margin-top: 18px;
+}
+
+.po-qb-bill-card.po-qb-credit-mode .po-qb-side-panel {
+    padding-top: 24px;
+}
+
+.po-qb-bill-card.po-qb-credit-mode .po-qb-side-class-row {
+    display: none !important;
+}
+
+.po-qb-bill-card.po-qb-credit-mode .po-qb-side-spacer {
+    display: none;
+}
+
+.po-qb-bill-card.po-qb-credit-mode .po-qb-memo-row {
+    margin-top: 20px;
+}
+
+.po-qb-bill-card.po-qb-credit-mode .po-qb-memo-row .po-qb-input {
+    max-width: 665px;
+}
+
+
+.po-qb-receive-only {
+    display: grid;
+}
+
+.po-qb-hide-on-expenses.expenses-active,
+.po-qb-receive-only.expenses-active {
+    display: none !important;
+}
+
+
+@media (max-width: 992px) {
+    .po-qb-topbar,
+    .po-qb-check {
+        max-width: 100%;
+    }
+    .po-qb-check-grid {
+        grid-template-columns: 1fr;
+    }
+    .po-qb-side-row {
+        max-width: 260px;
+    }
+    .po-qb-pay-row {
+        grid-template-columns: 1fr;
+        margin-top: 20px;
+    }
+    .po-qb-textarea {
+        width: 100%;
+    }
+}
+
+@media (max-width: 576px) {
+    .po-qb-topbar {
+        align-items: stretch;
+        flex-direction: column;
+    }
+    .po-qb-fieldline {
+        justify-content: space-between;
+    }
+    .po-qb-bank-select {
+        width: 100%;
+    }
+    .po-qb-tabs {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+    }
+    .po-qb-tabs .nav-link {
+        white-space: nowrap;
+    }
+    .po-qb-actions {
+        flex-direction: column;
+    }
+    .po-qb-actions .btn {
+        width: 100%;
+    }
+}
+
+input[type=number]::-webkit-outer-spin-button,
+input[type=number]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+input[type=number] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+}
+
+        /* Category headers for Item Name dropdowns */
+.select2-results__group {
+    background: #e8f5e9 !important;
+    color: #047857 !important;
+    font-weight: 700 !important;
+    padding: 8px 12px !important;
+    border-top: 1px solid #44D34E !important;
+    border-bottom: 1px solid rgba(4, 120, 87, 0.12) !important;
+}
+
+/* Regular items */
+.select2-results__option {
+    background: #ffffff !important;
+    color: #052A47 !important;
+}
+
+/* Native dropdown */
+.item-entry-select option,
+.form-select option {
+    background: #ffffff;
+    color: #052A47;
+}
+
+/* Category header */
+.item-entry-select optgroup,
+.form-select optgroup {
+    background: #e8f5e9;
+    color: #047857;
+    font-weight: 700;
+}
 </style>
-=======
-    </style>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 </head>
 <body>
     <!-- MAIN APPLICATION -->
     <div id="appPage">
-         <!-- Sidebar -->
+ <!-- Sidebar -->
 <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
         <h3>
             <button class="desktop-toggle-btn" id="desktopToggleBtn">
                 <i class="bi bi-list" id="toggleIcon"></i>
             </button>
-            <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
+
+            <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon">
+
             <span class="nav-text">Branch Admin</span>
         </h3>
     </div>
-    
+
     <div class="sidebar-content">
         <div class="sidebar-menu">
             <ul class="nav flex-column">
-<<<<<<< HEAD
-                        <li class="nav-item">
-                <a class="nav-link" href="branchdashboard.php">
-                <i class="bi bi-speedometer2"></i>
-                <span class="nav-text">Dashboard</span></a>
-            </li>
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
-                <!-- Warehouse Dropdown - walang dropdown-toggle class -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'warehouseMenu')">
-        <i class="bi bi-shop"></i>
-        <span class="nav-text">Warehouse</span>
-        <i class="bi bi-chevron-down dropdown-arrow"></i>
-    </a>
-    <div class="collapse" id="warehouseMenu">
-        <ul class="nav flex-column ps-4">
-            <li class="nav-item">
-                <a class="nav-link" href="current_inventory.php">
-                        <i class="bi bi-bar-chart-line"></i>
-                        <span class="nav-text">Current Inventory</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="bad_orders.php">
-                    <i class="bi bi-recycle"></i>
-                    <span class="nav-text">Bad Orders</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="pick_list_items.php">
-                    <i class="bi bi-list-check"></i>
-                    <span class="nav-text">Pick List Items</span>
-                </a>
-            </li>
-<<<<<<< HEAD
-                                            <li class="nav-item">
-                                    <a class="nav-link" href="warehouses.php">
-                                    <i class="bi bi-shop"></i>
-                                    <span class="nav-text">Warehouses</span></a>
-                                </li>
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
-        </ul>
-    </div>
-</li>
-
-                
-                <!-- Supplier Dropdown - walang dropdown-toggle class -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'supplierMenu')">
-        <i class="bi bi-building"></i>
-        <span class="nav-text">Supplier</span>
-        <i class="bi bi-chevron-down dropdown-arrow"></i>
-    </a>
-    <div class="collapse" id="supplierMenu">
-        <ul class="nav flex-column ps-4">
-            <li class="nav-item">
-                <a class="nav-link" href="purchase_order.php">
-                    <i class="bi bi-box"></i>
-                    <span class="nav-text">Receive Inventory</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="supplier.php">
-                    <i class="bi bi-people"></i>
-                    <span class="nav-text">Supplier List</span>
-                </a>
-            </li>
-        </ul>
-    </div>
-</li>
-
-<<<<<<< HEAD
-<li class="nav-item dropdown-nav">
-                            <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'customerMenu')">
-                                <i class="bi bi-people"></i><span class="nav-text">Customer</span><i class="bi bi-chevron-down dropdown-arrow"></i>
-                            </a>
-                            <div class="collapse" id="customerMenu">
-                                <ul class="nav flex-column ps-4">
-                                    <li class="nav-item"><a class="nav-link" href="customer_list.php"><i class="bi bi-person-badge"></i><span class="nav-text">Customer List</span></a></li>
-                                    <li class="nav-item"><a class="nav-link" href="approve_credit_requests.php"><i class="bi bi-pencil-square"></i><span class="nav-text">Approve Credit Request</span></a></li>
-                                    <li class="nav-item"><a class="nav-link" href="sales_order.php"><i class="bi bi-cart"></i><span class="nav-text">Sales Order</span></a></li>
-                                    <li class="nav-item"><a class="nav-link active" href="collections.php"><i class="bi bi-cash-stack"></i><span class="nav-text">Collections</span></a></li>
-                                </ul>
-                            </div>
-                        </li>
-=======
-<!-- Customer Dropdown - walang dropdown-toggle class -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'customerMenu')">
-        <i class="bi bi-people"></i>
-        <span class="nav-text">Customer</span>
-        <i class="bi bi-chevron-down dropdown-arrow"></i>
-    </a>
-    <div class="collapse" id="customerMenu">
-        <ul class="nav flex-column ps-4">
-            <li class="nav-item">
-                <a class="nav-link" href="sales_order.php">
-                    <i class="bi bi-cart"></i>
-                    <span class="nav-text">Sales Order</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="collections.php">
-                    <i class="bi bi-cash-stack"></i>
-                    <span class="nav-text">Collections</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="customer_list.php">
-                    <i class="bi bi-person-badge"></i>
-                    <span class="nav-text">Customer List</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="approve_credit_requests.php">
-                    <i class="bi bi-pencil-square"></i>
-                    <span class="nav-text">Approved Credit Request</span>
-                </a>
-            </li>
-        </ul>
-    </div>
-</li>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
-
-<!-- Delivery Dropdown - walang dropdown-toggle class -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'deliveryMenu')">
-        <i class="bi bi-truck"></i>
-        <span class="nav-text">Delivery</span>
-        <i class="bi bi-chevron-down dropdown-arrow"></i>
-    </a>
-    <div class="collapse" id="deliveryMenu">
-        <ul class="nav flex-column ps-4">
-            <li class="nav-item">
-                <a class="nav-link" href="trip_tickets.php">
-                    <i class="bi bi-ticket-perforated"></i>
-                    <span class="nav-text">Trip Tickets</span>
-                </a>
-            </li>
-        </ul>
-    </div>
-</li>
-<<<<<<< HEAD
- <!-- Banking Dropdown -->
-                    <li class="nav-item dropdown-nav">
-                        <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'bankingMenu')">
-                            <i class="bi bi-bank2"></i>
-                            <span class="nav-text">Banking</span>
-                            <i class="bi bi-chevron-down dropdown-arrow"></i>
+                   <!-- Dashboard -->
+                    <li class="nav-item">
+                        <a class="nav-link" href="branchdashboard.php">
+                            <i class="bi bi-speedometer2"></i>
+                            <span class="nav-text">Dashboard</span>
                         </a>
-
-                        <div class="collapse" id="bankingMenu">
-                            <ul class="nav flex-column ps-4">
-                                <li class="nav-item">
-                                    <a class="nav-link" href="deposit.php">
-                                        <i class="bi bi-arrow-down-circle"></i>
-                                        <span class="nav-text">Deposit</span>
-                                    </a>
-                                </li>
-
-                                <li class="nav-item">
-                                    <a class="nav-link" href="Withdrawal.php">
-                                        <i class="bi bi-arrow-up-circle"></i>
-                                        <span class="nav-text">Withdrawal</span>
-                                    </a>
-                                </li>
-
-                                <li class="nav-item">
-                                    <a class="nav-link" href="bank_statement.php">
-                                        <i class="bi bi-receipt"></i>
-                                        <span class="nav-text">Bank Statement</span>
-                                    </a>
-                                </li>
-
-                                <li class="nav-item">
-                                    <a class="nav-link" href="expenses.php">
-                                        <i class="bi bi-cash-stack"></i>
-                                        <span class="nav-text">Expenses</span>
-                                    </a>
-                                </li>
-                            </ul>
-                        </div>
                     </li>
-                    
-                     <!-- Shared Services Dropdown -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'sharedServicesMenu')">
-        <i class="bi bi-grid-3x3-gap"></i>
-        <span class="nav-text">Shared Services</span>
-        <i class="bi bi-chevron-down dropdown-arrow"></i>
-    </a>
-    <div class="collapse" id="sharedServicesMenu">
-        <ul class="nav flex-column ps-4">
-            <li class="nav-item">
-                <a class="nav-link" href="motorpool.php">
-                    <i class="bi bi-truck"></i>
-                    <span class="nav-text">Motorpool</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="central_warehouse.php">
-                    <i class="bi bi-box-seam"></i>
-                    <span class="nav-text">Central Warehouse</span>
-                </a>
-            </li>
-        </ul>
-    </div>
-</li>
-                    
-=======
-                <li class="nav-item">
-    <a class="nav-link" href="banking.php">
-        <i class="bi bi-bank2"></i>
-        <span class="nav-text">Banking</span>
-    </a>
-</li>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
-                <!-- Users -->
-                <li class="nav-item">
-                    <a class="nav-link" href="drivers.php">
-                        <i class="bi bi-people-fill"></i>
-                        <span class="nav-text">Users</span>
+
+                <!-- Vendor Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'supplierMenu')">
+                        <i class="bi bi-people"></i>
+                        <span class="nav-text">Vendor</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
                     </a>
+
+                    <div class="collapse" id="supplierMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item active">
+                                <a class="nav-link" href="purchase_order.php">
+                                    <i class="bi bi-file-earmark-text"></i>
+                                    <span class="nav-text">Enter Bills</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="paybills.php">
+                                    <i class="bi bi-currency-dollar"></i>
+                                    <span class="nav-text">Pay Bills</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="supplier.php">
+                                    <i class="bi bi-people"></i>
+                                    <span class="nav-text">Vendor List</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
                 </li>
-<<<<<<< HEAD
-                
-                
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
+
+                <!-- Customer Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'customerMenu')">
+                        <i class="bi bi-people"></i>
+                        <span class="nav-text">Customers</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="customerMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="customer_list.php">
+                                    <i class="bi bi-person-badge"></i>
+                                    <span class="nav-text">Customer List</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="orderproduct.php">
+                                    <i class="bi bi-receipt"></i>
+                                    <span class="nav-text">Create Invoice</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="collections.php">
+                                    <i class="bi bi-cash-stack"></i>
+                                    <span class="nav-text">Receive Payment</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+
+                <!-- Employees Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'employeesMenu')">
+                        <i class="bi bi-people"></i>
+                        <span class="nav-text">Employees</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="employeesMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="employeelist.php">
+                                    <i class="bi bi-people"></i>
+                                    <span class="nav-text">Employee List</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="employee.php">
+                                    <i class="bi bi-clock"></i>
+                                    <span class="nav-text">Enter Time</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+
+                <!-- Banking Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'bankingMenu')">
+                        <i class="bi bi-bank2"></i>
+                        <span class="nav-text">Banking</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="bankingMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="deposit.php">
+                                    <i class="bi bi-bank"></i>
+                                    <span class="nav-text">Record Deposit</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="Withdrawal.php">
+                                    <i class="bi bi-journal-check"></i>
+                                    <span class="nav-text">Write Checks</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="bank_statement.php">
+                                    <i class="bi bi-receipt"></i>
+                                    <span class="nav-text">Bank Statement</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item" hidden>
+                                <a class="nav-link" href="expenses.php">
+                                    <i class="bi bi-cash-stack"></i>
+                                    <span class="nav-text">Expenses</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+
+                <!-- Company Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'warehouseMenu')">
+                        <i class="bi bi-building"></i>
+                        <span class="nav-text">Company</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="warehouseMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="current_inventory.php">
+                                    <i class="bi bi-box"></i>
+                                    <span class="nav-text">Items</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="bad_orders.php">
+                                    <i class="bi bi-recycle"></i>
+                                    <span class="nav-text">Bad Orders</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="pick_list_items.php">
+                                    <i class="bi bi-list-check"></i>
+                                    <span class="nav-text">Pick List Items</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="warehouses.php">
+                                    <i class="bi bi-shop"></i>
+                                    <span class="nav-text">Warehouses</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="chartofaccounts.php">
+                                    <i class="bi bi-graph-up"></i>
+                                    <span class="nav-text">Chart of Accounts</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item" hidden>
+                                <a class="nav-link" href="trip_tickets.php">
+                                    <i class="bi bi-ticket-perforated"></i>
+                                    <span class="nav-text">Trip Tickets</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="motorpool.php">
+                                    <i class="bi bi-truck"></i>
+                                    <span class="nav-text">Motorpool</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="central_warehouse.php">
+                                    <i class="bi bi-box-seam"></i>
+                                    <span class="nav-text">Central Warehouse</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="batch_transaction.php">
+                                    <i class="bi bi-collection"></i>
+                                    <span class="nav-text">Batch Transaction</span>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="drivers.php">
+                                    <i class="bi bi-people-fill"></i>
+                                    <span class="nav-text">Users</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+                <!-- Accounting Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'accountingMenu')">
+                        <i class="bi bi-graph-up"></i>
+                        <span class="nav-text">Accounting</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="accountingMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="journal_entries.php">
+                                    <i class="bi bi-journal"></i>
+                                    <span class="nav-text">Journal Entries</span>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="batch_transaction.php">
+                                    <i class="bi bi-collection"></i>
+                                    <span class="nav-text">Batch Transaction</span>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="item_adjustment.php">
+                                    <i class="bi bi-sliders"></i>
+                                    <span class="nav-text">Item Adjusment</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+
             </ul>
         </div>
     </div>
-    
+
     <div class="sidebar-footer">
         <div class="user-profile-sidebar">
-            <div class="user-avatar-sidebar"><?php echo $user_initials; ?></div>
+            <div class="user-avatar-sidebar">
+                <?php echo htmlspecialchars($user_initials); ?>
+            </div>
+
             <div class="user-details-sidebar">
-                <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-                <span class="user-role-sidebar"><?php echo ucfirst($user_role); ?></span>
+                <span class="user-name-sidebar">
+                    <?php echo htmlspecialchars($user_name); ?>
+                </span>
+
+                <span class="user-role-sidebar">
+                    <?php echo htmlspecialchars(ucfirst($user_role)); ?>
+                </span>
             </div>
         </div>
+
         <button class="logout-btn-sidebar" onclick="logout()">
             <i class="bi bi-box-arrow-right"></i>
             <span class="logout-text">Logout</span>
@@ -4255,6 +6078,18 @@ function formatDateForInput($dateStr) {
         <div class="main-content" id="mainContent">
             <!-- PURCHASE ORDERS CONTENT -->
             <div id="dashboardContent" class="page-content active">
+                 <div class="navbar-top">
+                    <button class="mobile-toggle-btn" id="mobileToggleBtn"><i class="bi bi-list"></i></button>
+                    <div class="page-title">
+                        <h2>Receive Inventory</h2>
+                        <p id="dashboardSubtitle">Real-time inventory from database</p>
+                    </div>
+                    <div class="action-button-wrapper mb-0" id="newPoHeaderActionWrapper">
+                                <button class="btn-primary" onclick="showNewPOModal()">
+                                    <i class="bi bi-plus-circle me-1"></i> New PO
+                                </button>
+                            </div>
+                </div>
 
                 <!-- Alerts for missing columns -->
                 <?php if (!$po_branch_column_exists): ?>
@@ -4324,138 +6159,355 @@ function formatDateForInput($dateStr) {
 
                 <!-- RECEIVE INVENTORY SECTION -->
                 <div class="receive-inventory-section mb-5">
-                    <div class="receive-inventory-card">
-                        <div class="receive-inventory-header d-flex justify-content-between align-items-start flex-wrap gap-3">
-                            <div>
-                                <h4><i class="bi bi-inbox-fill"></i> Receive Inventory</h4>
-                                <p class="text-muted mb-0">Add received items from supplier or production</p>
-<<<<<<< HEAD
+                    <div class="receive-inventory-plain">
+
+                        <div class="po-qb-shell">
+                            <div class="po-qb-modebar">
+                                <div class="po-qb-mode-left">
+                                    <label class="po-qb-mode-option"><input type="radio" name="poQbMode" value="bill" checked> Bill</label>
+                                    <label class="po-qb-mode-option"><input type="radio" name="poQbMode" value="credit"> Credit</label>
+                                </div>
+
+                                <div class="po-qb-mode-center">
+                                    <div class="po-qb-payable-wrap">
+                                        <label class="po-qb-payable-label" for="poQbPayableAccount">Payable Account</label>
+                                        <select id="poQbPayableAccount" class="po-qb-mode-select">
+                                            <option value="">-- Select Payable Account --</option>
+                                            <?php $autoSelectPayableAccount = count($payable_accounts_list) === 1; ?>
+                                            <?php foreach ($payable_accounts_list as $payableAccount): ?>
+                                                <?php
+                                                    $payableAccountLabel = trim((string)($payableAccount['account_code'] ?? '')) !== ''
+                                                        ? trim((string)$payableAccount['account_code']) . ' - ' . trim((string)$payableAccount['account_title'])
+                                                        : trim((string)$payableAccount['account_title']);
+                                                ?>
+                                                <option value="<?= htmlspecialchars($payableAccount['account_title']) ?>" <?= $autoSelectPayableAccount ? 'selected' : '' ?>>
+                                                    <?= htmlspecialchars($payableAccountLabel) ?>
+                                                </option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="po-qb-mode-right">
+                                        <label class="po-qb-mode-option">
+                                            <input type="checkbox" id="poQbBillReceived" checked>
+                                            Bill Received
+                                        </label>
+
+                                        <label class="po-qb-mode-option">
+                                            <input type="checkbox" id="withPOCheckbox" name="withPO">
+                                            With PO?
+                                        </label>
+                                    </div>
                             </div>
-                            <div class="action-button-wrapper mb-0">
-                                <button class="btn-primary" onclick="showNewPOModal()">
-                                    <i class="bi bi-plus-circle me-1"></i> New PO
-                                </button>
+
+                            <div class="po-qb-check-attachment-row">
+                                <div class="po-qb-check-main">
+                                    <div class="po-qb-bill-card" id="poQbBillCard">
+                                <h1 class="po-qb-title" id="poQbTitle">Bill</h1>
+                                <div class="po-qb-bill-grid">
+                                    <div class="po-qb-left-panel">
+                                        <div class="po-qb-form-row">
+                                            <label class="po-qb-label" for="poQbPayee">Vendor</label>
+                                            <select id="poQbPayee" class="po-qb-select">
+                                                <option value="">-- Select Supplier --</option>
+                                                <?php foreach ($suppliers_list as $supplier): ?>
+                                                    <option value="<?= (int)$supplier['supplier_id'] ?>"
+                                                        data-name="<?= htmlspecialchars($supplier['supplier_name']) ?>"
+                                                        data-address="<?= htmlspecialchars($supplier['address'] ?? '') ?>"
+                                                        data-terms="<?= htmlspecialchars($supplier['payment_terms'] ?? '') ?>">
+                                                        <?= htmlspecialchars($supplier['supplier_name']) ?>
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+
+                                        <div class="po-qb-form-row po-qb-address-row">
+                                            <label class="po-qb-label" for="poQbAddress">Address</label>
+                                            <textarea class="po-qb-textarea" id="poQbAddress"></textarea>
+                                        </div>
+
+                                        <div class="po-qb-form-row po-qb-terms-row">
+                                            <label class="po-qb-label" for="poQbTerms">Terms</label>
+                                            <select id="poQbTerms" class="po-qb-select">
+                                                <option value=""></option>
+                                                <option>Due on receipt</option>
+                                                <option>Net 15</option>
+                                                <option>Net 30</option>
+                                                <option>Net 60</option>
+                                            </select>
+                                        </div>
+
+                                        <div class="po-qb-after-terms-grid">
+                                            <div class="po-qb-form-row po-qb-receive-only">
+                                                <label class="po-qb-label" for="poNumberDropdown">PO No.</label>
+                                                <select class="po-qb-select" id="poNumberDropdown">
+                                                    <option value="">-- Select PO --</option>
+                                                </select>
+                                            </div>
+                                            <input type="hidden" id="supplierReceiveDate" value="<?= date('Y-m-d') ?>">
+                                            <input type="hidden" id="supplierEncodedDate" value="<?= date('Y-m-d') ?>">
+                                            <div class="po-qb-form-row po-qb-bill-due-row">
+                                                <label class="po-qb-label" for="poQbBillDue">Bill Due</label>
+                                                <input type="date" class="po-qb-input" id="poQbBillDue" value="<?= date('Y-m-d', strtotime('+10 days')) ?>">
+                                            </div>
+                                        </div>
+
+                                        <div class="po-qb-memo-row">
+                                            <label class="po-qb-label" for="poQbMemo">Memo</label>
+                                            <input type="text" class="po-qb-input" id="poQbMemo">
+                                        </div>
+                                    </div>
+
+                                    <div class="po-qb-side-panel">
+                                        <div class="po-qb-side-row">
+                                            <label class="po-qb-label" for="poQbDate">Date</label>
+                                            <input type="date" class="po-qb-input" id="poQbDate" value="<?= date('Y-m-d') ?>">
+                                        </div>
+                                        <div class="po-qb-side-row">
+                                            <label class="po-qb-label" for="poQbRefNo">Ref. No.</label>
+                                            <input type="text" class="po-qb-input" id="poQbRefNo">
+                                        </div>
+                                        <div class="po-qb-side-row">
+                                            <label class="po-qb-label" for="poQbAmount" id="poQbAmountLabel">Amount Due</label>
+                                            <input type="number" class="po-qb-input" id="poQbAmount" value="0.00" step="0.01" min="0">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                                </div>
+                                <div class="po-qb-transaction-attachment-panel">
+                                    <h6 class="po-qb-attachment-title">Transaction Attachment</h6>
+                                    <div class="attachment-upload po-qb-attachment-upload">
+                                        <label for="supplierAttachments" class="form-label">Upload Attachment</label>
+                                        <input type="file" class="form-control" id="supplierAttachments" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
+                                        <small class="text-muted d-block mt-2">This attachment applies to the whole receive transaction.</small>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
                         <!-- TAB NAVIGATION -->
-                        <ul class="nav nav-tabs receive-tabs" role="tablist">
+                        <ul class="nav nav-tabs receive-tabs po-qb-tabs" role="tablist">
                             <li class="nav-item" role="presentation">
-                                <button class="nav-link active" id="supplierTab" data-bs-toggle="tab" data-bs-target="#supplierContent" type="button" role="tab" aria-controls="supplierContent" aria-selected="true">
-                                    <i class="bi bi-building"></i> Supplier
+                                <button class="nav-link active" id="expensesTab" data-bs-toggle="tab" data-bs-target="#expensesContent" type="button" role="tab" aria-controls="expensesContent" aria-selected="true">
+                                     Expenses <span class="po-qb-tab-amount" id="expenseTabAmount">₱0.00</span>
                                 </button>
                             </li>
 
                             <li class="nav-item" role="presentation">
-                                <button class="nav-link" id="rmrTab" data-bs-toggle="tab" data-bs-target="#rmrContent" type="button" role="tab" aria-controls="rmrContent" aria-selected="false">Returned Merchandise
+                                <button class="nav-link" id="supplierTab" data-bs-toggle="tab" data-bs-target="#supplierContent" type="button" role="tab" aria-controls="supplierContent" aria-selected="false">
+                                     Items <span class="po-qb-tab-amount" id="supplierTabAmount">₱0.00</span>
+                                </button>
+                            </li>
+                            <li class="nav-item" role="presentation">
+                                <button class="nav-link" id="rmrTab" data-bs-toggle="tab" data-bs-target="#rmrContent" type="button" role="tab" aria-controls="rmrContent" aria-selected="false">
+                                     Receive History
                                 </button>
                             </li>
                         </ul>
 
                         <!-- TAB CONTENT -->
                         <div class="tab-content receive-tab-content">
-                            <!-- SUPPLIER TAB -->
-                            <div class="tab-pane fade show active" id="supplierContent" role="tabpanel" aria-labelledby="supplierTab">
-                                <form id="supplierReceiveForm" class="receive-form">
-                                    <div class="form-section">
-                                        <h6 class="form-section-title">Supplier Information</h6>
-                                        <div class="row g-3">
-                                            <div class="col-md-6">
-                                                <label for="supplierDropdown" class="form-label">Supplier *</label>
-                                                <select class="form-select" id="supplierDropdown" required>
-                                                    <option value="">-- Select Supplier --</option>
-                                                    <?php foreach ($suppliers_list as $supplier): ?>
-                                                        <option value="<?= (int)$supplier['supplier_id'] ?>" data-name="<?= htmlspecialchars($supplier['supplier_name']) ?>" data-id="<?= (int)$supplier['supplier_id'] ?>">
-                                                            <?= htmlspecialchars($supplier['supplier_name']) ?>
-                                                        </option>
-                                                    <?php endforeach; ?>
-                                                </select>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <label for="poNumberDropdown" class="form-label">PO Number *</label>
-                                                <select class="form-select" id="poNumberDropdown" required>
-                                                    <option value="">-- Select PO --</option>
-                                                </select>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <div class="form-check form-switch">
-                                                    <input class="form-check-input" type="checkbox" id="withPOCheckbox" checked>
-                                                    <label class="form-check-label" for="withPOCheckbox">
-                                                        With PO?
-                                                    </label>
-                                                </div>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <label for="supplierReceiveDate" class="form-label">Receive Date *</label>
-                                                <input type="date" class="form-control" id="supplierReceiveDate" required>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <label for="supplierEncodedDate" class="form-label">Date Encoded *</label>
-                                                <input type="date" class="form-control" id="supplierEncodedDate" required>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <label for="itemSelector" class="form-label">Item Name</label>
-                                                <select class="form-select" id="itemSelector">
-                                                    <option value="">-- Select Item --</option>
-                                                    <?php foreach ($items_list as $item): ?>
-                                                        <option value="<?= (int)$item['item_id'] ?>"><?= htmlspecialchars($item['item_name']) ?></option>
-                                                    <?php endforeach; ?>
-                                                    <option value="__new__">+ Add New Item</option>
-                                                </select>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <label for="itemQty" class="form-label">Qty</label>
-                                                <input type="number" class="form-control" id="itemQty" placeholder="0" min="0" step="0.01">
-                                            </div>
-                                            <div class="col-md-3" id="newItemNameWrapper" style="display:none;">
-                                                <label for="newItemName" class="form-label">New Item Name</label>
-                                                <input type="text" class="form-control" id="newItemName" placeholder="Enter item name">
-                                            </div>
-                                            <div class="col-md-3">
-                                                <label for="itemCode" class="form-label">Item Code</label>
-                                                <input type="text" class="form-control" id="itemCode" placeholder="Item code">
-                                            </div>
-                                            <div class="col-md-3">
-                                                <label for="itemDescription" class="form-label">Item Description</label>
-                                                <input type="text" class="form-control" id="itemDescription" placeholder="Item description">
-                                            </div>
-                                            <div class="col-md-3">
-                                                <label for="itemCategory" class="form-label">Category</label>
-                                                <input type="text" class="form-control" id="itemCategory" placeholder="Category">
-                                            </div>
-                                            <div class="col-md-3" id="itemUomSelectWrapper" style="display:none;">
-                                                <label for="itemUoM" class="form-label">UoM</label>
-                                                <select class="form-select" id="itemUoM">
-                                                    <option value="">-- Select UoM --</option>
-                                                </select>
-                                            </div>
-                                            <div class="col-md-3" id="newItemUomWrapper" style="display:none;">
-                                                <label for="newItemUom" class="form-label">UoM</label>
-                                                <input type="text" class="form-control" id="newItemUom" placeholder="UoM">
-                                            </div>
-                                            <div class="col-md-3">
-                                                <label for="itemPrice" class="form-label">Unit Cost</label>
-                                                <input type="number" class="form-control" id="itemPrice" placeholder="0.00" min="0" step="0.01">
-                                            </div>
-                                            <div class="col-md-9">
-                                                <div id="selectedItemPreview" class="alert alert-light border mb-0" style="display:none;"></div>
-                                            </div>
-                                            <div class="col-md-12 d-flex justify-content-start">
-                                                <button type="button" class="btn btn-success" id="addReceiveItemBtn">
-                                                    <i class="bi bi-plus-circle"></i> Add to Table
-                                                </button>
-                                            </div>
+                            <!-- EXPENSES TAB -->
+                            <div class="tab-pane fade show active" id="expensesContent" role="tabpanel" aria-labelledby="expensesTab">
+                                <form id="expenseEntryForm" class="receive-form">
+                                    <div class="po-qb-sheet">
+                                        <div class="po-qb-grid-wrap">
+                                            <?php
+                                                $expenseAccountTypeOptions = [];
+                                                foreach ($chart_accounts_list as $account) {
+                                                    $type = trim((string)($account['account_type'] ?? ''));
+                                                    if ($type === '') continue;
+                                                    $expenseAccountTypeOptions[strtolower($type)] = $type;
+                                                }
+                                                asort($expenseAccountTypeOptions, SORT_NATURAL | SORT_FLAG_CASE);
+                                            ?>
+                                            <table class="po-qb-grid expense-entry-table mb-0">
+                                                <thead>
+                                                    <tr>
+                                                        <th style="width:30%;">Account Title</th>
+                                                        <th style="width:14%;">Amount</th>
+                                                        <th>Memo</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="expenseRowsBody">
+                                                    <?php for ($expenseBlankRow = 0; $expenseBlankRow < 10; $expenseBlankRow++): ?>
+                                                        <tr class="expense-row">
+                                                            <td class="expense-account-cell">
+                                                                <div class="qb-account-picker expense-account-combo">
+                                                                    <input type="text" class="expense-account-input" autocomplete="off">
+                                                                    <button type="button" class="qb-account-toggle" tabindex="-1" aria-label="Open account type list"><i class="bi bi-chevron-down"></i></button>
+                                                                </div>
+                                                            </td>
+                                                            <td><input type="number" class="expense-amount-input" min="0.01" step="0.01" autocomplete="off"></td>
+                                                            <td><input type="text" class="expense-memo-input" autocomplete="off"></td>
+                                                        </tr>
+                                                    <?php endfor; ?>
+                                                </tbody>
+                                            </table>
                                         </div>
                                     </div>
 
-                                    <div class="form-section">
-                                        <h6 class="form-section-title">Attachments</h6>
-                                        <div class="attachment-upload">
-                                            <label for="supplierAttachments" class="form-label">Upload Files</label>
-                                            <input type="file" class="form-control" id="supplierAttachments" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
-                                            <small class="text-muted d-block mt-2">Accepted formats: PDF, JPG, PNG, DOC, DOCX</small>
+                                    <div class="po-qb-actions">
+                                        <button type="submit" class="btn btn-light border" id="saveExpenseCloseBtn" data-save-mode="close">Save &amp; Close</button>
+                                        <button type="submit" class="btn btn-primary" id="saveExpenseBtn" data-save-mode="new">Save &amp; New</button>
+                                        <button type="button" class="btn po-qb-clear" id="clearExpenseSheetBtn">Clear</button>
+                                    </div>
+                                    <div class="d-none">
+                                        <span id="expenseGrandTotal">₱0.00</span>
+                                        <button type="button" id="addExpenseRowBtn">Add Row</button>
+                                    </div>
+                                </form>
+                            </div>
+
+                            <div class="modal fade" id="expenseDetailsModal" tabindex="-1" aria-hidden="true">
+                                <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                            <h5 class="modal-title"><i class="bi bi-receipt me-2"></i>Expense Details</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                            <div class="row g-3 mb-3">
+                                                <div class="col-md-4">
+                                                    <div class="expense-detail-muted">Expense No.</div>
+                                                    <strong id="expenseDetailsNo">-</strong>
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <div class="expense-detail-muted">Date</div>
+                                                    <strong id="expenseDetailsDate">-</strong>
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <div class="expense-detail-muted">Status</div>
+                                                    <strong id="expenseDetailsStatus">-</strong>
+                                                </div>
+                                            </div>
+                                            <div class="row g-3 mb-3">
+                                                <div class="col-md-4">
+                                                    <div class="expense-detail-muted">Total Amount</div>
+                                                    <strong id="expenseDetailsTotal">₱0.00</strong>
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <div class="expense-detail-muted">Paid</div>
+                                                    <strong id="expenseDetailsPaid">₱0.00</strong>
+                                                </div>
+                                                <div class="col-md-4">
+                                                    <div class="expense-detail-muted">Balance</div>
+                                                    <strong id="expenseDetailsBalance">₱0.00</strong>
+                                                </div>
+                                            </div>
+                                            <div class="row g-3 mb-3">
+                                                <div class="col-md-6">
+                                                    <div class="expense-detail-info-card">
+                                                        <div class="expense-detail-muted">Created By</div>
+                                                        <strong id="expenseDetailsCreatedBy">-</strong>
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <div class="expense-detail-info-card">
+                                                        <div class="expense-detail-muted">Created At</div>
+                                                        <strong id="expenseDetailsCreatedAt">-</strong>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div class="expense-details-list" id="expenseDetailsLines">
+                                                <div class="expense-detail-line expense-detail-head">
+                                                    <div>Account</div>
+                                                    <div>Amount</div>
+                                                    <div>Memo</div>
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+
+                            <!-- SUPPLIER TAB -->
+                            <div class="tab-pane fade" id="supplierContent" role="tabpanel" aria-labelledby="supplierTab">
+                                <form id="supplierReceiveForm" class="receive-form">
+                                    <div class="po-qb-sheet item-entry-sheet">
+                                        <div class="po-qb-grid-wrap item-entry-grid-wrap">
+                                            <select class="d-none" id="supplierDropdown" aria-hidden="true" tabindex="-1">
+                                                <option value="">-- Select Supplier --</option>
+                                                <?php foreach ($suppliers_list as $supplier): ?>
+                                                    <option value="<?= (int)$supplier['supplier_id'] ?>" data-name="<?= htmlspecialchars($supplier['supplier_name']) ?>" data-id="<?= (int)$supplier['supplier_id'] ?>">
+                                                        <?= htmlspecialchars($supplier['supplier_name']) ?>
+                                                    </option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                            <table class="po-qb-grid item-entry-table mb-0">
+                                                <thead>
+                                                    <tr>
+                                                        <th style="width:22%;">Item Name</th>
+                                                        <th style="width:8%;">Qty</th>
+                                                        <th style="width:28%;">Item Code / Description</th>
+                                                        <th style="width:10%;">UOM</th>
+                                                        <th style="width:10%;">Unit Cost</th>
+                                                        <th style="width:10%;">Discount</th>
+                                                        <th style="width:12%;">Total Unit Cost</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody id="supplierItemEntryBody">
+                                                    <?php for ($receiveRowIndex = 0; $receiveRowIndex < 10; $receiveRowIndex++): ?>
+                                                        <?php $isFirstReceiveRow = $receiveRowIndex === 0; ?>
+                                                        <tr class="item-entry-row item-entry-row-empty" data-row-index="<?= $receiveRowIndex ?>">
+                                                            <td>
+                                                                <select class="item-entry-select receive-item-selector" id="<?= $isFirstReceiveRow ? 'itemSelector' : 'itemSelector_' . $receiveRowIndex ?>" data-row-index="<?= $receiveRowIndex ?>">
+                                                                    <option value="">-- Select Item --</option>
+                                                                    <?php foreach ($items_by_category as $category_name => $category_items): ?>
+                                                                        <optgroup label="<?= htmlspecialchars($category_name) ?>">
+                                                                            <?php foreach ($category_items as $item): ?>
+                                                                                <option value="<?= (int)$item['item_id'] ?>"><?= htmlspecialchars($item['item_name']) ?></option>
+                                                                            <?php endforeach; ?>
+                                                                        </optgroup>
+                                                                    <?php endforeach; ?>
+                                                                    <option value="__new__">+ Add New Item</option>
+                                                                </select>
+                                                                <div class="new-item-name-wrapper" id="<?= $isFirstReceiveRow ? 'newItemNameWrapper' : 'newItemNameWrapper_' . $receiveRowIndex ?>" style="display:none;">
+                                                                    <input type="text" class="item-entry-input mt-1 new-item-name" id="<?= $isFirstReceiveRow ? 'newItemName' : 'newItemName_' . $receiveRowIndex ?>" data-row-index="<?= $receiveRowIndex ?>" placeholder="Enter new item name">
+                                                                </div>
+                                                            </td>
+                                                            <td>
+                                                                <input type="number" class="item-entry-input text-end receive-item-qty" id="<?= $isFirstReceiveRow ? 'itemQty' : 'itemQty_' . $receiveRowIndex ?>" data-row-index="<?= $receiveRowIndex ?>" placeholder="0" min="0" step="0.01">
+                                                            </td>
+                                                            <td>
+                                                                <input type="text" class="item-entry-input receive-item-code" id="<?= $isFirstReceiveRow ? 'itemCode' : 'itemCode_' . $receiveRowIndex ?>" data-row-index="<?= $receiveRowIndex ?>" placeholder="Item code - Description">
+                                                                <input type="hidden" class="receive-item-description" id="<?= $isFirstReceiveRow ? 'itemDescription' : 'itemDescription_' . $receiveRowIndex ?>">
+                                                                <input type="hidden" class="receive-item-category" id="<?= $isFirstReceiveRow ? 'itemCategory' : 'itemCategory_' . $receiveRowIndex ?>" value="">
+                                                            </td>
+                                                            <td>
+                                                                <div class="item-uom-select-wrapper" id="<?= $isFirstReceiveRow ? 'itemUomSelectWrapper' : 'itemUomSelectWrapper_' . $receiveRowIndex ?>" style="display:none;">
+                                                                    <select class="item-entry-select receive-item-uom" id="<?= $isFirstReceiveRow ? 'itemUoM' : 'itemUoM_' . $receiveRowIndex ?>" data-row-index="<?= $receiveRowIndex ?>">
+                                                                        <option value="">-- UOM --</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div class="new-item-uom-wrapper" id="<?= $isFirstReceiveRow ? 'newItemUomWrapper' : 'newItemUomWrapper_' . $receiveRowIndex ?>" style="display:none;">
+                                                                    <input type="text" class="item-entry-input new-item-uom" id="<?= $isFirstReceiveRow ? 'newItemUom' : 'newItemUom_' . $receiveRowIndex ?>" data-row-index="<?= $receiveRowIndex ?>" placeholder="UOM">
+                                                                </div>
+                                                            </td>
+                                                            <td>
+                                                                <input type="number" class="item-entry-input text-end receive-item-price" id="<?= $isFirstReceiveRow ? 'itemPrice' : 'itemPrice_' . $receiveRowIndex ?>" data-row-index="<?= $receiveRowIndex ?>" placeholder="0.00" min="0" step="0.01">
+                                                            </td>
+                                                            <td>
+                                                                <input type="text" class="item-entry-input text-end receive-item-discount" id="<?= $isFirstReceiveRow ? 'itemDiscount' : 'itemDiscount_' . $receiveRowIndex ?>" data-row-index="<?= $receiveRowIndex ?>" placeholder="0 or 0%" autocomplete="off" inputmode="decimal">
+                                                            </td>
+                                                            <td>
+                                                                <input type="text" class="item-entry-input text-end receive-item-total-unit-cost" id="<?= $isFirstReceiveRow ? 'itemTotalUnitCost' : 'itemTotalUnitCost_' . $receiveRowIndex ?>" data-row-index="<?= $receiveRowIndex ?>" value="₱0.00" readonly>
+                                                            </td>
+                                                        </tr>
+                                                    <?php endfor; ?>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+
+                                    <div class="po-qb-actions item-entry-actions">
+                                        <button type="button" class="btn btn-light border" id="saveItemCloseBtn" data-save-mode="close">Save &amp; Close</button>
+                                        <button type="button" class="btn btn-primary" id="saveItemNewBtn" data-save-mode="new">Save &amp; New</button>
+                                        <button type="button" class="btn po-qb-clear" id="clearItemSheetBtn">Clear</button>
+                                    </div>
+
                                 </form>
                             </div>
 
@@ -4469,10 +6521,7 @@ function formatDateForInput($dateStr) {
                                                 <label for="productionReceiveDate" class="form-label">Receive Date *</label>
                                                 <input type="date" class="form-control" id="productionReceiveDate" required>
                                             </div>
-                                            <div class="col-md-6">
-                                                <label for="productionEncodedDate" class="form-label">Date Encoded *</label>
-                                                <input type="date" class="form-control" id="productionEncodedDate" required>
-                                            </div>
+                                            <input type="hidden" id="productionEncodedDate" value="<?= date('Y-m-d') ?>">
                                             <div class="col-md-6">
                                                 <input type="hidden" id="productionTotalItems" value="">
                                             </div>
@@ -4480,8 +6529,12 @@ function formatDateForInput($dateStr) {
                                                 <label for="productionItemSelector" class="form-label">Item Name</label>
                                                 <select class="form-select" id="productionItemSelector">
                                                     <option value="">-- Select Item --</option>
-                                                    <?php foreach ($items_list as $item): ?>
-                                                        <option value="<?= (int)$item['item_id'] ?>"><?= htmlspecialchars($item['item_name']) ?></option>
+                                                    <?php foreach ($items_by_category as $category_name => $category_items): ?>
+                                                        <optgroup label="<?= htmlspecialchars($category_name) ?>">
+                                                            <?php foreach ($category_items as $item): ?>
+                                                                <option value="<?= (int)$item['item_id'] ?>"><?= htmlspecialchars($item['item_name']) ?></option>
+                                                            <?php endforeach; ?>
+                                                        </optgroup>
                                                     <?php endforeach; ?>
                                                     <option value="__new__">+ Add New Item</option>
                                                 </select>
@@ -4494,17 +6547,11 @@ function formatDateForInput($dateStr) {
                                                 <label for="productionNewItemName" class="form-label">New Item Name</label>
                                                 <input type="text" class="form-control" id="productionNewItemName" placeholder="Enter item name">
                                             </div>
-                                            <div class="col-md-3">
-                                                <label for="productionItemCode" class="form-label">Item Code</label>
-                                                <input type="text" class="form-control" id="productionItemCode" placeholder="Item code">
-                                            </div>
-                                            <div class="col-md-3">
-                                                <label for="productionItemDescription" class="form-label">Item Description</label>
-                                                <input type="text" class="form-control" id="productionItemDescription" placeholder="Item description">
-                                            </div>
-                                            <div class="col-md-3">
-                                                <label for="productionItemCategory" class="form-label">Category</label>
-                                                <input type="text" class="form-control" id="productionItemCategory" placeholder="Category">
+                                            <div class="col-md-6">
+                                                <label for="productionItemCode" class="form-label">Item Code / Description</label>
+                                                <input type="text" class="form-control" id="productionItemCode" placeholder="Item code - Description">
+                                                <input type="hidden" id="productionItemDescription">
+                                                <input type="hidden" id="productionItemCategory" value="">
                                             </div>
                                             <div class="col-md-3" id="productionItemUomSelectWrapper" style="display:none;">
                                                 <label for="productionItemUoM" class="form-label">UoM</label>
@@ -4542,393 +6589,13 @@ function formatDateForInput($dateStr) {
                                 </form>
                             </div>
 
-                            <!-- RETURNED MERCHANDISE TAB -->
+                            <!-- RECEIVE HISTORY TAB -->
                             <div class="tab-pane fade" id="rmrContent" role="tabpanel" aria-labelledby="rmrTab">
-                                <form id="rmrReceiveForm" class="receive-form">
-                                    <div class="form-section">
-                                        <h6 class="form-section-title">Returned Merchandise Information</h6>
-                                        <div class="row g-3">
-                                            <div class="col-md-8">
-                                                <label for="rmrRequestDropdown" class="form-label">Confirmed / Processed RMR Request *</label>
-                                                <select class="form-select" id="rmrRequestDropdown" required>
-                                                    <option value="">-- Select RMR Request --</option>
-                                                    <?php foreach ($rmr_requests_list as $rmr): ?>
-                                                        <option
-                                                            value="<?= (int)$rmr['rmr_id'] ?>"
-                                                            data-item-id="<?= (int)$rmr['item_id'] ?>"
-                                                            data-item-name="<?= htmlspecialchars($rmr['item_name'] ?? '') ?>"
-                                                            data-item-code="<?= htmlspecialchars($rmr['item_code'] ?? '') ?>"
-                                                            data-item-description="<?= htmlspecialchars($rmr['item_description'] ?? ($rmr['item_name'] ?? '')) ?>"
-                                                            data-qty="<?= htmlspecialchars((string)($rmr['quantity'] ?? 0)) ?>"
-                                                            data-uom="<?= htmlspecialchars($rmr['unit_type'] ?? '') ?>"
-                                                            data-price="<?= htmlspecialchars((string)($rmr['unit_price'] ?? 0)) ?>"
-                                                            data-status="<?= htmlspecialchars($rmr['status'] ?? '') ?>"
-                                                            data-customer="<?= htmlspecialchars($rmr['customer_name'] ?? '') ?>"
-                                                            data-reason="<?= htmlspecialchars($rmr['reason'] ?? '') ?>">
-                                                            <?= htmlspecialchars(($rmr['rmr_number'] ?? ('RMR-' . $rmr['rmr_id'])) . ' - ' . (($rmr['customer_name'] ?? '') !== '' ? ($rmr['customer_name'] . ' - ') : '') . ($rmr['item_name'] ?? 'Item') . ' - Qty: ' . ($rmr['quantity'] ?? 0) . ' ' . ($rmr['unit_type'] ?? '')) ?>
-                                                        </option>
-                                                    <?php endforeach; ?>
-                                                </select>
-                                                <small class="text-muted d-block mt-2">Only confirmed or processed RMR requests that are not yet returned to inventory are shown here.</small>
-                                            </div>
-                                            <div class="col-md-4">
-                                                <label for="rmrReceiveDate" class="form-label">Receive Date *</label>
-                                                <input type="date" class="form-control" id="rmrReceiveDate" required>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <label for="rmrEncodedDate" class="form-label">Date Encoded *</label>
-                                                <input type="date" class="form-control" id="rmrEncodedDate" required>
-                                            </div>
-                                            <div class="col-12">
-                                                <div id="rmrRequestPreview" class="alert alert-light border mb-0" style="display:none;"></div>
-                                            </div>
-                                            <div class="col-md-12 d-flex justify-content-start">
-                                                <button type="button" class="btn btn-success" id="addRmrReceiveItemBtn">
-                                                    <i class="bi bi-plus-circle"></i> Add RMR Item to Table
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-
-                        <!-- ITEM TABLE -->
-                        <div class="receive-table-section mt-4">
-                            <h6 class="form-section-title">Received Items</h6>
-                            <div class="table-container-receive">
-                                <table class="table receive-items-table" id="receiveItemsTable">
-                                    <thead>
-                                        <tr>
-                                            <th>Item Name</th>
-                                            <th>Item Code</th>
-                                            <th>Item Description</th>
-                                            <th>Category</th>
-                                            <th>Qty</th>
-                                            <th>UoM</th>
-                                            <th>Unit Cost</th>
-                                            <th>Total Price</th>
-                                            <th>Action</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="receiveItemsTableBody">
-                                        <tr class="text-center text-muted">
-                                            <td colspan="9">No items added yet</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-
-                        <!-- MEMO AND FORM CONTROLS -->
-                        <div class="receive-form-controls mt-4 align-items-end flex-wrap gap-3">
-                            <div class="flex-grow-1" style="min-width: 280px; max-width: 650px;">
-                                <label for="receiveMemo" class="form-label mb-1">Memo</label>
-                                <textarea class="form-control" id="receiveMemo" rows="3" placeholder="Enter memo / receipt notes...(Optional)" style="resize: vertical;"></textarea>
-                                </div>
-                            <div class="d-flex gap-2 ms-auto">
-                                <button type="button" class="btn btn-secondary" onclick="clearReceiveForm()">
-                                    <i class="bi bi-arrow-clockwise me-1"></i> Clear
-                                </button>
-                                <button type="button" class="btn btn-primary" id="submitReceiveBtn" onclick="submitReceiveInventory()">
-                                    <i class="bi bi-check-circle me-1"></i> Submit Receipt
-                                </button>
-                            </div>
-=======
-                            </div>
-                            <div class="action-button-wrapper mb-0">
-                                <button class="btn-primary" onclick="showNewPOModal()">
-                                    <i class="bi bi-plus-circle me-1"></i> New PO
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- TAB NAVIGATION -->
-                        <ul class="nav nav-tabs receive-tabs" role="tablist">
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link active" id="supplierTab" data-bs-toggle="tab" data-bs-target="#supplierContent" type="button" role="tab" aria-controls="supplierContent" aria-selected="true">
-                                    <i class="bi bi-building"></i> Supplier
-                                </button>
-                            </li>
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link" id="productionTab" data-bs-toggle="tab" data-bs-target="#productionContent" type="button" role="tab" aria-controls="productionContent" aria-selected="false">
-                                    <i class="bi bi-factory"></i> Production
-                                </button>
-                            </li>
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link" id="rmrTab" data-bs-toggle="tab" data-bs-target="#rmrContent" type="button" role="tab" aria-controls="rmrContent" aria-selected="false">
-                                    <i class="bi bi-arrow-return-left"></i> Returned Merchandise
-                                </button>
-                            </li>
-                        </ul>
-
-                        <!-- TAB CONTENT -->
-                        <div class="tab-content receive-tab-content">
-                            <!-- SUPPLIER TAB -->
-                            <div class="tab-pane fade show active" id="supplierContent" role="tabpanel" aria-labelledby="supplierTab">
-                                <form id="supplierReceiveForm" class="receive-form">
-                                    <div class="form-section">
-                                        <h6 class="form-section-title">Supplier Information</h6>
-                                        <div class="row g-3">
-                                            <div class="col-md-6">
-                                                <label for="supplierDropdown" class="form-label">Supplier *</label>
-                                                <select class="form-select" id="supplierDropdown" required>
-                                                    <option value="">-- Select Supplier --</option>
-                                                    <?php foreach ($suppliers_list as $supplier): ?>
-                                                        <option value="<?= (int)$supplier['supplier_id'] ?>" data-name="<?= htmlspecialchars($supplier['supplier_name']) ?>" data-id="<?= (int)$supplier['supplier_id'] ?>">
-                                                            <?= htmlspecialchars($supplier['supplier_name']) ?>
-                                                        </option>
-                                                    <?php endforeach; ?>
-                                                </select>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <label for="poNumberDropdown" class="form-label">PO Number *</label>
-                                                <select class="form-select" id="poNumberDropdown" required>
-                                                    <option value="">-- Select PO --</option>
-                                                </select>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <div class="form-check form-switch">
-                                                    <input class="form-check-input" type="checkbox" id="withPOCheckbox" checked>
-                                                    <label class="form-check-label" for="withPOCheckbox">
-                                                        With PO?
-                                                    </label>
-                                                </div>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <label for="supplierReceiveDate" class="form-label">Receive Date *</label>
-                                                <input type="date" class="form-control" id="supplierReceiveDate" required>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <label for="itemSelector" class="form-label">Item Name</label>
-                                                <select class="form-select" id="itemSelector">
-                                                    <option value="">-- Select Item --</option>
-                                                    <?php foreach ($items_list as $item): ?>
-                                                        <option value="<?= (int)$item['item_id'] ?>"><?= htmlspecialchars($item['item_name']) ?></option>
-                                                    <?php endforeach; ?>
-                                                    <option value="__new__">+ Add New Item</option>
-                                                </select>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <label for="itemQty" class="form-label">Qty</label>
-                                                <input type="number" class="form-control" id="itemQty" placeholder="0" min="0" step="0.01">
-                                            </div>
-                                            <div class="col-md-3" id="newItemNameWrapper" style="display:none;">
-                                                <label for="newItemName" class="form-label">New Item Name</label>
-                                                <input type="text" class="form-control" id="newItemName" placeholder="Enter item name">
-                                            </div>
-                                            <div class="col-md-3">
-                                                <label for="itemCode" class="form-label">Item Code</label>
-                                                <input type="text" class="form-control" id="itemCode" placeholder="Item code">
-                                            </div>
-                                            <div class="col-md-3">
-                                                <label for="itemDescription" class="form-label">Item Description</label>
-                                                <input type="text" class="form-control" id="itemDescription" placeholder="Item description">
-                                            </div>
-                                            <div class="col-md-3" id="itemUomSelectWrapper" style="display:none;">
-                                                <label for="itemUoM" class="form-label">UoM</label>
-                                                <select class="form-select" id="itemUoM">
-                                                    <option value="">-- Select UoM --</option>
-                                                </select>
-                                            </div>
-                                            <div class="col-md-3" id="newItemUomWrapper" style="display:none;">
-                                                <label for="newItemUom" class="form-label">UoM</label>
-                                                <input type="text" class="form-control" id="newItemUom" placeholder="UoM">
-                                            </div>
-                                            <div class="col-md-3">
-                                                <label for="itemPrice" class="form-label">Unit Price</label>
-                                                <input type="number" class="form-control" id="itemPrice" placeholder="0.00" min="0" step="0.01">
-                                            </div>
-                                            <div class="col-md-9">
-                                                <div id="selectedItemPreview" class="alert alert-light border mb-0" style="display:none;"></div>
-                                            </div>
-                                            <div class="col-md-12 d-flex justify-content-start">
-                                                <button type="button" class="btn btn-success" id="addReceiveItemBtn">
-                                                    <i class="bi bi-plus-circle"></i> Add to Table
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div class="form-section">
-                                        <h6 class="form-section-title">Attachments</h6>
-                                        <div class="attachment-upload">
-                                            <label for="supplierAttachments" class="form-label">Upload Files</label>
-                                            <input type="file" class="form-control" id="supplierAttachments" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
-                                            <small class="text-muted d-block mt-2">Accepted formats: PDF, JPG, PNG, DOC, DOCX</small>
-                                        </div>
-                                    </div>
-                                </form>
-                            </div>
-
-                            <!-- PRODUCTION TAB -->
-                            <div class="tab-pane fade" id="productionContent" role="tabpanel" aria-labelledby="productionTab">
-                                <form id="productionReceiveForm" class="receive-form">
-                                    <div class="form-section">
-                                        <h6 class="form-section-title">Production Information</h6>
-                                        <div class="row g-3">
-                                            <div class="col-md-6">
-                                                <label for="productionReceiveDate" class="form-label">Receive Date *</label>
-                                                <input type="date" class="form-control" id="productionReceiveDate" required>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <input type="hidden" id="productionTotalItems" value="">
-                                            </div>
-                                            <div class="col-md-6">
-                                                <label for="productionItemSelector" class="form-label">Item Name</label>
-                                                <select class="form-select" id="productionItemSelector">
-                                                    <option value="">-- Select Item --</option>
-                                                    <?php foreach ($items_list as $item): ?>
-                                                        <option value="<?= (int)$item['item_id'] ?>"><?= htmlspecialchars($item['item_name']) ?></option>
-                                                    <?php endforeach; ?>
-                                                    <option value="__new__">+ Add New Item</option>
-                                                </select>
-                                            </div>
-                                            <div class="col-md-6">
-                                                <label for="productionItemQty" class="form-label">Qty</label>
-                                                <input type="number" class="form-control" id="productionItemQty" placeholder="0" min="0" step="0.01">
-                                            </div>
-                                            <div class="col-md-3" id="productionNewItemNameWrapper" style="display:none;">
-                                                <label for="productionNewItemName" class="form-label">New Item Name</label>
-                                                <input type="text" class="form-control" id="productionNewItemName" placeholder="Enter item name">
-                                            </div>
-                                            <div class="col-md-3">
-                                                <label for="productionItemCode" class="form-label">Item Code</label>
-                                                <input type="text" class="form-control" id="productionItemCode" placeholder="Item code">
-                                            </div>
-                                            <div class="col-md-3">
-                                                <label for="productionItemDescription" class="form-label">Item Description</label>
-                                                <input type="text" class="form-control" id="productionItemDescription" placeholder="Item description">
-                                            </div>
-                                            <div class="col-md-3" id="productionItemUomSelectWrapper" style="display:none;">
-                                                <label for="productionItemUoM" class="form-label">UoM</label>
-                                                <select class="form-select" id="productionItemUoM">
-                                                    <option value="">-- Select UoM --</option>
-                                                </select>
-                                            </div>
-                                            <div class="col-md-3" id="productionNewItemUomWrapper" style="display:none;">
-                                                <label for="productionNewItemUom" class="form-label">UoM</label>
-                                                <input type="text" class="form-control" id="productionNewItemUom" placeholder="UoM">
-                                            </div>
-                                            <div class="col-md-3">
-                                                <label for="productionItemPrice" class="form-label">Unit Price</label>
-                                                <input type="number" class="form-control" id="productionItemPrice" placeholder="0.00" min="0" step="0.01">
-                                            </div>
-                                            <div class="col-md-9">
-                                                <div id="productionSelectedItemPreview" class="alert alert-light border mb-0" style="display:none;"></div>
-                                            </div>
-                                            <div class="col-md-12 d-flex justify-content-start">
-                                                <button type="button" class="btn btn-success" id="addProductionReceiveItemBtn">
-                                                    <i class="bi bi-plus-circle"></i> Add to Table
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-
-                                    <div class="form-section">
-                                        <h6 class="form-section-title">Attachments</h6>
-                                        <div class="attachment-upload">
-                                            <label for="productionAttachments" class="form-label">Upload Files</label>
-                                            <input type="file" class="form-control" id="productionAttachments" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx">
-                                            <small class="text-muted d-block mt-2">Accepted formats: PDF, JPG, PNG, DOC, DOCX</small>
-                                        </div>
-                                    </div>
-                                </form>
-                            </div>
-
-                            <!-- RETURNED MERCHANDISE TAB -->
-                            <div class="tab-pane fade" id="rmrContent" role="tabpanel" aria-labelledby="rmrTab">
-                                <form id="rmrReceiveForm" class="receive-form">
-                                    <div class="form-section">
-                                        <h6 class="form-section-title">Returned Merchandise Information</h6>
-                                        <div class="row g-3">
-                                            <div class="col-md-8">
-                                                <label for="rmrRequestDropdown" class="form-label">Confirmed / Processed RMR Request *</label>
-                                                <select class="form-select" id="rmrRequestDropdown" required>
-                                                    <option value="">-- Select RMR Request --</option>
-                                                    <?php foreach ($rmr_requests_list as $rmr): ?>
-                                                        <option
-                                                            value="<?= (int)$rmr['rmr_id'] ?>"
-                                                            data-item-id="<?= (int)$rmr['item_id'] ?>"
-                                                            data-item-name="<?= htmlspecialchars($rmr['item_name'] ?? '') ?>"
-                                                            data-item-code="<?= htmlspecialchars($rmr['item_code'] ?? '') ?>"
-                                                            data-item-description="<?= htmlspecialchars($rmr['item_description'] ?? ($rmr['item_name'] ?? '')) ?>"
-                                                            data-qty="<?= htmlspecialchars((string)($rmr['quantity'] ?? 0)) ?>"
-                                                            data-uom="<?= htmlspecialchars($rmr['unit_type'] ?? '') ?>"
-                                                            data-price="<?= htmlspecialchars((string)($rmr['unit_price'] ?? 0)) ?>"
-                                                            data-status="<?= htmlspecialchars($rmr['status'] ?? '') ?>"
-                                                            data-customer="<?= htmlspecialchars($rmr['customer_name'] ?? '') ?>"
-                                                            data-reason="<?= htmlspecialchars($rmr['reason'] ?? '') ?>">
-                                                            <?= htmlspecialchars(($rmr['rmr_number'] ?? ('RMR-' . $rmr['rmr_id'])) . ' - ' . ($rmr['item_name'] ?? 'Item') . ' - Qty: ' . ($rmr['quantity'] ?? 0) . ' ' . ($rmr['unit_type'] ?? '')) ?>
-                                                        </option>
-                                                    <?php endforeach; ?>
-                                                </select>
-                                                <small class="text-muted d-block mt-2">Only confirmed or processed RMR requests that are not yet returned to inventory are shown here.</small>
-                                            </div>
-                                            <div class="col-md-4">
-                                                <label for="rmrReceiveDate" class="form-label">Receive Date *</label>
-                                                <input type="date" class="form-control" id="rmrReceiveDate" required>
-                                            </div>
-                                            <div class="col-12">
-                                                <div id="rmrRequestPreview" class="alert alert-light border mb-0" style="display:none;"></div>
-                                            </div>
-                                            <div class="col-md-12 d-flex justify-content-start">
-                                                <button type="button" class="btn btn-success" id="addRmrReceiveItemBtn">
-                                                    <i class="bi bi-plus-circle"></i> Add RMR Item to Table
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-
-                        <!-- ITEM TABLE -->
-                        <div class="receive-table-section mt-4">
-                            <h6 class="form-section-title">Received Items</h6>
-                            <div class="table-container-receive">
-                                <table class="table receive-items-table" id="receiveItemsTable">
-                                    <thead>
-                                        <tr>
-                                            <th>Item Name</th>
-                                            <th>Item Code</th>
-                                            <th>Item Description</th>
-                                            <th>Qty</th>
-                                            <th>UoM</th>
-                                            <th>Unit Price</th>
-                                            <th>Total Price</th>
-                                            <th>Action</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody id="receiveItemsTableBody">
-                                        <tr class="text-center text-muted">
-                                            <td colspan="8">No items added yet</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
-                            </div>
-                        </div>
-
-                        <!-- FORM CONTROLS -->
-                        <div class="receive-form-controls mt-4">
-                            <button type="button" class="btn btn-secondary" onclick="clearReceiveForm()">
-                                <i class="bi bi-arrow-clockwise me-1"></i> Clear
-                            </button>
-                            <button type="button" class="btn btn-primary" id="submitReceiveBtn" onclick="submitReceiveInventory()">
-                                <i class="bi bi-check-circle me-1"></i> Submit Receipt
-                            </button>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
-                        </div>
-                    </div>
-
-
-                <div class="receive-table-section mb-5">
-                    <div class="receive-inventory-card">
+                <div class="receive-table-section mb-5" id="receiveHistorySharedSection">
                         <div class="receive-inventory-header">
-<<<<<<< HEAD
                             <div class="d-flex align-items-center gap-2 flex-wrap w-100">
                                 <div>
-                                    <h4 class="mb-1"><i class="bi bi-clock-history"></i> Receive History</h4>
+                                    <h4 class="mb-1">Receive History</h4>
                                     <p class="text-muted mb-0">Click any row to view full receive details</p>
                                 </div>
                                 <div class="ms-auto text-end">
@@ -4988,10 +6655,6 @@ function formatDateForInput($dateStr) {
                                     </button>
                                 </div>
                             </div>
-=======
-                            <h4><i class="bi bi-clock-history"></i> Receive History</h4>
-                            <p class="text-muted mb-0">Click any row to view full receive details</p>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         </div>
                         <div class="table-container-receive">
                             <table class="table receive-items-table" id="receiveHistoryTable">
@@ -4999,7 +6662,6 @@ function formatDateForInput($dateStr) {
                                     <tr>
                                         <th>Item Name</th>
                                         <th>Qty</th>
-<<<<<<< HEAD
                                         <th>Unit Cost</th>
                                         <th>Total Cost</th>
                                         <th>Receive Date</th>
@@ -5056,33 +6718,10 @@ function formatDateForInput($dateStr) {
                                 </tbody>
                             </table>
                             <div id="receiveHistoryPrintable" class="print-only-area"></div>
-=======
-                                        <th>Date</th>
-                                        <th>UoM</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    <?php if (!empty($receive_history_list)): ?>
-                                        <?php foreach ($receive_history_list as $history): ?>
-                                            <tr class="receive-history-row" data-transaction-id="<?= (int)($history['transaction_id'] ?? 0) ?>" data-item-id="<?= (int)($history['item_id'] ?? 0) ?>" data-reference-type="<?= htmlspecialchars($history['reference_type'] ?? '', ENT_QUOTES) ?>" data-reference-id="<?= (int)($history['reference_id'] ?? 0) ?>" data-created-at="<?= htmlspecialchars($history['created_at'] ?? '', ENT_QUOTES) ?>" style="cursor:pointer;">
-                                                <td><?= htmlspecialchars($history['item_name'] ?? 'Unknown Item') ?></td>
-                                                <td><?= htmlspecialchars(rtrim(rtrim(number_format((float)($history['quantity_changed'] ?? 0), 2, '.', ''), '0'), '.')) ?></td>
-                                                <td><?= htmlspecialchars(formatDateTime($history['created_at'] ?? '')) ?></td>
-                                                <td><?= htmlspecialchars($history['unit_type'] ?? '') ?></td>
-                                            </tr>
-                                        <?php endforeach; ?>
-                                    <?php else: ?>
-                                        <tr class="text-center text-muted">
-                                            <td colspan="4">No receive history found yet</td>
-                                        </tr>
-                                    <?php endif; ?>
-                                </tbody>
-                            </table>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         </div>
-                    </div>
                 </div>
-
+                            </div>
+                        </div>
             </div>
         </div>
     </div>
@@ -5399,17 +7038,21 @@ function formatDateForInput($dateStr) {
                             <label for="itemSelect" class="form-label">Select Item *</label>
                             <select class="form-select" id="itemSelect" required>
                                 <option value="">-- Select Item --</option>
-                                <?php foreach ($items_list as $item): ?>
-                                <option value="<?= $item['item_id'] ?>" 
-                                        data-price-piece="<?= $item['price_piece'] ?>"
-                                        data-price-case="<?= $item['price_case'] ?? 0 ?>"
-                                        data-price-inner="<?= $item['price_inner_pack'] ?? 0 ?>"
-                                        data-price-box="<?= $item['price_box'] ?? 0 ?>"
-                                        data-price-carton="<?= $item['price_carton'] ?? 0 ?>"
-                                        data-code="<?= htmlspecialchars($item['item_code']) ?>"
-                                        data-stock="<?= $item['stock'] ?>">
-                                    <?= htmlspecialchars($item['item_code'] . ' - ' . $item['item_name']) ?>
-                                </option>
+                                <?php foreach ($items_by_category as $category_name => $category_items): ?>
+                                <optgroup label="<?= htmlspecialchars($category_name) ?>">
+                                    <?php foreach ($category_items as $item): ?>
+                                    <option value="<?= $item['item_id'] ?>" 
+                                            data-price-piece="<?= $item['price_piece'] ?>"
+                                            data-price-case="<?= $item['price_case'] ?? 0 ?>"
+                                            data-price-inner="<?= $item['price_inner_pack'] ?? 0 ?>"
+                                            data-price-box="<?= $item['price_box'] ?? 0 ?>"
+                                            data-price-carton="<?= $item['price_carton'] ?? 0 ?>"
+                                            data-code="<?= htmlspecialchars($item['item_code']) ?>"
+                                            data-stock="<?= $item['stock'] ?>">
+                                        <?= htmlspecialchars($item['item_code'] . ' - ' . $item['item_name']) ?>
+                                    </option>
+                                    <?php endforeach; ?>
+                                </optgroup>
                                 <?php endforeach; ?>
                             </select>
                         </div>
@@ -5504,7 +7147,6 @@ function formatDateForInput($dateStr) {
         </div>
     </div>
     
-<<<<<<< HEAD
 <!-- Mobile Bottom Navigation - Clean Version (No Arrows) -->
 <div class="mobile-nav" id="mobileNav">
     <?php 
@@ -5659,21 +7301,6 @@ function formatDateForInput($dateStr) {
 
     <!-- Mobile Profile Modal -->
     <div class="modal fade" id="profileModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title"><i class="bi bi-person-circle me-2"></i>User Profile</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body text-center"><div class="user-avatar-large mb-3"><?php echo $user_initials; ?></div><h4 class="mb-1"><?php echo htmlspecialchars($user_name); ?></h4><p class="text-muted mb-3"><span class="badge bg-success"><?php echo ucfirst($user_role); ?></span></p><?php if (!$view_all_branches && $branch_id > 0): ?><div class="branch-info mb-3"><i class="bi bi-building me-1"></i><span><?php echo htmlspecialchars($branch_name); ?></span></div><?php endif; ?><div class="user-id text-muted small mb-4"><i class="bi bi-hash"></i> User ID: <?php echo $user_id; ?></div><button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()"><i class="bi bi-box-arrow-right me-2"></i>Logout</button></div></div></div></div>
-=======
-    <!-- Mobile Bottom Navigation -->
-    <div class="mobile-nav" id="mobileNav">
-        <ul class="nav">
-            <li class="nav-item dropdown-more" id="inventoryDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'inventoryDropdownMenu')"><i class="bi bi-box-seam"></i><span>Inventory</span></a><div class="more-dropdown" id="inventoryDropdownMenu"><a href="current_inventory.php" class="dropdown-item"><i class="bi bi-bar-chart-line"></i><span>Current Inventory</span></a><a href="bad_orders.php" class="dropdown-item"><i class="bi bi-recycle"></i><span>Bad Orders</span></a></div></li>
-            <li class="nav-item dropdown-more" id="salesDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'salesDropdownMenu')"><i class="bi bi-cart"></i><span>Sales</span></a><div class="more-dropdown" id="salesDropdownMenu"><a href="sales_order.php" class="dropdown-item"><i class="bi bi-cart"></i><span>Sales Orders</span></a><a href="pick_list_items.php" class="dropdown-item"><i class="bi bi-list-check"></i><span>Pick Lists</span></a></div></li>
-            <li class="nav-item dropdown-more" id="purchaseDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'purchaseDropdownMenu')"><i class="bi bi-truck"></i><span>Purchase</span></a><div class="more-dropdown" id="purchaseDropdownMenu" style="right: 0 !important; left: auto !important;"><a href="purchase_order.php" class="dropdown-item"><i class="bi bi-box"></i><span>Purchase Orders</span></a><a href="supplier.php" class="dropdown-item"><i class="bi bi-building"></i><span>Suppliers</span></a></div></li>
-            <li class="nav-item"><a class="nav-link" href="trip_tickets.php"><i class="bi bi-ticket-perforated"></i><span>Trips</span></a></li>
-            <li class="nav-item dropdown-more" id="moreDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'moreDropdownMenu')"><i class="bi bi-three-dots-vertical"></i><span>More</span></a><div class="more-dropdown" id="moreDropdownMenu"><a href="drivers.php" class="dropdown-item"><i class="bi bi-people"></i><span>Users</span></a><a href="approve_credit_requests.php" class="dropdown-item"><i class="bi bi-pencil-square"></i><span>Approve Requests</span></a><div class="dropdown-divider"></div><a href="#" class="dropdown-item logout-item" onclick="showProfileModal(); return false;"><i class="bi bi-box-arrow-right"></i><span>Logout</span></a></div></li>
-        </ul>
-    </div>
-
-     <!-- Mobile Profile Modal -->
-        <div class="modal fade" id="profileModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title"><i class="bi bi-person-circle me-2"></i>User Profile</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body text-center"><div class="user-avatar-large mb-3"><?php echo $user_initials; ?></div><h4 class="mb-1"><?php echo htmlspecialchars($user_name); ?></h4><p class="text-muted mb-3"><span class="badge bg-success"><?php echo ucfirst($user_role); ?></span></p><?php if (!$view_all_branches && $branch_id > 0): ?><div class="branch-info mb-3"><i class="bi bi-building me-1"></i><span><?php echo htmlspecialchars($branch_name); ?></span></div><?php endif; ?><div class="user-id text-muted small mb-4"></div><button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()"><i class="bi bi-box-arrow-right me-2"></i>Logout</button></div></div></div></div>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
 
 
@@ -5698,7 +7325,6 @@ function formatDateForInput($dateStr) {
     const supplierIdColumnExists = <?php echo $supplier_id_column_exists ? 'true' : 'false'; ?>;
     const discountTypeColumnExists = <?php echo $discount_type_column_exists ? 'true' : 'false'; ?>;
     const discountValueColumnExists = <?php echo $discount_value_column_exists ? 'true' : 'false'; ?>;
-<<<<<<< HEAD
 
     function formatAmount(value, minimumFractionDigits = 2, maximumFractionDigits = 2) {
         const number = Number(value || 0);
@@ -5711,8 +7337,6 @@ function formatDateForInput($dateStr) {
     function formatPeso(value, minimumFractionDigits = 2, maximumFractionDigits = 2) {
         return `₱${formatAmount(value, minimumFractionDigits, maximumFractionDigits)}`;
     }
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     
     // Order discount variables
     let subtotalAfterItemDiscounts = 0;
@@ -5905,9 +7529,9 @@ function formatDateForInput($dateStr) {
         const container = document.getElementById('itemsContainer');
         const itemId = 'itemRow' + itemCounter;
 
-        let options = '<option value="">-- Select Item --</option>';
-        itemsList.forEach(item => {
-            options += `<option value="${item.item_id}" data-code="${escapeHtml(String(item.item_code || ''))}" data-name="${escapeHtml(String(item.item_name || ''))}">${escapeHtml(String(item.item_code || ''))} - ${escapeHtml(String(item.item_name || ''))}</option>`;
+        let options = buildGroupedItemOptionsHtml({
+            placeholder: '-- Select Item --',
+            showCode: true
         });
 
         const itemRow = document.createElement('div');
@@ -5969,11 +7593,7 @@ function formatDateForInput($dateStr) {
         if (itemObj && itemObj.uom_prices) {
             Object.keys(itemObj.uom_prices).forEach(key => {
                 const price = parseFloat(itemObj.uom_prices[key] || 0);
-<<<<<<< HEAD
                 if (price > 0) prices.push(`${key}: ${formatPeso(price)}`);
-=======
-                if (price > 0) prices.push(`${key}: ₱${price.toFixed(2)}`);
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             });
         }
 
@@ -6064,11 +7684,7 @@ function formatDateForInput($dateStr) {
         }
         
         const subtotal = quantity * discountedUnitPrice;
-<<<<<<< HEAD
         row.querySelector('.item-subtotal').textContent = formatPeso(subtotal);
-=======
-        row.querySelector('.item-subtotal').textContent = `₱${subtotal.toFixed(2)}`;
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         
         updateTotalAmount();
     }
@@ -6148,17 +7764,10 @@ function formatDateForInput($dateStr) {
         
         orderGrandTotal = subtotalAfterItemDiscounts - discountAmount;
         
-<<<<<<< HEAD
         document.getElementById('subtotalDisplay').textContent = formatPeso(subtotalAfterItemDiscounts);
         document.getElementById('discountAmountDisplay').textContent = `-${formatPeso(discountAmount)}`;
         document.getElementById('grandTotalDisplay').textContent = formatPeso(orderGrandTotal);
         document.getElementById('totalAmountDisplay').textContent = formatPeso(orderGrandTotal);
-=======
-        document.getElementById('subtotalDisplay').textContent = `₱${subtotalAfterItemDiscounts.toFixed(2)}`;
-        document.getElementById('discountAmountDisplay').textContent = `-₱${discountAmount.toFixed(2)}`;
-        document.getElementById('grandTotalDisplay').textContent = `₱${orderGrandTotal.toFixed(2)}`;
-        document.getElementById('totalAmountDisplay').textContent = `₱${orderGrandTotal.toFixed(2)}`;
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         document.getElementById('totalAmount').value = orderGrandTotal.toFixed(2);
         
         document.getElementById('discountType_hidden').value = orderDiscountType;
@@ -6208,6 +7817,47 @@ function formatDateForInput($dateStr) {
         document.getElementById('orderDate').value = formattedDate;
         
         initializeSupplierSelect();
+
+        const poQbPayee = document.getElementById('poQbPayee');
+        const supplierDropdownForBill = document.getElementById('supplierDropdown');
+        if (poQbPayee && supplierDropdownForBill) {
+            poQbPayee.addEventListener('change', function() {
+                supplierDropdownForBill.value = this.value;
+                supplierDropdownForBill.dispatchEvent(new Event('change', { bubbles: true }));
+            });
+            supplierDropdownForBill.addEventListener('change', function() {
+                if (poQbPayee.value !== this.value) poQbPayee.value = this.value;
+            });
+        }
+
+        function toggleReceiveSectionsForActiveTab() {
+            const expensesTab = document.getElementById('expensesTab');
+            const isExpensesActive = expensesTab && expensesTab.classList.contains('active');
+            const sharedSectionIds = [
+                'receiveItemsSharedSection',
+                'receiveFormControlsSharedSection',
+                'receiveHistorySharedSection'
+            ];
+            sharedSectionIds.forEach(sectionId => {
+                const section = document.getElementById(sectionId);
+                if (section) section.style.display = isExpensesActive ? 'none' : '';
+            });
+            const newPoHeaderActionWrapper = document.getElementById('newPoHeaderActionWrapper');
+            if (newPoHeaderActionWrapper) newPoHeaderActionWrapper.style.display = isExpensesActive ? 'none' : '';
+        }
+
+        document.querySelectorAll('button[data-bs-toggle="tab"][data-bs-target]').forEach(tabButton => {
+            tabButton.addEventListener('shown.bs.tab', toggleReceiveSectionsForActiveTab);
+        });
+
+        const activeTabParam = new URLSearchParams(window.location.search).get('tab');
+        if (activeTabParam === 'expenses') {
+            const expensesTabTrigger = document.getElementById('expensesTab');
+            if (expensesTabTrigger && typeof bootstrap !== 'undefined') {
+                new bootstrap.Tab(expensesTabTrigger).show();
+            }
+        }
+        toggleReceiveSectionsForActiveTab();
         
         if (document.getElementById('itemSelect')) {
             $('#itemSelect').select2({
@@ -6334,11 +7984,7 @@ function formatDateForInput($dateStr) {
         }
         
         const subtotal = quantity * discountedPrice;
-<<<<<<< HEAD
         document.getElementById('subtotalAmount').textContent = formatAmount(subtotal);
-=======
-        document.getElementById('subtotalAmount').textContent = subtotal.toFixed(2);
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         document.getElementById('itemSubtotal').style.display = 'block';
     }
 
@@ -6636,11 +8282,7 @@ function formatDateForInput($dateStr) {
                             </div>
                             <div class="info-row">
                                 <span class="info-label">Total Amount:</span>
-<<<<<<< HEAD
                                 <span class="info-value total-amount">${formatPeso(po.total_amount || 0)}</span>
-=======
-                                <span class="info-value total-amount">₱${Number(po.total_amount || 0).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}</span>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                             </div>
                             <div class="info-row">
                                 <span class="info-label">Created By:</span>
@@ -6676,11 +8318,7 @@ function formatDateForInput($dateStr) {
                                             <th style="width: 15%">Item Code</th>
                                             <th style="width: 30%">Item Name</th>
                                             <th style="width: 10%" class="text-center">Qty</th>
-<<<<<<< HEAD
                                             <th style="width: 15%" class="text-end">Unit Cost</th>
-=======
-                                            <th style="width: 15%" class="text-end">Unit Price</th>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                             <th style="width: 10%" class="text-center">Discount</th>
                                             <th style="width: 15%" class="text-end">Subtotal</th>
                                             ${po.po_status !== 'received' && po.po_status !== 'cancelled' ? '<th style="width: 10%" class="text-center">Action</th>' : ''}
@@ -6701,11 +8339,7 @@ function formatDateForInput($dateStr) {
                                 discountDisplay = `${item.discount_value}%`;
                             } else if (item.discount_type === 'fixed') {
                                 discountedUnitPrice = Math.max(0, item.unit_price - item.discount_value);
-<<<<<<< HEAD
                                 discountDisplay = formatPeso(item.discount_value);
-=======
-                                discountDisplay = `₱${Number(item.discount_value).toFixed(2)}`;
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                             }
                         }
                         const subtotal = item.quantity_ordered * discountedUnitPrice;
@@ -6718,15 +8352,9 @@ function formatDateForInput($dateStr) {
                                 <td>${escapeHtml(item.item_code || 'N/A')}</td>
                                 <td>${escapeHtml(item.item_name || 'N/A')}</td>
                                 <td class="text-center">${item.quantity_ordered}</td>
-<<<<<<< HEAD
                                 <td class="text-end">${formatPeso(item.unit_price)}</span></td>
                                 <td class="text-center">${discountDisplay}</td>
                                 <td class="text-end">${formatPeso(subtotal)}</span></td>
-=======
-                                <td class="text-end">₱${Number(item.unit_price).toFixed(2)}</span></td>
-                                <td class="text-center">${discountDisplay}</td>
-                                <td class="text-end">₱${Number(subtotal).toFixed(2)}</span></td>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                 ${po.po_status !== 'received' && po.po_status !== 'cancelled' ? 
                                     `<td class="text-center">
                                         <button class="btn btn-sm btn-outline-danger" onclick="deleteItem(${item.po_item_id}, ${po.po_id}, '${escapeHtml(item.item_name)}')">
@@ -6745,11 +8373,7 @@ function formatDateForInput($dateStr) {
                                             <th class="text-center">${totalQty}</th>
                                             <th></th>
                                             <th></th>
-<<<<<<< HEAD
                                             <th class="text-end">${formatPeso(totalAmount)}</th>
-=======
-                                            <th class="text-end">₱${Number(totalAmount).toFixed(2)}</th>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                             ${po.po_status !== 'received' && po.po_status !== 'cancelled' ? '<th></th>' : ''}
                                         </tr>
                                     </tfoot>
@@ -7249,7 +8873,6 @@ function formatDateForInput($dateStr) {
         }
     }
 }
-<<<<<<< HEAD
 function confirmLogout() {
             // Close the modal first
             const modal = bootstrap.Modal.getInstance(document.getElementById('profileModal'));
@@ -7274,39 +8897,27 @@ function confirmLogout() {
             });
         }
 
-=======
+function logout() { confirmLogout(); }
 
-   function showProfileModal() { 
-    cleanupModalBackdrops();
-    new bootstrap.Modal(document.getElementById('profileModal')).show(); 
+function closeAllDropdowns() {
+    try {
+        document.querySelectorAll('.dropdown-menu.show, .custom-dropdown-menu.show, .qb-account-dropdown.show, .expense-account-dropdown.show').forEach(function(dropdown) {
+            dropdown.classList.remove('show');
+        });
+        document.querySelectorAll('.qb-account-toggle.active, .dropdown-toggle.active').forEach(function(btn) {
+            btn.classList.remove('active');
+            if (btn.hasAttribute('aria-expanded')) {
+                btn.setAttribute('aria-expanded', 'false');
+            }
+        });
+        if (window.expenseAccountDropdown && window.expenseAccountDropdown.classList) {
+            window.expenseAccountDropdown.classList.remove('show');
+        }
+    } catch (err) {
+        console.warn('closeAllDropdowns skipped:', err);
+    }
 }
 
-function confirmLogout() {
-            // Close the modal first
-            const modal = bootstrap.Modal.getInstance(document.getElementById('profileModal'));
-            if (modal) {
-                modal.hide();
-            }
-            
-            // Show confirmation dialog
-            Swal.fire({
-                title: 'Are you sure?',
-                text: 'You will be logged out of the system',
-                icon: 'question',
-                showCancelButton: true,
-                confirmButtonColor: '#07d826',
-                cancelButtonColor: '#6c757d',
-                confirmButtonText: 'Yes, logout'
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    localStorage.removeItem('sidebarCollapsed');
-                    window.location.href = '../logout.php';
-                }
-            });
-        }
-
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
-function logout() { confirmLogout(); }
     document.addEventListener('keydown', function(e) {
         if (e.ctrlKey && e.key === 'b' && window.innerWidth > 992) {
             e.preventDefault();
@@ -7319,72 +8930,13 @@ function logout() { confirmLogout(); }
             showNewPOModal();
         }
     });
-<<<<<<< HEAD
 window.addEventListener('scroll', function() {
-=======
-
-    // ================= DROPDOWN FUNCTIONS =================
-    window.toggleDropdown = function(event, dropdownId) {
-        event.preventDefault();
-        event.stopPropagation();
-        
-        const dropdown = document.getElementById(dropdownId);
-        const btn = event.currentTarget;
-        
-        if (!dropdown) return;
-        
-        if (dropdown.classList.contains('show')) {
-            dropdown.classList.remove('show');
-            btn.classList.remove('active');
-        } else {
-            // Close all other dropdowns
-            const dropdowns = ['inventoryDropdownMenu', 'salesDropdownMenu', 'purchaseDropdownMenu', 'moreDropdownMenu'];
-            dropdowns.forEach(id => {
-                const d = document.getElementById(id);
-                if (d && d !== dropdown) {
-                    d.classList.remove('show');
-                }
-            });
-            document.querySelectorAll('.more-btn').forEach(b => b.classList.remove('active'));
-            
-            dropdown.classList.add('show');
-            btn.classList.add('active');
-            
-            // Close when clicking outside
-            setTimeout(() => {
-                document.addEventListener('click', function closeHandler(e) {
-                    if (!dropdown.contains(e.target) && !btn.contains(e.target)) {
-                        dropdown.classList.remove('show');
-                        btn.classList.remove('active');
-                        document.removeEventListener('click', closeHandler);
-                    }
-                });
-            }, 100);
-        }
-    };
-
-    function closeAllDropdowns() {
-        const dropdowns = ['inventoryDropdownMenu', 'salesDropdownMenu', 'purchaseDropdownMenu', 'moreDropdownMenu'];
-        dropdowns.forEach(id => {
-            const dropdown = document.getElementById(id);
-            if (dropdown) dropdown.classList.remove('show');
-        });
-        document.querySelectorAll('.more-btn').forEach(btn => btn.classList.remove('active'));
-    }
-
-    document.addEventListener('keydown', function(e) {
-        if (e.key === 'Escape') closeAllDropdowns();
-    });
-
-    window.addEventListener('scroll', function() {
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         if (globalScrollTimeout) clearTimeout(globalScrollTimeout);
         globalScrollTimeout = setTimeout(() => {
             closeAllDropdowns();
         }, 150);
     });
 
-<<<<<<< HEAD
 
     // ========== MOBILE BOTTOM NAVBAR FIX ==========
     // Global functions because mobile bottom nav uses inline onclick handlers.
@@ -7493,8 +9045,6 @@ window.addEventListener('scroll', function() {
     });
 
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     // ================= PURCHASE DROPDOWN POSITION FIX =================
     function fixPurchaseDropdownPosition() {
         const purchaseDropdown = document.querySelector('#purchaseDropdown .more-dropdown');
@@ -7896,7 +9446,6 @@ function expandActiveDropdownContainers() {
 // Toggle sidebar function (updated with proper behavior)
 function toggleSidebar() {
     const sidebar = document.getElementById('sidebar');
-<<<<<<< HEAD
     if (!sidebar) return false;
     
     if (window.innerWidth <= 992) {
@@ -7920,32 +9469,12 @@ function toggleSidebar() {
             overlay.classList.remove('active');
             setTimeout(function() { overlay.remove(); }, 300);
         }
-=======
-    const desktopToggleBtn = document.getElementById('desktopToggleBtn');
-    
-    if (window.innerWidth <= 992) {
-        // Mobile behavior
-        sidebar.classList.toggle('active');
-        let overlay = document.querySelector('.sidebar-overlay');
-        if (!overlay) { 
-            overlay = document.createElement('div'); 
-            overlay.className = 'sidebar-overlay'; 
-            document.body.appendChild(overlay); 
-            overlay.addEventListener('click', function() { 
-                sidebar.classList.remove('active'); 
-                overlay.classList.remove('active'); 
-                setTimeout(function() { overlay.remove(); }, 300); 
-            }); 
-        }
-        setTimeout(function() { overlay.classList.add('active'); }, 10);
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     } else {
         // Desktop behavior - toggle collapse
         const wasCollapsed = sidebar.classList.contains('collapsed');
         sidebar.classList.toggle('collapsed');
         localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
         
-<<<<<<< HEAD
         if (wasCollapsed && !sidebar.classList.contains('collapsed')) {
             sidebar.style.width = '';
             setTimeout(function() {
@@ -7970,21 +9499,6 @@ function toggleSidebar() {
 // Make toggleSidebar available to inline onclick handlers and event listeners.
 window.toggleSidebar = toggleSidebar;
 
-=======
-        // If expanding from collapsed state
-        if (wasCollapsed && !sidebar.classList.contains('collapsed')) {
-            // Remove any inline styles that might have been set by hover
-            sidebar.style.width = '';
-            
-            // AFTER expanding, find any active child link and open its parent dropdown
-            setTimeout(function() {
-                expandActiveDropdownContainers();
-            }, 150);
-        }
-    }
-}
-
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 // Initialize sidebar on DOM load
 document.addEventListener('DOMContentLoaded', function() {
     // Restore sidebar state from localStorage
@@ -8051,7 +9565,6 @@ document.addEventListener('DOMContentLoaded', function() {
 
     let receiveItems = [];
 
-<<<<<<< HEAD
 
     function showSystemAlert(title, message, icon = 'warning', options = {}) {
         const finalTitle = title || (
@@ -8086,8 +9599,6 @@ document.addEventListener('DOMContentLoaded', function() {
         return Promise.resolve();
     }
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     function getSupplierName() {
         const supplierDropdown = document.getElementById('supplierDropdown');
         if (!supplierDropdown) return '';
@@ -8112,10 +9623,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 newItemName: null,
                 itemCode: null,
                 itemDescription: null,
-<<<<<<< HEAD
                 itemCategory: null,
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 itemUomSelectWrapper: null,
                 itemUoM: null,
                 newItemUomWrapper: null,
@@ -8132,10 +9640,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 newItemName: document.getElementById('productionNewItemName'),
                 itemCode: document.getElementById('productionItemCode'),
                 itemDescription: document.getElementById('productionItemDescription'),
-<<<<<<< HEAD
                 itemCategory: document.getElementById('productionItemCategory'),
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 itemUomSelectWrapper: document.getElementById('productionItemUomSelectWrapper'),
                 itemUoM: document.getElementById('productionItemUoM'),
                 newItemUomWrapper: document.getElementById('productionNewItemUomWrapper'),
@@ -8151,10 +9656,7 @@ document.addEventListener('DOMContentLoaded', function() {
             newItemName: document.getElementById('newItemName'),
             itemCode: document.getElementById('itemCode'),
             itemDescription: document.getElementById('itemDescription'),
-<<<<<<< HEAD
             itemCategory: document.getElementById('itemCategory'),
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             itemUomSelectWrapper: document.getElementById('itemUomSelectWrapper'),
             itemUoM: document.getElementById('itemUoM'),
             newItemUomWrapper: document.getElementById('newItemUomWrapper'),
@@ -8257,40 +9759,97 @@ document.addEventListener('DOMContentLoaded', function() {
         if (productionTotal) productionTotal.value = totalQty > 0 ? totalQty : '';
     }
 
+    function parseReceiveDiscount(discountInput, subtotal) {
+        const raw = String(discountInput || '').trim();
+        const baseSubtotal = parseFloat(subtotal) || 0;
+        if (!raw) return 0;
+        if (raw.endsWith('%')) {
+            const percent = parseFloat(raw.replace('%', '').replace(/,/g, '')) || 0;
+            return Math.max(0, baseSubtotal * (percent / 100));
+        }
+        return Math.max(0, parseFloat(raw.replace(/,/g, '').replace('₱', '')) || 0);
+    }
+
+    function computeReceiveTotalUnitCost(qty, unitCost, discountInput) {
+        const quantity = parseFloat(qty) || 0;
+        const cost = parseFloat(unitCost) || 0;
+        const subtotal = quantity * cost;
+        const discountAmount = parseReceiveDiscount(discountInput, subtotal);
+        return Math.max(0, subtotal - discountAmount);
+    }
+
+    function getItemEntryRowsGrandTotal() {
+        return getItemEntryRows().reduce((sum, row) => {
+            const fields = getSupplierRowFields(row);
+            const hasQty = String(fields.qty?.value || '').trim() !== '';
+            const hasPrice = String(fields.itemPrice?.value || '').trim() !== '';
+            const hasDiscount = String(fields.discount?.value || '').trim() !== '';
+            const hasItem = String(fields.selector?.value || '').trim() !== '' || String(fields.newItemName?.value || '').trim() !== '';
+            if (!hasQty && !hasPrice && !hasDiscount && !hasItem) return sum;
+            return sum + computeReceiveTotalUnitCost(fields.qty?.value || 0, fields.itemPrice?.value || 0, fields.discount?.value || '');
+        }, 0);
+    }
+
+    function getReceiveItemsGrandTotal() {
+        return receiveItems.reduce((sum, item) => {
+            const lineTotal = item.total_unit_cost !== undefined
+                ? Number(item.total_unit_cost || 0)
+                : computeReceiveTotalUnitCost(item.qty || 0, item.price || 0, item.discount || '');
+            return sum + (Number(lineTotal) || 0);
+        }, 0);
+    }
+
+    function updateItemsGrandTotal(useState = false) {
+        const total = useState ? getReceiveItemsGrandTotal() : getItemEntryRowsGrandTotal();
+        const itemTabAmount = document.getElementById('supplierTabAmount');
+        if (itemTabAmount) itemTabAmount.textContent = formatPeso(total);
+
+        const activeTabId = document.querySelector('.receive-tabs .nav-link.active')?.id || 'supplierTab';
+        const qbAmount = document.getElementById('poQbAmount');
+        if (qbAmount && activeTabId === 'supplierTab') {
+            qbAmount.value = Number(total || 0).toFixed(2);
+        }
+        return total;
+    }
+
+    function syncSupplierItemLiveTotals() {
+        getItemEntryRows().forEach(row => refreshSupplierRowTotalUnitCost(row));
+        updateItemsGrandTotal(false);
+    }
+
+    function refreshSupplierRowTotalUnitCost(row) {
+        if (!row) return;
+        const fields = getSupplierRowFields(row);
+        const lineTotalCost = computeReceiveTotalUnitCost(fields.qty?.value || 0, fields.itemPrice?.value || 0, fields.discount?.value || '');
+        if (fields.totalUnitCost) fields.totalUnitCost.value = formatPeso(lineTotalCost);
+        updateItemsGrandTotal(false);
+    }
+
     function renderReceiveTable() {
         const tbody = document.getElementById('receiveItemsTableBody');
         if (!tbody) return;
         if (receiveItems.length === 0) {
-<<<<<<< HEAD
             tbody.innerHTML = '<tr class="text-center text-muted"><td colspan="9">No items added yet</td></tr>';
-=======
-            tbody.innerHTML = '<tr class="text-center text-muted"><td colspan="8">No items added yet</td></tr>';
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             syncReceiveItemCount();
+            updateItemsGrandTotal(true);
             return;
         }
 
         tbody.innerHTML = receiveItems.map(item => `
             <tr data-item-id="${item.id}">
                 <td>${escapeHtml(String(item.name || ''))}</td>
-                <td>${escapeHtml(String(item.code || ''))}</td>
-                <td>${escapeHtml(String(item.description || ''))}</td>
-<<<<<<< HEAD
-                <td>${escapeHtml(String(item.category || ''))}</td>
+                <td>${escapeHtml(`${String(item.code || '')}${item.description ? ' - ' + String(item.description || '') : ''}`)}</td>
                 <td><input type="number" class="form-control form-control-sm qty-input" data-item-id="${item.id}" value="${item.qty}" min="0" step="0.01" inputmode="decimal"></td>
                 <td>${escapeHtml(String(item.uom || ''))}</td>
                 <td><input type="number" class="form-control form-control-sm price-input" data-item-id="${item.id}" value="${Number(item.price || 0).toFixed(2)}" min="0" step="0.01" inputmode="decimal"></td>
+                <td><input type="text" class="form-control form-control-sm discount-input text-end" data-item-id="${item.id}" value="${escapeHtml(String(item.discount || ''))}" placeholder="0 or 0%"></td>
+                <td class="total-unit-cost" data-unit-total-id="${item.id}">${formatPeso(item.total || computeReceiveTotalUnitCost(item.qty || 0, item.price || 0, item.discount || ''))}</td>
                 <td class="total-price" data-total-id="${item.id}">${formatPeso(item.total || 0)}</td>
-=======
-                <td><input type="number" class="form-control form-control-sm qty-input" data-item-id="${item.id}" value="${item.qty}" min="0" step="0.01"></td>
-                <td>${escapeHtml(String(item.uom || ''))}</td>
-                <td><input type="number" class="form-control form-control-sm price-input" data-item-id="${item.id}" value="${Number(item.price || 0).toFixed(2)}" min="0" step="0.01"></td>
-                <td class="total-price" data-total-id="${item.id}">₱${Number(item.total || 0).toFixed(2)}</td>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 <td><button type="button" class="btn btn-sm btn-danger remove-item-btn" data-item-id="${item.id}"><i class="bi bi-trash"></i></button></td>
             </tr>
         `).join('');
         syncReceiveItemCount();
+        updateItemsGrandTotal(true);
     }
 
     function resetReceiveItemEntry(mode = null) {
@@ -8299,10 +9858,7 @@ document.addEventListener('DOMContentLoaded', function() {
         if (fields.newItemName) fields.newItemName.value = '';
         if (fields.itemCode) fields.itemCode.value = '';
         if (fields.itemDescription) fields.itemDescription.value = '';
-<<<<<<< HEAD
         if (fields.itemCategory) fields.itemCategory.value = '';
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         if (fields.qty) fields.qty.value = '';
         if (fields.itemPrice) fields.itemPrice.value = '';
         if (fields.newItemUom) fields.newItemUom.value = '';
@@ -8324,20 +9880,14 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         if (fields.itemCode) fields.itemCode.value = '';
         if (fields.itemDescription) fields.itemDescription.value = '';
-<<<<<<< HEAD
         if (fields.itemCategory) fields.itemCategory.value = '';
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         if (fields.itemPrice) fields.itemPrice.value = '';
 
         if (selectedValue === '__new__') {
             if (fields.newItemNameWrapper) fields.newItemNameWrapper.style.display = 'block';
             if (fields.itemCode) fields.itemCode.readOnly = false;
             if (fields.itemDescription) fields.itemDescription.readOnly = false;
-<<<<<<< HEAD
             if (fields.itemCategory) fields.itemCategory.readOnly = false;
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             if (fields.itemPrice) fields.itemPrice.readOnly = false;
             populateUomForSelectedItem(null, mode);
             return;
@@ -8347,45 +9897,371 @@ document.addEventListener('DOMContentLoaded', function() {
         if (fields.newItemName) fields.newItemName.value = '';
 
         if (selectedItem) {
-            if (fields.itemCode) fields.itemCode.value = selectedItem.item_code || '';
+            if (fields.itemCode) fields.itemCode.value = formatItemCodeDescription(selectedItem.item_code || '', selectedItem.description || selectedItem.item_name || '');
             if (fields.itemDescription) fields.itemDescription.value = selectedItem.description || selectedItem.item_name || '';
-<<<<<<< HEAD
             if (fields.itemCategory) fields.itemCategory.value = selectedItem.category || '';
             if (fields.itemPrice) fields.itemPrice.value = Number(selectedItem.price_piece || 0).toFixed(2);
             if (fields.itemCode) fields.itemCode.readOnly = true;
             if (fields.itemDescription) fields.itemDescription.readOnly = true;
             if (fields.itemCategory) fields.itemCategory.readOnly = true;
-=======
-            if (fields.itemPrice) fields.itemPrice.value = Number(selectedItem.price_piece || 0).toFixed(2);
-            if (fields.itemCode) fields.itemCode.readOnly = true;
-            if (fields.itemDescription) fields.itemDescription.readOnly = true;
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             if (fields.itemPrice) fields.itemPrice.readOnly = false;
             populateUomForSelectedItem(selectedItem, mode);
-            if (fields.selectedItemPreview) {
-                fields.selectedItemPreview.innerHTML = `
-                    <strong>Selected Item:</strong> ${escapeHtml(String(selectedItem.item_name || ''))}<br>
-                    <small>
-                        <strong>Code:</strong> ${escapeHtml(String(selectedItem.item_code || 'N/A'))} &nbsp;|&nbsp;
-<<<<<<< HEAD
-                        <strong>Description:</strong> ${escapeHtml(String(selectedItem.description || selectedItem.item_name || 'N/A'))} &nbsp;|&nbsp;
-                        <strong>Category:</strong> ${escapeHtml(String(selectedItem.category || 'N/A'))}
-=======
-                        <strong>Description:</strong> ${escapeHtml(String(selectedItem.description || selectedItem.item_name || 'N/A'))}
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
-                    </small>`;
-                fields.selectedItemPreview.style.display = 'block';
-            }
         } else {
             if (fields.itemCode) fields.itemCode.readOnly = false;
             if (fields.itemDescription) fields.itemDescription.readOnly = false;
-<<<<<<< HEAD
             if (fields.itemCategory) fields.itemCategory.readOnly = false;
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             if (fields.itemPrice) fields.itemPrice.readOnly = false;
             populateUomForSelectedItem(null, mode);
         }
+    }
+
+    function splitItemCodeDescription(value) {
+        const text = String(value || '').trim();
+        const parts = text.split(/\s[-–—:]\s|[-–—:]/);
+        const code = (parts.shift() || '').trim();
+        const description = parts.join(' - ').trim();
+        return { code, description };
+    }
+
+    function formatItemCodeDescription(code, description) {
+        const cleanCode = String(code || '').trim();
+        const cleanDescription = String(description || '').trim();
+        return cleanDescription ? `${cleanCode} - ${cleanDescription}` : cleanCode;
+    }
+
+    const INITIAL_SUPPLIER_ITEM_ROWS = 10;
+
+    function getSupplierItemEntryBody() {
+        return document.getElementById('supplierItemEntryBody');
+    }
+
+    function getItemEntryRows() {
+        const tbody = getSupplierItemEntryBody();
+        return tbody ? Array.from(tbody.querySelectorAll('tr.item-entry-row')) : [];
+    }
+
+    function getSupplierRowFields(row) {
+        return {
+            selector: row.querySelector('.receive-item-selector'),
+            newItemNameWrapper: row.querySelector('.new-item-name-wrapper'),
+            newItemName: row.querySelector('.new-item-name'),
+            qty: row.querySelector('.receive-item-qty'),
+            itemCode: row.querySelector('.receive-item-code'),
+            itemDescription: row.querySelector('.receive-item-description'),
+            itemCategory: row.querySelector('.receive-item-category'),
+            itemUomSelectWrapper: row.querySelector('.item-uom-select-wrapper'),
+            itemUoM: row.querySelector('.receive-item-uom'),
+            newItemUomWrapper: row.querySelector('.new-item-uom-wrapper'),
+            newItemUom: row.querySelector('.new-item-uom'),
+            discount: row.querySelector('.receive-item-discount'),
+            itemPrice: row.querySelector('.receive-item-price'),
+            totalUnitCost: row.querySelector('.receive-item-total-unit-cost')
+        };
+    }
+
+    function getItemCategoryName(item) {
+        const category = String(item?.category || '').trim();
+        return category || 'Uncategorized';
+    }
+
+    function buildGroupedItemOptionsHtml(config = {}) {
+        const showCode = !!config.showCode;
+        const includeNew = !!config.includeNew;
+        const placeholder = config.placeholder || '-- Select Item --';
+        let html = `<option value="">${escapeHtml(placeholder)}</option>`;
+        const groupedItems = {};
+
+        itemsList.forEach(item => {
+            const category = getItemCategoryName(item);
+            if (!groupedItems[category]) groupedItems[category] = [];
+            groupedItems[category].push(item);
+        });
+
+        Object.keys(groupedItems).sort((a, b) => a.localeCompare(b)).forEach(category => {
+            html += `<optgroup label="${escapeHtml(category)}">`;
+            groupedItems[category]
+                .slice()
+                .sort((a, b) => String(a.item_name || '').localeCompare(String(b.item_name || '')))
+                .forEach(item => {
+                    const itemId = escapeHtml(String(item.item_id || ''));
+                    const itemCode = escapeHtml(String(item.item_code || ''));
+                    const itemName = escapeHtml(String(item.item_name || ''));
+                    const label = showCode && itemCode ? `${itemCode} - ${itemName}` : itemName;
+                    html += `<option value="${itemId}" data-code="${itemCode}" data-name="${itemName}">${label}</option>`;
+                });
+            html += '</optgroup>';
+        });
+
+        if (includeNew) {
+            html += '<option value="__new__">+ Add New Item</option>';
+        }
+
+        return html;
+    }
+
+    function buildReceiveItemOptionsHtml() {
+        return buildGroupedItemOptionsHtml({
+            placeholder: '-- Select Item --',
+            includeNew: true
+        });
+    }
+
+    function buildSupplierItemRow(index) {
+        return `
+            <tr class="item-entry-row item-entry-row-empty" data-row-index="${index}">
+                <td>
+                    <select class="item-entry-select receive-item-selector" id="itemSelector_${index}" data-row-index="${index}">
+                        ${buildReceiveItemOptionsHtml()}
+                    </select>
+                    <div class="new-item-name-wrapper" id="newItemNameWrapper_${index}" style="display:none;">
+                        <input type="text" class="item-entry-input mt-1 new-item-name" id="newItemName_${index}" data-row-index="${index}" placeholder="Enter new item name">
+                    </div>
+                </td>
+                <td><input type="number" class="item-entry-input text-end receive-item-qty" id="itemQty_${index}" data-row-index="${index}" placeholder="0" min="0" step="0.01"></td>
+                <td>
+                    <input type="text" class="item-entry-input receive-item-code" id="itemCode_${index}" data-row-index="${index}" placeholder="Item code - Description">
+                    <input type="hidden" class="receive-item-description" id="itemDescription_${index}">
+                    <input type="hidden" class="receive-item-category" id="itemCategory_${index}" value="">
+                </td>
+                <td>
+                    <div class="item-uom-select-wrapper" id="itemUomSelectWrapper_${index}" style="display:none;">
+                        <select class="item-entry-select receive-item-uom" id="itemUoM_${index}" data-row-index="${index}">
+                            <option value="">-- UOM --</option>
+                        </select>
+                    </div>
+                    <div class="new-item-uom-wrapper" id="newItemUomWrapper_${index}" style="display:none;">
+                        <input type="text" class="item-entry-input new-item-uom" id="newItemUom_${index}" data-row-index="${index}" placeholder="UOM">
+                    </div>
+                </td>
+                <td><input type="number" class="item-entry-input text-end receive-item-price" id="itemPrice_${index}" data-row-index="${index}" placeholder="0.00" min="0" step="0.01"></td>
+                <td><input type="text" class="item-entry-input text-end receive-item-discount" id="itemDiscount_${index}" data-row-index="${index}" placeholder="0 or 0%" autocomplete="off" inputmode="decimal"></td>
+                <td><input type="text" class="item-entry-input text-end receive-item-total-unit-cost" id="itemTotalUnitCost_${index}" data-row-index="${index}" value="₱0.00" readonly></td>
+            </tr>
+        `;
+    }
+
+    function ensureSupplierItemBlankRow() {
+        const tbody = getSupplierItemEntryBody();
+        if (!tbody) return;
+        const rows = getItemEntryRows();
+        const lastRow = rows[rows.length - 1];
+        if (!lastRow) return;
+        const hasValue = rowHasAnyItemValue(lastRow);
+        if (hasValue) {
+            const nextIndex = rows.length;
+            tbody.insertAdjacentHTML('beforeend', buildSupplierItemRow(nextIndex));
+        }
+    }
+
+    function rowHasAnyItemValue(row) {
+        const fields = getSupplierRowFields(row);
+        return [
+            fields.selector?.value,
+            fields.newItemName?.value,
+            fields.qty?.value,
+            fields.itemCode?.value,
+            fields.itemUoM?.value,
+            fields.newItemUom?.value,
+            fields.discount?.value,
+            fields.itemPrice?.value
+        ].some(value => String(value || '').trim() !== '');
+    }
+
+    function updateSupplierRowEmptyState(row) {
+        if (!row) return;
+        row.classList.toggle('item-entry-row-empty', !rowHasAnyItemValue(row));
+    }
+
+    function populateSupplierRowUoms(row, item) {
+        const fields = getSupplierRowFields(row);
+        if (!fields.itemUoM || !fields.itemUomSelectWrapper || !fields.newItemUomWrapper) return;
+
+        fields.itemUoM.innerHTML = '<option value="">-- UOM --</option>';
+
+        if (!item) {
+            fields.itemUomSelectWrapper.style.display = 'none';
+            fields.newItemUomWrapper.style.display = '';
+            if (fields.newItemUom) fields.newItemUom.value = '';
+            return;
+        }
+
+        const seen = new Set();
+        const itemUoms = Array.isArray(item.available_uoms) ? item.available_uoms : [];
+        itemUoms.forEach((uomValue) => {
+            const norm = String(uomValue || '').trim();
+            if (!norm || seen.has(norm.toLowerCase())) return;
+            seen.add(norm.toLowerCase());
+            const opt = document.createElement('option');
+            opt.value = norm;
+            opt.textContent = norm;
+            if (item.uom_prices && Object.prototype.hasOwnProperty.call(item.uom_prices, norm.toLowerCase())) {
+                opt.dataset.price = item.uom_prices[norm.toLowerCase()];
+            }
+            fields.itemUoM.appendChild(opt);
+        });
+
+        const defaultUom = String(item.unit_type || '').trim();
+        if (defaultUom) fields.itemUoM.value = defaultUom;
+        if (!fields.itemUoM.value && fields.itemUoM.options.length > 1) {
+            fields.itemUoM.selectedIndex = 1;
+        }
+        if (fields.itemUoM.selectedOptions.length > 0 && fields.itemUoM.selectedOptions[0].dataset.price && fields.itemPrice) {
+            fields.itemPrice.value = Number(fields.itemUoM.selectedOptions[0].dataset.price || 0).toFixed(2);
+        }
+
+        fields.itemUomSelectWrapper.style.display = '';
+        fields.newItemUomWrapper.style.display = 'none';
+    }
+
+    function handleSupplierItemRowSelection(row) {
+        const fields = getSupplierRowFields(row);
+        if (!fields.selector) return;
+
+        const selectorValue = fields.selector.value;
+        const isNewItem = selectorValue === '__new__';
+        const selectedItem = itemsList.find(item => String(item.item_id) === String(selectorValue)) || null;
+
+        if (fields.newItemNameWrapper) fields.newItemNameWrapper.style.display = isNewItem ? '' : 'none';
+
+        if (isNewItem) {
+            if (fields.newItemName) fields.newItemName.value = '';
+            if (fields.itemCode) {
+                fields.itemCode.value = '';
+                fields.itemCode.readOnly = false;
+            }
+            if (fields.itemDescription) fields.itemDescription.value = '';
+            if (fields.itemPrice) {
+                fields.itemPrice.value = '';
+                fields.itemPrice.readOnly = false;
+            }
+            populateSupplierRowUoms(row, null);
+        } else if (selectedItem) {
+            if (fields.itemCode) {
+                fields.itemCode.value = formatItemCodeDescription(selectedItem.item_code || '', selectedItem.description || selectedItem.item_name || '');
+                fields.itemCode.readOnly = true;
+            }
+            if (fields.itemDescription) fields.itemDescription.value = selectedItem.description || selectedItem.item_name || '';
+            if (fields.itemCategory) fields.itemCategory.value = selectedItem.category || '';
+            if (fields.itemPrice) {
+                fields.itemPrice.value = Number(selectedItem.price_piece || 0).toFixed(2);
+                fields.itemPrice.readOnly = false;
+            }
+            refreshSupplierRowTotalUnitCost(row);
+            populateSupplierRowUoms(row, selectedItem);
+            refreshSupplierRowTotalUnitCost(row);
+        } else {
+            if (fields.newItemNameWrapper) fields.newItemNameWrapper.style.display = 'none';
+            if (fields.itemCode) fields.itemCode.value = '';
+            if (fields.itemDescription) fields.itemDescription.value = '';
+            if (fields.itemCategory) fields.itemCategory.value = '';
+            if (fields.itemPrice) fields.itemPrice.value = '';
+            if (fields.discount) fields.discount.value = '';
+            refreshSupplierRowTotalUnitCost(row);
+            populateSupplierRowUoms(row, null);
+            if (fields.newItemUomWrapper) fields.newItemUomWrapper.style.display = 'none';
+        }
+
+        updateSupplierRowEmptyState(row);
+        ensureSupplierItemBlankRow();
+    }
+
+    function collectSupplierItemRows(showAlert = true) {
+        const rows = getItemEntryRows();
+        const collected = [];
+
+        for (const row of rows) {
+            const fields = getSupplierRowFields(row);
+            const selectorValue = String(fields.selector?.value || '').trim();
+            const isNewItem = selectorValue === '__new__';
+            const hasAnyValue = rowHasAnyItemValue(row);
+            if (!hasAnyValue) continue;
+
+            const selectedItem = !isNewItem ? (itemsList.find(item => String(item.item_id) === String(selectorValue)) || null) : null;
+            const itemName = isNewItem ? String(fields.newItemName?.value || '').trim() : String(selectedItem?.item_name || '').trim();
+            const codeDescription = splitItemCodeDescription(fields.itemCode?.value || '');
+            const itemCode = codeDescription.code;
+            const itemDescription = codeDescription.description || String(fields.itemDescription?.value || '').trim();
+            const itemCategory = String(fields.itemCategory?.value || '').trim();
+            const qty = parseFloat(fields.qty?.value || 0) || 0;
+            const uom = isNewItem ? String(fields.newItemUom?.value || '').trim() : String(fields.itemUoM?.value || '').trim();
+            const discount = String(fields.discount?.value || '').trim();
+            const price = parseFloat(fields.itemPrice?.value || 0) || 0;
+            const totalUnitCost = computeReceiveTotalUnitCost(qty, price, discount);
+
+            if (!selectorValue || !itemName || !itemCode || !itemDescription || !uom || qty <= 0) {
+                if (showAlert) {
+                    showSystemAlert('Reminder', 'Please complete all item rows with item name, code/description, quantity, UOM, and unit cost.', 'warning');
+                }
+                return null;
+            }
+
+            collected.push({
+                id: Date.now() + collected.length,
+                item_id: selectedItem ? selectedItem.item_id : null,
+                is_new: isNewItem,
+                name: itemName,
+                code: itemCode,
+                description: itemDescription,
+                category: itemCategory,
+                qty: qty,
+                uom: uom,
+                discount: discount,
+                price: price,
+                total_unit_cost: totalUnitCost,
+                total: totalUnitCost
+            });
+        }
+
+        if (showAlert && collected.length === 0) {
+            showSystemAlert('Reminder', 'Please add at least one item to receive.', 'warning');
+            return null;
+        }
+
+        receiveItems = collected;
+        syncReceiveItemCount();
+        updateItemsGrandTotal(false);
+        return collected;
+    }
+
+    function populateSupplierItemRowsFromReceiveItems(items) {
+        const tbody = getSupplierItemEntryBody();
+        if (!tbody) return;
+
+        const neededRows = Math.max(INITIAL_SUPPLIER_ITEM_ROWS, Array.isArray(items) ? items.length + 1 : INITIAL_SUPPLIER_ITEM_ROWS);
+        tbody.innerHTML = '';
+        for (let i = 0; i < neededRows; i++) {
+            tbody.insertAdjacentHTML('beforeend', buildSupplierItemRow(i));
+        }
+
+        (items || []).forEach((item, index) => {
+            const row = getItemEntryRows()[index];
+            if (!row) return;
+            const fields = getSupplierRowFields(row);
+            const selectedId = item.item_id ? String(item.item_id) : '';
+            const itemExists = selectedId && itemsList.some(listItem => String(listItem.item_id) === selectedId);
+
+            if (fields.selector) fields.selector.value = itemExists ? selectedId : '__new__';
+            handleSupplierItemRowSelection(row);
+
+            if (!itemExists) {
+                if (fields.newItemName) fields.newItemName.value = item.name || '';
+                if (fields.newItemNameWrapper) fields.newItemNameWrapper.style.display = '';
+            }
+            if (fields.qty) fields.qty.value = item.qty || '';
+            if (fields.itemCode) fields.itemCode.value = formatItemCodeDescription(item.code || '', item.description || '');
+            if (fields.itemDescription) fields.itemDescription.value = item.description || '';
+            if (fields.itemCategory) fields.itemCategory.value = item.category || '';
+            if (fields.itemUoM) fields.itemUoM.value = item.uom || fields.itemUoM.value;
+            if (fields.newItemUom) fields.newItemUom.value = item.uom || '';
+            if (fields.discount) fields.discount.value = item.discount || '';
+            if (fields.itemPrice) fields.itemPrice.value = Number(item.price || 0).toFixed(2);
+            refreshSupplierRowTotalUnitCost(row);
+            updateSupplierRowEmptyState(row);
+        });
+
+        ensureSupplierItemBlankRow();
+        syncReceiveItemCount();
+        updateItemsGrandTotal(false);
     }
 
     function addItemToTable(mode = null) {
@@ -8394,18 +10270,17 @@ document.addEventListener('DOMContentLoaded', function() {
         const selectedItem = getSelectedReceiveItem(mode);
         const isNewItem = selectorValue === '__new__';
         const itemName = isNewItem ? ((fields.newItemName ? fields.newItemName.value : '') || '').trim() : (selectedItem?.item_name || '');
-        const itemCode = ((fields.itemCode ? fields.itemCode.value : '') || '').trim();
-        const itemDescription = ((fields.itemDescription ? fields.itemDescription.value : '') || '').trim();
-<<<<<<< HEAD
-        const itemCategory = ((fields.itemCategory ? fields.itemCategory.value : '') || '').trim();
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
+        const codeDescription = splitItemCodeDescription((fields.itemCode ? fields.itemCode.value : '') || '');
+        const itemCode = codeDescription.code;
+        const itemDescription = codeDescription.description || ((fields.itemDescription ? fields.itemDescription.value : '') || '').trim();
+        const itemCategory = '';
         const qty = parseFloat(fields.qty ? fields.qty.value : 0) || 0;
         const uom = isNewItem ? (((fields.newItemUom || {}).value || '').trim()) : ((((fields.itemUoM || {}).value || '').trim()));
         const price = parseFloat(fields.itemPrice ? fields.itemPrice.value : 0) || 0;
+        const discount = '';
+        const totalUnitCost = computeReceiveTotalUnitCost(qty, price, discount);
 
         if (!selectorValue) {
-<<<<<<< HEAD
             showSystemAlert('Reminder', 'Please select an item first.', 'warning');
             return;
         }
@@ -8413,27 +10288,12 @@ document.addEventListener('DOMContentLoaded', function() {
             showSystemAlert('Reminder', 'Please enter the new item name.', 'warning');
             return;
         }
-        if (!itemName || !itemCode || !itemDescription || !itemCategory || !uom) {
+        if (!itemName || !itemCode || !itemDescription || !uom) {
             showSystemAlert('Reminder', 'Please complete the item details.', 'warning');
             return;
         }
         if (qty <= 0) {
             showSystemAlert('Reminder', 'Quantity must be greater than 0.', 'warning');
-=======
-            alert('Please select an item first.');
-            return;
-        }
-        if (isNewItem && !itemName) {
-            alert('Please enter the new item name.');
-            return;
-        }
-        if (!itemName || !itemCode || !itemDescription || !uom) {
-            alert('Please complete the item details.');
-            return;
-        }
-        if (qty <= 0) {
-            alert('Quantity must be greater than 0.');
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             return;
         }
 
@@ -8444,56 +10304,60 @@ document.addEventListener('DOMContentLoaded', function() {
             name: itemName,
             code: itemCode,
             description: itemDescription,
-<<<<<<< HEAD
             category: itemCategory,
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             qty: qty,
             uom: uom,
+            discount: discount,
             price: price,
-            total: qty * price
+            total_unit_cost: totalUnitCost,
+            total: totalUnitCost
         });
 
         renderReceiveTable();
+        updateItemsGrandTotal(true);
         resetReceiveItemEntry(mode);
         if (fields.selector) fields.selector.focus();
     }
 
-<<<<<<< HEAD
     function refreshReceiveItemTotalCell(itemId) {
         const item = receiveItems.find(i => String(i.id) === String(itemId));
         if (!item) return;
         const totalCell = document.querySelector(`[data-total-id="${CSS.escape(String(itemId))}"]`);
+        const unitTotalCell = document.querySelector(`[data-unit-total-id="${CSS.escape(String(itemId))}"]`);
+        if (unitTotalCell) {
+            unitTotalCell.textContent = formatPeso(item.total || (parseFloat(item.total_unit_cost || 0) || 0));
+        }
         if (totalCell) {
             totalCell.textContent = formatPeso(item.total || 0);
         }
         syncReceiveItemCount();
     }
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     function updateItemQty(itemId, newQty) {
         const item = receiveItems.find(i => String(i.id) === String(itemId));
         if (!item) return;
         item.qty = parseFloat(newQty) || 0;
-        item.total = (parseFloat(item.qty) || 0) * (parseFloat(item.price) || 0);
-<<<<<<< HEAD
+        item.total_unit_cost = computeReceiveTotalUnitCost(item.qty || 0, item.price || 0, item.discount || '');
+        item.total = parseFloat(item.total_unit_cost) || 0;
         refreshReceiveItemTotalCell(itemId);
-=======
-        renderReceiveTable();
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     }
 
     function updateItemPrice(itemId, newPrice) {
         const item = receiveItems.find(i => String(i.id) === String(itemId));
         if (!item) return;
         item.price = parseFloat(newPrice) || 0;
-        item.total = (parseFloat(item.qty) || 0) * (parseFloat(item.price) || 0);
-<<<<<<< HEAD
+        item.total_unit_cost = computeReceiveTotalUnitCost(item.qty || 0, item.price || 0, item.discount || '');
+        item.total = parseFloat(item.total_unit_cost) || 0;
         refreshReceiveItemTotalCell(itemId);
-=======
-        renderReceiveTable();
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
+    }
+
+    function updateItemDiscount(itemId, newDiscount) {
+        const item = receiveItems.find(i => String(i.id) === String(itemId));
+        if (!item) return;
+        item.discount = String(newDiscount || '').trim();
+        item.total_unit_cost = computeReceiveTotalUnitCost(item.qty || 0, item.price || 0, item.discount || '');
+        item.total = parseFloat(item.total_unit_cost) || 0;
+        refreshReceiveItemTotalCell(itemId);
     }
 
     function removeItem(itemId) {
@@ -8519,16 +10383,122 @@ document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('productionItemPrice').value = Number(selectedItem.uom_prices[selectedUom] || 0).toFixed(2);
         }
     });
-    document.getElementById('addReceiveItemBtn').addEventListener('click', function() { addItemToTable('supplier'); });
+
+    const supplierItemEntryBody = getSupplierItemEntryBody();
+    if (supplierItemEntryBody) {
+        supplierItemEntryBody.addEventListener('change', function(e) {
+            const row = e.target.closest('.item-entry-row');
+            if (!row) return;
+
+            if (e.target.classList.contains('receive-item-selector')) {
+                handleSupplierItemRowSelection(row);
+            }
+
+            if (e.target.classList.contains('receive-item-uom')) {
+                const fields = getSupplierRowFields(row);
+                const selectorValue = String(fields.selector?.value || '').trim();
+                const selectedItem = itemsList.find(item => String(item.item_id) === String(selectorValue)) || null;
+                const selectedUom = String(e.target.value || '').trim().toLowerCase();
+                if (selectedItem && selectedItem.uom_prices && Object.prototype.hasOwnProperty.call(selectedItem.uom_prices, selectedUom) && fields.itemPrice) {
+                    fields.itemPrice.value = Number(selectedItem.uom_prices[selectedUom] || 0).toFixed(2);
+                }
+                refreshSupplierRowTotalUnitCost(row);
+            }
+
+            refreshSupplierRowTotalUnitCost(row);
+            updateSupplierRowEmptyState(row);
+            ensureSupplierItemBlankRow();
+            collectSupplierItemRows(false);
+            updateItemsGrandTotal(false);
+        });
+
+        supplierItemEntryBody.addEventListener('input', function(e) {
+            const row = e.target.closest('.item-entry-row');
+            if (!row) return;
+            if (
+                e.target.classList.contains('receive-item-qty') ||
+                e.target.classList.contains('receive-item-price') ||
+                e.target.classList.contains('receive-item-discount') ||
+                e.target.classList.contains('receive-item-selector') ||
+                e.target.classList.contains('receive-item-uom') ||
+                e.target.classList.contains('new-item-name') ||
+                e.target.classList.contains('new-item-uom') ||
+                e.target.classList.contains('receive-item-code')
+            ) {
+                refreshSupplierRowTotalUnitCost(row);
+            }
+            updateSupplierRowEmptyState(row);
+            ensureSupplierItemBlankRow();
+            collectSupplierItemRows(false);
+            updateItemsGrandTotal(false);
+        });
+
+        supplierItemEntryBody.addEventListener('keyup', function(e) {
+            const row = e.target.closest('.item-entry-row');
+            if (!row) return;
+            if (
+                e.target.classList.contains('receive-item-qty') ||
+                e.target.classList.contains('receive-item-price') ||
+                e.target.classList.contains('receive-item-discount')
+            ) {
+                refreshSupplierRowTotalUnitCost(row);
+                updateItemsGrandTotal(false);
+            }
+        });
+
+        supplierItemEntryBody.addEventListener('paste', function() {
+            setTimeout(syncSupplierItemLiveTotals, 0);
+        });
+    }
+
+    const saveItemCloseBtn = document.getElementById('saveItemCloseBtn');
+    const saveItemNewBtn = document.getElementById('saveItemNewBtn');
+    const clearItemSheetBtn = document.getElementById('clearItemSheetBtn');
+
+    if (saveItemCloseBtn) {
+        saveItemCloseBtn.addEventListener('click', function() {
+            submitReceiveInventory('close', this);
+        });
+    }
+    if (saveItemNewBtn) {
+        saveItemNewBtn.addEventListener('click', function() {
+            submitReceiveInventory('new', this);
+        });
+    }
+    if (clearItemSheetBtn) {
+        clearItemSheetBtn.addEventListener('click', function() {
+            clearReceiveForm();
+            updateItemsGrandTotal(false);
+        });
+    }
+
+    populateSupplierItemRowsFromReceiveItems(receiveItems);
+    updateItemsGrandTotal(false);
     document.getElementById('addProductionReceiveItemBtn').addEventListener('click', function() { addItemToTable('production'); });
+
+    const supplierAttachmentInputForLabel = document.getElementById('supplierAttachments');
+    if (supplierAttachmentInputForLabel) {
+        supplierAttachmentInputForLabel.addEventListener('change', function() {
+            updateAttachmentButtonLabel('supplierAttachments', 'supplierAttachmentsLabel');
+        });
+        updateAttachmentButtonLabel('supplierAttachments', 'supplierAttachmentsLabel');
+    }
+
+    const productionAttachmentInputForLabel = document.getElementById('productionAttachments');
+    if (productionAttachmentInputForLabel) {
+        productionAttachmentInputForLabel.addEventListener('change', function() {
+            updateAttachmentButtonLabel('productionAttachments', 'productionAttachmentsLabel');
+        });
+    }
 
     document.getElementById('poNumberDropdown').addEventListener('change', function() {
         const poId = this.value;
         if (!poId) {
             receiveItems = [];
+            populateSupplierItemRowsFromReceiveItems(receiveItems);
             renderReceiveTable();
-            resetReceiveItemEntry('supplier');
-        resetReceiveItemEntry('production');
+            updateItemsGrandTotal(false);
+            resetReceiveItemEntry('production');
         const rmrPreview = document.getElementById('rmrRequestPreview');
         if (rmrPreview) {
             rmrPreview.style.display = 'none';
@@ -8545,6 +10515,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         if (selected.order_date) {
             document.getElementById('supplierReceiveDate').value = String(selected.order_date).split(' ')[0];
+            const poQbDateField = document.getElementById('poQbDate');
+            if (poQbDateField) poQbDateField.value = String(selected.order_date).split(' ')[0];
         }
         const supplierItemNameField = document.getElementById('supplierItemName');
         if (supplierItemNameField) {
@@ -8569,6 +10541,8 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             if (data.po && data.po.order_date) {
                 document.getElementById('supplierReceiveDate').value = String(data.po.order_date).split(' ')[0];
+                const poQbDateField = document.getElementById('poQbDate');
+                if (poQbDateField) poQbDateField.value = String(data.po.order_date).split(' ')[0];
             }
 
             receiveItems = (data.items || []).map((item, idx) => ({
@@ -8578,14 +10552,13 @@ document.addEventListener('DOMContentLoaded', function() {
                 name: item.item_name || '',
                 code: item.item_code || '',
                 description: item.description || item.item_name || '',
-<<<<<<< HEAD
-                category: item.category || '',
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
+                category: '',
                 qty: parseFloat(item.quantity_ordered || 0),
                 uom: item.unit_type || '',
+                discount: item.discount_type === 'percentage' ? `${item.discount_value || 0}%` : (Number(item.discount_value || 0) > 0 ? String(item.discount_value) : ''),
                 price: parseFloat(item.unit_price || 0),
-                total: (parseFloat(item.quantity_ordered || 0) * parseFloat(item.unit_price || 0))
+                total_unit_cost: computeReceiveTotalUnitCost(item.quantity_ordered || 0, item.unit_price || 0, item.discount_type === 'percentage' ? `${item.discount_value || 0}%` : (Number(item.discount_value || 0) > 0 ? String(item.discount_value) : '')),
+                total: computeReceiveTotalUnitCost(item.quantity_ordered || 0, item.unit_price || 0, item.discount_type === 'percentage' ? `${item.discount_value || 0}%` : (Number(item.discount_value || 0) > 0 ? String(item.discount_value) : ''))
             }));
 
             renderReceiveTable();
@@ -8593,44 +10566,54 @@ document.addEventListener('DOMContentLoaded', function() {
         resetReceiveItemEntry('production');
         })
         .catch(error => {
-<<<<<<< HEAD
             if (typeof Swal !== 'undefined') showSystemAlert('Error', error.message || 'Unable to load PO details.', 'error');
             else showSystemAlert('Error', error.message || 'Unable to load PO details.', 'error');
-=======
-            if (typeof Swal !== 'undefined') Swal.fire('Error', error.message || 'Unable to load PO details.', 'error');
-            else alert(error.message || 'Unable to load PO details.');
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         });
     });
 
-    document.getElementById('withPOCheckbox').addEventListener('change', function() {
-        const poField = document.getElementById('poNumberDropdown').parentElement;
-        if (this.checked) {
-            poField.style.display = 'block';
-            document.getElementById('poNumberDropdown').required = true;
+    const withPOCheckbox = document.getElementById('withPOCheckbox') || document.getElementById('withPO');
+    const poNumberDropdownField = document.getElementById('poNumberDropdown') ? document.getElementById('poNumberDropdown').parentElement : null;
+
+    function syncWithPOToggle() {
+        const poNumberDropdown = document.getElementById('poNumberDropdown');
+        if (!withPOCheckbox || !poNumberDropdownField || !poNumberDropdown) return;
+
+        if (withPOCheckbox.checked) {
+            poNumberDropdownField.style.display = '';
+            poNumberDropdown.required = true;
         } else {
-            poField.style.display = 'none';
-            document.getElementById('poNumberDropdown').required = false;
-            document.getElementById('poNumberDropdown').value = '';
+            poNumberDropdownField.style.display = 'none';
+            poNumberDropdown.required = false;
+            poNumberDropdown.value = '';
         }
-    });
+    }
 
-    document.getElementById('receiveItemsTableBody').addEventListener('input', function(e) {
-        if (e.target.classList.contains('qty-input')) {
-            updateItemQty(e.target.dataset.itemId, e.target.value);
-        }
-        if (e.target.classList.contains('price-input')) {
-            updateItemPrice(e.target.dataset.itemId, e.target.value);
-        }
-    });
+    if (withPOCheckbox) {
+        withPOCheckbox.addEventListener('change', syncWithPOToggle);
+        syncWithPOToggle();
+    }
 
+    const receiveItemsTableBody = document.getElementById('receiveItemsTableBody');
+    if (receiveItemsTableBody) {
+        receiveItemsTableBody.addEventListener('input', function(e) {
+            if (e.target.classList.contains('qty-input')) {
+                updateItemQty(e.target.dataset.itemId, e.target.value);
+            }
+            if (e.target.classList.contains('price-input')) {
+                updateItemPrice(e.target.dataset.itemId, e.target.value);
+            }
+            if (e.target.classList.contains('discount-input')) {
+                updateItemDiscount(e.target.dataset.itemId, e.target.value);
+            }
+        });
 
-    document.getElementById('receiveItemsTableBody').addEventListener('click', function(e) {
-        const btn = e.target.closest('.remove-item-btn');
-        if (btn) {
-            removeItem(btn.dataset.itemId);
-        }
-    });
+        receiveItemsTableBody.addEventListener('click', function(e) {
+            const btn = e.target.closest('.remove-item-btn');
+            if (btn) {
+                removeItem(btn.dataset.itemId);
+            }
+        });
+    }
 
     function formatReceiveHistoryValue(value, fallback = 'N/A') {
         const normalized = (value === null || value === undefined) ? '' : String(value).trim();
@@ -8706,19 +10689,12 @@ document.addEventListener('DOMContentLoaded', function() {
 
             const detail = data.detail || {};
             const poItems = Array.isArray(data.po_items) ? data.po_items : [];
-<<<<<<< HEAD
             const refType = String(detail.reference_type || '').toLowerCase();
             const sourceLabel = refType === 'production' ? 'Production' : (refType === 'rmr' ? 'Returned Merchandise' : 'Supplier');
             const unitPrice = Number(detail.unit_cost || detail.unit_price || 0);
             const qty = Number(detail.quantity_changed || 0);
             const savedTotalCost = Number(detail.total_cost || 0);
             const totalAmount = savedTotalCost > 0 ? savedTotalCost : (qty * unitPrice);
-=======
-            const sourceLabel = String(detail.reference_type || '').toLowerCase() === 'production' ? 'Production' : 'Supplier';
-            const unitPrice = Number(detail.unit_price || 0);
-            const qty = Number(detail.quantity_changed || 0);
-            const totalAmount = qty * unitPrice;
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
             let itemsHtml = '';
             if (poItems.length > 0) {
@@ -8732,12 +10708,8 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <th>Description</th>
                                     <th>Qty</th>
                                     <th>UoM</th>
-<<<<<<< HEAD
                                     <th>Unit Cost</th>
                                     <th>Total Cost</th>
-=======
-                                    <th>Unit Price</th>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                 </tr>
                             </thead>
                             <tbody>
@@ -8748,12 +10720,8 @@ document.addEventListener('DOMContentLoaded', function() {
                                         <td>${formatReceiveHistoryValue(item.item_description)}</td>
                                         <td>${formatReceiveHistoryValue(item.quantity_ordered)}</td>
                                         <td>${formatReceiveHistoryValue(item.unit_type)}</td>
-<<<<<<< HEAD
                                         <td>${formatPeso(item.unit_price || 0)}</td>
                                         <td>${formatPeso((Number(item.quantity_ordered || 0) * Number(item.unit_price || 0)) || 0)}</td>
-=======
-                                        <td>₱${Number(item.unit_price || 0).toFixed(2)}</td>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                     </tr>
                                 `).join('')}
                             </tbody>
@@ -8770,11 +10738,9 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <th>Description</th>
                                     <th>Qty</th>
                                     <th>UoM</th>
-<<<<<<< HEAD
+                                    <th>Discount</th>
                                     <th>Unit Cost</th>
-=======
-                                    <th>Unit Price</th>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
+                                    <th>Total Unit Cost</th>
                                     <th>Total Price</th>
                                 </tr>
                             </thead>
@@ -8785,13 +10751,10 @@ document.addEventListener('DOMContentLoaded', function() {
                                     <td>${formatReceiveHistoryValue(detail.item_description)}</td>
                                     <td>${qty.toFixed(2).replace(/\.00$/, '')}</td>
                                     <td>${formatReceiveHistoryValue(detail.unit_type)}</td>
-<<<<<<< HEAD
+                                    <td>—</td>
+                                    <td>${formatPeso(unitPrice)}</td>
                                     <td>${formatPeso(unitPrice)}</td>
                                     <td>${formatPeso(totalAmount)}</td>
-=======
-                                    <td>₱${unitPrice.toFixed(2)}</td>
-                                    <td>₱${totalAmount.toFixed(2)}</td>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                 </tr>
                             </tbody>
                         </table>
@@ -8802,7 +10765,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 <div class="row g-3">
                     <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Source</div><div class="fw-semibold">${sourceLabel}</div></div></div>
                     <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Received By</div><div class="fw-semibold">${formatReceiveHistoryValue(detail.received_by_name)}</div></div></div>
-<<<<<<< HEAD
                     <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Receive Date</div><div class="fw-semibold">${formatReceiveHistoryValue(detail.receive_date || detail.created_at)}</div></div></div>
                     <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Date Encoded</div><div class="fw-semibold">${formatReceiveHistoryValue(detail.encoded_date || detail.created_at)}</div></div></div>
                     <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Branch</div><div class="fw-semibold">${formatReceiveHistoryValue(detail.branch_name)}</div></div></div>
@@ -8813,14 +10775,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">PO Status</div><div class="fw-semibold">${sourceLabel === 'Supplier' ? formatReceiveHistoryValue(detail.po_status) : 'N/A'}</div></div></div>
                     <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Reference</div><div class="fw-semibold">${formatReceiveHistoryValue(detail.reference_type)} #${formatReceiveHistoryValue(detail.reference_id, '0')}</div></div></div>
                     <div class="col-12"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Memo</div><div class="fw-semibold" style="white-space: pre-wrap; word-break: break-word;">${formatReceiveHistoryValue(detail.receive_memo)}</div></div></div>
-=======
-                    <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Date Received</div><div class="fw-semibold">${formatReceiveHistoryValue(detail.created_at)}</div></div></div>
-                    <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Branch</div><div class="fw-semibold">${formatReceiveHistoryValue(detail.branch_name)}</div></div></div>
-                    <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Supplier</div><div class="fw-semibold">${sourceLabel === 'Supplier' ? formatReceiveHistoryValue(detail.supplier_name) : 'N/A'}</div></div></div>
-                    <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">PO Number</div><div class="fw-semibold">${sourceLabel === 'Supplier' ? formatReceiveHistoryValue(detail.po_number) : 'N/A'}</div></div></div>
-                    <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">PO Status</div><div class="fw-semibold">${sourceLabel === 'Supplier' ? formatReceiveHistoryValue(detail.po_status) : 'N/A'}</div></div></div>
-                    <div class="col-md-6"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Reference</div><div class="fw-semibold">${formatReceiveHistoryValue(detail.reference_type)} #${formatReceiveHistoryValue(detail.reference_id, '0')}</div></div></div>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     <div class="col-12"><div class="border rounded p-3 h-100"><div class="text-muted small mb-1">Attachment</div><div class="fw-semibold">${renderReceiveAttachments(data.attachments || [], data.attachment_note || 'No saved attachment found for this receive record.')}</div></div></div>
                     <div class="col-12"><div class="border rounded p-3 h-100"><div class="text-muted small mb-2">What was done</div><div class="fw-semibold">Stock was received and posted to current inventory. An inventory transaction record was saved for this item.</div></div></div>
                     <div class="col-12"><div class="border rounded p-3"> <div class="text-muted small mb-2">Received Item Details</div>${itemsHtml}</div></div>
@@ -8842,22 +10796,15 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .catch(error => {
             if (typeof Swal !== 'undefined') {
-<<<<<<< HEAD
                 showSystemAlert('Error', error.message || 'Unable to load receive history details.', 'error');
             } else {
                 showSystemAlert('Error', error.message || 'Unable to load receive history details.', 'error');
-=======
-                Swal.fire('Error', error.message || 'Unable to load receive history details.', 'error');
-            } else {
-                alert(error.message || 'Unable to load receive history details.');
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             }
         });
     }
 
 
 
-<<<<<<< HEAD
     
     const receiveHistoryReportRows = <?php echo json_encode(array_map(function($row) {
         return [
@@ -9221,7 +11168,9 @@ function previewSelectedRmrRequest() {
             description: opt.dataset.itemDescription || opt.dataset.itemName || '',
             qty: qty,
             uom: opt.dataset.uom || '',
+            discount: '',
             price: price,
+            total_unit_cost: price,
             total: qty * price,
             source: 'rmr',
             rmr_id: dropdown.value
@@ -9324,16 +11273,35 @@ function previewSelectedRmrRequest() {
         });
     }
 
-    document.getElementById('supplierReceiveDate').valueAsDate = new Date();
-    document.getElementById('productionReceiveDate').valueAsDate = new Date();
+    document.getElementById('supplierReceiveDate').value = new Date().toISOString().slice(0, 10);
+    document.getElementById('productionReceiveDate').value = new Date().toISOString().slice(0, 10);
     const supplierEncodedDate = document.getElementById('supplierEncodedDate');
     const productionEncodedDate = document.getElementById('productionEncodedDate');
-    if (supplierEncodedDate) supplierEncodedDate.valueAsDate = new Date();
-    if (productionEncodedDate) productionEncodedDate.valueAsDate = new Date();
+    if (supplierEncodedDate) supplierEncodedDate.value = new Date().toISOString().slice(0, 10);
+    if (productionEncodedDate) productionEncodedDate.value = new Date().toISOString().slice(0, 10);
     const initialRmrReceiveDate = document.getElementById('rmrReceiveDate');
-    if (initialRmrReceiveDate) initialRmrReceiveDate.valueAsDate = new Date();
+    if (initialRmrReceiveDate) initialRmrReceiveDate.value = new Date().toISOString().slice(0, 10);
     const initialRmrEncodedDate = document.getElementById('rmrEncodedDate');
-    if (initialRmrEncodedDate) initialRmrEncodedDate.valueAsDate = new Date();
+    if (initialRmrEncodedDate) initialRmrEncodedDate.value = new Date().toISOString().slice(0, 10);
+    const poQbDateInput = document.getElementById('poQbDate');
+    const supplierReceiveDateHidden = document.getElementById('supplierReceiveDate');
+    const supplierEncodedDateHidden = document.getElementById('supplierEncodedDate');
+    if (poQbDateInput && supplierReceiveDateHidden && supplierEncodedDateHidden) {
+        supplierReceiveDateHidden.value = poQbDateInput.value;
+        supplierEncodedDateHidden.value = poQbDateInput.value;
+        poQbDateInput.addEventListener('change', () => {
+            supplierReceiveDateHidden.value = poQbDateInput.value;
+            supplierEncodedDateHidden.value = poQbDateInput.value;
+        });
+    }
+    ['production', 'rmr'].forEach(mode => {
+        const receiveInput = document.getElementById(`${mode}ReceiveDate`);
+        const encodedInput = document.getElementById(`${mode}EncodedDate`);
+        if (receiveInput && encodedInput) {
+            encodedInput.value = receiveInput.value;
+            receiveInput.addEventListener('change', () => { encodedInput.value = receiveInput.value; });
+        }
+    });
     renderReceiveTable();
     handleReceiveItemSelection('supplier');
     handleReceiveItemSelection('production');
@@ -9395,36 +11363,68 @@ function previewSelectedRmrRequest() {
         });
     }
 
+
+    function updateAttachmentButtonLabel(inputId, labelId) {
+        const input = document.getElementById(inputId);
+        const label = document.getElementById(labelId) || document.querySelector(`label[for="${inputId}"]`);
+        if (!input || !label) return;
+
+        let labelText = 'Attach';
+        let titleText = 'Attach file';
+
+        if (input.files && input.files.length > 0) {
+            const fileNames = Array.from(input.files).map(file => file.name);
+            labelText = input.files.length === 1 ? fileNames[0] : `${fileNames[0]} +${input.files.length - 1}`;
+            titleText = fileNames.join(', ');
+            label.classList.add('has-file');
+        } else {
+            label.classList.remove('has-file');
+        }
+
+        label.title = titleText;
+        label.innerHTML = `<i class="bi bi-paperclip"></i><span class="item-attachment-text">${escapeHtml(labelText)}</span>`;
+    }
+
+    function resetAttachmentButtonLabel(inputId, labelId) {
+        const input = document.getElementById(inputId);
+        if (input) input.value = '';
+        updateAttachmentButtonLabel(inputId, labelId);
+    }
+
     function clearReceiveForm() {
         document.getElementById('supplierReceiveForm').reset();
         document.getElementById('productionReceiveForm').reset();
         const rmrReceiveForm = document.getElementById('rmrReceiveForm');
         if (rmrReceiveForm) rmrReceiveForm.reset();
-        document.getElementById('supplierReceiveDate').valueAsDate = new Date();
-        document.getElementById('productionReceiveDate').valueAsDate = new Date();
+        document.getElementById('supplierReceiveDate').value = new Date().toISOString().slice(0, 10);
+        document.getElementById('productionReceiveDate').value = new Date().toISOString().slice(0, 10);
         const supplierEncodedDate = document.getElementById('supplierEncodedDate');
         const productionEncodedDate = document.getElementById('productionEncodedDate');
-        if (supplierEncodedDate) supplierEncodedDate.valueAsDate = new Date();
-        if (productionEncodedDate) productionEncodedDate.valueAsDate = new Date();
+        if (supplierEncodedDate) supplierEncodedDate.value = new Date().toISOString().slice(0, 10);
+        if (productionEncodedDate) productionEncodedDate.value = new Date().toISOString().slice(0, 10);
         const rmrReceiveDate = document.getElementById('rmrReceiveDate');
-        if (rmrReceiveDate) rmrReceiveDate.valueAsDate = new Date();
+        if (rmrReceiveDate) rmrReceiveDate.value = new Date().toISOString().slice(0, 10);
         const rmrEncodedDate = document.getElementById('rmrEncodedDate');
-        if (rmrEncodedDate) rmrEncodedDate.valueAsDate = new Date();
+        if (rmrEncodedDate) rmrEncodedDate.value = new Date().toISOString().slice(0, 10);
         document.getElementById('poNumberDropdown').innerHTML = '<option value="">-- Select PO --</option>';
-        const supplierAttachmentInput = document.getElementById('supplierAttachments');
-        const productionAttachmentInput = document.getElementById('productionAttachments');
-        if (supplierAttachmentInput) supplierAttachmentInput.value = '';
-        if (productionAttachmentInput) productionAttachmentInput.value = '';
+        resetAttachmentButtonLabel('supplierAttachments', 'supplierAttachmentsLabel');
+        resetAttachmentButtonLabel('productionAttachments', 'productionAttachmentsLabel');
         const receiveMemo = document.getElementById('receiveMemo');
         if (receiveMemo) receiveMemo.value = '';
         receiveItems = [];
+        populateSupplierItemRowsFromReceiveItems(receiveItems);
         renderReceiveTable();
         resetReceiveItemEntry('supplier');
         resetReceiveItemEntry('production');
+        updateItemsGrandTotal(false);
     }
 
-    function submitReceiveInventory() {
+    function submitReceiveInventory(saveMode = 'new', clickedButton = null) {
         const activeTab = document.querySelector('.receive-tabs .nav-link.active').id;
+        if (activeTab === 'supplierTab') {
+            const collectedSupplierRows = collectSupplierItemRows(true);
+            if (!collectedSupplierRows) return;
+        }
         let formData = {};
         if (activeTab === 'supplierTab') {
             formData = {
@@ -9432,9 +11432,9 @@ function previewSelectedRmrRequest() {
                 supplier: document.getElementById('supplierDropdown').value,
                 supplierName: getSupplierName(),
                 poNumber: document.getElementById('poNumberDropdown').value,
-                withPO: document.getElementById('withPOCheckbox').checked,
-                receiveDate: document.getElementById('supplierReceiveDate').value,
-                encodedDate: document.getElementById('supplierEncodedDate').value,
+                withPO: !!(document.getElementById('withPOCheckbox') || document.getElementById('withPO')) && (document.getElementById('withPOCheckbox') || document.getElementById('withPO')).checked,
+                receiveDate: document.getElementById('poQbDate').value,
+                encodedDate: document.getElementById('poQbDate').value,
                 totalItems: receiveItems.length
             };
         } else if (activeTab === 'rmrTab') {
@@ -9442,14 +11442,14 @@ function previewSelectedRmrRequest() {
                 source: 'rmr',
                 rmr_id: document.getElementById('rmrRequestDropdown').value,
                 receiveDate: document.getElementById('rmrReceiveDate').value,
-                encodedDate: document.getElementById('rmrEncodedDate').value,
+                encodedDate: document.getElementById('rmrReceiveDate').value,
                 totalItems: receiveItems.length
             };
         } else {
             formData = {
                 source: 'production',
                 receiveDate: document.getElementById('productionReceiveDate').value,
-                encodedDate: document.getElementById('productionEncodedDate').value,
+                encodedDate: document.getElementById('productionReceiveDate').value,
                 totalItems: document.getElementById('productionTotalItems').value
             };
         }
@@ -9472,10 +11472,6 @@ function previewSelectedRmrRequest() {
             showSystemAlert('Reminder', 'Please select a receive date.', 'warning');
             return;
         }
-        if (!formData.encodedDate) {
-            showSystemAlert('Reminder', 'Please select an date encoded.', 'warning');
-            return;
-        }
         if (receiveItems.length === 0) {
             showSystemAlert('Reminder', 'Please add at least one item to receive.', 'warning');
             return;
@@ -9491,7 +11487,12 @@ function previewSelectedRmrRequest() {
         payload.append('rmr_id', formData.rmr_id || '');
         payload.append('receiveDate', formData.receiveDate || '');
         payload.append('encodedDate', formData.encodedDate || '');
-        payload.append('receive_memo', (document.getElementById('receiveMemo')?.value || '').trim());
+        payload.append('receive_memo', (document.getElementById('poQbMemo')?.value || document.getElementById('receiveMemo')?.value || '').trim());
+        payload.append('ref_no', (document.getElementById('poQbRefNo')?.value || '').trim());
+        payload.append('vendor_address', (document.getElementById('poQbAddress')?.value || '').trim());
+        payload.append('address', (document.getElementById('poQbAddress')?.value || '').trim());
+        payload.append('qb_mode', document.querySelector('input[name="poQbMode"]:checked')?.value || 'bill');
+        payload.append('payable_account', document.getElementById('poQbPayableAccount')?.value || '');
         payload.append('items', JSON.stringify(receiveItems));
 
         const attachmentInput = activeTab === 'supplierTab'
@@ -9503,7 +11504,7 @@ function previewSelectedRmrRequest() {
             });
         }
 
-        const submitBtn = document.getElementById('submitReceiveBtn');
+        const submitBtn = clickedButton || document.getElementById(saveMode === 'close' ? 'saveItemCloseBtn' : 'saveItemNewBtn') || document.getElementById('submitReceiveBtn');
         const originalSubmitHtml = submitBtn ? submitBtn.innerHTML : '';
         if (submitBtn) {
             submitBtn.disabled = true;
@@ -9538,10 +11539,20 @@ function previewSelectedRmrRequest() {
             return Promise.resolve();
         })
         .then(() => {
-            clearReceiveForm();
-            window.location.reload();
+            if (saveMode === 'close') {
+                window.location.href = window.location.pathname;
+            } else {
+                clearReceiveForm();
+                const itemTabUrl = new URL(window.location.href);
+                itemTabUrl.searchParams.set('tab', 'items');
+                window.location.href = itemTabUrl.toString();
+            }
         })
         .catch(error => {
+            if (submitBtn) {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalSubmitHtml || (saveMode === 'close' ? 'Save & Close' : 'Save & New');
+            }
             if (typeof Swal !== 'undefined') {
                 showSystemAlert('Error', error.message || 'Unable to save received inventory.', 'error');
             } else {
@@ -9550,301 +11561,621 @@ function previewSelectedRmrRequest() {
         });
     }
 
-    window.clearReceiveForm = clearReceiveForm;
-    window.submitReceiveInventory = submitReceiveInventory;
 
-    // Helper function to escape HTML
-    function escapeHtml(unsafe) {
-        return unsafe
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;")
-            .replace(/"/g, "&quot;")
-            .replace(/'/g, "&#039;");
-    }
-});
-</script>
-</body>
-</html>
+    const poQbModeInputs = document.querySelectorAll('input[name="poQbMode"]');
+    const poQbBillCard = document.getElementById('poQbBillCard');
+    const poQbTitle = document.getElementById('poQbTitle');
+    const poQbAmountLabel = document.getElementById('poQbAmountLabel');
+    const poQbBillReceivedOption = document.getElementById('poQbBillReceived')?.closest('.po-qb-mode-option');
+    const poQbMainClass = document.getElementById('poQbClass');
+    const poQbCreditClass = document.getElementById('poQbCreditClass');
 
-=======
-    function previewSelectedRmrRequest() {
-        const dropdown = document.getElementById('rmrRequestDropdown');
-        const preview = document.getElementById('rmrRequestPreview');
-        if (!dropdown || !preview) return;
-        const opt = dropdown.options[dropdown.selectedIndex];
-        if (!opt || !opt.value) {
-            preview.style.display = 'none';
-            preview.innerHTML = '';
-            return;
+    function syncPoQbMode() {
+        const selectedMode = document.querySelector('input[name="poQbMode"]:checked')?.value || 'bill';
+        const isCredit = selectedMode === 'credit';
+
+        if (poQbBillCard) poQbBillCard.classList.toggle('po-qb-credit-mode', isCredit);
+        if (poQbTitle) poQbTitle.textContent = isCredit ? 'Credit' : 'Bill';
+        if (poQbAmountLabel) poQbAmountLabel.textContent = isCredit ? 'Credit Amount' : 'Amount Due';
+        if (poQbBillReceivedOption) poQbBillReceivedOption.style.visibility = isCredit ? 'hidden' : 'visible';
+
+        if (isCredit && poQbMainClass && poQbCreditClass) {
+            poQbCreditClass.value = poQbMainClass.value;
+        } else if (!isCredit && poQbMainClass && poQbCreditClass) {
+            poQbMainClass.value = poQbCreditClass.value;
         }
-        preview.innerHTML = `
-            <strong>Selected RMR:</strong> ${escapeHtml(opt.textContent.trim())}<br>
-            <small>
-                <strong>Customer:</strong> ${escapeHtml(opt.dataset.customer || 'N/A')} &nbsp;|&nbsp;
-                <strong>Status:</strong> ${escapeHtml(opt.dataset.status || 'N/A')} &nbsp;|&nbsp;
-                <strong>Reason:</strong> ${escapeHtml(opt.dataset.reason || 'N/A')}
-            </small>`;
-        preview.style.display = 'block';
     }
 
-    function addSelectedRmrItemToTable() {
-        const dropdown = document.getElementById('rmrRequestDropdown');
-        if (!dropdown || !dropdown.value) {
-            alert('Please select an RMR request first.');
-            return;
-        }
-        const opt = dropdown.options[dropdown.selectedIndex];
-        const itemId = parseInt(opt.dataset.itemId || '0', 10);
-        const qty = parseFloat(opt.dataset.qty || '0');
-        const price = parseFloat(opt.dataset.price || '0');
-        if (!itemId || qty <= 0) {
-            alert('Selected RMR request has invalid item or quantity.');
-            return;
-        }
-        receiveItems = [{
-            id: itemId,
-            item_id: itemId,
-            name: opt.dataset.itemName || opt.textContent.trim(),
-            code: opt.dataset.itemCode || '',
-            description: opt.dataset.itemDescription || opt.dataset.itemName || '',
-            qty: qty,
-            uom: opt.dataset.uom || '',
-            price: price,
-            total: qty * price,
-            source: 'rmr',
-            rmr_id: dropdown.value
-        }];
-        renderReceiveTable();
-    }
-
-    const rmrRequestDropdown = document.getElementById('rmrRequestDropdown');
-    if (rmrRequestDropdown) {
-        rmrRequestDropdown.addEventListener('change', function() {
-            receiveItems = [];
-            renderReceiveTable();
-            previewSelectedRmrRequest();
+    poQbModeInputs.forEach(input => input.addEventListener('change', syncPoQbMode));
+    document.querySelectorAll('.receive-tabs .nav-link').forEach(tabButton => {
+        tabButton.addEventListener('shown.bs.tab', function() {
+            if (this.id === 'supplierTab') {
+                syncSupplierItemLiveTotals();
+            } else if (this.id === 'expensesTab') {
+                updateExpenseGrandTotal();
+            }
         });
+    });
+
+    if (poQbMainClass && poQbCreditClass) {
+        poQbMainClass.addEventListener('change', () => { poQbCreditClass.value = poQbMainClass.value; });
+        poQbCreditClass.addEventListener('change', () => { poQbMainClass.value = poQbCreditClass.value; });
     }
-    const addRmrReceiveItemBtn = document.getElementById('addRmrReceiveItemBtn');
-    if (addRmrReceiveItemBtn) {
-        addRmrReceiveItemBtn.addEventListener('click', addSelectedRmrItemToTable);
-    }
+    syncPoQbMode();
 
-    const receiveHistoryTable = document.getElementById('receiveHistoryTable');
-    if (receiveHistoryTable) {
-        receiveHistoryTable.addEventListener('click', function(e) {
-            const row = e.target.closest('.receive-history-row');
-            if (!row) return;
-            openReceiveHistoryDetails(row.dataset.transactionId || '', {
-                itemId: row.dataset.itemId || '',
-                referenceType: row.dataset.referenceType || '',
-                referenceId: row.dataset.referenceId || '',
-                createdAt: row.dataset.createdAt || ''
-            });
-        });
-    }
+    const poQbPayee = document.getElementById('poQbPayee');
+    const poQbAddress = document.getElementById('poQbAddress');
+    const poQbTerms = document.getElementById('poQbTerms');
 
-    document.getElementById('supplierReceiveDate').valueAsDate = new Date();
-    document.getElementById('productionReceiveDate').valueAsDate = new Date();
-    const initialRmrReceiveDate = document.getElementById('rmrReceiveDate');
-    if (initialRmrReceiveDate) initialRmrReceiveDate.valueAsDate = new Date();
-    renderReceiveTable();
-    handleReceiveItemSelection('supplier');
-    handleReceiveItemSelection('production');
-
-
-    const deleteReceiveHistoryBtn = document.getElementById('deleteReceiveHistoryBtn');
-    if (deleteReceiveHistoryBtn) {
-        deleteReceiveHistoryBtn.addEventListener('click', function() {
-            if (!activeReceiveHistoryDeletePayload) return;
-            const proceed = () => {
-                deleteReceiveHistoryBtn.disabled = true;
-                deleteReceiveHistoryBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Deleting...';
-                const payload = new URLSearchParams();
-                payload.append('action', 'delete_receive_history');
-                Object.entries(activeReceiveHistoryDeletePayload).forEach(([key, value]) => {
-                    if (value !== null && value !== undefined) payload.append(key, value);
+    function syncSelectedVendorDetails() {
+        if (!poQbPayee) return;
+        const selectedOption = poQbPayee.options[poQbPayee.selectedIndex];
+        if (!selectedOption) return;
+        if (poQbAddress) poQbAddress.value = selectedOption.getAttribute('data-address') || '';
+        if (poQbTerms) {
+            const supplierTerms = selectedOption.getAttribute('data-terms') || '';
+            if (supplierTerms) {
+                let matched = false;
+                Array.from(poQbTerms.options).forEach(option => {
+                    if (option.value.toLowerCase() === supplierTerms.toLowerCase() || option.textContent.trim().toLowerCase() === supplierTerms.toLowerCase()) {
+                        poQbTerms.value = option.value;
+                        matched = true;
+                    }
                 });
+                if (!matched) {
+                    const newTermOption = new Option(supplierTerms, supplierTerms, true, true);
+                    poQbTerms.add(newTermOption);
+                }
+            }
+        }
+    }
 
-                fetch(window.location.href, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
-                    body: payload.toString()
-                })
-                .then(res => res.text())
+    if (poQbPayee) {
+        poQbPayee.addEventListener('change', syncSelectedVendorDetails);
+        syncSelectedVendorDetails();
+    }
+
+    function applyPayBillsPrefillFromUrl() {
+        const params = new URLSearchParams(window.location.search);
+        const source = params.get('source') || '';
+        const modeParam = (params.get('qb_mode') || '').toLowerCase();
+        const hasPrefill = source === 'paybills' || params.has('qb_mode') || params.has('vendor_id') || params.has('vendor_name') || params.has('ref_no') || params.has('amount');
+        if (!hasPrefill) return;
+
+        if (modeParam === 'credit' || modeParam === 'bill') {
+            const modeInput = document.querySelector(`input[name="poQbMode"][value="${modeParam}"]`);
+            if (modeInput) {
+                modeInput.checked = true;
+                syncPoQbMode();
+            }
+        }
+
+        const vendorId = params.get('vendor_id') || '';
+        const vendorName = (params.get('vendor_name') || '').trim().toLowerCase();
+        if (poQbPayee) {
+            if (vendorId && Array.from(poQbPayee.options).some(opt => opt.value === vendorId)) {
+                poQbPayee.value = vendorId;
+            } else if (vendorName) {
+                const match = Array.from(poQbPayee.options).find(opt => {
+                    const dataName = (opt.getAttribute('data-name') || '').trim().toLowerCase();
+                    const textName = (opt.textContent || '').trim().toLowerCase();
+                    return dataName === vendorName || textName === vendorName;
+                });
+                if (match) poQbPayee.value = match.value;
+            }
+            poQbPayee.dispatchEvent(new Event('change'));
+        }
+
+        const addressParam = params.get('vendor_address');
+        if (addressParam !== null && poQbAddress) poQbAddress.value = addressParam;
+
+        const termsParam = params.get('terms');
+        if (termsParam !== null && poQbTerms) {
+            let found = false;
+            Array.from(poQbTerms.options).forEach(option => {
+                if (option.value.toLowerCase() === termsParam.toLowerCase() || option.textContent.trim().toLowerCase() === termsParam.toLowerCase()) {
+                    poQbTerms.value = option.value;
+                    found = true;
+                }
+            });
+            if (!found && termsParam.trim() !== '') poQbTerms.add(new Option(termsParam, termsParam, true, true));
+        }
+
+        const dateParam = params.get('date');
+        if (dateParam && document.getElementById('poQbDate')) document.getElementById('poQbDate').value = dateParam;
+        const billDueParam = params.get('bill_due');
+        if (billDueParam && document.getElementById('poQbBillDue')) document.getElementById('poQbBillDue').value = billDueParam;
+        const refParam = params.get('ref_no');
+        if (refParam !== null && document.getElementById('poQbRefNo')) document.getElementById('poQbRefNo').value = refParam;
+        const memoParam = params.get('memo');
+        if (memoParam !== null && document.getElementById('poQbMemo')) document.getElementById('poQbMemo').value = memoParam;
+        const amountParam = params.get('amount');
+        if (amountParam !== null && document.getElementById('poQbAmount')) document.getElementById('poQbAmount').value = amountParam;
+
+        const payableParam = (params.get('payable_account') || '').trim().toLowerCase();
+        const payableSelect = document.getElementById('poQbPayableAccount');
+        if (payableParam && payableSelect) {
+            const match = Array.from(payableSelect.options).find(option => {
+                return option.value.trim().toLowerCase() === payableParam || option.textContent.trim().toLowerCase().includes(payableParam);
+            });
+            if (match) payableSelect.value = match.value;
+        }
+
+        const tabParam = params.get('tab') || 'expenses';
+        if (tabParam === 'expenses') {
+            const expensesTabBtn = document.getElementById('expensesTab');
+            if (expensesTabBtn && window.bootstrap) bootstrap.Tab.getOrCreateInstance(expensesTabBtn).show();
+        }
+    }
+
+    applyPayBillsPrefillFromUrl();
+
+    const expenseRowsBody = document.getElementById('expenseRowsBody');
+    const addExpenseRowBtn = document.getElementById('addExpenseRowBtn');
+    const expenseGrandTotal = document.getElementById('expenseGrandTotal');
+
+    function formatExpensePeso(value) {
+        return '₱' + Number(value || 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
+    // Expenses > Account Title dropdown is sourced from active account_title values in chart_of_accounts.
+    const chartAccountOptions = <?php
+        $expense_account_title_map = [];
+        foreach ($chart_accounts_list as $account) {
+            $title = trim((string)($account['account_title'] ?? ''));
+            if ($title === '') continue;
+            $label = trim((string)($account['account_code'] ?? '')) !== ''
+                ? trim((string)$account['account_code']) . ' - ' . $title
+                : $title;
+            $expense_account_title_map[strtolower($title)] = [
+                'value' => $title,
+                'label' => $label,
+                'type' => trim((string)($account['account_type'] ?? ''))
+            ];
+        }
+        uasort($expense_account_title_map, function($a, $b) {
+            return strcasecmp($a['label'], $b['label']);
+        });
+        echo json_encode(array_values($expense_account_title_map), JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    ?>.filter(account => String(account?.value || '').trim() !== '');
+
+    function findChartAccountInfo(label) {
+        const normalized = String(label || '').trim().toLowerCase();
+        if (!normalized) return null;
+        return chartAccountOptions.find(account => String(account?.value || '').trim().toLowerCase() === normalized) || null;
+    }
+
+    let activeExpenseAccountPicker = null;
+    let expenseAccountDropdown = null;
+
+    function getExpenseAccountDropdown() {
+        if (expenseAccountDropdown) return expenseAccountDropdown;
+        expenseAccountDropdown = document.createElement('div');
+        expenseAccountDropdown.className = 'qb-account-dropdown expense-account-dropdown';
+        document.body.appendChild(expenseAccountDropdown);
+        window.expenseAccountDropdown = expenseAccountDropdown;
+        return expenseAccountDropdown;
+    }
+
+    function closeExpenseAccountDropdown() {
+        const dropdown = getExpenseAccountDropdown();
+        dropdown.classList.remove('show');
+        dropdown.innerHTML = '';
+        document.querySelectorAll('.qb-account-toggle.active').forEach(btn => btn.classList.remove('active'));
+        activeExpenseAccountPicker = null;
+    }
+
+    function positionExpenseAccountDropdown(picker) {
+        const dropdown = getExpenseAccountDropdown();
+        const rect = picker.getBoundingClientRect();
+        const dropdownWidth = Math.max(rect.width, 240);
+        const viewportPadding = 8;
+        let left = rect.left;
+        if (left + dropdownWidth > window.innerWidth - viewportPadding) {
+            left = Math.max(viewportPadding, window.innerWidth - dropdownWidth - viewportPadding);
+        }
+        dropdown.style.width = dropdownWidth + 'px';
+        dropdown.style.minWidth = dropdownWidth + 'px';
+        dropdown.style.left = left + 'px';
+        dropdown.style.top = (rect.bottom + 2) + 'px';
+    }
+
+    function renderExpenseAccountDropdown(input, showAll = false) {
+        const picker = input.closest('.qb-account-picker');
+        if (!picker) return;
+
+        const dropdown = getExpenseAccountDropdown();
+        const keyword = String(input.value || '').trim().toLowerCase();
+        const filtered = showAll || keyword === ''
+            ? chartAccountOptions.slice()
+            : chartAccountOptions.filter(account => {
+                const value = String(account?.value || '').toLowerCase();
+                const label = String(account?.label || '').toLowerCase();
+                const type = String(account?.type || '').toLowerCase();
+                return value.includes(keyword) || label.includes(keyword) || type.includes(keyword);
+            });
+
+        dropdown.innerHTML = '';
+        if (!filtered.length) {
+            dropdown.innerHTML = '<div class="qb-account-empty">No account title found</div>';
+        } else {
+            filtered.forEach(account => {
+                const option = document.createElement('button');
+                option.type = 'button';
+                option.className = 'qb-account-option';
+                option.dataset.value = account.value;
+                option.innerHTML = `<span class="qb-account-option-label">${escapeHtml(account.label || account.value)}</span><small>${escapeHtml(account.type || '')}</small>`;
+                option.addEventListener('mousedown', function(e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    input.value = account.value;
+                    input.dispatchEvent(new Event('input', { bubbles: true }));
+                    closeExpenseAccountDropdown();
+                    input.focus();
+                });
+                dropdown.appendChild(option);
+            });
+        }
+
+        activeExpenseAccountPicker = picker;
+        positionExpenseAccountDropdown(picker);
+        dropdown.classList.add('show');
+
+        document.querySelectorAll('.qb-account-toggle.active').forEach(btn => btn.classList.remove('active'));
+        const btn = picker.querySelector('.qb-account-toggle');
+        if (btn) btn.classList.add('active');
+    }
+
+    function ensureExpenseAccountCombo(rowOrPicker) {
+        const root = rowOrPicker || document;
+        root.querySelectorAll('.expense-account-cell').forEach(cell => {
+            if (cell.querySelector('.expense-account-input')) return;
+            const existingValue = (cell.querySelector('.expense-account-select')?.value || '').trim();
+            cell.innerHTML = `
+                <div class="qb-account-picker expense-account-combo">
+                    <input type="text" class="expense-account-input" autocomplete="off" value="${escapeHtml(existingValue)}">
+                    <button type="button" class="qb-account-toggle" aria-label="Open account type list"><i class="bi bi-chevron-down"></i></button>
+                </div>
+            `;
+        });
+    }
+
+    ensureExpenseAccountCombo(document);
+
+    document.addEventListener('input', function(e) {
+        if (!e.target.classList.contains('expense-account-input')) return;
+        renderExpenseAccountDropdown(e.target, false);
+    });
+
+    document.addEventListener('focusin', function(e) {
+        if (!e.target.classList.contains('expense-account-input')) return;
+        renderExpenseAccountDropdown(e.target, false);
+    });
+
+    document.addEventListener('mousedown', function(e) {
+        const toggle = e.target.closest('.qb-account-toggle');
+        if (toggle && toggle.closest('.expense-account-combo')) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const picker = toggle.closest('.qb-account-picker');
+            const input = picker ? picker.querySelector('.expense-account-input') : null;
+            if (!input) return;
+
+            const dropdown = getExpenseAccountDropdown();
+            const isOpenForThisPicker = activeExpenseAccountPicker === picker && dropdown.classList.contains('show');
+
+            if (isOpenForThisPicker) {
+                closeExpenseAccountDropdown();
+            } else {
+                renderExpenseAccountDropdown(input, true);
+                setTimeout(() => input.focus(), 0);
+            }
+            return;
+        }
+
+        if (e.target.closest('.qb-account-dropdown')) {
+            return;
+        }
+
+        if (!e.target.closest('.expense-account-combo')) {
+            closeExpenseAccountDropdown();
+        }
+    });
+
+    document.addEventListener('click', function(e) {
+        const toggle = e.target.closest('.qb-account-toggle');
+        if (toggle && toggle.closest('.expense-account-combo')) {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const picker = toggle.closest('.qb-account-picker');
+            const input = picker ? picker.querySelector('.expense-account-input') : null;
+            if (!input) return;
+
+            renderExpenseAccountDropdown(input, true);
+            setTimeout(function() { input.focus(); }, 0);
+            return;
+        }
+
+        if (e.target.closest('.qb-account-dropdown') || e.target.closest('.expense-account-combo')) {
+            return;
+        }
+
+        closeExpenseAccountDropdown();
+    });
+
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && getExpenseAccountDropdown().classList.contains('show')) {
+            closeExpenseAccountDropdown();
+        }
+    });
+
+    window.addEventListener('resize', closeExpenseAccountDropdown);
+    window.addEventListener('scroll', function() {
+        if (activeExpenseAccountPicker && getExpenseAccountDropdown().classList.contains('show')) {
+            positionExpenseAccountDropdown(activeExpenseAccountPicker);
+        }
+    }, true);
+
+    function updateExpenseGrandTotal() {
+        if (!expenseRowsBody || !expenseGrandTotal) return;
+        let total = 0;
+        expenseRowsBody.querySelectorAll('.expense-amount-input').forEach(input => {
+            total += parseFloat(input.value || '0') || 0;
+        });
+        expenseGrandTotal.textContent = formatExpensePeso(total);
+        const tabAmount = document.getElementById('expenseTabAmount');
+        if (tabAmount) tabAmount.textContent = formatExpensePeso(total);
+        const qbAmount = document.getElementById('poQbAmount');
+        const activeTabId = document.querySelector('.receive-tabs .nav-link.active')?.id || '';
+        if (qbAmount && activeTabId === 'expensesTab') qbAmount.value = Number(total || 0).toFixed(2);
+    }
+
+    function createExpenseRow() {
+        const tr = document.createElement('tr');
+        tr.className = 'expense-row';
+        tr.innerHTML = `
+            <td class="expense-account-cell"><div class="qb-account-picker expense-account-combo"><input type="text" class="expense-account-input" autocomplete="off"><button type="button" class="qb-account-toggle" tabindex="-1" aria-label="Open account type list"><i class="bi bi-chevron-down"></i></button></div></td>
+            <td><input type="number" class="expense-amount-input" min="0.01" step="0.01" autocomplete="off"></td>
+            <td><input type="text" class="expense-memo-input" autocomplete="off"></td>
+        `;
+        return tr;
+    }
+
+    function expenseRowHasValue(row) {
+        if (!row) return false;
+        const account = (row.querySelector('.expense-account-input')?.value || '').trim();
+        const amount = parseFloat(row.querySelector('.expense-amount-input')?.value || '0') || 0;
+        const memo = (row.querySelector('.expense-memo-input')?.value || '').trim();
+        return account !== '' || amount > 0 || memo !== '';
+    }
+
+    function appendExpenseRow() {
+        if (!expenseRowsBody) return null;
+        const newRow = createExpenseRow();
+        expenseRowsBody.appendChild(newRow);
+        ensureExpenseAccountCombo(newRow);
+        return newRow;
+    }
+
+    function ensureExpenseMinimumRows(minRows = 10) {
+        if (!expenseRowsBody) return;
+        while (expenseRowsBody.querySelectorAll('.expense-row').length < minRows) {
+            appendExpenseRow();
+        }
+    }
+
+    function autoAddExpenseRowIfLastFilled() {
+        if (!expenseRowsBody) return;
+        const rows = Array.from(expenseRowsBody.querySelectorAll('.expense-row'));
+        const lastRow = rows[rows.length - 1];
+        if (expenseRowHasValue(lastRow)) {
+            appendExpenseRow();
+        }
+    }
+
+    if (addExpenseRowBtn && expenseRowsBody) {
+        addExpenseRowBtn.addEventListener('click', function() {
+            appendExpenseRow();
+            updateExpenseGrandTotal();
+        });
+        expenseRowsBody.addEventListener('input', function(e) {
+            if (e.target && (
+                e.target.classList.contains('expense-account-input') ||
+                e.target.classList.contains('expense-amount-input') ||
+                e.target.classList.contains('expense-memo-input')
+            )) {
+                updateExpenseGrandTotal();
+                autoAddExpenseRowIfLastFilled();
+            }
+        });
+        expenseRowsBody.addEventListener('change', function(e) {
+            if (e.target && (
+                e.target.classList.contains('expense-account-input') ||
+                e.target.classList.contains('expense-amount-input') ||
+                e.target.classList.contains('expense-memo-input')
+            )) {
+                updateExpenseGrandTotal();
+                autoAddExpenseRowIfLastFilled();
+            }
+        });
+        expenseRowsBody.addEventListener('click', function(e) {
+            const removeBtn = e.target.closest('.remove-expense-row');
+            if (!removeBtn) return;
+            const rows = expenseRowsBody.querySelectorAll('.expense-row');
+            if (rows.length <= 10) {
+                const row = removeBtn.closest('.expense-row');
+                row.querySelectorAll('input').forEach(input => input.value = '');
+            } else {
+                removeBtn.closest('.expense-row').remove();
+            }
+            ensureExpenseMinimumRows(10);
+            updateExpenseGrandTotal();
+        });
+        ensureExpenseMinimumRows(10);
+        updateExpenseGrandTotal();
+    }
+
+    const clearExpenseSheetBtn = document.getElementById('clearExpenseSheetBtn');
+    if (clearExpenseSheetBtn && expenseRowsBody) {
+        clearExpenseSheetBtn.addEventListener('click', function() {
+            expenseRowsBody.innerHTML = '';
+            ensureExpenseMinimumRows(10);
+            closeExpenseAccountDropdown();
+            updateExpenseGrandTotal();
+        });
+    }
+
+    const expenseEntryForm = document.getElementById('expenseEntryForm');
+    if (expenseEntryForm) {
+        expenseEntryForm.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const rows = [];
+            expenseRowsBody.querySelectorAll('.expense-row').forEach(row => {
+                const account = (row.querySelector('.expense-account-input')?.value || '').trim();
+                const amount = parseFloat(row.querySelector('.expense-amount-input')?.value || '0') || 0;
+                const memo = (row.querySelector('.expense-memo-input')?.value || '').trim();
+                if (account || amount > 0 || memo) rows.push({ account, amount, memo });
+            });
+            if (!poQbPayee || !poQbPayee.value) { showSystemAlert('Reminder', 'Please select a vendor.', 'warning'); return; }
+            if (!rows.length) { showSystemAlert('Reminder', 'Please add at least one expense row.', 'warning'); return; }
+            for (const row of rows) {
+                if (!row.account) { showSystemAlert('Reminder', 'Please select an account title for every expense row.', 'warning'); return; }
+                if (!findChartAccountInfo(row.account)) {
+                    showSystemAlert('Invalid Account Title', 'Please select an account title from Chart of Accounts only.', 'warning');
+                    return;
+                }
+                if (!row.amount || row.amount <= 0) { showSystemAlert('Reminder', 'Please enter a valid amount for every expense row.', 'warning'); return; }
+            }
+            const btn = e.submitter || document.getElementById('saveExpenseBtn');
+            const saveMode = btn ? (btn.getAttribute('data-save-mode') || 'new') : 'new';
+            const originalHtml = btn ? btn.innerHTML : '';
+            if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Saving...'; }
+            const payload = new FormData();
+            const selectedVendorOption = poQbPayee ? poQbPayee.options[poQbPayee.selectedIndex] : null;
+            const selectedMode = document.querySelector('input[name="poQbMode"]:checked')?.value || 'bill';
+            const selectedClass = selectedMode === 'credit'
+                ? (document.getElementById('poQbCreditClass')?.value || '')
+                : (document.getElementById('poQbClass')?.value || '');
+
+            payload.append('action', 'create_expense');
+            payload.append('qb_mode', selectedMode);
+            payload.append('vendor_id', poQbPayee?.value || '');
+            payload.append('vendor_name', selectedVendorOption ? (selectedVendorOption.getAttribute('data-name') || selectedVendorOption.textContent.trim()) : '');
+            payload.append('vendor_address', document.getElementById('poQbAddress')?.value || '');
+            payload.append('terms', document.getElementById('poQbTerms')?.value || '');
+            payload.append('ref_no', document.getElementById('poQbRefNo')?.value || '');
+            payload.append('expense_date', document.getElementById('poQbDate')?.value || '');
+            payload.append('bill_due', document.getElementById('poQbBillDue')?.value || '');
+            payload.append('class_name', selectedClass);
+            payload.append('payable_account', document.getElementById('poQbPayableAccount')?.value || '');
+            payload.append('memo', document.getElementById('poQbMemo')?.value || '');
+            payload.append('bill_received', document.getElementById('poQbBillReceived')?.checked ? '1' : '0');
+            payload.append('expense_rows', JSON.stringify(rows));
+            fetch(window.location.href, { method: 'POST', body: payload })
+                .then(response => response.text())
                 .then(text => {
                     let data;
-                    try { data = JSON.parse(text); } catch (e) { throw new Error(text || 'Failed to parse delete response.'); }
-                    if (!data.success) throw new Error(data.message || 'Failed to delete receive record.');
-                    if (typeof Swal !== 'undefined') {
-                        return Swal.fire('Deleted', data.message || 'Receive record deleted successfully.', 'success');
-                    }
-                    alert(data.message || 'Receive record deleted successfully.');
+                    try { data = JSON.parse(text); } catch (err) { throw new Error(text || 'Failed to parse server response.'); }
+                    if (!data.success) throw new Error(data.message || 'Failed to save expense.');
+                    return showSystemAlert('Expense Saved', data.message || 'Expense saved successfully.', 'success', { timer: 2200, timerProgressBar: true });
                 })
-                .then(() => window.location.reload())
-                .catch(err => {
-                    deleteReceiveHistoryBtn.disabled = false;
-                    deleteReceiveHistoryBtn.innerHTML = '<i class="bi bi-trash me-1"></i> Delete Receive';
-                    if (typeof Swal !== 'undefined') {
-                        Swal.fire('Error', err.message || 'Failed to delete receive record.', 'error');
+                .then(() => {
+                    if (saveMode === 'close') {
+                        window.location.href = window.location.pathname;
                     } else {
-                        alert(err.message || 'Failed to delete receive record.');
+                        const expenseTabUrl = new URL(window.location.href);
+                        expenseTabUrl.searchParams.set('tab', 'expenses');
+                        window.location.href = expenseTabUrl.toString();
                     }
-                });
-            };
-
-            if (typeof Swal !== 'undefined') {
-                Swal.fire({
-                    icon: 'warning',
-                    title: 'Delete this receive record?',
-                    text: 'This will remove the receive record and deduct the received stock.',
-                    showCancelButton: true,
-                    confirmButtonText: 'Yes, delete it'
-                }).then(result => {
-                    if (result.isConfirmed) proceed();
-                });
-            } else if (confirm('Delete this receive record and deduct the received stock?')) {
-                proceed();
-            }
+                })
+                .catch(error => showSystemAlert('Error', error.message || 'Unable to save expense.', 'error'))
+                .finally(() => { if (btn) { btn.disabled = false; btn.innerHTML = originalHtml; } });
         });
     }
 
-    function clearReceiveForm() {
-        document.getElementById('supplierReceiveForm').reset();
-        document.getElementById('productionReceiveForm').reset();
-        const rmrReceiveForm = document.getElementById('rmrReceiveForm');
-        if (rmrReceiveForm) rmrReceiveForm.reset();
-        document.getElementById('supplierReceiveDate').valueAsDate = new Date();
-        document.getElementById('productionReceiveDate').valueAsDate = new Date();
-        const rmrReceiveDate = document.getElementById('rmrReceiveDate');
-        if (rmrReceiveDate) rmrReceiveDate.valueAsDate = new Date();
-        document.getElementById('poNumberDropdown').innerHTML = '<option value="">-- Select PO --</option>';
-        const supplierAttachmentInput = document.getElementById('supplierAttachments');
-        const productionAttachmentInput = document.getElementById('productionAttachments');
-        if (supplierAttachmentInput) supplierAttachmentInput.value = '';
-        if (productionAttachmentInput) productionAttachmentInput.value = '';
-        receiveItems = [];
-        renderReceiveTable();
-        resetReceiveItemEntry('supplier');
-        resetReceiveItemEntry('production');
+    function setExpenseDetailsText(id, value) {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value && String(value).trim() !== '' ? value : '-';
     }
 
-    function submitReceiveInventory() {
-        const activeTab = document.querySelector('.receive-tabs .nav-link.active').id;
-        let formData = {};
-        if (activeTab === 'supplierTab') {
-            formData = {
-                source: 'supplier',
-                supplier: document.getElementById('supplierDropdown').value,
-                supplierName: getSupplierName(),
-                poNumber: document.getElementById('poNumberDropdown').value,
-                withPO: document.getElementById('withPOCheckbox').checked,
-                receiveDate: document.getElementById('supplierReceiveDate').value,
-                totalItems: receiveItems.length
-            };
-        } else if (activeTab === 'rmrTab') {
-            formData = {
-                source: 'rmr',
-                rmr_id: document.getElementById('rmrRequestDropdown').value,
-                receiveDate: document.getElementById('rmrReceiveDate').value,
-                totalItems: receiveItems.length
-            };
-        } else {
-            formData = {
-                source: 'production',
-                receiveDate: document.getElementById('productionReceiveDate').value,
-                totalItems: document.getElementById('productionTotalItems').value
-            };
-        }
+    function openExpenseDetailsModal(details) {
+        if (!details) return;
+        setExpenseDetailsText('expenseDetailsNo', details.expense_no);
+        setExpenseDetailsText('expenseDetailsDate', details.expense_date);
+        setExpenseDetailsText('expenseDetailsStatus', details.status);
+        setExpenseDetailsText('expenseDetailsTotal', formatExpensePeso(details.total_amount || 0));
+        setExpenseDetailsText('expenseDetailsPaid', formatExpensePeso(details.paid_amount || 0));
+        setExpenseDetailsText('expenseDetailsBalance', formatExpensePeso(details.balance || 0));
+        setExpenseDetailsText('expenseDetailsCreatedBy', details.created_by || 'System');
+        setExpenseDetailsText('expenseDetailsCreatedAt', details.created_at);
 
-        if (activeTab === 'supplierTab') {
-            if (!formData.supplier) {
-                alert('Please select a supplier.');
-                return;
-            }
-            if (formData.withPO && !formData.poNumber) {
-                alert('Please select a PO number or uncheck "With PO?".');
-                return;
-            }
-        }
-        if (activeTab === 'rmrTab' && !formData.rmr_id) {
-            alert('Please select a confirmed or processed RMR request.');
-            return;
-        }
-        if (!formData.receiveDate) {
-            alert('Please select a receive date.');
-            return;
-        }
-        if (receiveItems.length === 0) {
-            alert('Please add at least one item to receive.');
-            return;
-        }
-
-        const payload = new FormData();
-        payload.append('action', 'receive_inventory');
-        payload.append('source', formData.source);
-        payload.append('supplier_id', formData.supplier || '');
-        payload.append('supplier', formData.supplierName || '');
-        payload.append('poNumber', formData.poNumber || '');
-        payload.append('withPO', formData.withPO ? '1' : '0');
-        payload.append('rmr_id', formData.rmr_id || '');
-        payload.append('receiveDate', formData.receiveDate || '');
-        payload.append('items', JSON.stringify(receiveItems));
-
-        const attachmentInput = activeTab === 'supplierTab'
-            ? document.getElementById('supplierAttachments')
-            : (activeTab === 'productionTab' ? document.getElementById('productionAttachments') : null);
-        if (attachmentInput && attachmentInput.files && attachmentInput.files.length > 0) {
-            Array.from(attachmentInput.files).forEach(file => {
-                payload.append(activeTab === 'supplierTab' ? 'supplierAttachments[]' : 'productionAttachments[]', file);
+        const linesWrapper = document.getElementById('expenseDetailsLines');
+        if (linesWrapper) {
+            const lines = Array.isArray(details.items) && details.items.length ? details.items : [{
+                account: details.account || '',
+                amount: details.total_amount || 0,
+                memo: details.memo || ''
+            }];
+            linesWrapper.innerHTML = `
+                <div class="expense-detail-line expense-detail-head">
+                    <div>Account</div>
+                    <div>Amount</div>
+                    <div>Memo</div>
+                </div>
+            `;
+            lines.forEach(line => {
+                const row = document.createElement('div');
+                row.className = 'expense-detail-line';
+                row.innerHTML = `
+                    <div><strong>${escapeHtml(String(line.account || '-'))}</strong></div>
+                    <div>${escapeHtml(formatExpensePeso(line.amount || 0))}</div>
+                    <div>${line.memo && String(line.memo).trim() !== '' ? escapeHtml(String(line.memo)) : '<span class="text-muted">No memo</span>'}</div>
+                `;
+                linesWrapper.appendChild(row);
             });
         }
 
-        const submitBtn = document.getElementById('submitReceiveBtn');
-        const originalSubmitHtml = submitBtn ? submitBtn.innerHTML : '';
-        if (submitBtn) {
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Saving...';
+        const modalEl = document.getElementById('expenseDetailsModal');
+        if (modalEl && typeof bootstrap !== 'undefined') {
+            bootstrap.Modal.getOrCreateInstance(modalEl).show();
         }
+    }
 
-        fetch(window.location.href, {
-            method: 'POST',
-            body: payload
-        })
-        .then(response => response.text())
-        .then(text => {
-            let data;
+    document.querySelectorAll('.recorded-expense-row').forEach(row => {
+        const showDetails = () => {
             try {
-                data = JSON.parse(text);
-            } catch (e) {
-                throw new Error(text || 'Failed to parse server response.');
+                openExpenseDetailsModal(JSON.parse(row.getAttribute('data-expense-details') || '{}'));
+            } catch (err) {
+                showSystemAlert('Error', 'Unable to open expense details.', 'error');
             }
-            if (!data.success) throw new Error(data.message || 'Failed to save received inventory.');
-            if (typeof Swal !== 'undefined') {
-                return Swal.fire({
-                    icon: 'success',
-                    title: 'Inventory Received',
-                    text: (data.message || 'Received inventory saved successfully.') + ((data.attachments_saved || 0) > 0 ? ` Attachments saved: ${data.attachments_saved}.` : ''),
-                    timer: 2500,
-                    timerProgressBar: true
-                });
-            }
-            alert(data.message || 'Received inventory saved successfully.');
-            return Promise.resolve();
-        })
-        .then(() => {
-            clearReceiveForm();
-            window.location.reload();
-        })
-        .catch(error => {
-            if (typeof Swal !== 'undefined') {
-                Swal.fire('Error', error.message || 'Unable to save received inventory.', 'error');
-            } else {
-                alert(error.message || 'Unable to save received inventory.');
+        };
+        row.addEventListener('click', showDetails);
+        row.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                showDetails();
             }
         });
-    }
+    });
+
+
+
+    // Prevent number input values from changing when scrolling while focused
+    document.addEventListener('wheel', function(e) {
+        const activeElement = document.activeElement;
+        if (activeElement && activeElement.matches && activeElement.matches('input[type="number"]')) {
+            activeElement.blur();
+        }
+    }, { passive: true });
+
+    document.addEventListener('keydown', function(e) {
+        const activeElement = document.activeElement;
+        if (activeElement && activeElement.matches && activeElement.matches('input[type="number"]') && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+            e.preventDefault();
+        }
+    });
 
     window.clearReceiveForm = clearReceiveForm;
     window.submitReceiveInventory = submitReceiveInventory;
@@ -9862,4 +12193,3 @@ function previewSelectedRmrRequest() {
 </script>
 </body>
 </html>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928

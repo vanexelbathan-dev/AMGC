@@ -2085,214 +2085,284 @@ function isRequestExpired($effective_until) {
 
     <!-- MAIN APPLICATION -->
     <div id="appPage">
-         <!-- Sidebar -->
+           <!-- Sidebar -->
 <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
         <h3>
             <button class="desktop-toggle-btn" id="desktopToggleBtn">
                 <i class="bi bi-list" id="toggleIcon"></i>
             </button>
-            <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
+
+            <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon">
+
             <span class="nav-text">Branch Admin</span>
         </h3>
     </div>
-    
+
     <div class="sidebar-content">
         <div class="sidebar-menu">
             <ul class="nav flex-column">
-                <li class="nav-item">
-                <a class="nav-link" href="branchdashboard.php">
-                <i class="bi bi-speedometer2"></i>
-                <span class="nav-text">Dashboard</span></a>
-            </li>
-                <!-- Warehouse Dropdown - walang dropdown-toggle class -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'warehouseMenu')">
-        <i class="bi bi-shop"></i>
-        <span class="nav-text">Warehouse</span>
-        <i class="bi bi-chevron-down dropdown-arrow"></i>
-    </a>
-    <div class="collapse" id="warehouseMenu">
-        <ul class="nav flex-column ps-4">
-                        
-            <li class="nav-item">
-                <a class="nav-link active" href="current_inventory.php">
-                        <i class="bi bi-bar-chart-line"></i>
-                        <span class="nav-text">Current Inventory</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="bad_orders.php">
-                    <i class="bi bi-recycle"></i>
-                    <span class="nav-text">Bad Orders</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="pick_list_items.php">
-                    <i class="bi bi-list-check"></i>
-                    <span class="nav-text">Pick List Items</span>
-                </a>
-            </li>
-                                            <li class="nav-item">
-                                    <a class="nav-link" href="warehouses.php">
-                                    <i class="bi bi-shop"></i>
-                                    <span class="nav-text">Warehouses</span></a>
-                                </li>
-        </ul>
-    </div>
-</li>
 
-                
-                <!-- Supplier Dropdown - walang dropdown-toggle class -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'supplierMenu')">
-        <i class="bi bi-building"></i>
-        <span class="nav-text">Supplier</span>
-        <i class="bi bi-chevron-down dropdown-arrow"></i>
-    </a>
-    <div class="collapse" id="supplierMenu">
-        <ul class="nav flex-column ps-4">
-            <li class="nav-item">
-                <a class="nav-link" href="purchase_order.php">
-                    <i class="bi bi-box"></i>
-                    <span class="nav-text">Receive Inventory</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="supplier.php">
-                    <i class="bi bi-people"></i>
-                    <span class="nav-text">Supplier List</span>
-                </a>
-            </li>
-        </ul>
-    </div>
-</li>
-
-<li class="nav-item dropdown-nav">
-                            <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'customerMenu')">
-                                <i class="bi bi-people"></i><span class="nav-text">Customer</span><i class="bi bi-chevron-down dropdown-arrow"></i>
-                            </a>
-                            <div class="collapse" id="customerMenu">
-                                <ul class="nav flex-column ps-4">
-                                    <li class="nav-item"><a class="nav-link" href="customer_list.php"><i class="bi bi-person-badge"></i><span class="nav-text">Customer List</span></a></li>
-                                    <li class="nav-item"><a class="nav-link" href="approve_credit_requests.php"><i class="bi bi-pencil-square"></i><span class="nav-text">Approve Credit Request</span></a></li>
-                                    <li class="nav-item"><a class="nav-link" href="sales_order.php"><i class="bi bi-cart"></i><span class="nav-text">Sales Order</span></a></li>
-                                    <li class="nav-item"><a class="nav-link active" href="collections.php"><i class="bi bi-cash-stack"></i><span class="nav-text">Collections</span></a></li>
-                                </ul>
-                            </div>
-                        </li>
-
-<!-- Delivery Dropdown - walang dropdown-toggle class -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'deliveryMenu')">
-        <i class="bi bi-truck"></i>
-        <span class="nav-text">Delivery</span>
-        <i class="bi bi-chevron-down dropdown-arrow"></i>
-    </a>
-    <div class="collapse" id="deliveryMenu">
-        <ul class="nav flex-column ps-4">
-            <li class="nav-item">
-                <a class="nav-link" href="trip_tickets.php">
-                    <i class="bi bi-ticket-perforated"></i>
-                    <span class="nav-text">Trip Tickets</span>
-                </a>
-            </li>
-        </ul>
-    </div>
-</li>
-                                   <!-- Banking Dropdown -->
-                    <li class="nav-item dropdown-nav">
-                        <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'bankingMenu')">
-                            <i class="bi bi-bank2"></i>
-                            <span class="nav-text">Banking</span>
-                            <i class="bi bi-chevron-down dropdown-arrow"></i>
-                        </a>
-
-                        <div class="collapse" id="bankingMenu">
-                            <ul class="nav flex-column ps-4">
-                                <li class="nav-item">
-                                    <a class="nav-link" href="deposit.php">
-                                        <i class="bi bi-arrow-down-circle"></i>
-                                        <span class="nav-text">Deposit</span>
-                                    </a>
-                                </li>
-
-                                <li class="nav-item">
-                                    <a class="nav-link" href="Withdrawal.php">
-                                        <i class="bi bi-arrow-up-circle"></i>
-                                        <span class="nav-text">Withdrawal</span>
-                                    </a>
-                                </li>
-
-                                <li class="nav-item">
-                                    <a class="nav-link" href="bank_statement.php">
-                                        <i class="bi bi-receipt"></i>
-                                        <span class="nav-text">Bank Statement</span>
-                                    </a>
-                                </li>
-
-                                <li class="nav-item">
-                                    <a class="nav-link" href="expenses.php">
-                                        <i class="bi bi-cash-stack"></i>
-                                        <span class="nav-text">Expenses</span>
-                                    </a>
-                                </li>
-                            </ul>
-                        </div>
-                    </li>
-                    
-                      <!-- Shared Services Dropdown -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'sharedServicesMenu')">
-        <i class="bi bi-grid-3x3-gap"></i>
-        <span class="nav-text">Shared Services</span>
-        <i class="bi bi-chevron-down dropdown-arrow"></i>
-    </a>
-    <div class="collapse" id="sharedServicesMenu">
-        <ul class="nav flex-column ps-4">
-            <li class="nav-item">
-                <a class="nav-link" href="motorpool.php">
-                    <i class="bi bi-truck"></i>
-                    <span class="nav-text">Motorpool</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="central_warehouse.php">
-                    <i class="bi bi-box-seam"></i>
-                    <span class="nav-text">Central Warehouse</span>
-                </a>
-            </li>
-        </ul>
-    </div>
-</li>
-                    
-                <!-- Users -->
-                <li class="nav-item">
-                    <a class="nav-link" href="drivers.php">
-                        <i class="bi bi-people-fill"></i>
-                        <span class="nav-text">Users</span>
+                <!-- Vendor Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'supplierMenu')">
+                        <i class="bi bi-people"></i>
+                        <span class="nav-text">Vendor</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
                     </a>
+
+                    <div class="collapse" id="supplierMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="purchase_order.php">
+                                    <i class="bi bi-file-earmark-text"></i>
+                                    <span class="nav-text">Enter Bills</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="paybills.php">
+                                    <i class="bi bi-currency-dollar"></i>
+                                    <span class="nav-text">Pay Bills</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="supplier.php">
+                                    <i class="bi bi-people"></i>
+                                    <span class="nav-text">Vendor List</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
                 </li>
-                
-                
+
+                <!-- Customer Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'customerMenu')">
+                        <i class="bi bi-people"></i>
+                        <span class="nav-text">Customers</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="customerMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="customer_list.php">
+                                    <i class="bi bi-person-badge"></i>
+                                    <span class="nav-text">Customer List</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link active" href="approve_credit_requests.php">
+                                    <i class="bi bi-pencil-square"></i>
+                                    <span class="nav-text">Approve Credit Limit & Terms</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="sales_order.php">
+                                    <i class="bi bi-cart"></i>
+                                    <span class="nav-text">Sales Order</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="collections.php">
+                                    <i class="bi bi-cash-stack"></i>
+                                    <span class="nav-text">Receive Payment</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+
+                <!-- Employees Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'employeesMenu')">
+                        <i class="bi bi-people"></i>
+                        <span class="nav-text">Employees</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="employeesMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="employeelist.php">
+                                    <i class="bi bi-people"></i>
+                                    <span class="nav-text">Employee List</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="employee.php">
+                                    <i class="bi bi-clock"></i>
+                                    <span class="nav-text">Enter Time</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+
+                <!-- Banking Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'bankingMenu')">
+                        <i class="bi bi-bank2"></i>
+                        <span class="nav-text">Banking</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="bankingMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="deposit.php">
+                                    <i class="bi bi-bank"></i>
+                                    <span class="nav-text">Record Deposit</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="Withdrawal.php">
+                                    <i class="bi bi-journal-check"></i>
+                                    <span class="nav-text">Write Checks</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="bank_statement.php">
+                                    <i class="bi bi-receipt"></i>
+                                    <span class="nav-text">Bank Statement</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item" hidden>
+                                <a class="nav-link" href="expenses.php">
+                                    <i class="bi bi-cash-stack"></i>
+                                    <span class="nav-text">Expenses</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+
+                <!-- Company Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'warehouseMenu')">
+                        <i class="bi bi-building"></i>
+                        <span class="nav-text">Company</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="warehouseMenu">
+                        <ul class="nav flex-column ps-4">
+                            <!-- Dashboard -->
+                            <li class="nav-item">
+                                <a class="nav-link" href="branchdashboard.php">
+                                    <i class="bi bi-speedometer2"></i>
+                                    <span class="nav-text">Dashboard</span>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="current_inventory.php">
+                                    <i class="bi bi-box"></i>
+                                    <span class="nav-text">Items</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="bad_orders.php">
+                                    <i class="bi bi-recycle"></i>
+                                    <span class="nav-text">Bad Orders</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="pick_list_items.php">
+                                    <i class="bi bi-list-check"></i>
+                                    <span class="nav-text">Pick List Items</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="warehouses.php">
+                                    <i class="bi bi-shop"></i>
+                                    <span class="nav-text">Warehouses</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="chartofaccounts.php">
+                                    <i class="bi bi-graph-up"></i>
+                                    <span class="nav-text">Chart of Accounts</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item" hidden>
+                                <a class="nav-link" href="trip_tickets.php">
+                                    <i class="bi bi-ticket-perforated"></i>
+                                    <span class="nav-text">Trip Tickets</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="motorpool.php">
+                                    <i class="bi bi-truck"></i>
+                                    <span class="nav-text">Motorpool</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="central_warehouse.php">
+                                    <i class="bi bi-box-seam"></i>
+                                    <span class="nav-text">Central Warehouse</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="batch_transaction.php">
+                                    <i class="bi bi-collection"></i>
+                                    <span class="nav-text">Batch Transaction</span>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="drivers.php">
+                                    <i class="bi bi-people-fill"></i>
+                                    <span class="nav-text">Users</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+
             </ul>
         </div>
     </div>
-    
+
     <div class="sidebar-footer">
         <div class="user-profile-sidebar">
-            <div class="user-avatar-sidebar"><?php echo $user_initials; ?></div>
+            <div class="user-avatar-sidebar">
+                <?php echo htmlspecialchars($user_initials); ?>
+            </div>
+
             <div class="user-details-sidebar">
-                <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-                <span class="user-role-sidebar"><?php echo ucfirst($user_role); ?></span>
+                <span class="user-name-sidebar">
+                    <?php echo htmlspecialchars($user_name); ?>
+                </span>
+
+                <span class="user-role-sidebar">
+                    <?php echo htmlspecialchars(ucfirst($user_role)); ?>
+                </span>
             </div>
         </div>
+
         <button class="logout-btn-sidebar" onclick="logout()">
             <i class="bi bi-box-arrow-right"></i>
             <span class="logout-text">Logout</span>
         </button>
     </div>
 </div>
+
 
         <!-- Main Content -->
         <div class="main-content" id="mainContent">

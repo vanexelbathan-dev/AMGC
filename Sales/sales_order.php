@@ -70,7 +70,6 @@ if ($check_drivers && $check_drivers->num_rows > 0) {
     $drivers_table_exists = true;
 }
 
-<<<<<<< HEAD
 
 // ===== SAFE COLUMN HELPERS FOR ORDER DETAILS TOTALS =====
 // Used by Order Details modal so SUBTOTAL / DISCOUNT / GRAND TOTAL works
@@ -87,10 +86,6 @@ if (!function_exists('amgc_sales_column_exists')) {
 
 // ========== NEW: EXPORT ALL ORDERS TO EXCEL (REQUIRED FORMAT) ==========
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'export_all_orders') {
-=======
-// Handle AJAX request for Excel export data
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'export_excel_data') {
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     header('Content-Type: application/json');
     
     try {
@@ -113,11 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $param_types .= "i";
         }
         
-<<<<<<< HEAD
         // Created by filter - regular users only see their own orders
-=======
-        // Created by filter - regular users only see their own orders, admins see all
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         if (!$view_all_branches) {
             $where_conditions[] = "so.created_by = ?";
             $params[] = $user_id;
@@ -138,7 +129,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $param_types .= "s";
         }
         
-<<<<<<< HEAD
         // Date range filter
         if (!empty($start_date)) {
             $where_conditions[] = "DATE(so.order_date) >= ?";
@@ -490,8 +480,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
             $param_types .= "s";
         }
         
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         // Date range filter
         if (!empty($start_date)) {
             $where_conditions[] = "DATE(so.order_date) >= ?";
@@ -587,11 +575,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
     exit;
 }
 
-<<<<<<< HEAD
 // Handle AJAX request for printing all orders (legacy - kept for compatibility)
-=======
-// Handle AJAX request for printing all orders
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'get_all_order_items') {
     header('Content-Type: application/json');
     
@@ -803,12 +787,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         
         // Get order summary from first item
         $order_summary = !empty($items) ? $items[0] : null;
-<<<<<<< HEAD
         if (!$order_summary || !in_array(strtolower((string)$order_summary['order_status']), ['pending', 'confirmed'], true)) {
             throw new Exception('Print receipt is only available for Pending and Confirmed orders.');
         }
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         
         echo json_encode([
             'success' => true,
@@ -872,7 +853,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
             }
             
-<<<<<<< HEAD
             // Get order details with driver info, store_name, and saved discount totals.
             // Column-safe expressions prevent Unknown column errors on older databases.
             $so_discount_percent_expr = amgc_sales_column_exists($conn, 'sales_orders', 'discount_percent') ? "COALESCE(so.discount_percent, 0)" : "0";
@@ -885,9 +865,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 ? "COALESCE(NULLIF(soi_sub.gross_price, 0), NULLIF(soi_sub.unit_price, 0), 0)"
                 : "COALESCE(NULLIF(soi_sub.unit_price, 0), 0)";
 
-=======
-            // Get order details with driver info and store_name
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             $sql = "SELECT 
                         so.so_id,
                         so.so_number,
@@ -1233,10 +1210,7 @@ if (file_exists($logo_path)) {
 function getOrderStatusBadge($status) {
     return match($status) {
         'pending' => 'badge bg-warning text-dark',
-<<<<<<< HEAD
         'confirmed' => 'badge bg-secondary text-white',
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         'processing' => 'badge bg-info text-white',
         'shipped' => 'badge bg-primary text-white',
         'delivered' => 'badge bg-success text-white',
@@ -1248,10 +1222,7 @@ function getOrderStatusBadge($status) {
 function getOrderStatusText($status) {
     return match($status) {
         'pending' => 'Pending',
-<<<<<<< HEAD
         'confirmed' => 'Confirmed',
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         'processing' => 'Processing',
         'shipped' => 'Shipped',
         'delivered' => 'Delivered',
@@ -1289,11 +1260,8 @@ function formatDate($dateStr) {
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <!-- SheetJS for Excel export -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<<<<<<< HEAD
         <!-- Session Checker -->
     <script src="../js/session-checker.js"></script>
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     <style>
         /* Brand Colors - Keep UI exactly the same */
         :root {
@@ -2683,7 +2651,6 @@ function formatDate($dateStr) {
         background: rgba(239, 68, 68, 0.1) !important;
     }
     
-<<<<<<< HEAD
 
     .table-responsive table td[data-label="Status"] .badge.status-badge {
         padding: 5px 9px !important;
@@ -2710,8 +2677,6 @@ function formatDate($dateStr) {
         border-color: #ffc107 !important;
     }
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     /* Driver - row 2 (katabi ng Customer) */
     .table-responsive table td[data-label="Driver"] {
         display: block !important;
@@ -2774,7 +2739,6 @@ function formatDate($dateStr) {
         display: none !important;
     }
 }
-<<<<<<< HEAD
 
 
 /* ===== ORDER DETAILS MODAL TOTALS - SAME LAYOUT AS CUSTOMER PAGE ===== */
@@ -2916,8 +2880,6 @@ function formatDate($dateStr) {
         display: none !important;
     }
 }
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     </style>
 </head>
 <body>
@@ -3060,15 +3022,12 @@ function formatDate($dateStr) {
                             <span class="nav-text">Sales Orders</span>
                         </a>
                     </li>
-<<<<<<< HEAD
                      <li class="nav-item">
                          <a class="nav-link" href="sales_collections.php">
                              <i class="bi bi-cash-stack"></i>
                              <span class="nav-text">Collections</span>
                         </a>
                     </li>
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 </ul>
             </div>
             <!-- User Profile Section at the bottom of sidebar -->
@@ -3332,12 +3291,8 @@ function formatDate($dateStr) {
         </tr>
     <?php else: ?>
         <?php foreach ($orders as $order): ?>
-<<<<<<< HEAD
             <tr class="sales-order-row"
                 onclick="handleOrderRowClick(event, <?php echo (int)$order['so_id']; ?>)"
-=======
-            <tr class="sales-order-row" 
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 data-id="<?php echo $order['so_id']; ?>"
                 data-order-number="<?php echo htmlspecialchars($order['so_number']); ?>"
                 data-customer="<?php echo htmlspecialchars($order['customer_name'] ?? ''); ?>"
@@ -3398,20 +3353,11 @@ function formatDate($dateStr) {
                 
                 <td data-label="Actions" class="no-print">
                     <div class="action-buttons">
-<<<<<<< HEAD
                         <?php if (in_array(strtolower((string)$order['order_status']), ['pending', 'confirmed'], true)): ?>
                             <button class="btn-action btn-print" onclick="event.stopPropagation(); printSingleOrder(<?php echo $order['so_id']; ?>)" title="Print Order">
                                 <i class="bi bi-printer"></i>
                             </button>
                         <?php endif; ?>
-=======
-                        <button class="btn-action btn-view" onclick="viewOrderDetails(<?php echo $order['so_id']; ?>)" title="View Details">
-                            <i class="bi bi-eye"></i>
-                        </button>
-                        <button class="btn-action btn-print" onclick="printSingleOrder(<?php echo $order['so_id']; ?>)" title="Print Order">
-                            <i class="bi bi-printer"></i>
-                        </button>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     </div>
                 </td>
             </tr>
@@ -3892,11 +3838,7 @@ function formatDate($dateStr) {
                 }
             });
             
-<<<<<<< HEAD
             // Update date range summary with formatted currency
-=======
-            // Update date range summary
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             updateDateRangeSummary(startDate, endDate, visibleCount, totalAmount);
         }
 
@@ -3945,11 +3887,7 @@ function formatDate($dateStr) {
             const summaryText = document.getElementById('dateRangeSummaryText');
             
             if (!startDate || !endDate) {
-<<<<<<< HEAD
                 if (summaryDiv) summaryDiv.style.display = 'none';
-=======
-                summaryDiv.style.display = 'none';
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 return;
             }
             
@@ -3959,15 +3897,10 @@ function formatDate($dateStr) {
             const startStr = start.toLocaleDateString('en-US', options);
             const endStr = end.toLocaleDateString('en-US', options);
             
-<<<<<<< HEAD
             if (summaryText) {
                 summaryText.innerHTML = `<strong>${startStr} - ${endStr}:</strong> ${visibleCount} orders, Total: ${formatCurrency(totalAmount)}`;
             }
             if (summaryDiv) summaryDiv.style.display = 'block';
-=======
-            summaryText.innerHTML = `<strong>${startStr} - ${endStr}:</strong> ${visibleCount} orders, Total: ₱${totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
-            summaryDiv.style.display = 'block';
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         }
 
         // Refresh orders
@@ -3985,7 +3918,6 @@ function formatDate($dateStr) {
             document.getElementById('loadingOverlay').style.display = 'none';
         }
 
-<<<<<<< HEAD
         // View order details with improved layout and formatted currency
         function viewOrderDetails(orderId) {
             currentOrderId = orderId;
@@ -4203,307 +4135,10 @@ function formatDate($dateStr) {
                                         </div>
                                     </div>
                                 </div>
-=======
-        // View order details with improved layout
-function viewOrderDetails(orderId) {
-    currentOrderId = orderId;
-    const modal = new bootstrap.Modal(document.getElementById('orderDetailsModal'));
-    
-    // Show loading
-    const orderDetailsContent = document.getElementById('orderDetailsContent');
-    if (orderDetailsContent) {
-        orderDetailsContent.innerHTML = `
-            <div class="loading-state">
-                <div class="spinner-border text-success" role="status">
-                    <span class="visually-hidden">Loading...</span>
-                </div>
-                <p class="mt-3 text-muted">Loading order details...</p>
-            </div>
-        `;
-    }
-    
-    modal.show();
-    
-    // Fetch order details via AJAX
-    fetch('', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-Requested-With': 'XMLHttpRequest'
-        },
-        body: 'action=get_order_details&order_id=' + orderId
-    })
-    .then(response => {
-        if (!response.ok) {
-            throw new Error('Network response was not ok');
-        }
-        return response.json();
-    })
-    .then(data => {
-        if (data.success) {
-            const order = data.order;
-            const items = data.items;
-            
-            // Build items table HTML
-            let itemsHtml = '';
-            let grandTotal = 0;
-            
-            if (items && items.length > 0) {
-                items.forEach(item => {
-                    const total = parseFloat(item.line_total) || (parseFloat(item.quantity_ordered) * parseFloat(item.unit_price));
-                    grandTotal += total;
-                    itemsHtml += `
-                        <tr>
-                            <td data-label="Product">
-                                <strong>${escapeHtml(item.item_name)}</strong><br>
-                                <small class="text-muted">${escapeHtml(item.item_code)}</small>
-                            </td>
-                            <td data-label="Unit" class="text-center">${escapeHtml(item.unit_type || 'N/A')}</td>
-                            <td data-label="Quantity" class="text-center">${parseInt(item.quantity_ordered)}</td>
-                            <td data-label="Unit Price" class="text-end">₱${parseFloat(item.unit_price).toFixed(2)}</td>
-                            <td data-label="Total" class="text-end">₱${total.toFixed(2)}</td>
-                        </tr>
-                    `;
-                });
-            } else {
-                itemsHtml = `
-                    <tr>
-                        <td colspan="5" class="text-center text-muted py-4">
-                            <i class="bi bi-box"></i> No items found for this order
-                        </td>
-                    </tr>
-                `;
-            }
-            
-            // Build complete modal content
-            if (orderDetailsContent) {
-                orderDetailsContent.innerHTML = `
-                    <div class="order-details-card">
-                        <!-- Order Header Section -->
-                        <div class="order-header-section">
-                            <div class="order-badge">
-                                <i class="bi bi-receipt"></i>
-                                <span>Order Information</span>
                             </div>
-                            <div class="order-number">${escapeHtml(order.so_number)}</div>
-                        </div>
-                        
-                        <!-- Order Info Grid (2 columns) -->
-                        <div class="order-info-grid">
-                            <div class="order-info-item">
-                                <div class="order-info-label">
-                                    <i class="bi bi-calendar3"></i> Order Date
-                                </div>
-                                <div class="order-info-value">${new Date(order.order_date).toLocaleString()}</div>
-                            </div>
-                            <div class="order-info-item">
-                                <div class="order-info-label">
-                                    <i class="bi bi-flag"></i> Status
-                                </div>
-                                <div class="order-info-value">
-                                    <span class="badge ${getOrderStatusBadgeClass(order.order_status)}">${getOrderStatusText(order.order_status)}</span>
-                                </div>
-                            </div>
-                            <div class="order-info-item">
-                                <div class="order-info-label">
-                                    <i class="bi bi-building"></i> Branch
-                                </div>
-                                <div class="order-info-value">${escapeHtml(order.branch_name || 'N/A')}</div>
-                            </div>
-                            <div class="order-info-item">
-                                <div class="order-info-label">
-                                    <i class="bi bi-person"></i> Created By
-                                </div>
-                                <div class="order-info-value">${escapeHtml(order.created_by || 'System')}</div>
-                            </div>
-                            <div class="order-info-item">
-                                <div class="order-info-label">
-                                    <i class="bi bi-truck"></i> Assigned Driver
-                                </div>
-                                <div class="order-info-value">
-                                    ${order.assigned_driver && order.assigned_driver !== 'No Driver' ? 
-                                        `<span class="driver-badge-modal"><i class="bi bi-person-badge"></i> ${escapeHtml(order.assigned_driver)}</span>` : 
-                                        `<span class="text-muted"><i class="bi bi-person-x"></i> No Driver Assigned</span>`}
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Customer Information Section -->
-                        <div class="customer-section">
-                            <h6>
-                                <i class="bi bi-person-badge"></i> Customer Information
-                            </h6>
-                            <div class="customer-info-card">
-                                <div class="customer-detail-row">
-                                    <span class="customer-detail-label">Customer Name:</span>
-                                    <span class="customer-detail-value">${escapeHtml(order.customer_name || 'N/A')}</span>
-                                </div>
-                                <div class="customer-detail-row">
-                                    <span class="customer-detail-label">Store Name:</span>
-                                    <span class="customer-detail-value">${escapeHtml(order.store_name || 'N/A')}</span>
-                                </div>
-                                <div class="customer-detail-row">
-                                    <span class="customer-detail-label">Customer Code:</span>
-                                    <span class="customer-detail-value">${escapeHtml(order.customer_code || 'N/A')}</span>
-                                </div>
-                                <div class="customer-detail-row">
-                                    <span class="customer-detail-label">Email:</span>
-                                    <span class="customer-detail-value">${escapeHtml(order.email || 'N/A')}</span>
-                                </div>
-                                <div class="customer-detail-row">
-                                    <span class="customer-detail-label">Phone:</span>
-                                    <span class="customer-detail-value">${escapeHtml(order.phone_number || 'N/A')}</span>
-                                </div>
-                                <div class="customer-detail-row">
-                                    <span class="customer-detail-label">Address:</span>
-                                    <span class="customer-detail-value">${escapeHtml(order.address || 'N/A')}</span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <!-- Order Items Section -->
-                        <div class="items-section">
-                            <h6>
-                                <i class="bi bi-box-seam"></i> Order Items
-                            </h6>
-                            <div class="table-responsive">
-                                <table class="items-table">
-                                    <thead>
-                                        <tr>
-                                            <th>Product</th>
-                                            <th class="text-center">Unit</th>
-                                            <th class="text-center">Quantity</th>
-                                            <th class="text-end">Unit Price</th>
-                                            <th class="text-end">Total</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        ${itemsHtml}
-                                        <tr class="total-row">
-                                            <td colspan="4" class="text-end fw-bold">Grand Total</td>
-                                            <td class="text-end fw-bold text-success">₱${grandTotal.toFixed(2)}</td>
-                                        </tr>
-                                    </tbody>
-                                </table>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }
-            
-            // Show print and cancel buttons
-            const printButton = document.getElementById('printOrderFromDetails');
-            if (printButton) printButton.style.display = 'inline-block';
-            const cancelButton = document.getElementById('cancelOrderBtn');
-            if (cancelButton) cancelButton.style.display = 'inline-block';
-        } else {
-            if (orderDetailsContent) {
-                orderDetailsContent.innerHTML = `
-                    <div class="error-state">
-                        <i class="bi bi-exclamation-triangle fs-1"></i>
-                        <p class="mt-3">${escapeHtml(data.message || 'Error loading order details.')}</p>
-                    </div>
-                `;
-            }
-            const printButton = document.getElementById('printOrderFromDetails');
-            if (printButton) printButton.style.display = 'none';
-        }
-    })
-    .catch(error => {
-        console.error('Error:', error);
-        if (orderDetailsContent) {
-            orderDetailsContent.innerHTML = `
-                <div class="error-state">
-                    <i class="bi bi-wifi-off fs-1"></i>
-                    <p class="mt-3">Network error: ${escapeHtml(error.message)}</p>
-                    <button class="btn btn-outline-danger mt-2" onclick="viewOrderDetails(${orderId})">
-                        <i class="bi bi-arrow-repeat"></i> Try Again
-                    </button>
-                </div>
-            `;
-        }
-        const printButton = document.getElementById('printOrderFromDetails');
-        if (printButton) printButton.style.display = 'none';
-    });
-}
-
-// Helper function to escape HTML
-function escapeHtml(str) {
-    if (!str) return '';
-    return str
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
-}
-
-// Helper function for status badge class (for modal)
-function getOrderStatusBadgeClass(status) {
-    switch(status) {
-        case 'pending': return 'bg-warning text-dark';
-        case 'processing': return 'bg-info text-white';
-        case 'shipped': return 'bg-primary text-white';
-        case 'delivered': return 'bg-success text-white';
-        case 'cancelled': return 'bg-danger text-white';
-        default: return 'bg-secondary text-white';
-    }
-}
-
-// Helper function for status text
-function getOrderStatusText(status) {
-    switch(status) {
-        case 'pending': return 'Pending';
-        case 'processing': return 'Processing';
-        case 'shipped': return 'Shipped';
-        case 'delivered': return 'Delivered';
-        case 'cancelled': return 'Cancelled';
-        default: return status || 'Unknown';
-    }
-}
-
-        // Print all orders (with current filters)
-        function printAllOrders() {
-            const filterData = {
-                status: document.getElementById('statusFilter').value,
-                customer: document.getElementById('customerFilter').value,
-                search: document.getElementById('searchInput').value,
-                start_date: activeDateRange.start,
-                end_date: activeDateRange.end
-            };
-            
-            // Show loading on button
-            const printBtn = document.querySelector('.btn-primary[onclick="printAllOrders()"]');
-            if (printBtn) {
-                const originalText = printBtn.innerHTML;
-                printBtn.innerHTML = '<i class="bi bi-printer"></i> Preparing...';
-                printBtn.disabled = true;
-            }
-            
-            showLoading();
-            
-            const formData = new FormData();
-            formData.append('action', 'get_all_order_items');
-            formData.append('filter_data', JSON.stringify(filterData));
-            
-            fetch('', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                hideLoading();
-                
-                if (data.success) {
-                    const items = data.items;
-                    
-                    if (items.length === 0) {
-                        Swal.fire('Warning', 'No orders match the current filters', 'warning');
-                        return;
+                        `;
                     }
                     
-<<<<<<< HEAD
                     // Show print and cancel buttons
                     const printButton = document.getElementById('printOrderFromDetails');
                     const canPrintOrder = ['pending', 'confirmed'].includes(String(order.order_status || '').toLowerCase());
@@ -4518,44 +4153,13 @@ function getOrderStatusText(status) {
                                 <p class="mt-3">${escapeHtml(data.message || 'Error loading order details.')}</p>
                             </div>
                         `;
-=======
-                    // Generate compact HTML with each item as a separate row
-                    const htmlContent = generateAllOrdersHTML(items);
-                    
-                    // Use hidden iframe for printing
-                    const iframe = document.getElementById('printFrame');
-                    const iframeDoc = iframe.contentWindow.document;
-                    
-                    iframeDoc.open();
-                    iframeDoc.write(htmlContent);
-                    iframeDoc.close();
-                    
-                    // Restore button
-                    setTimeout(() => {
-                        if (printBtn) {
-                            printBtn.innerHTML = '<i class="bi bi-printer"></i> Print All Orders';
-                            printBtn.disabled = false;
-                        }
-                    }, 1000);
-                    
-                    // Trigger print dialog
-                    setTimeout(() => {
-                        iframe.contentWindow.focus();
-                        iframe.contentWindow.print();
-                    }, 250);
-                } else {
-                    Swal.fire('Error', data.message || 'Failed to load order data', 'error');
-                    if (printBtn) {
-                        printBtn.innerHTML = '<i class="bi bi-printer"></i> Print All Orders';
-                        printBtn.disabled = false;
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     }
+                    const printButton = document.getElementById('printOrderFromDetails');
+                    if (printButton) printButton.style.display = 'none';
                 }
             })
             .catch(error => {
-                hideLoading();
                 console.error('Error:', error);
-<<<<<<< HEAD
                 if (orderDetailsContent) {
                     orderDetailsContent.innerHTML = `
                         <div class="error-state">
@@ -4566,17 +4170,12 @@ function getOrderStatusText(status) {
                             </button>
                         </div>
                     `;
-=======
-                Swal.fire('Error', 'Network error: ' + error.message, 'error');
-                if (printBtn) {
-                    printBtn.innerHTML = '<i class="bi bi-printer"></i> Print All Orders';
-                    printBtn.disabled = false;
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 }
+                const printButton = document.getElementById('printOrderFromDetails');
+                if (printButton) printButton.style.display = 'none';
             });
         }
 
-<<<<<<< HEAD
         // Helper function to escape HTML
         function escapeHtml(str) {
             if (!str) return '';
@@ -4621,11 +4220,6 @@ function getOrderStatusText(status) {
             const search = document.getElementById('searchInput')?.value || '';
             const startDate = activeDateRange.start;
             const endDate = activeDateRange.end;
-=======
-        // Print single order
-        function printSingleOrder(orderId) {
-            currentOrderId = orderId;
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             
             const printBtn = document.querySelector('.btn-primary[onclick="printAllOrders()"]');
             if (printBtn) {
@@ -4636,17 +4230,12 @@ function getOrderStatusText(status) {
             showLoading();
             
             const formData = new FormData();
-<<<<<<< HEAD
             formData.append('action', 'print_all_orders');
             formData.append('status', status);
             formData.append('customer', customer);
             formData.append('search', search);
             formData.append('start_date', startDate);
             formData.append('end_date', endDate);
-=======
-            formData.append('action', 'print_order');
-            formData.append('so_id', orderId);
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             
             fetch('', {
                 method: 'POST',
@@ -4656,7 +4245,6 @@ function getOrderStatusText(status) {
             .then(data => {
                 hideLoading();
                 
-<<<<<<< HEAD
                 if (data.success && data.html) {
                     const iframe = document.getElementById('printFrame');
                     const iframeDoc = iframe.contentWindow.document;
@@ -4710,21 +4298,12 @@ function getOrderStatusText(status) {
             .then(data => {
                 hideLoading();
                 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 if (data.success) {
                     const order = data.order;
                     const items = data.items;
                     const driver = data.driver || null;
                     
-<<<<<<< HEAD
                     const htmlContent = generateSingleOrderHTML(order, items, driver);
-=======
-                    // Generate compact HTML with each item as a separate row
-                    const htmlContent = generateSingleOrderHTML(order, items, driver);
-                    
-                    // Use hidden iframe for printing
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     const iframe = document.getElementById('printFrame');
                     const iframeDoc = iframe.contentWindow.document;
                     
@@ -4732,10 +4311,6 @@ function getOrderStatusText(status) {
                     iframeDoc.write(htmlContent);
                     iframeDoc.close();
                     
-<<<<<<< HEAD
-=======
-                    // Restore button
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     setTimeout(() => {
                         if (printBtn) {
                             printBtn.innerHTML = '<i class="bi bi-printer"></i>';
@@ -4743,10 +4318,6 @@ function getOrderStatusText(status) {
                         }
                     }, 1000);
                     
-<<<<<<< HEAD
-=======
-                    // Trigger print dialog
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     setTimeout(() => {
                         iframe.contentWindow.focus();
                         iframe.contentWindow.print();
@@ -4766,41 +4337,8 @@ function getOrderStatusText(status) {
                 if (printBtn) {
                     printBtn.innerHTML = '<i class="bi bi-printer"></i>';
                     printBtn.disabled = false;
-<<<<<<< HEAD
-=======
                 }
             });
-        }
-
-        // Generate HTML for all orders (with driver column)
-        function generateAllOrdersHTML(items) {
-            let tableRows = '';
-            let totalAmount = 0;
-            let totalQuantity = 0;
-            
-            items.forEach((item) => {
-                const subtotal = item.quantity_ordered * item.unit_price;
-                totalAmount += subtotal;
-                totalQuantity += parseInt(item.quantity_ordered);
-                
-                tableRows += '<tr>';
-                tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.so_number}</td>`;
-                tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.order_date ? formatDate(item.order_date) : ''}</td>`;
-                tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.customer_name}</td>`;
-                if (branchColumnExists && viewAllBranches) {
-                    tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.branch_name || 'Branch ' + item.branch_id}</td>`;
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
-                }
-                tableRows += `<td style="padding: 3px; border: 1px solid #000; text-align: center;">${item.item_code}</td>`;
-                tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.item_name}</td>`;
-                tableRows += `<td style="padding: 3px; border: 1px solid #000; text-align: center;">${item.unit_type || 'N/A'}</td>`;
-                tableRows += `<td style="padding: 3px; border: 1px solid #000; text-align: center;">${item.quantity_ordered}</td>`;
-                tableRows += `<td style="padding: 3px; border: 1px solid #000; text-align: right;">₱${parseFloat(item.unit_price).toFixed(2)}</td>`;
-                tableRows += `<td style="padding: 3px; border: 1px solid #000; text-align: right;">₱${parseFloat(subtotal).toFixed(2)}</td>`;
-                tableRows += `<td style="padding: 3px; border: 1px solid #000;">${item.assigned_driver || 'No Driver'}</td>`;
-                tableRows += '</tr>';
-            });
-<<<<<<< HEAD
         }
 
         function formatReceiptAmount(amount) {
@@ -5021,224 +4559,6 @@ window.onload = function () {
             `;
         }
 
-=======
-            
-            const currentDate = new Date().toLocaleDateString('en-US', { 
-                year: 'numeric', 
-                month: 'short', 
-                day: 'numeric' 
-            });
-            
-            const colCount = branchColumnExists && viewAllBranches ? 12 : 11;
-            const summaryColspan = branchColumnExists && viewAllBranches ? 9 : 8;
-            
-            return `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="UTF-8">
-                    <title>Sales Orders - Detailed</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; margin: 0; padding: 0; font-size: 9px; }
-                        .print-container { max-width: 100%; margin: 0; }
-                        .print-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; border-bottom: 1px solid #000; padding-bottom: 3px; }
-                        .logo-section { display: flex; align-items: center; gap: 5px; }
-                        .company-logo { width: 30px; height: auto; }
-                        .company-info h1 { font-size: 14px; margin: 0; font-weight: bold; }
-                        .company-info p { font-size: 8px; margin: 0; }
-                        .report-title h2 { font-size: 12px; margin: 0; }
-                        .report-title .date-info { font-size: 8px; }
-                        .summary-box { border: 1px solid #000; padding: 3px; margin-bottom: 5px; display: flex; }
-                        .summary-item { flex: 1; text-align: center; border-right: 1px solid #000; }
-                        .summary-item:last-child { border-right: none; }
-                        .summary-label { font-size: 8px; font-weight: bold; }
-                        .summary-value { font-size: 11px; font-weight: bold; }
-                        table { width: 100%; border-collapse: collapse; font-size: 8px; }
-                        th { border: 1px solid #000; padding: 3px; text-align: left; font-weight: bold; }
-                        td { border: 1px solid #000; padding: 3px; }
-                        .total-row { font-weight: bold; }
-                        .print-footer { margin-top: 5px; border-top: 1px solid #000; padding-top: 3px; display: flex; justify-content: space-between; font-size: 8px; }
-                    </style>
-                </head>
-                <body>
-                    <div class="print-container">
-                        <div class="print-header">
-                            <div class="logo-section">
-                                <img src="${logoBase64}" alt="AMGC Logo" class="company-logo">
-                                <div class="company-info">
-                                    <h1>AMGC</h1>
-                                    <p>Sales Orders - Detailed</p>
-                                </div>
-                            </div>
-                            <div class="report-title">
-                                <h2>SALES ORDERS</h2>
-                                <div class="date-info">${currentDate}</div>
-                            </div>
-                        </div>
-                        
-                        <div class="summary-box">
-                            <div class="summary-item"><div class="summary-label">Total Items</div><div class="summary-value">${items.length}</div></div>
-                            <div class="summary-item"><div class="summary-label">Total Qty</div><div class="summary-value">${totalQuantity}</div></div>
-                            <div class="summary-item"><div class="summary-label">Total Amount</div><div class="summary-value">₱${totalAmount.toFixed(2)}</div></div>
-                            <div class="summary-item"><div class="summary-label">Branch</div><div class="summary-value">${!viewAllBranches && branchId > 0 ? `Branch ${branchId}` : 'All'}</div></div>
-                        </div>
-                        
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Order #</th>
-                                    <th>Date</th>
-                                    <th>Customer</th>
-                                    ${branchColumnExists && viewAllBranches ? '<th>Branch</th>' : ''}
-                                    <th>Item Code</th>
-                                    <th>Item Name</th>
-                                    <th style="text-align: center;">Unit</th>
-                                    <th style="text-align: center;">Qty</th>
-                                    <th style="text-align: right;">Unit Price</th>
-                                    <th style="text-align: right;">Subtotal</th>
-                                    <th>Driver</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${tableRows}
-                                <tr class="total-row">
-                                    <td colspan="${summaryColspan}" style="text-align: right;">TOTAL</td>
-                                    <td style="text-align: center;">${totalQuantity}</td>
-                                    <td style="text-align: right;">₱${totalAmount.toFixed(2)}</td>
-                                    <td></td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        
-                        <div class="print-footer">
-                            <div>Generated: ${currentDate}</div>
-                            <div>${document.querySelector('.user-name-sidebar')?.textContent || 'Sales User'}</div>
-                        </div>
-                    </div>
-                </body>
-                </html>
-            `;
-        }
-
-        // Generate HTML for single order (with driver info)
-        function generateSingleOrderHTML(order, items, driver) {
-            let itemsHtml = '';
-            let totalQty = 0;
-            
-            if (items && items.length > 0) {
-                itemsHtml = items.map(item => {
-                    const subtotal = item.quantity_ordered * item.unit_price;
-                    totalQty += parseInt(item.quantity_ordered);
-                    return `
-                        <tr>
-                            <td style="padding: 3px; border: 1px solid #000;">${item.item_code}</td>
-                            <td style="padding: 3px; border: 1px solid #000;">${item.item_name}</td>
-                            <td style="padding: 3px; border: 1px solid #000; text-align: center;">${item.unit_type || ''}</td>
-                            <td style="padding: 3px; border: 1px solid #000; text-align: center;">${item.quantity_ordered}</td>
-                            <td style="padding: 3px; border: 1px solid #000; text-align: right;">₱${parseFloat(item.unit_price).toFixed(2)}</td>
-                            <td style="padding: 3px; border: 1px solid #000; text-align: right;">₱${parseFloat(subtotal).toFixed(2)}</td>
-                        </tr>
-                    `;
-                }).join('');
-            }
-            
-            const createdByName = order ? (order.first_name ? `${order.first_name} ${order.last_name || ''}` : 'Sales User') : 'Sales User';
-            const currentDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
-            const orderDate = order ? (order.order_date ? new Date(order.order_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' }) : currentDate) : currentDate;
-            const customerName = order ? order.customer_name : '';
-            const orderNumber = order ? order.so_number : '';
-            const orderStatus = order ? order.order_status : '';
-            const totalAmount = order ? order.order_total : 0;
-            const driverName = driver ? driver.driver_name : (order?.assigned_driver !== 'No Driver' ? order?.assigned_driver : 'No Driver');
-            
-            return `
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <meta charset="UTF-8">
-                    <title>Order #${orderNumber}</title>
-                    <style>
-                        body { font-family: Arial, sans-serif; margin: 0; padding: 0; font-size: 10px; }
-                        .print-container { max-width: 100%; margin: 0; }
-                        .print-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; border-bottom: 1px solid #000; padding-bottom: 3px; }
-                        .logo-section { display: flex; align-items: center; gap: 5px; }
-                        .company-logo { width: 30px; height: auto; }
-                        .company-info h1 { font-size: 14px; margin: 0; font-weight: bold; }
-                        .company-info p { font-size: 8px; margin: 0; }
-                        .report-title h2 { font-size: 12px; margin: 0; }
-                        .report-title .date-info { font-size: 8px; }
-                        .customer-section { border: 1px solid #000; padding: 5px; margin-bottom: 5px; }
-                        .section-title { font-size: 10px; font-weight: bold; margin-bottom: 3px; border-bottom: 1px solid #000; }
-                        .info-row { display: flex; font-size: 9px; margin-bottom: 2px; }
-                        .info-label { width: 80px; font-weight: bold; }
-                        .info-value { flex: 1; }
-                        table { width: 100%; border-collapse: collapse; font-size: 9px; }
-                        th { border: 1px solid #000; padding: 3px; text-align: left; font-weight: bold; }
-                        td { border: 1px solid #000; padding: 3px; }
-                        .total-row { font-weight: bold; }
-                        .print-footer { margin-top: 5px; border-top: 1px solid #000; padding-top: 3px; display: flex; justify-content: space-between; font-size: 8px; }
-                    </style>
-                </head>
-                <body>
-                    <div class="print-container">
-                        <div class="print-header">
-                            <div class="logo-section">
-                                <img src="${logoBase64}" alt="AMGC Logo" class="company-logo">
-                                <div class="company-info">
-                                    <h1>AMGC</h1>
-                                    <p>Sales Order</p>
-                                </div>
-                            </div>
-                            <div class="report-title">
-                                <h2>${orderNumber}</h2>
-                                <div class="date-info">${currentDate}</div>
-                            </div>
-                        </div>
-                        
-                        <div class="customer-section">
-                            <div class="section-title">Order Info</div>
-                            <div style="display: flex; flex-wrap: wrap;">
-                                <div class="info-row" style="width: 50%;"><span class="info-label">Date:</span><span class="info-value">${orderDate}</span></div>
-                                <div class="info-row" style="width: 50%;"><span class="info-label">Status:</span><span class="info-value">${orderStatus}</span></div>
-                                <div class="info-row" style="width: 50%;"><span class="info-label">Customer:</span><span class="info-value">${customerName}</span></div>
-                                <div class="info-row" style="width: 50%;"><span class="info-label">Driver:</span><span class="info-value">${driverName}</span></div>
-                            </div>
-                        </div>
-                        
-                        <div class="section-title">Items</div>
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Item Code</th>
-                                    <th>Item Name</th>
-                                    <th style="text-align: center;">Unit</th>
-                                    <th style="text-align: center;">Qty</th>
-                                    <th style="text-align: right;">Unit Price</th>
-                                    <th style="text-align: right;">Subtotal</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${itemsHtml}
-                                <tr class="total-row">
-                                    <td colspan="3" style="text-align: right;">TOTAL</td>
-                                    <td style="text-align: center;">${totalQty}</td>
-                                    <td></td>
-                                    <td style="text-align: right;">₱${parseFloat(totalAmount).toFixed(2)}</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        
-                        <div class="print-footer">
-                            <div>Created by: ${createdByName}</div>
-                            <div>${currentDate}</div>
-                        </div>
-                    </div>
-                </body>
-                </html>
-            `;
-        }
-
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         // Print from details modal
         function printFromDetails() {
             if (currentOrderId) {
@@ -5248,21 +4568,13 @@ window.onload = function () {
             }
         }
 
-<<<<<<< HEAD
         // Cancel order function (unchanged)
-=======
-        // Cancel order function
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         function cancelOrder() {
             if (!currentOrderId) {
                 Swal.fire('Error', 'No order selected', 'error');
                 return;
             }
 
-<<<<<<< HEAD
-=======
-            // Show confirmation dialog
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             Swal.fire({
                 title: 'Cancel Order?',
                 text: 'Are you sure you want to cancel this order? This action cannot be undone.',
@@ -5274,17 +4586,9 @@ window.onload = function () {
                 cancelButtonText: 'No, keep it'
             }).then((result) => {
                 if (result.isConfirmed) {
-<<<<<<< HEAD
                     const cancelBtn = document.getElementById('cancelOrderBtn');
                     if (cancelBtn) cancelBtn.disabled = true;
 
-=======
-                    // Disable button to prevent double clicks
-                    const cancelBtn = document.getElementById('cancelOrderBtn');
-                    if (cancelBtn) cancelBtn.disabled = true;
-
-                    // Send cancel request
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     fetch('', {
                         method: 'POST',
                         headers: {
@@ -5293,21 +4597,9 @@ window.onload = function () {
                         },
                         body: 'action=cancel_order&order_id=' + currentOrderId
                     })
-<<<<<<< HEAD
                     .then(response => response.json())
                     .then(data => {
                         if (data.success) {
-=======
-                    .then(response => {
-                        if (!response.ok) {
-                            throw new Error('Network response was not ok');
-                        }
-                        return response.json();
-                    })
-                    .then(data => {
-                        if (data.success) {
-                            // Show success toast
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                             Swal.fire({
                                 title: 'Success!',
                                 text: 'Order cancelled successfully',
@@ -5315,22 +4607,9 @@ window.onload = function () {
                                 timer: 2000,
                                 showConfirmButton: false
                             });
-<<<<<<< HEAD
                             const modal = bootstrap.Modal.getInstance(document.getElementById('orderDetailsModal'));
                             if (modal) modal.hide();
                             setTimeout(() => refreshOrders(), 500);
-=======
-
-                            // Close modal
-                            const modal = bootstrap.Modal.getInstance(document.getElementById('orderDetailsModal'));
-                            if (modal) modal.hide();
-
-                            // Refresh the orders table
-                            setTimeout(() => {
-                                refreshOrders();
-                            }, 500);
-
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                             currentOrderId = null;
                         } else {
                             Swal.fire('Error', data.message || 'Failed to cancel order', 'error');
@@ -5346,11 +4625,7 @@ window.onload = function () {
             });
         }
 
-<<<<<<< HEAD
         // Export to Excel with new format using export_all_orders action
-=======
-        // Export to Excel with new format
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         function exportToExcel() {
             const status = document.getElementById('statusFilter')?.value || '';
             const customer = document.getElementById('customerFilter')?.value || '';
@@ -5376,7 +4651,6 @@ window.onload = function () {
             .then(data => {
                 hideLoading();
                 
-<<<<<<< HEAD
                 if (data.success && data.data && data.data.length > 0) {
                     const headers = [
                         'Date Encoded',
@@ -5430,12 +4704,6 @@ window.onload = function () {
                     Swal.fire('Warning', 'No data to export', 'warning');
                 } else {
                     Swal.fire('Error', data.message || 'Export failed', 'error');
-=======
-                if (data.success && data.items && data.items.length > 0) {
-                    generateExcelFile(data.items);
-                } else {
-                    Swal.fire('Warning', 'No data to export', 'warning');
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 }
             })
             .catch(error => {
@@ -5445,145 +4713,6 @@ window.onload = function () {
             });
         }
 
-<<<<<<< HEAD
-=======
-        // Generate Excel file with new format: Customer Code, Store Name, Customer Name, Item Code, Item Description, Discount, Net Price, Total Discount, Date Encoded, Encoded by
-        function generateExcelFile(items) {
-            // Prepare data array for Excel - NEW FORMAT
-            const excelData = [];
-            
-            // Add headers - NEW COLUMNS
-            const headers = [
-                'Customer Code',
-                'Store Name',
-                'Customer Name',
-                'Item Code',
-                'Item Description',
-                'Discount',
-                'Net Price',
-                'Total Discount',
-                'Date Encoded',
-                'Encoded by'
-            ];
-            excelData.push(headers);
-
-            // Add data rows
-            items.forEach(item => {
-                // Calculate discount (assuming discount is 0 for now - can be modified based on credit_discount_requests)
-                const discount = 0;
-                const netPrice = parseFloat(item.unit_price) || 0;
-                const totalDiscount = (item.quantity_ordered * netPrice * discount) / 100;
-                
-                // Get encoded by (created by user)
-                const encodedBy = item.created_by_name || 'Sales User';
-                
-                // Get store name (if available from customers table)
-                const storeName = item.store_name || '';
-                
-                // Get customer code (if available)
-                const customerCode = item.customer_code || '';
-                
-                const rowData = [
-                    customerCode,                                    // Customer Code
-                    storeName,                                       // Store Name
-                    item.customer_name || '',                       // Customer Name
-                    item.item_code || '',                           // Item Code
-                    item.item_name || '',                           // Item Description
-                    discount,                                        // Discount
-                    netPrice,                                        // Net Price
-                    totalDiscount,                                   // Total Discount
-                    item.order_date ? formatDateForExport(item.order_date) : '', // Date Encoded
-                    encodedBy                                        // Encoded by
-                ];
-                
-                excelData.push(rowData);
-            });
-
-            // Add summary row at the bottom
-            const totalQty = items.reduce((sum, item) => sum + parseInt(item.quantity_ordered), 0);
-            const totalRevenue = items.reduce((sum, item) => sum + (parseFloat(item.quantity_ordered) * parseFloat(item.unit_price)), 0);
-            
-            const summaryRow = [
-                'TOTAL',
-                '',
-                '',
-                '',
-                '',
-                '',
-                '',
-                totalRevenue.toFixed(2),
-                '',
-                ''
-            ];
-            excelData.push(['']); // Empty row for spacing
-            excelData.push(summaryRow);
-            
-            // Add additional summary info
-            const summaryInfoRow = [
-                `Total Items: ${totalQty}`,
-                `Total Orders: ${new Set(items.map(i => i.so_id)).size}`,
-                `Total Revenue: ₱${totalRevenue.toFixed(2)}`,
-                `Generated: ${new Date().toLocaleString()}`,
-                '',
-                '',
-                '',
-                '',
-                '',
-                ''
-            ];
-            excelData.push(summaryInfoRow);
-
-            // Create workbook and worksheet
-            const wb = XLSX.utils.book_new();
-            const ws = XLSX.utils.aoa_to_sheet(excelData);
-
-            // Set column widths for new columns
-            const colWidths = [
-                { wch: 15 }, // Customer Code
-                { wch: 25 }, // Store Name
-                { wch: 30 }, // Customer Name
-                { wch: 15 }, // Item Code
-                { wch: 35 }, // Item Description
-                { wch: 10 }, // Discount
-                { wch: 12 }, // Net Price
-                { wch: 15 }, // Total Discount
-                { wch: 15 }, // Date Encoded
-                { wch: 20 }  // Encoded by
-            ];
-            ws['!cols'] = colWidths;
-
-            // Add worksheet to workbook
-            XLSX.utils.book_append_sheet(wb, ws, 'Sales Orders Export');
-
-            // Generate filename with current date
-            const date = new Date();
-            const dateStr = date.toISOString().slice(0,10).replace(/-/g, '');
-            let filename = `Sales_Orders_Export_${dateStr}`;
-            if (!viewAllBranches && branchId > 0) {
-                filename += `_Branch_${branchId}`;
-            }
-            filename += '.xlsx';
-
-            // Export Excel file
-            XLSX.writeFile(wb, filename);
-            
-            Swal.fire({
-                icon: 'success',
-                title: 'Export Complete',
-                text: 'Excel export completed successfully!',
-                timer: 2000,
-                showConfirmButton: false
-            });
-        }
-
-        // Helper function to format date for Excel export
-        function formatDateForExport(dateStr) {
-            if (!dateStr) return '';
-            const date = new Date(dateStr);
-            return date.toLocaleDateString('en-US', { year: 'numeric', month: '2-digit', day: '2-digit' });
-        }
-
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         // Helper function to format date
         function formatDate(dateStr) {
             if (!dateStr) return '';
@@ -5638,12 +4767,8 @@ window.onload = function () {
                 exportToExcel();
             }
         });
-<<<<<<< HEAD
         
         // ============= MOBILE NAVIGATION FUNCTION =============
-=======
-                // ============= MOBILE NAVIGATION FUNCTION =============
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         function initMobileNav() {
             const mobileNav = document.getElementById('mobileNav');
             if (!mobileNav) return;
@@ -5696,7 +4821,6 @@ window.onload = function () {
                 }
             });
         }
-<<<<<<< HEAD
         
         // Collapsible Filter Toggle - Default Closed
         document.addEventListener('DOMContentLoaded', function() {
@@ -5749,54 +4873,6 @@ window.onload = function () {
             console.warn('Neither viewOrder nor viewOrderDetails function found');
         }
 
-=======
-        // Collapsible Filter Toggle - Default Closed
-document.addEventListener('DOMContentLoaded', function() {
-    const filterToggleBtn = document.getElementById('filterToggleBtn');
-    const filterContent = document.getElementById('filterContent');
-    
-    if (filterToggleBtn && filterContent) {
-        // Default: collapsed (closed)
-        filterContent.classList.add('collapsed');
-        filterToggleBtn.setAttribute('aria-expanded', 'false');
-        
-        // Toggle on click
-        filterToggleBtn.addEventListener('click', function() {
-            const isExpanded = filterToggleBtn.getAttribute('aria-expanded') === 'true';
-            
-            if (isExpanded) {
-                // Close
-                filterContent.classList.add('collapsed');
-                filterToggleBtn.setAttribute('aria-expanded', 'false');
-            } else {
-                // Open
-                filterContent.classList.remove('collapsed');
-                filterToggleBtn.setAttribute('aria-expanded', 'true');
-            }
-        });
-    }
-});
-// Tap to view functionality para sa mobile card view
-document.addEventListener('DOMContentLoaded', function() {
-    // Kunin lahat ng order rows
-    const orderRows = document.querySelectorAll('.sales-order-row');
-    
-    orderRows.forEach(row => {
-        row.addEventListener('click', function(e) {
-            // Para sa mobile lang (width <= 767px)
-            if (window.innerWidth <= 767) {
-                // Kunin ang order ID mula sa data-id attribute
-                const orderId = this.dataset.id;
-                
-                if (orderId) {
-                    // Tawagin ang viewOrderDetails function
-                    viewOrderDetails(orderId);
-                }
-            }
-        });
-    });
-});
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     </script>
 </body>
 </html>

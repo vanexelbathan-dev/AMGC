@@ -5,6 +5,7 @@ ini_set('display_errors', 1);
 require_once '../config/database.php';
 require_once '../config/session_handler.php';
 
+
 // Protect page - only Sales role can access
 requireLogin();
 requireRole(['sales']);
@@ -2095,5 +2096,6 @@ body {
         }
     }
     </script>
+    <?php require_once __DIR__ . '/../config/task_login_alert.php'; ?>
 </body>
 </html>

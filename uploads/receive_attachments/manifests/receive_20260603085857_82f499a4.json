@@ -1,0 +1,33 @@
+{
+    "manifest_id": "receive_20260603085857_82f499a4",
+    "source": "supplier",
+    "supplier_id": 1,
+    "supplier_name": "Jill Anuran",
+    "po_number": "PO-RCV-20260603085857",
+    "reference_type": "purchase_order",
+    "reference_id": 40,
+    "receive_date": "2026-06-03",
+    "encoded_date": "2026-06-03",
+    "receive_memo": "",
+    "created_at": "2026-06-03 08:58:57",
+    "created_by": 2,
+    "branch_id": 1,
+    "transaction_ids": [
+        296
+    ],
+    "attachments": [],
+    "items": [
+        {
+            "item_id": 2,
+            "item_name": "Product B",
+            "item_code": "ITEM002",
+            "item_description": "Product B",
+            "category": "Oil",
+            "uom": "Piece",
+            "qty": 10,
+            "unit_price": 150,
+            "unit_cost": 150,
+            "total_cost": 1500
+        }
+    ]
+}

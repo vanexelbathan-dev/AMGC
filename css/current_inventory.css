@@ -18877,3 +18877,590 @@ body.modal-open {
         grid-template-columns: 1fr !important;
     }
 }
+
+/* ============================================ */
+/* ===== FUEL MONITORING MODAL - MODERN DESIGN ===== */
+/* ============================================ */
+
+/* Base modal styles */
+#fuelMonitoringModal .modal-dialog {
+    margin: 1rem auto !important;
+    max-width: 900px !important;
+}
+
+@media (max-width: 768px) {
+    #fuelMonitoringModal .modal-dialog {
+        margin: 0.75rem auto !important;
+        max-width: calc(100% - 1.5rem) !important;
+        width: calc(100% - 1.5rem) !important;
+    }
+}
+
+@media (max-width: 576px) {
+    #fuelMonitoringModal .modal-dialog {
+        margin: 0.5rem auto !important;
+        max-width: calc(100% - 1rem) !important;
+        width: calc(100% - 1rem) !important;
+    }
+}
+
+#fuelMonitoringModal .modal-content {
+    border: none !important;
+    border-radius: 20px !important;
+    overflow: hidden !important;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2) !important;
+    max-height: 90vh !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+/* Modal Header - Reduced Height */
+#fuelMonitoringModal .modal-header {
+    background: linear-gradient(135deg, #047857 0%, #44D34E 100%) !important;
+    color: white !important;
+    border-bottom: none !important;
+    padding: 0.6rem 1.25rem !important;
+    flex-shrink: 0 !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 10 !important;
+}
+
+@media (max-width: 768px) {
+    #fuelMonitoringModal .modal-header {
+        padding: 0.5rem 1rem !important;
+    }
+}
+
+#fuelMonitoringModal .modal-header .modal-title {
+    font-weight: 600 !important;
+    font-size: 1rem !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    color: white !important;
+}
+
+#fuelMonitoringModal .modal-header .modal-title i {
+    color: white !important;
+    font-size: 1rem !important;
+}
+
+/* Close button */
+#fuelMonitoringModal .modal-header .btn-close {
+    background: rgba(255, 255, 255, 0.25) !important;
+    border-radius: 50% !important;
+    width: 28px !important;
+    height: 28px !important;
+    padding: 0 !important;
+    margin: -0.3rem -0.3rem -0.3rem auto !important;
+    opacity: 1 !important;
+    transition: all 0.2s ease !important;
+}
+
+#fuelMonitoringModal .modal-header .btn-close:hover {
+    background: rgba(255, 255, 255, 0.4) !important;
+    transform: rotate(90deg) !important;
+}
+
+/* Modal Body */
+#fuelMonitoringModal .modal-body {
+    padding: 1.25rem !important;
+    overflow-y: auto !important;
+    flex: 1 !important;
+    background: #f8fafc !important;
+    max-height: calc(90vh - 110px) !important;
+}
+
+@media (max-width: 768px) {
+    #fuelMonitoringModal .modal-body {
+        padding: 1rem !important;
+        max-height: calc(90vh - 100px) !important;
+    }
+}
+
+/* Scrollbar styling */
+#fuelMonitoringModal .modal-body::-webkit-scrollbar {
+    width: 5px;
+}
+
+#fuelMonitoringModal .modal-body::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+#fuelMonitoringModal .modal-body::-webkit-scrollbar-thumb {
+    background: #44D34E;
+    border-radius: 3px;
+}
+
+/* Modal Footer */
+#fuelMonitoringModal .modal-footer {
+    border-top: 1px solid #e9ecef !important;
+    padding: 0.7rem 1.25rem !important;
+    background: #ffffff !important;
+    flex-shrink: 0 !important;
+    gap: 0.75rem !important;
+}
+
+#fuelMonitoringModal .modal-footer .btn {
+    padding: 0.4rem 1rem !important;
+    font-size: 0.8rem !important;
+    font-weight: 500 !important;
+    border-radius: 8px !important;
+    transition: all 0.2s ease !important;
+}
+
+#fuelMonitoringModal .modal-footer .btn-secondary {
+    background: #6c757d !important;
+    border: none !important;
+    color: white !important;
+}
+
+#fuelMonitoringModal .modal-footer .btn-secondary:hover {
+    background: #5a6268 !important;
+    transform: translateY(-1px) !important;
+}
+
+#fuelMonitoringModal .modal-footer .btn-success {
+    background: linear-gradient(135deg, #059669, #047857) !important;
+    border: none !important;
+    color: white !important;
+}
+
+#fuelMonitoringModal .modal-footer .btn-success:hover {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3) !important;
+}
+
+/* ===== FORM STYLES ===== */
+
+/* Vehicle info alert box */
+#fuelMonitoringModal .alert-light {
+    background: #f0fdf4 !important;
+    border: 1px solid #bbf7d0 !important;
+    border-radius: 12px !important;
+    padding: 0.75rem 1rem !important;
+    margin-bottom: 1.25rem !important;
+}
+
+#fuelMonitoringModal .alert-light strong {
+    color: #047857 !important;
+    font-size: 0.9rem !important;
+}
+
+#fuelMonitoringModal .alert-light .text-muted {
+    color: #6c757d !important;
+    font-size: 0.7rem !important;
+}
+
+/* Form labels */
+#fuelMonitoringModal .form-label {
+    font-size: 0.7rem !important;
+    font-weight: 600 !important;
+    color: #374151 !important;
+    margin-bottom: 0.35rem !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.35rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+}
+
+/* Required mark */
+#fuelMonitoringModal .required-mark {
+    color: #dc2626 !important;
+    font-size: 0.75rem !important;
+    font-weight: bold !important;
+}
+
+/* Form controls */
+#fuelMonitoringModal .form-control {
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 10px !important;
+    padding: 0.55rem 0.75rem !important;
+    font-size: 0.85rem !important;
+    transition: all 0.2s ease !important;
+    background-color: #ffffff !important;
+}
+
+#fuelMonitoringModal .form-control:focus {
+    border-color: #44D34E !important;
+    box-shadow: 0 0 0 3px rgba(68, 211, 78, 0.15) !important;
+    outline: none !important;
+}
+
+#fuelMonitoringModal .form-control[type="file"] {
+    padding: 0.4rem 0.65rem !important;
+}
+
+/* Form row spacing */
+#fuelMonitoringModal .row.g-3 {
+    margin: -0.5rem !important;
+}
+
+#fuelMonitoringModal .row.g-3 > [class*="col-"] {
+    padding: 0.5rem !important;
+}
+
+/* Placeholder styling */
+#fuelMonitoringModal .form-control::placeholder {
+    color: #94a3b8 !important;
+    font-size: 0.75rem !important;
+}
+
+/* Readonly fields */
+#fuelMonitoringModal .form-control[readonly] {
+    background-color: #f1f5f9 !important;
+    cursor: default !important;
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 768px) {
+    #fuelMonitoringModal .col-md-4,
+    #fuelMonitoringModal .col-md-6 {
+        flex: 0 0 100% !important;
+        max-width: 100% !important;
+    }
+    
+    #fuelMonitoringModal .modal-footer {
+        flex-wrap: wrap !important;
+    }
+    
+    #fuelMonitoringModal .modal-footer .btn {
+        flex: 1 !important;
+        text-align: center !important;
+    }
+}
+
+@media (max-width: 576px) {
+    #fuelMonitoringModal .modal-body {
+        padding: 0.875rem !important;
+    }
+    
+    #fuelMonitoringModal .form-label {
+        font-size: 0.65rem !important;
+    }
+    
+    #fuelMonitoringModal .form-control {
+        padding: 0.45rem 0.65rem !important;
+        font-size: 0.8rem !important;
+    }
+    
+    #fuelMonitoringModal .alert-light {
+        padding: 0.6rem 0.75rem !important;
+    }
+    
+    #fuelMonitoringModal .alert-light strong {
+        font-size: 0.85rem !important;
+    }
+}
+
+/* Animation for modal */
+#fuelMonitoringModal.fade .modal-dialog {
+    transform: scale(0.95) !important;
+    transition: transform 0.2s ease-out !important;
+}
+
+#fuelMonitoringModal.fade.show .modal-dialog {
+    transform: scale(1) !important;
+}
+
+/* Validation styles */
+#fuelMonitoringModal .form-control.is-valid {
+    border-color: #10b981 !important;
+}
+
+#fuelMonitoringModal .form-control.is-invalid {
+    border-color: #dc2626 !important;
+}
+
+/* Focus visible for accessibility */
+#fuelMonitoringModal .btn:focus-visible {
+    outline: 2px solid #047857 !important;
+    outline-offset: 2px !important;
+}
+
+/* ============================================ */
+/* ===== ATW DETAILS MODAL - MODERN DESIGN ===== */
+/* ============================================ */
+
+/* Base modal styles */
+#atwDetailsModal .modal-dialog {
+    margin: 1rem auto !important;
+    max-width: 800px !important;
+}
+
+@media (max-width: 768px) {
+    #atwDetailsModal .modal-dialog {
+        margin: 0.75rem auto !important;
+        max-width: calc(100% - 1.5rem) !important;
+        width: calc(100% - 1.5rem) !important;
+    }
+}
+
+@media (max-width: 576px) {
+    #atwDetailsModal .modal-dialog {
+        margin: 0.5rem auto !important;
+        max-width: calc(100% - 1rem) !important;
+        width: calc(100% - 1rem) !important;
+    }
+}
+
+#atwDetailsModal .modal-content {
+    border: none !important;
+    border-radius: 20px !important;
+    overflow: hidden !important;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2) !important;
+    max-height: 90vh !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+/* Modal Header */
+#atwDetailsModal .modal-header {
+    background: linear-gradient(135deg, #047857 0%, #44D34E 100%) !important;
+    color: white !important;
+    border-bottom: none !important;
+    padding: 0.6rem 1.25rem !important;
+    flex-shrink: 0 !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 10 !important;
+}
+
+@media (max-width: 768px) {
+    #atwDetailsModal .modal-header {
+        padding: 0.5rem 1rem !important;
+    }
+}
+
+#atwDetailsModal .modal-header .modal-title {
+    font-weight: 600 !important;
+    font-size: 1rem !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    color: white !important;
+}
+
+#atwDetailsModal .modal-header .modal-title i {
+    color: white !important;
+    font-size: 1rem !important;
+}
+
+/* Close button */
+#atwDetailsModal .modal-header .btn-close {
+    background: rgba(255, 255, 255, 0.25) !important;
+    border-radius: 50% !important;
+    width: 28px !important;
+    height: 28px !important;
+    padding: 0 !important;
+    margin: -0.3rem -0.3rem -0.3rem auto !important;
+    opacity: 1 !important;
+    transition: all 0.2s ease !important;
+}
+
+#atwDetailsModal .modal-header .btn-close:hover {
+    background: rgba(255, 255, 255, 0.4) !important;
+    transform: rotate(90deg) !important;
+}
+
+/* Modal Body */
+#atwDetailsModal .modal-body {
+    padding: 1.25rem !important;
+    overflow-y: auto !important;
+    flex: 1 !important;
+    background: #f8fafc !important;
+    max-height: calc(90vh - 110px) !important;
+}
+
+@media (max-width: 768px) {
+    #atwDetailsModal .modal-body {
+        padding: 1rem !important;
+        max-height: calc(90vh - 100px) !important;
+    }
+}
+
+/* Scrollbar styling */
+#atwDetailsModal .modal-body::-webkit-scrollbar {
+    width: 5px;
+}
+
+#atwDetailsModal .modal-body::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+#atwDetailsModal .modal-body::-webkit-scrollbar-thumb {
+    background: #44D34E;
+    border-radius: 3px;
+}
+
+/* Modal Footer */
+#atwDetailsModal .modal-footer {
+    border-top: 1px solid #e9ecef !important;
+    padding: 0.7rem 1.25rem !important;
+    background: #ffffff !important;
+    flex-shrink: 0 !important;
+    gap: 0.75rem !important;
+}
+
+#atwDetailsModal .modal-footer .btn-secondary {
+    background: #6c757d !important;
+    border: none !important;
+    color: white !important;
+    padding: 0.4rem 1rem !important;
+    font-size: 0.8rem !important;
+    border-radius: 8px !important;
+    transition: all 0.2s ease !important;
+}
+
+#atwDetailsModal .modal-footer .btn-secondary:hover {
+    background: #5a6268 !important;
+    transform: translateY(-1px) !important;
+}
+
+/* ===== ATW DETAILS CONTENT STYLES ===== */
+
+/* Header section with ATW No. and status */
+#atwDetailsModal .d-flex {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    gap: 1rem !important;
+    flex-wrap: wrap !important;
+    margin-bottom: 1.25rem !important;
+    padding-bottom: 0.75rem !important;
+    border-bottom: 1px solid #e9ecef !important;
+}
+
+#atwDetailsModal .profile-info-label {
+    font-size: 0.65rem !important;
+    font-weight: 600 !important;
+    color: #6c757d !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+    margin-bottom: 0.25rem !important;
+}
+
+#atwDetailsModal h5 {
+    font-size: 1rem !important;
+    font-weight: 700 !important;
+    color: #1e293b !important;
+    margin: 0 !important;
+}
+
+/* Status badge */
+#atwDetailsModal .badge {
+    padding: 0.35rem 0.85rem !important;
+    border-radius: 20px !important;
+    font-size: 0.7rem !important;
+    font-weight: 600 !important;
+}
+
+/* Detail Grid */
+#atwDetailsModal .atw-detail-grid {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)) !important;
+    gap: 0.75rem 1.25rem !important;
+    margin-bottom: 1.25rem !important;
+}
+
+@media (max-width: 768px) {
+    #atwDetailsModal .atw-detail-grid {
+        grid-template-columns: 1fr !important;
+    }
+}
+
+#atwDetailsModal .atw-detail-item {
+    border-bottom: 1px solid #eef2f6 !important;
+    padding-bottom: 0.6rem !important;
+}
+
+#atwDetailsModal .atw-detail-label {
+    font-size: 0.65rem !important;
+    font-weight: 600 !important;
+    color: #6c757d !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+    margin-bottom: 0.25rem !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.35rem !important;
+}
+
+#atwDetailsModal .atw-detail-label i {
+    color: #047857 !important;
+    font-size: 0.7rem !important;
+}
+
+#atwDetailsModal .atw-detail-value {
+    font-size: 0.85rem !important;
+    font-weight: 600 !important;
+    color: #1e293b !important;
+    word-break: break-word !important;
+    white-space: pre-line !important;
+}
+
+/* Divider */
+#atwDetailsModal hr {
+    margin: 1rem 0 !important;
+    border-top: 1px solid #e9ecef !important;
+    opacity: 1 !important;
+}
+
+/* Items section */
+#atwDetailsModal .profile-info-label.mb-1 {
+    font-size: 0.7rem !important;
+    font-weight: 700 !important;
+    color: #047857 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+    margin-bottom: 0.5rem !important;
+}
+
+#atwDetailsModal .rounded {
+    background: #f8fafc !important;
+    border-radius: 12px !important;
+    padding: 1rem !important;
+    color: #1e293b !important;
+    font-weight: 500 !important;
+    font-size: 0.85rem !important;
+    white-space: pre-line !important;
+    border: 1px solid #e9ecef !important;
+}
+
+/* ===== ANIMATION ===== */
+#atwDetailsModal.fade .modal-dialog {
+    transform: scale(0.95) !important;
+    transition: transform 0.2s ease-out !important;
+}
+
+#atwDetailsModal.fade.show .modal-dialog {
+    transform: scale(1) !important;
+}
+
+/* ===== RESPONSIVE ===== */
+@media (max-width: 576px) {
+    #atwDetailsModal .modal-body {
+        padding: 0.875rem !important;
+    }
+    
+    #atwDetailsModal .atw-detail-label {
+        font-size: 0.6rem !important;
+    }
+    
+    #atwDetailsModal .atw-detail-value {
+        font-size: 0.8rem !important;
+    }
+    
+    #atwDetailsModal .rounded {
+        padding: 0.75rem !important;
+        font-size: 0.8rem !important;
+    }
+    
+    #atwDetailsModal h5 {
+        font-size: 0.9rem !important;
+    }
+}

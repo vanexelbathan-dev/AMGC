@@ -25,6 +25,36 @@ if (empty($user_initials)) {
     $user_initials = 'BA';
 }
 
+$task_badge_count = 0;
+
+if (isset($conn) && !empty($_SESSION['user_id'])) {
+    $uid = (int) $_SESSION['user_id'];
+
+    $taskBadgeStmt = $conn->prepare("
+        SELECT COUNT(DISTINCT t.task_id) AS total
+        FROM user_tasks t
+        INNER JOIN user_task_assignees a
+            ON a.task_id = t.task_id
+        WHERE a.user_id = ?
+          AND a.assignee_status NOT IN ('completed', 'cancelled')
+          AND NOW() >= DATE_SUB(
+              t.due_datetime,
+              INTERVAL COALESCE(t.reminder_days, 0) DAY
+          )
+    ");
+
+    if ($taskBadgeStmt) {
+        $taskBadgeStmt->bind_param('i', $uid);
+        $taskBadgeStmt->execute();
+
+        $taskBadgeResult = $taskBadgeStmt->get_result();
+        $taskBadgeRow = $taskBadgeResult->fetch_assoc();
+
+        $task_badge_count = (int) ($taskBadgeRow['total'] ?? 0);
+
+        $taskBadgeStmt->close();
+    }
+}
 // Get user's branch name for display
 $branch_name = 'All Branches';
 if (!$view_all_branches && $branch_id > 0) {
@@ -434,6 +464,784 @@ if ($check_customer_group_column && $check_customer_group_column->num_rows > 0) 
     $customer_group_column_exists = ($recheck_customer_group_column && $recheck_customer_group_column->num_rows > 0);
 }
 
+// ===== CUSTOMER GROUP MASTER LIST SAFETY =====
+// This lets the system save a new customer group even before any customer uses it.
+$customer_groups_master_table_exists = false;
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    @$conn->query("CREATE TABLE IF NOT EXISTS customer_groups_master (
+        group_id INT AUTO_INCREMENT PRIMARY KEY,
+        group_name VARCHAR(100) NOT NULL,
+        branch_id INT NULL,
+        created_by INT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        UNIQUE KEY uniq_group_branch (group_name, branch_id),
+        INDEX idx_group_name (group_name),
+        INDEX idx_branch_id (branch_id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci");
+}
+$check_customer_groups_master = $conn->query("SHOW TABLES LIKE 'customer_groups_master'");
+if ($check_customer_groups_master && $check_customer_groups_master->num_rows > 0) {
+    $customer_groups_master_table_exists = true;
+}
+
+
+
+
+// ===== MERGED CUSTOMER SAVE HANDLER FIX =====
+// Handles Add/Edit before any tab-specific AJAX handler so customer saving will not be blocked after merge.
+if (!function_exists('mergedCustomerColumnExists')) {
+    function mergedCustomerColumnExists($conn, $column) {
+        $column = $conn->real_escape_string($column);
+        $res = $conn->query("SHOW COLUMNS FROM customers LIKE '{$column}'");
+        return $res && $res->num_rows > 0;
+    }
+}
+
+if (!function_exists('mergedGenerateCustomerCode')) {
+    function mergedGenerateCustomerCode($conn) {
+        $prefix = 'CUST-';
+        $year = date('Y');
+        $month = date('m');
+        $like = $prefix . $year . $month . '%';
+        $stmt = $conn->prepare("SELECT customer_code FROM customers WHERE customer_code LIKE ? ORDER BY customer_code DESC LIMIT 1");
+        if ($stmt) {
+            $stmt->bind_param('s', $like);
+            $stmt->execute();
+            $result = $stmt->get_result();
+            if ($result && $row = $result->fetch_assoc()) {
+                $last_code = (string)($row['customer_code'] ?? '');
+                $sequence = intval(substr($last_code, -4)) + 1;
+                $stmt->close();
+                return $prefix . $year . $month . '-' . str_pad((string)$sequence, 4, '0', STR_PAD_LEFT);
+            }
+            $stmt->close();
+        }
+        return $prefix . $year . $month . '-0001';
+    }
+}
+
+if (!function_exists('mergedHandleStoreImageUpload')) {
+    function mergedHandleStoreImageUpload($current_image = '') {
+        if (!isset($_FILES['store_image']) || $_FILES['store_image']['error'] !== UPLOAD_ERR_OK) {
+            return $current_image;
+        }
+
+        $upload_dir = '../uploads/store_images/';
+        if (!is_dir($upload_dir)) {
+            @mkdir($upload_dir, 0755, true);
+        }
+
+        $file_name = $_FILES['store_image']['name'] ?? '';
+        $file_tmp = $_FILES['store_image']['tmp_name'] ?? '';
+        $file_size = (int)($_FILES['store_image']['size'] ?? 0);
+        $file_ext = strtolower(pathinfo($file_name, PATHINFO_EXTENSION));
+        $allowed_ext = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+
+        if (!in_array($file_ext, $allowed_ext, true)) {
+            throw new Exception('Invalid store image type.');
+        }
+        if ($file_size > 5242880) {
+            throw new Exception('Store image must not exceed 5MB.');
+        }
+
+        $new_file_name = 'store_' . uniqid('', true) . '.' . $file_ext;
+        if (!move_uploaded_file($file_tmp, $upload_dir . $new_file_name)) {
+            throw new Exception('Failed to upload store image.');
+        }
+
+        if ($current_image !== '' && file_exists($upload_dir . $current_image)) {
+            @unlink($upload_dir . $current_image);
+        }
+
+        return $new_file_name;
+    }
+}
+
+if (!function_exists('mergedEnsureCustomerGroupMaster')) {
+    function mergedEnsureCustomerGroupMaster($conn, $group_name, $branch_id, $user_id) {
+        $group_name = trim((string)$group_name);
+        if ($group_name === '') return;
+
+        $check_table = $conn->query("SHOW TABLES LIKE 'customer_groups_master'");
+        if (!$check_table || $check_table->num_rows === 0) return;
+
+        $stmt = $conn->prepare("SELECT group_id FROM customer_groups_master WHERE LOWER(TRIM(group_name)) = LOWER(TRIM(?)) AND (branch_id = ? OR branch_id IS NULL OR branch_id = 0) LIMIT 1");
+        if ($stmt) {
+            $stmt->bind_param('si', $group_name, $branch_id);
+            $stmt->execute();
+            $res = $stmt->get_result();
+            $exists = $res && $res->num_rows > 0;
+            $stmt->close();
+            if ($exists) return;
+        }
+
+        $ins = $conn->prepare("INSERT INTO customer_groups_master (group_name, branch_id, created_by) VALUES (?, ?, ?)");
+        if ($ins) {
+            $ins->bind_param('sii', $group_name, $branch_id, $user_id);
+            @$ins->execute();
+            $ins->close();
+        }
+    }
+}
+
+$merged_customer_save_actions = ['add_customer', 'update_customer_fast', 'update_customer'];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array($_POST['action'], $merged_customer_save_actions, true)) {
+    header('Content-Type: application/json');
+    @set_time_limit(20);
+    @$conn->query("SET SESSION innodb_lock_wait_timeout = 5");
+
+    try {
+        $action = $_POST['action'];
+        $customer_id = (int)($_POST['customer_id'] ?? 0);
+        $customer_name = trim($_POST['customer_name'] ?? '');
+        $contact_person = trim($_POST['contact_person'] ?? '');
+        $email = trim($_POST['email'] ?? '');
+        $phone = trim($_POST['phone_number'] ?? '');
+        $price_level = trim($_POST['price_level'] ?? 'Standard');
+        $region = trim($_POST['region'] ?? '');
+        $province = trim($_POST['province'] ?? '');
+        $city = trim($_POST['city'] ?? '');
+        $city_code = trim($_POST['city_code'] ?? '');
+        $barangay = trim($_POST['barangay'] ?? '');
+        $store_name = trim($_POST['store_name'] ?? '');
+        $customer_group = trim($_POST['customer_group'] ?? '');
+        $status = trim($_POST['status'] ?? 'active');
+
+        if ($customer_name === '') {
+            throw new Exception('Customer name is required.');
+        }
+        if (!in_array($status, ['active', 'inactive', 'pending'], true)) {
+            $status = 'active';
+        }
+
+        $address_parts = [];
+        if ($barangay !== '') $address_parts[] = $barangay;
+        if ($city !== '') $address_parts[] = $city;
+        if ($province !== '') $address_parts[] = $province;
+        if ($region !== '') $address_parts[] = $region;
+        $address = implode(', ', $address_parts);
+
+        $target_branch_id = 0;
+        if (!$view_all_branches && (int)$branch_id > 0) {
+            $target_branch_id = (int)$branch_id;
+        } elseif (isset($_POST['branch_id']) && (int)$_POST['branch_id'] > 0) {
+            $target_branch_id = (int)$_POST['branch_id'];
+        }
+
+        $conn->begin_transaction();
+
+        if ($action === 'add_customer') {
+            $customer_code = trim($_POST['customer_code'] ?? '');
+            if ($customer_code === '') {
+                $customer_code = mergedGenerateCustomerCode($conn);
+            }
+
+            $dup = $conn->prepare("SELECT customer_id FROM customers WHERE customer_code = ? LIMIT 1");
+            if ($dup) {
+                $dup->bind_param('s', $customer_code);
+                $dup->execute();
+                $dup_res = $dup->get_result();
+                if ($dup_res && $dup_res->num_rows > 0) {
+                    $customer_code = mergedGenerateCustomerCode($conn);
+                }
+                $dup->close();
+            }
+
+            $store_image = mergedHandleStoreImageUpload('');
+
+            $data = [
+                'customer_code' => $customer_code,
+                'customer_name' => $customer_name,
+                'contact_person' => $contact_person,
+                'email' => $email,
+                'phone_number' => $phone,
+                'address' => $address,
+                'region' => $region,
+                'province' => $province,
+                'city' => $city,
+                'barangay' => $barangay,
+                'price_level' => $price_level,
+                'store_name' => $store_name,
+                'customer_group' => $customer_group,
+                'store_image' => $store_image,
+                'city_code' => $city_code,
+                'latitude' => null,
+                'longitude' => null,
+                'status' => 'active',
+                'branch_id' => $target_branch_id > 0 ? $target_branch_id : null,
+                'created_by' => (int)$user_id
+            ];
+
+            $columns = [];
+            $values = [];
+            $types = '';
+            foreach ($data as $col => $val) {
+                if (!mergedCustomerColumnExists($conn, $col)) continue;
+                $columns[] = "`$col`";
+                $values[] = $val;
+                $types .= in_array($col, ['branch_id', 'created_by'], true) ? 'i' : 's';
+            }
+
+            if (empty($columns)) {
+                throw new Exception('No valid customer columns found.');
+            }
+
+            $placeholders = implode(',', array_fill(0, count($columns), '?'));
+            $sql = 'INSERT INTO customers (' . implode(',', $columns) . ') VALUES (' . $placeholders . ')';
+            $stmt = $conn->prepare($sql);
+            if (!$stmt) throw new Exception('Prepare add failed: ' . $conn->error);
+            $stmt->bind_param($types, ...$values);
+            if (!$stmt->execute()) throw new Exception('Failed to add customer: ' . $stmt->error);
+            $stmt->close();
+
+            if ($customer_group !== '') {
+                mergedEnsureCustomerGroupMaster($conn, $customer_group, $target_branch_id, $user_id);
+            }
+
+            $conn->commit();
+            echo json_encode(['success' => true, 'message' => 'Customer added successfully', 'customer_code' => $customer_code]);
+            exit;
+        }
+
+        if ($customer_id <= 0) {
+            throw new Exception('Invalid customer ID.');
+        }
+
+        $existing_image = trim($_POST['existing_store_image'] ?? '');
+        if ($existing_image === '' && mergedCustomerColumnExists($conn, 'store_image')) {
+            $img_stmt = $conn->prepare("SELECT store_image FROM customers WHERE customer_id = ? LIMIT 1");
+            if ($img_stmt) {
+                $img_stmt->bind_param('i', $customer_id);
+                $img_stmt->execute();
+                $img_res = $img_stmt->get_result();
+                if ($img_res && $img_row = $img_res->fetch_assoc()) {
+                    $existing_image = (string)($img_row['store_image'] ?? '');
+                }
+                $img_stmt->close();
+            }
+        }
+        $store_image = mergedHandleStoreImageUpload($existing_image);
+
+        $update_data = [
+            'customer_name' => $customer_name,
+            'contact_person' => $contact_person,
+            'email' => $email,
+            'phone_number' => $phone,
+            'address' => $address,
+            'region' => $region,
+            'province' => $province,
+            'city' => $city,
+            'barangay' => $barangay,
+            'price_level' => $price_level,
+            'store_name' => $store_name,
+            'customer_group' => $customer_group,
+            'store_image' => $store_image,
+            'city_code' => $city_code,
+            'status' => $status
+        ];
+
+        $sets = [];
+        $values = [];
+        $types = '';
+        foreach ($update_data as $col => $val) {
+            if (!mergedCustomerColumnExists($conn, $col)) continue;
+            $sets[] = "`$col` = ?";
+            $values[] = $val;
+            $types .= 's';
+        }
+        if (mergedCustomerColumnExists($conn, 'updated_at')) {
+            $sets[] = "updated_at = NOW()";
+        }
+        if (empty($sets)) {
+            throw new Exception('No valid customer fields to update.');
+        }
+        $values[] = $customer_id;
+        $types .= 'i';
+
+        $sql = 'UPDATE customers SET ' . implode(', ', $sets) . ' WHERE customer_id = ?';
+        $stmt = $conn->prepare($sql);
+        if (!$stmt) throw new Exception('Prepare update failed: ' . $conn->error);
+        $stmt->bind_param($types, ...$values);
+        if (!$stmt->execute()) throw new Exception('Failed to update customer: ' . $stmt->error);
+        $affected = $stmt->affected_rows;
+        $stmt->close();
+
+        if ($customer_group !== '') {
+            mergedEnsureCustomerGroupMaster($conn, $customer_group, $target_branch_id, $user_id);
+        }
+
+        $conn->commit();
+        echo json_encode(['success' => true, 'message' => 'Customer updated successfully', 'affected_rows' => $affected]);
+        exit;
+    } catch (Throwable $e) {
+        if (isset($conn) && $conn instanceof mysqli) {
+            @$conn->rollback();
+        }
+        http_response_code(200);
+        echo json_encode(['success' => false, 'message' => $e->getMessage()]);
+        exit;
+    }
+}
+
+// ===== APPROVE CREDIT REQUESTS TAB LOGIC =====
+// Enable error logging
+ini_set('log_errors', 1);
+ini_set('error_log', '../logs/approve_credit_errors.log');
+
+// Check if credit_discount_requests table exists
+$credit_requests_table_exists = false;
+$check_credit_requests_table = $conn->query("SHOW TABLES LIKE 'credit_discount_requests'");
+if ($check_credit_requests_table && $check_credit_requests_table->num_rows > 0) {
+    $credit_requests_table_exists = true;
+}
+
+// ------------------------------------------------------------
+// Check if attachments table exists
+// ------------------------------------------------------------
+$attachments_table_exists = false;
+$check_attachments_table = $conn->query("SHOW TABLES LIKE 'credit_discount_attachments'");
+if ($check_attachments_table && $check_attachments_table->num_rows > 0) {
+    $attachments_table_exists = true;
+}
+
+// Check if branch_id column exists in customers table
+$customers_branch_column_exists = false;
+$check_customers_column = $conn->query("SHOW COLUMNS FROM customers LIKE 'branch_id'");
+if ($check_customers_column && $check_customers_column->num_rows > 0) {
+    $customers_branch_column_exists = true;
+}
+
+// Check if approved_by column exists and is valid foreign key
+$approved_by_column_exists = false;
+$check_approved_by = $conn->query("SHOW COLUMNS FROM credit_discount_requests LIKE 'approved_by'");
+if ($check_approved_by && $check_approved_by->num_rows > 0) {
+    $approved_by_column_exists = true;
+}
+
+// Check if effective_from and effective_until columns exist
+$effective_columns_exist = false;
+$check_effective_from = $conn->query("SHOW COLUMNS FROM credit_discount_requests LIKE 'effective_from'");
+$check_effective_until = $conn->query("SHOW COLUMNS FROM credit_discount_requests LIKE 'effective_until'");
+if ($check_effective_from && $check_effective_from->num_rows > 0 && 
+    $check_effective_until && $check_effective_until->num_rows > 0) {
+    $effective_columns_exist = true;
+}
+
+// Get base64 encoded logo for printing
+$logo_path = '../Pictures/amgc3DLogo.png';
+$logo_base64 = '';
+if (file_exists($logo_path)) {
+    $image_data = file_get_contents($logo_path);
+    $logo_base64 = 'data:image/png;base64,' . base64_encode($image_data);
+}
+
+// Determine branch filter condition for customers
+$branch_condition = "";
+if ($customers_branch_column_exists && !$view_all_branches && $branch_id > 0) {
+    $branch_condition = "AND c.branch_id = $branch_id";
+}
+
+// ========== HANDLE AJAX REQUESTS ==========
+$credit_ajax_actions = ['approve_request', 'reject_request', 'view_request'];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && in_array($_POST['action'], $credit_ajax_actions, true)) {
+    header('Content-Type: application/json');
+    
+    try {
+        // Start transaction only for approve/reject. View request is read-only.
+        if (in_array($_POST['action'], ['approve_request', 'reject_request'], true)) {
+            $conn->begin_transaction();
+        }
+        
+        // APPROVE REQUEST - WITH EXPIRATION DAYS
+        if ($_POST['action'] === 'approve_request') {
+            $request_id = (int)$_POST['request_id'];
+            $admin_notes = trim($_POST['admin_notes'] ?? '');
+            $expiration_days = (int)($_POST['expiration_days'] ?? 30); // Default 30 days
+            
+            // Validate expiration days
+            if ($expiration_days <= 0) {
+                $expiration_days = 30;
+            }
+            
+            // Calculate effective from (now) and effective until (now + expiration days)
+            $effective_from = date('Y-m-d H:i:s');
+            $effective_until = date('Y-m-d H:i:s', strtotime("+{$expiration_days} days"));
+            
+            error_log("========== APPROVE REQUEST ATTEMPT ==========");
+            error_log("Timestamp: " . date('Y-m-d H:i:s'));
+            error_log("Request ID: " . $request_id);
+            error_log("Admin User ID: " . $user_id);
+            error_log("Expiration Days: " . $expiration_days);
+            error_log("Effective From: " . $effective_from);
+            error_log("Effective Until: " . $effective_until);
+            
+            // First, check if the request exists and get its current status
+            $check_sql = "SELECT r.request_id, r.status, r.customer_id, r.request_type,
+                                 r.requested_credit_limit, r.requested_discount_percent, r.credit_terms_days,
+                                 c.customer_name, c.branch_id as customer_branch_id
+                          FROM credit_discount_requests r
+                          LEFT JOIN customers c ON r.customer_id = c.customer_id
+                          WHERE r.request_id = ?";
+            
+            $check_stmt = $conn->prepare($check_sql);
+            if (!$check_stmt) {
+                throw new Exception("Prepare check failed: " . $conn->error);
+            }
+            
+            $check_stmt->bind_param("i", $request_id);
+            if (!$check_stmt->execute()) {
+                throw new Exception("Execute check failed: " . $check_stmt->error);
+            }
+            
+            $check_result = $check_stmt->get_result();
+            
+            if ($check_result->num_rows === 0) {
+                throw new Exception("Request ID $request_id not found in database");
+            }
+            
+            $request_data = $check_result->fetch_assoc();
+            error_log("Found Request - Current Status: " . $request_data['status']);
+            error_log("Customer: " . $request_data['customer_name']);
+            
+            // Verify branch access if not admin
+            if (!$view_all_branches && $customers_branch_column_exists) {
+                if (!isset($request_data['customer_branch_id']) || $request_data['customer_branch_id'] != $branch_id) {
+                    throw new Exception("Access denied: This customer belongs to a different branch");
+                }
+            }
+            
+            // Check if already approved
+            if ($request_data['status'] === 'approved') {
+                echo json_encode([
+                    'success' => true,
+                    'message' => 'Request was already approved',
+                    'already_approved' => true
+                ]);
+                $conn->commit();
+                exit;
+            }
+            
+            // Update with effective dates
+            if ($effective_columns_exist && $approved_by_column_exists) {
+                $update_sql = "UPDATE credit_discount_requests 
+                               SET status = 'approved', 
+                                   admin_notes = ?,
+                                   effective_from = ?,
+                                   effective_until = ?,
+                                   approved_at = NOW(), 
+                                   approved_by = ? 
+                               WHERE request_id = ?";
+                
+                error_log("Using update with effective dates");
+                error_log("SQL: " . $update_sql);
+                
+                $update_stmt = $conn->prepare($update_sql);
+                if (!$update_stmt) {
+                    throw new Exception("Prepare update failed: " . $conn->error);
+                }
+                
+                $update_stmt->bind_param("sssii", $admin_notes, $effective_from, $effective_until, $user_id, $request_id);
+                
+            } elseif ($effective_columns_exist) {
+                // Without approved_by column
+                $update_sql = "UPDATE credit_discount_requests 
+                               SET status = 'approved', 
+                                   admin_notes = ?,
+                                   effective_from = ?,
+                                   effective_until = ?,
+                                   approved_at = NOW()
+                               WHERE request_id = ?";
+                
+                error_log("Using update without approved_by column");
+                
+                $update_stmt = $conn->prepare($update_sql);
+                if (!$update_stmt) {
+                    throw new Exception("Prepare update failed: " . $conn->error);
+                }
+                
+                $update_stmt->bind_param("sssi", $admin_notes, $effective_from, $effective_until, $request_id);
+                
+            } elseif ($approved_by_column_exists) {
+                // Without effective dates
+                $update_sql = "UPDATE credit_discount_requests 
+                               SET status = 'approved', 
+                                   admin_notes = ?,
+                                   approved_at = NOW(), 
+                                   approved_by = ? 
+                               WHERE request_id = ?";
+                
+                error_log("Using update without effective dates");
+                
+                $update_stmt = $conn->prepare($update_sql);
+                if (!$update_stmt) {
+                    throw new Exception("Prepare update failed: " . $conn->error);
+                }
+                
+                $update_stmt->bind_param("sii", $admin_notes, $user_id, $request_id);
+                
+            } else {
+                // Fallback
+                $update_sql = "UPDATE credit_discount_requests 
+                               SET status = 'approved', 
+                                   admin_notes = ?,
+                                   approved_at = NOW()
+                               WHERE request_id = ?";
+                
+                error_log("Using fallback update");
+                
+                $update_stmt = $conn->prepare($update_sql);
+                if (!$update_stmt) {
+                    throw new Exception("Prepare update failed: " . $conn->error);
+                }
+                
+                $update_stmt->bind_param("si", $admin_notes, $request_id);
+            }
+            
+            if (!$update_stmt->execute()) {
+                throw new Exception("Execute update failed: " . $update_stmt->error);
+            }
+            
+            $affected_rows = $update_stmt->affected_rows;
+            error_log("Affected rows: " . $affected_rows);
+            
+            // Commit the transaction
+            $conn->commit();
+            
+            error_log("========== APPROVE REQUEST SUCCESS ==========");
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Request approved successfully. Effective until: ' . date('M d, Y', strtotime($effective_until)),
+                'affected_rows' => $affected_rows,
+                'request_id' => $request_id,
+                'new_status' => 'approved',
+                'effective_until' => $effective_until
+            ]);
+            exit;
+        }
+        
+        // REJECT REQUEST
+        elseif ($_POST['action'] === 'reject_request') {
+            $request_id = (int)$_POST['request_id'];
+            $rejection_reason = trim($_POST['rejection_reason'] ?? '');
+            
+            error_log("========== REJECT REQUEST ATTEMPT ==========");
+            error_log("Request ID: " . $request_id);
+            error_log("Rejection Reason: " . $rejection_reason);
+            
+            // Check if request exists
+            $check_sql = "SELECT request_id, status FROM credit_discount_requests WHERE request_id = ?";
+            $check_stmt = $conn->prepare($check_sql);
+            $check_stmt->bind_param("i", $request_id);
+            $check_stmt->execute();
+            $check_result = $check_stmt->get_result();
+            
+            if ($check_result->num_rows === 0) {
+                throw new Exception("Request not found");
+            }
+            
+            $request_data = $check_result->fetch_assoc();
+            error_log("Current status: " . $request_data['status']);
+            
+            // Update to rejected
+            if ($approved_by_column_exists) {
+                $update_sql = "UPDATE credit_discount_requests 
+                               SET status = 'rejected', 
+                                   admin_notes = CONCAT(IFNULL(admin_notes,''), '\nRejected: ', ?),
+                                   approved_at = NOW(), 
+                                   approved_by = ? 
+                               WHERE request_id = ?";
+                $update_stmt = $conn->prepare($update_sql);
+                $update_stmt->bind_param("sii", $rejection_reason, $user_id, $request_id);
+            } else {
+                $update_sql = "UPDATE credit_discount_requests 
+                               SET status = 'rejected', 
+                                   admin_notes = CONCAT(IFNULL(admin_notes,''), '\nRejected: ', ?),
+                                   approved_at = NOW()
+                               WHERE request_id = ?";
+                $update_stmt = $conn->prepare($update_sql);
+                $update_stmt->bind_param("si", $rejection_reason, $request_id);
+            }
+            
+            if (!$update_stmt->execute()) {
+                throw new Exception("Failed to reject request: " . $update_stmt->error);
+            }
+            
+            $conn->commit();
+            
+            echo json_encode([
+                'success' => true,
+                'message' => 'Request rejected successfully'
+            ]);
+            exit;
+        }
+        
+        // VIEW REQUEST DETAILS
+        elseif ($_POST['action'] === 'view_request') {
+            $request_id = (int)$_POST['request_id'];
+            
+            $query = "SELECT r.*, c.customer_name, c.customer_code, c.email, c.phone_number,
+                             u.first_name, u.last_name, u.email as agent_email
+                      FROM credit_discount_requests r
+                      JOIN customers c ON r.customer_id = c.customer_id
+                      JOIN users u ON r.agent_id = u.user_id
+                      WHERE r.request_id = ?";
+            
+            if (!$view_all_branches && $customers_branch_column_exists) {
+                $query .= " AND c.branch_id = ?";
+                $stmt = $conn->prepare($query);
+                $stmt->bind_param("ii", $request_id, $branch_id);
+            } else {
+                $stmt = $conn->prepare($query);
+                $stmt->bind_param("i", $request_id);
+            }
+            
+            $stmt->execute();
+            $result = $stmt->get_result();
+            $request = $result->fetch_assoc();
+            
+            if ($request) {
+                // Get attachments for this request
+                $attachments = [];
+                if ($attachments_table_exists) {
+                    $att_query = "SELECT * FROM credit_discount_attachments WHERE request_id = ? ORDER BY uploaded_at ASC";
+                    $att_stmt = $conn->prepare($att_query);
+                    $att_stmt->bind_param("i", $request_id);
+                    $att_stmt->execute();
+                    $att_result = $att_stmt->get_result();
+                    while ($att = $att_result->fetch_assoc()) {
+                        $attachments[] = $att;
+                    }
+                }
+                
+                echo json_encode([
+                    'success' => true,
+                    'request' => $request,
+                    'attachments' => $attachments
+                ]);
+            } else {
+                throw new Exception('Request not found');
+            }
+            exit;
+        }
+        
+    } catch (Exception $e) {
+        if (in_array($_POST['action'] ?? '', ['approve_request', 'reject_request'], true)) {
+            @ $conn->rollback();
+        }
+        error_log("========== APPROVE REQUEST ERROR ==========");
+        error_log("Error message: " . $e->getMessage());
+        error_log("Error trace: " . $e->getTraceAsString());
+        
+        echo json_encode([
+            'success' => false,
+            'message' => $e->getMessage()
+        ]);
+        exit;
+    }
+}
+
+// FETCH REQUESTS FROM DATABASE with branch filtering via customer
+$requests_query = "
+    SELECT 
+        r.request_id,
+        r.request_type,
+        r.requested_credit_limit,
+        r.requested_discount_percent,
+        r.credit_terms_days,
+        r.reason,
+        r.status,
+        r.admin_notes,
+        r.created_at,
+        r.updated_at,
+        r.approved_at,
+        r.effective_from,
+        r.effective_until,
+        c.customer_id,
+        c.customer_name,
+        c.customer_code,
+        c.branch_id as customer_branch_id,
+        CONCAT(u.first_name, ' ', u.last_name) as agent_name,
+        u.email as agent_email
+    FROM credit_discount_requests r
+    JOIN customers c ON r.customer_id = c.customer_id
+    LEFT JOIN users u ON r.agent_id = u.user_id
+    WHERE 1=1
+    $branch_condition
+    ORDER BY r.created_at DESC, r.request_id DESC
+";
+
+$requests_result = $conn->query($requests_query);
+if (!$requests_result) {
+    $requests = [];
+    error_log("Credit Discount Requests Query Error: " . $conn->error);
+} else {
+    $requests = $requests_result->fetch_all(MYSQLI_ASSOC);
+}
+
+// Get attachments for all requests
+$attachments_by_request = [];
+if ($attachments_table_exists && !empty($requests)) {
+    $all_request_ids = array_column($requests, 'request_id');
+    if (!empty($all_request_ids)) {
+        $ids_string = implode(',', $all_request_ids);
+        $attachment_query = "SELECT * FROM credit_discount_attachments WHERE request_id IN ($ids_string) ORDER BY uploaded_at ASC";
+        $attachments_result = $conn->query($attachment_query);
+        if ($attachments_result) {
+            while ($attachment = $attachments_result->fetch_assoc()) {
+                $attachments_by_request[$attachment['request_id']][] = $attachment;
+            }
+        }
+    }
+}
+
+// CALCULATE STATISTICS
+$total_requests = count($requests);
+$pending_requests = count(array_filter($requests, fn($r) => $r['status'] === 'pending'));
+$approved_requests = count(array_filter($requests, fn($r) => $r['status'] === 'approved'));
+$rejected_requests = count(array_filter($requests, fn($r) => $r['status'] === 'rejected'));
+
+// Helper functions
+function getRequestStatusClass($status) {
+    return match($status) {
+        'pending' => 'status-pending',
+        'approved' => 'status-approved',
+        'rejected' => 'status-rejected',
+        default => 'status-pending'
+    };
+}
+
+function getRequestStatusText($status) {
+    return match($status) {
+        'pending' => 'Pending',
+        'approved' => 'Approved',
+        'rejected' => 'Rejected',
+        default => ucfirst($status)
+    };
+}
+
+function getRequestTypeText($type) {
+    return match($type) {
+        'credit' => 'Credit Limit',
+        'discount' => 'Discount',
+        'both' => 'Credit & Discount',
+        'credit_terms' => 'Credit Terms',
+        default => ucfirst($type)
+    };
+}
+
+function creditFormatDate($dateStr) {
+    if (!$dateStr) return '';
+    $date = new DateTime($dateStr);
+    return $date->format('M d, Y H:i');
+}
+
+function isRequestExpired($effective_until) {
+    if (!$effective_until) return false;
+    return strtotime($effective_until) < time();
+}
+
 
 // FAST AJAX UPDATE HANDLER
 // This runs before page-only queries like preview code and walk-in checks.
@@ -736,7 +1544,7 @@ ensureWalkinCustomer($conn, $branch_id, $user_id);
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     header('Content-Type: application/json');
     
-    $write_actions = ['add_customer', 'delete_customer'];
+    $write_actions = ['add_customer', 'delete_customer', 'update_customer_group', 'create_customer_group'];
     $is_write_action = in_array($_POST['action'], $write_actions, true);
     
     try {
@@ -929,6 +1737,175 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             exit;
         }
         
+
+        // CREATE CUSTOMER GROUP NAME
+        elseif ($_POST['action'] === 'create_customer_group') {
+            if (!$customer_group_column_exists) {
+                throw new Exception('Missing database column: customer_group. Please run fix_customer_group_column.sql once.');
+            }
+
+            if (!$customer_groups_master_table_exists) {
+                throw new Exception('Customer group master table is missing. Please refresh the page and try again.');
+            }
+
+            $new_group = trim($_POST['new_group'] ?? '');
+
+            if ($new_group === '') {
+                throw new Exception('Customer group name is required.');
+            }
+
+            if (mb_strlen($new_group, 'UTF-8') > 100) {
+                throw new Exception('Customer group name must not exceed 100 characters.');
+            }
+
+            $target_group_branch_id = (!$view_all_branches && $customers_branch_column_exists && $branch_id > 0) ? (int)$branch_id : null;
+
+            $duplicate_sql = "SELECT group_id FROM customer_groups_master WHERE LOWER(TRIM(group_name)) = LOWER(TRIM(?))";
+            $duplicate_types = "s";
+            $duplicate_params = [$new_group];
+            if ($target_group_branch_id !== null) {
+                $duplicate_sql .= " AND (branch_id = ? OR branch_id IS NULL OR branch_id = 0)";
+                $duplicate_types .= "i";
+                $duplicate_params[] = $target_group_branch_id;
+            }
+            $duplicate_sql .= " LIMIT 1";
+
+            $duplicate_stmt = $conn->prepare($duplicate_sql);
+            if (!$duplicate_stmt) {
+                throw new Exception('Prepare failed: ' . $conn->error);
+            }
+            $duplicate_stmt->bind_param($duplicate_types, ...$duplicate_params);
+            $duplicate_stmt->execute();
+            $duplicate_result = $duplicate_stmt->get_result();
+            $already_exists = $duplicate_result && $duplicate_result->num_rows > 0;
+            $duplicate_stmt->close();
+
+            if ($already_exists) {
+                throw new Exception('Customer group already exists.');
+            }
+
+            $insert_group_sql = "INSERT INTO customer_groups_master (group_name, branch_id, created_by) VALUES (?, ?, ?)";
+            $insert_group_stmt = $conn->prepare($insert_group_sql);
+            if (!$insert_group_stmt) {
+                throw new Exception('Prepare failed: ' . $conn->error);
+            }
+            $insert_group_stmt->bind_param('sii', $new_group, $target_group_branch_id, $user_id);
+            if (!$insert_group_stmt->execute()) {
+                throw new Exception('Failed to create customer group: ' . $insert_group_stmt->error);
+            }
+            $insert_group_stmt->close();
+
+            $conn->commit();
+            echo json_encode([
+                'success' => true,
+                'message' => 'Customer group added successfully.',
+                'group_name' => $new_group
+            ]);
+            exit;
+        }
+
+        // UPDATE CUSTOMER GROUP NAME
+        elseif ($_POST['action'] === 'update_customer_group') {
+            if (!$customer_group_column_exists) {
+                throw new Exception('Missing database column: customer_group. Please run fix_customer_group_column.sql once.');
+            }
+
+            $old_group = trim($_POST['old_group'] ?? '');
+            $new_group = trim($_POST['new_group'] ?? '');
+
+            if ($old_group === '') {
+                throw new Exception('Original customer group is required.');
+            }
+
+            if ($new_group === '') {
+                throw new Exception('New customer group name is required.');
+            }
+
+            if (mb_strlen($new_group, 'UTF-8') > 100) {
+                throw new Exception('Customer group name must not exceed 100 characters.');
+            }
+
+            if (mb_strtolower($old_group, 'UTF-8') === mb_strtolower($new_group, 'UTF-8')) {
+                $conn->commit();
+                echo json_encode(['success' => true, 'message' => 'Customer group is already updated.']);
+                exit;
+            }
+
+            $scope_sql = "";
+            $check_types = "s";
+            $check_params = [$old_group];
+
+            if (!$view_all_branches && $customers_branch_column_exists && $branch_id > 0) {
+                $scope_sql = " AND (branch_id = ? OR branch_id IS NULL OR branch_id = 0)";
+                $check_types .= "i";
+                $check_params[] = (int)$branch_id;
+            }
+
+            $check_sql = "SELECT COUNT(*) AS group_count FROM customers WHERE TRIM(customer_group) = ?" . $scope_sql;
+            $check_stmt = $conn->prepare($check_sql);
+            if (!$check_stmt) {
+                throw new Exception('Prepare failed: ' . $conn->error);
+            }
+            $check_stmt->bind_param($check_types, ...$check_params);
+            $check_stmt->execute();
+            $check_result = $check_stmt->get_result();
+            $group_count = (int)($check_result->fetch_assoc()['group_count'] ?? 0);
+            $check_stmt->close();
+
+            if ($group_count <= 0) {
+                throw new Exception('Customer group not found.');
+            }
+
+            $update_types = "ss";
+            $update_params = [$new_group, $old_group];
+
+            if (!$view_all_branches && $customers_branch_column_exists && $branch_id > 0) {
+                $update_types .= "i";
+                $update_params[] = (int)$branch_id;
+            }
+
+            $update_group_sql = "UPDATE customers
+                                 SET customer_group = ?, updated_at = NOW()
+                                 WHERE TRIM(customer_group) = ?" . $scope_sql;
+            $group_stmt = $conn->prepare($update_group_sql);
+            if (!$group_stmt) {
+                throw new Exception('Prepare failed: ' . $conn->error);
+            }
+            $group_stmt->bind_param($update_types, ...$update_params);
+            if (!$group_stmt->execute()) {
+                throw new Exception('Failed to update customer group: ' . $group_stmt->error);
+            }
+
+            $affected_rows = $group_stmt->affected_rows;
+            $group_stmt->close();
+
+            if ($customer_groups_master_table_exists) {
+                $master_scope_sql = "";
+                $master_types = "ss";
+                $master_params = [$new_group, $old_group];
+                if (!$view_all_branches && $customers_branch_column_exists && $branch_id > 0) {
+                    $master_scope_sql = " AND (branch_id = ? OR branch_id IS NULL OR branch_id = 0)";
+                    $master_types .= "i";
+                    $master_params[] = (int)$branch_id;
+                }
+                $master_update_sql = "UPDATE customer_groups_master SET group_name = ?, updated_at = NOW() WHERE TRIM(group_name) = ?" . $master_scope_sql;
+                $master_update_stmt = $conn->prepare($master_update_sql);
+                if ($master_update_stmt) {
+                    $master_update_stmt->bind_param($master_types, ...$master_params);
+                    $master_update_stmt->execute();
+                    $master_update_stmt->close();
+                }
+            }
+
+            $conn->commit();
+            echo json_encode([
+                'success' => true,
+                'message' => 'Customer group updated successfully.',
+                'updated_customers' => $affected_rows
+            ]);
+            exit;
+        }
+
         // DELETE CUSTOMER
         elseif ($_POST['action'] === 'delete_customer') {
             $customer_id = intval($_POST['customer_id']);
@@ -1069,6 +2046,19 @@ $customers_result = $conn->query($customers_query);
 $customers = $customers_result ? $customers_result->fetch_all(MYSQLI_ASSOC) : [];
 
 // FETCH EXISTING CUSTOMER GROUPS FOR TYPE-AHEAD DROPDOWN
+$customer_groups = [];
+$customer_group_map = [];
+
+$addCustomerGroupToMap = function($groupName) use (&$customer_group_map) {
+    $raw_group = trim((string)$groupName);
+    if ($raw_group !== '') {
+        $normalized_group_key = mb_strtolower($raw_group, 'UTF-8');
+        if (!isset($customer_group_map[$normalized_group_key])) {
+            $customer_group_map[$normalized_group_key] = $raw_group;
+        }
+    }
+};
+
 if ($view_all_branches) {
     $groups_query = "SELECT DISTINCT customer_group FROM customers WHERE customer_group IS NOT NULL AND customer_group != '' ORDER BY customer_group ASC";
     $groups_result = $conn->query($groups_query);
@@ -1079,22 +2069,60 @@ if ($view_all_branches) {
     $groups_stmt->execute();
     $groups_result = $groups_stmt->get_result();
 }
-$customer_groups = [];
-$customer_group_map = [];
 if ($groups_result) {
     while ($group_row = $groups_result->fetch_assoc()) {
-        $raw_group = trim($group_row['customer_group'] ?? '');
-        if ($raw_group !== '') {
-            $normalized_group_key = mb_strtolower($raw_group, 'UTF-8');
-            if (!isset($customer_group_map[$normalized_group_key])) {
-                $customer_group_map[$normalized_group_key] = $raw_group;
-            }
+        $addCustomerGroupToMap($group_row['customer_group'] ?? '');
+    }
+}
+
+if ($customer_groups_master_table_exists) {
+    if ($view_all_branches || !$customers_branch_column_exists || (int)$branch_id <= 0) {
+        $master_groups_result = $conn->query("SELECT group_name FROM customer_groups_master WHERE group_name IS NOT NULL AND TRIM(group_name) != '' ORDER BY group_name ASC");
+    } else {
+        $master_groups_stmt = $conn->prepare("SELECT group_name FROM customer_groups_master WHERE group_name IS NOT NULL AND TRIM(group_name) != '' AND (branch_id = ? OR branch_id IS NULL OR branch_id = 0) ORDER BY group_name ASC");
+        $master_groups_stmt->bind_param('i', $branch_id);
+        $master_groups_stmt->execute();
+        $master_groups_result = $master_groups_stmt->get_result();
+    }
+    if ($master_groups_result) {
+        while ($master_group_row = $master_groups_result->fetch_assoc()) {
+            $addCustomerGroupToMap($master_group_row['group_name'] ?? '');
         }
     }
 }
 $customer_groups = array_values($customer_group_map);
 natcasesort($customer_groups);
 $customer_groups = array_values($customer_groups);
+
+$customer_group_counts = [];
+if (!empty($customer_groups)) {
+    if ($view_all_branches || !$customers_branch_column_exists || (int)$branch_id <= 0) {
+        $counts_query = "SELECT TRIM(customer_group) AS customer_group, COUNT(*) AS customer_count
+                         FROM customers
+                         WHERE customer_group IS NOT NULL AND TRIM(customer_group) != ''
+                         GROUP BY TRIM(customer_group)";
+        $counts_result = $conn->query($counts_query);
+    } else {
+        $counts_query = "SELECT TRIM(customer_group) AS customer_group, COUNT(*) AS customer_count
+                         FROM customers
+                         WHERE customer_group IS NOT NULL AND TRIM(customer_group) != ''
+                           AND (branch_id = ? OR branch_id IS NULL OR branch_id = 0)
+                         GROUP BY TRIM(customer_group)";
+        $counts_stmt = $conn->prepare($counts_query);
+        $counts_stmt->bind_param('i', $branch_id);
+        $counts_stmt->execute();
+        $counts_result = $counts_stmt->get_result();
+    }
+
+    if ($counts_result) {
+        while ($count_row = $counts_result->fetch_assoc()) {
+            $count_group_name = trim($count_row['customer_group'] ?? '');
+            if ($count_group_name !== '') {
+                $customer_group_counts[mb_strtolower($count_group_name, 'UTF-8')] = (int)($count_row['customer_count'] ?? 0);
+            }
+        }
+    }
+}
 
 
 // ============= HANDLE GET ORDER DETAILS (for modal) =============
@@ -1386,6 +2414,8 @@ if ($check_price_levels && $check_price_levels->num_rows > 0) {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <!-- Leaflet CSS for Maps -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <!-- SheetJS for Credit Requests Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <!-- SweetAlert2 -->
     <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -1674,7 +2704,28 @@ if ($check_price_levels && $check_price_levels->num_rows > 0) {
         /* Add button */
         .add-button-wrapper {
             margin-bottom: 1.25rem;
-            text-align: right;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .add-button-left,
+        .add-button-right {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+        }
+
+        .add-button-left {
+            justify-content: flex-start;
+        }
+
+        .add-button-right {
+            justify-content: flex-end;
+            margin-left: auto;
         }
         
         .btn-primary-custom {
@@ -1702,7 +2753,17 @@ if ($check_price_levels && $check_price_levels->num_rows > 0) {
         @media (max-width: 768px) {
             .add-button-wrapper {
                 margin-bottom: 1rem;
-                text-align: center;
+                justify-content: center;
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .add-button-left,
+            .add-button-right {
+                width: 100%;
+                justify-content: center;
+                flex-direction: column;
+                align-items: stretch;
+                margin-left: 0;
             }
             .btn-primary-custom {
                 width: 100%;
@@ -2740,183 +3801,2370 @@ if ($check_price_levels && $check_price_levels->num_rows > 0) {
         font-size: 0.75rem;
     }
 }
-    </style>
+/* ============================================ */
+/* ===== CUSTOMER GROUPS MODAL - MODERN GREEN THEME ===== */
+/* ============================================ */
+
+#customerGroupsModal .modal-content {
+    border: none !important;
+    border-radius: 24px !important;
+    overflow: hidden !important;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2) !important;
+    max-height: 90vh !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+/* Modal Header */
+#customerGroupsModal .modal-header.bg-primary-custom {
+    background: linear-gradient(135deg, #047857 0%, #44D34E 100%) !important;
+    border-bottom: none !important;
+    padding: 1rem 1.25rem !important;
+    flex-shrink: 0 !important;
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 10 !important;
+}
+
+@media (max-width: 768px) {
+    #customerGroupsModal .modal-header.bg-primary-custom {
+        padding: 0.875rem 1rem !important;
+    }
+}
+
+@media (max-width: 576px) {
+    #customerGroupsModal .modal-header.bg-primary-custom {
+        padding: 0.75rem 0.875rem !important;
+    }
+}
+
+#customerGroupsModal .modal-header .modal-title {
+    font-weight: 600 !important;
+    font-size: 1.1rem !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    color: white !important;
+}
+
+#customerGroupsModal .modal-header .modal-title i {
+    color: white !important;
+    font-size: 1.2rem !important;
+}
+
+@media (max-width: 576px) {
+    #customerGroupsModal .modal-header .modal-title {
+        font-size: 0.95rem !important;
+    }
+}
+
+/* Close button */
+#customerGroupsModal .modal-header .btn-close {
+    background: rgba(255, 255, 255, 0.25) !important;
+    border-radius: 50% !important;
+    width: 34px !important;
+    height: 34px !important;
+    padding: 0 !important;
+    margin: -0.5rem -0.5rem -0.5rem auto !important;
+    opacity: 1 !important;
+    transition: all 0.2s ease !important;
+    background-image: none !important;
+}
+
+#customerGroupsModal .modal-header .btn-close::before {
+    font-size: 1rem !important;
+    font-weight: normal !important;
+    color: white !important;
+}
+
+#customerGroupsModal .modal-header .btn-close:hover {
+    background: rgba(255, 255, 255, 0.4) !important;
+    transform: rotate(90deg) !important;
+}
+
+/* Modal Body */
+#customerGroupsModal .modal-body {
+    padding: 1.25rem !important;
+    overflow-y: auto !important;
+    flex: 1 !important;
+    background: #f8fafc !important;
+    max-height: calc(90vh - 130px) !important;
+}
+
+@media (max-width: 768px) {
+    #customerGroupsModal .modal-body {
+        padding: 1rem !important;
+        max-height: calc(90vh - 120px) !important;
+    }
+}
+
+@media (max-width: 576px) {
+    #customerGroupsModal .modal-body {
+        padding: 0.875rem !important;
+        max-height: calc(90vh - 110px) !important;
+    }
+}
+
+/* Scrollbar styling */
+#customerGroupsModal .modal-body::-webkit-scrollbar {
+    width: 5px;
+}
+
+#customerGroupsModal .modal-body::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+#customerGroupsModal .modal-body::-webkit-scrollbar-thumb {
+    background: #44D34E;
+    border-radius: 3px;
+}
+
+/* Alert Info Styling */
+#customerGroupsModal .alert-info {
+    background: #e8f5e9 !important;
+    border: none !important;
+    border-left: 4px solid #059669 !important;
+    border-radius: 12px !important;
+    color: #065f46 !important;
+    font-size: 0.75rem !important;
+    padding: 0.75rem 1rem !important;
+    margin-bottom: 1rem !important;
+}
+
+#customerGroupsModal .alert-info i {
+    color: #059669 !important;
+    font-size: 1rem !important;
+}
+
+/* ===== TABLE STYLES ===== */
+#customerGroupsModal .table {
+    margin-bottom: 0 !important;
+    border-collapse: collapse !important;
+}
+
+#customerGroupsModal .table thead th {
+    background: #f8fafc !important;
+    color: #475569 !important;
+    font-weight: 600 !important;
+    font-size: 0.7rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.5px !important;
+    padding: 0.85rem 1rem !important;
+    border-bottom: 2px solid #e9ecef !important;
+    border-top: none !important;
+}
+
+#customerGroupsModal .table thead th:first-child {
+    text-align: left !important;
+}
+
+#customerGroupsModal .table thead th:nth-child(2) {
+    text-align: center !important;
+}
+
+#customerGroupsModal .table thead th:last-child {
+    text-align: right !important;
+}
+
+#customerGroupsModal .table tbody tr {
+    border-bottom: 1px solid #e9ecef !important;
+    transition: all 0.2s ease !important;
+}
+
+#customerGroupsModal .table tbody tr:hover {
+    background-color: #f1f5f9 !important;
+}
+
+#customerGroupsModal .table tbody td {
+    padding: 0.85rem 1rem !important;
+    vertical-align: middle !important;
+    color: #334155 !important;
+    font-size: 0.85rem !important;
+    border: none !important;
+}
+
+#customerGroupsModal .table tbody td:first-child {
+    text-align: left !important;
+}
+
+#customerGroupsModal .table tbody td:nth-child(2) {
+    text-align: center !important;
+}
+
+#customerGroupsModal .table tbody td:last-child {
+    text-align: right !important;
+}
+
+/* ===== GROUP NAME - PLAIN TEXT, NO BADGE STYLE ===== */
+#customerGroupsModal .table tbody td:first-child {
+    font-weight: 500 !important;
+    color: #1e293b !important;
+    font-size: 0.85rem !important;
+    background: transparent !important;
+    padding: 0.85rem 1rem !important;
+    border-radius: 0 !important;
+}
+
+/* ===== BADGE COUNT STYLING - IMPROVED ===== */
+#customerGroupsModal .badge.bg-light {
+    background: #e8f5e9 !important;
+    color: #047857 !important;
+    font-weight: 600 !important;
+    padding: 0.3rem 0.8rem !important;
+    border-radius: 50px !important;
+    font-size: 0.75rem !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0.25rem !important;
+    min-width: 45px !important;
+    border: 1px solid rgba(4, 120, 87, 0.2) !important;
+}
+
+/* ===== EDIT BUTTON - IMPROVED ===== */
+#customerGroupsModal .customer-group-edit-btn {
+    background: linear-gradient(135deg, #44D34E, #047857) !important;
+    border: none !important;
+    color: #fff !important;
+    font-weight: 600 !important;
+    border-radius: 8px !important;
+    min-width: 70px !important;
+    padding: 0.45rem 0.9rem !important;
+    font-size: 0.7rem !important;
+    transition: all 0.2s ease !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 0.4rem !important;
+    cursor: pointer !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05) !important;
+}
+
+#customerGroupsModal .customer-group-edit-btn i {
+    font-size: 0.75rem !important;
+    margin: 0 !important;
+}
+
+#customerGroupsModal .customer-group-edit-btn span {
+    font-size: 0.7rem !important;
+    font-weight: 600 !important;
+}
+
+#customerGroupsModal .customer-group-edit-btn:hover {
+    background: linear-gradient(135deg, #3bc645, #036b4d) !important;
+    color: #fff !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 12px rgba(4, 120, 87, 0.25) !important;
+}
+
+#customerGroupsModal .customer-group-edit-btn:active {
+    transform: translateY(0px) !important;
+}
+
+/* Icon-only button on very small screens */
+@media (max-width: 480px) {
+    #customerGroupsModal .customer-group-edit-btn span {
+        display: none !important;
+    }
+    
+    #customerGroupsModal .customer-group-edit-btn {
+        min-width: 36px !important;
+        padding: 0.45rem !important;
+        border-radius: 8px !important;
+    }
+    
+    #customerGroupsModal .customer-group-edit-btn i {
+        font-size: 0.9rem !important;
+        margin: 0 !important;
+    }
+    
+    #customerGroupsModal .badge.bg-light {
+        min-width: 38px !important;
+        padding: 0.25rem 0.6rem !important;
+        font-size: 0.7rem !important;
+    }
+}
+
+/* ===== EMPTY STATE STYLES ===== */
+#customerGroupsModal .empty-state {
+    padding: 2rem !important;
+}
+
+#customerGroupsModal .empty-state i {
+    font-size: 3rem !important;
+    color: #94a3b8 !important;
+    opacity: 0.5 !important;
+}
+
+#customerGroupsModal .empty-state h6 {
+    color: #1e293b !important;
+    font-weight: 600 !important;
+    margin-top: 0.75rem !important;
+    margin-bottom: 0.25rem !important;
+    font-size: 0.9rem !important;
+}
+
+#customerGroupsModal .empty-state p {
+    color: #94a3b8 !important;
+    font-size: 0.8rem !important;
+}
+
+/* ===== RESPONSIVE STYLES ===== */
+@media (max-width: 768px) {
+    #customerGroupsModal .table thead th,
+    #customerGroupsModal .table tbody td {
+        padding: 0.6rem 0.75rem !important;
+        font-size: 0.8rem !important;
+    }
+    
+    #customerGroupsModal .customer-group-edit-btn {
+        min-width: 65px !important;
+        padding: 0.4rem 0.7rem !important;
+        font-size: 0.65rem !important;
+    }
+    
+    #customerGroupsModal .badge.bg-light {
+        padding: 0.25rem 0.7rem !important;
+        font-size: 0.7rem !important;
+        min-width: 42px !important;
+    }
+}
+
+@media (max-width: 576px) {
+    #customerGroupsModal .table thead th,
+    #customerGroupsModal .table tbody td {
+        padding: 0.5rem 0.6rem !important;
+        font-size: 0.75rem !important;
+    }
+    
+    #customerGroupsModal .table tbody td:first-child {
+        font-size: 0.8rem !important;
+    }
+    
+    #customerGroupsModal .customer-group-edit-btn {
+        min-width: 55px !important;
+        padding: 0.35rem 0.5rem !important;
+    }
+    
+    #customerGroupsModal .badge.bg-light {
+        padding: 0.2rem 0.5rem !important;
+        font-size: 0.65rem !important;
+        min-width: 35px !important;
+    }
+}
+
+/* ===== ANIMATION ===== */
+
+
+/* Keep Customer Groups modal height stable while adding rows */
+#customerGroupsModal .modal-dialog {
+    max-height: 90vh !important;
+}
+
+#customerGroupsModal .modal-body {
+    overflow: hidden !important;
+}
+
+#customerGroupsModal .customer-groups-table-scroll {
+    max-height: 380px !important;
+    overflow-y: auto !important;
+    overflow-x: auto !important;
+    border-radius: 12px !important;
+    background: #ffffff !important;
+}
+
+#customerGroupsModal .customer-groups-table-scroll thead th {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 2 !important;
+}
+
+#customerGroupsModal .customer-groups-table-scroll::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+}
+
+#customerGroupsModal .customer-groups-table-scroll::-webkit-scrollbar-thumb {
+    background: #44D34E;
+    border-radius: 10px;
+}
+
+@media (max-width: 768px) {
+    #customerGroupsModal .customer-groups-table-scroll {
+        max-height: 320px !important;
+    }
+}
+
+@media (max-width: 576px) {
+    #customerGroupsModal .customer-groups-table-scroll {
+        max-height: 280px !important;
+    }
+}
+
+#customerGroupsModal .customer-groups-footer {
+    border-top: 1px solid #e5e7eb;
+    justify-content: flex-start;
+    padding: 16px 24px 20px;
+}
+
+#customerGroupsModal .customer-group-new-btn,
+#customerGroupsModal .customer-group-save-btn {
+    background: linear-gradient(135deg, #44D34E, #047857);
+    border: none;
+    color: #fff;
+    font-weight: 700;
+    border-radius: 10px;
+    box-shadow: 0 8px 18px rgba(4, 120, 87, 0.18);
+}
+
+#customerGroupsModal .customer-group-new-btn:hover,
+#customerGroupsModal .customer-group-save-btn:hover {
+    color: #fff;
+    transform: translateY(-1px);
+    box-shadow: 0 10px 22px rgba(4, 120, 87, 0.25);
+}
+
+#customerGroupsModal .customer-group-inline-input {
+    border: 1px solid #9ee7b7;
+    border-radius: 10px;
+    font-weight: 700;
+    color: #052A47;
+    min-height: 42px;
+}
+
+#customerGroupsModal .customer-group-inline-input:focus {
+    border-color: #44D34E;
+    box-shadow: 0 0 0 0.2rem rgba(68, 211, 78, 0.16);
+}
+
+#customerGroupsModal .customer-group-new-row td {
+    background: #f0fdf4 !important;
+}
+
+#customerGroupsModal.fade .modal-dialog {
+    transform: scale(0.95) !important;
+    transition: transform 0.2s ease-out !important;
+}
+
+#customerGroupsModal.fade.show .modal-dialog {
+    transform: scale(1) !important;
+}
+    
+        /* Branch badge styling */
+        .branch-badge {
+            background-color: #e7f1ff;
+            color: #0d6efd;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 5px;
+        }
+        
+        /* Alert for missing table */
+        .alert-info {
+            background-color: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        
+        .alert-info code {
+            background-color: #f8f9fa;
+            padding: 2px 4px;
+            border-radius: 4px;
+            color: #c7254e;
+        }
+        
+        /* Status badges */
+        .status-badge {
+            display: inline-block;
+            padding: 5px 12px;
+            font-size: 12px;
+            font-weight: 500;
+            border-radius: 20px;
+            text-align: center;
+            min-width: 85px;
+        }
+        
+        .status-pending { background-color: #fff3cd; color: #856404; }
+        .status-approved { background-color: #d4edda; color: #155724; }
+        .status-rejected { background-color: #f8d7da; color: #721c24; }
+        .status-expired { background-color: #e9ecef; color: #6c757d; }
+        
+        /* Request type badge */
+        .type-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            font-size: 11px;
+            font-weight: 500;
+            border-radius: 4px;
+        }
+        
+        .type-credit { background-color: #cce5ff; color: #004085; }
+        .type-discount { background-color: #d4edda; color: #155724; }
+        .type-both { background-color: #e2d5f2; color: #533f7c; }
+        .type-credit_terms { background-color: #fff3cd; color: #856404; }
+        
+        /* Attachment styles */
+        .attachment-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            justify-content: flex-start;
+            margin-top: 8px;
+        }
+        .attachment-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            background: #f0f0f0;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.7rem;
+            color: #333;
+            text-decoration: none;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        .attachment-badge:hover {
+            background: #e0e0e0;
+            color: #000;
+            transform: translateY(-1px);
+        }
+        .attachment-badge i {
+            font-size: 0.75rem;
+        }
+        
+        /* Table column widths */
+        .col-id { width: 5%; }
+        .col-date { width: 10%; }
+        .col-customer { width: 13%; }
+        .col-agent { width: 10%; }
+        .col-type { width: 8%; }
+        .col-credit { width: 8%; }
+        .col-discount { width: 7%; }
+        .col-terms { width: 7%; }
+        .col-reason { width: 15%; }
+        .col-status { width: 8%; }
+        .col-validity { width: 12%; }
+        .col-attachments { width: 8%; }
+        .col-actions { width: 10%; text-align: center; }
+        
+        /* Filter section */
+        .filter-section {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 15px;
+            margin-bottom: 25px;
+            padding: 16px 20px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .filter-controls {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+        }
+        
+        .filter-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .filter-dropdowns {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            align-items: center;
+        }
+        
+        .filter-dropdown {
+            min-width: 160px;
+        }
+        
+        .filter-dropdown .form-select {
+            font-size: 13px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            border: 1px solid #ced4da;
+            background-color: white;
+            cursor: pointer;
+        }
+        
+        .search-box {
+            position: relative;
+            min-width: 250px;
+        }
+        
+        .search-box i {
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #6c757d;
+            font-size: 14px;
+            z-index: 10;
+            pointer-events: none;
+        }
+        
+        .search-box input {
+            width: 100%;
+            padding: 8px 12px 8px 38px;
+            border: 1px solid #ced4da;
+            border-radius: 6px;
+            height: 40px;
+            font-size: 14px;
+        }
+        
+        .empty-state-table {
+            text-align: center;
+            padding: 40px 20px;
+            background-color: white;
+            border-radius: 8px;
+        }
+        
+        .empty-state-table i {
+            font-size: 48px;
+            color: #adb5bd;
+            margin-bottom: 16px;
+        }
+        
+        .empty-state-table h5 {
+            color: #495057;
+            margin-bottom: 8px;
+        }
+        
+        .empty-state-table p {
+            color: #6c757d;
+            margin-bottom: 8px;
+        }
+        .btn-approve{
+            color: #388e3c;
+            background-color: #e8f5e9;
+            border-color: #c8e6c9;
+        }
+        
+        .btn-reject{
+            color: #c30010;
+            background-color: #ffcbd1;
+            border-color: #f69697;
+        }
+             
+        /* Modal styling */
+        .detail-label {
+            font-size: 12px;
+            color: #6c757d;
+            margin-bottom: 4px;
+        }
+        .detail-value {
+            font-size: 16px;
+            font-weight: 600;
+            color: #212529;
+        }
+        
+        /* Expiration days input */
+        .expiration-slider {
+            margin: 15px 0;
+        }
+
+        .expiration-number-wrap {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .expiration-number-input {
+            max-width: 160px;
+        }
+
+        .expiration-value {
+            font-size: 14px;
+            font-weight: bold;
+            color: #0d6efd;
+            white-space: nowrap;
+        }
+        
+        /* Print Frame */
+        #printFrame {
+            position: absolute;
+            left: -9999px;
+            top: -9999px;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        @media print {
+            @page {
+                size: landscape;
+                margin: 0.3in;
+            }
+            body * { visibility: hidden; background: white !important; color: black !important; border-color: black !important; }
+            #printFrame, #printFrame * { visibility: visible; }
+            #printFrame { position: absolute; left: 0; top: 0; width: 100%; height: auto; border: none; }
+            #printFrame img { filter: none !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            #printFrame * { background: white !important; color: black !important; border-color: #000 !important; box-shadow: none !important; text-shadow: none !important; }
+            #printFrame table, #printFrame th, #printFrame td { border: 1px solid #000 !important; }
+            #printFrame th { background: white !important; color: black !important; font-weight: bold; }
+            #printFrame .summary-box, #printFrame .customer-section, #printFrame .total-row { background: white !important; border: 1px solid #000 !important; }
+            #printFrame .badge { background: white !important; border: 1px solid #000 !important; color: black !important; padding: 2px 6px; }
+        }
+        /* ===== QUICK STATS CARDS STYLE - gaya ng nasa ibaba ===== */
+.stat-card {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.08) !important;
+    min-height: auto !important;
+    height: auto !important;
+    padding: 0.8rem !important;
+    transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+    cursor: default !important;
+}
+
+/* Gradient backgrounds for each type */
+.stat-card.total {
+   background: linear-gradient(135deg, #047857, #059669) !important;
+    border: none !important;
+}
+
+.stat-card.pending {
+    background: linear-gradient(135deg, #047857, #059669) !important;
+    border: none !important;
+}
+
+.stat-card.approved {
+    background: linear-gradient(135deg, #047857, #059669) !important;
+    border: none !important;
+}
+
+.stat-card.rejected {
+    background: linear-gradient(135deg, #047857, #059669) !important;
+    border: none !important;
+}
+
+/* Force text colors to white */
+.stat-card .stat-value,
+.stat-card .stat-label {
+    color: white !important;
+}
+
+/* Remove any white background from icon */
+.stat-card .stat-icon {
+    background: transparent !important;
+    color: white !important;
+}
+
+/* ===== MOBILE: SQUARE CARDS WITH CENTERED ICON ===== */
+@media (max-width: 991px) {
+    .stat-card {
+        aspect-ratio: 1 / 1 !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        align-items: center !important;
+        text-align: center !important;
+        padding: 0.5rem !important;
+    }
+    
+    .stat-card i,
+    .stat-card .stat-icon {
+        display: block !important;
+        text-align: center !important;
+        margin: 0 auto 0.3rem auto !important;
+        font-size: 1.6rem !important;
+        width: auto !important;
+        float: none !important;
+        position: static !important;
+    }
+    
+    .stat-card .stat-value {
+        display: block !important;
+        text-align: center !important;
+        font-size: 1.2rem !important;
+        font-weight: bold !important;
+        line-height: 1.2 !important;
+        margin: 0.2rem 0 !important;
+        width: 100% !important;
+    }
+    
+    .stat-card .stat-label {
+        display: block !important;
+        text-align: center !important;
+        font-size: 0.7rem !important;
+        font-weight: 500 !important;
+        width: 100% !important;
+        white-space: normal !important;
+        word-break: break-word !important;
+        line-height: 1.2 !important;
+    }
+    
+    /* Para sa "Total Requests" na mahaba */
+    .stat-card.total .stat-label {
+        font-size: 0.65rem !important;
+        max-width: 100% !important;
+        padding: 0 0.2rem !important;
+    }
+}
+
+/* ===== DESKTOP: HORIZONTAL LAYOUT ===== */
+@media (min-width: 992px) {
+    .stat-card {
+        align-items: center !important;
+        text-align: left !important;
+        padding: 1rem !important;
+        aspect-ratio: auto !important;
+        min-height: 100px !important;
+        display: flex !important;
+        flex-direction: row !important;
+        justify-content: flex-start !important;
+    }
+    
+    .stat-card i,
+    .stat-card .stat-icon {
+        margin: 0 0.75rem 0 0 !important;
+        font-size: 2rem !important;
+        display: inline-flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        flex-shrink: 0 !important;
+    }
+    
+    .stat-card .stat-value {
+        font-size: 1.5rem !important;
+        font-weight: bold !important;
+        line-height: 1 !important;
+        margin: 0 !important;
+    }
+    
+    .stat-card .stat-label {
+        font-size: 0.75rem !important;
+        font-weight: 500 !important;
+        white-space: nowrap !important;
+        line-height: 1.2 !important;
+        margin-top: 0.25rem !important;
+    }
+    
+    /* Para sa desktop, hindi mag-break ang "Total Requests" */
+    .stat-card.total .stat-label {
+        white-space: nowrap !important;
+    }
+}
+
+/* ===== TABLET (768px - 991px) ===== */
+@media (min-width: 768px) and (max-width: 991px) {
+    .stat-card i,
+    .stat-card .stat-icon {
+        font-size: 1.4rem !important;
+        margin-bottom: 0.25rem !important;
+    }
+    
+    .stat-card .stat-value {
+        font-size: 1rem !important;
+    }
+    
+    .stat-card .stat-label {
+        font-size: 0.6rem !important;
+    }
+    
+    /* Para sa "Total Requests" sa tablet */
+    .stat-card.total .stat-label {
+        font-size: 0.55rem !important;
+    }
+}
+
+/* ===== EXTRA SMALL MOBILE (below 400px) ===== */
+@media (max-width: 399px) {
+    .stat-card {
+        padding: 0.3rem !important;
+    }
+    
+    .stat-card i,
+    .stat-card .stat-icon {
+        font-size: 1.2rem !important;
+        margin-bottom: 0.2rem !important;
+    }
+    
+    .stat-card .stat-value {
+        font-size: 0.9rem !important;
+    }
+    
+    .stat-card .stat-label {
+        font-size: 0.55rem !important;
+    }
+    
+    /* Para sa "Total Requests" sa sobrang liit na screen */
+    .stat-card.total .stat-label {
+        font-size: 0.5rem !important;
+    }
+}
+
+/* ===== HOVER EFFECT ===== */
+.stat-card:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 6px 15px rgba(0, 0, 0, 0.15) !important;
+}
+/* ===== FILTER ACTION BUTTONS STYLE ===== */
+.filter-actions {
+    display: flex;
+    gap: 0.5rem;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+}
+
+.filter-actions .btn {
+    padding: 0.35rem 0.85rem;
+    font-size: 0.8rem;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+    font-weight: 500;
+}
+
+.filter-actions .btn-outline-primary {
+    border: 1px solid #dee2e6;
+    background: white;
+    color: #0d6efd;
+}
+
+.filter-actions .btn-outline-primary:hover {
+    background: #0d6efd;
+    border-color: #0d6efd;
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(13, 110, 253, 0.2);
+}
+
+.filter-actions .btn-outline-success {
+    border: 1px solid #dee2e6;
+    background: white;
+    color: #198754;
+}
+
+.filter-actions .btn-outline-success:hover {
+    background: #198754;
+    border-color: #198754;
+    color: white;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(25, 135, 84, 0.2);
+}
+
+.filter-actions .btn i {
+    margin-right: 0.35rem;
+    font-size: 0.75rem;
+}
+
+/* Alisin ang white space sa row na may buttons */
+.filter-content .row:last-child {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+}
+
+/* Adjust ang spacing ng buong filter content */
+.filter-content {
+    padding: 1.25rem;
+    padding-bottom: 0.75rem;
+}
+
+/* Bawasan ang gap sa pagitan ng rows */
+.filter-content .row + .row {
+    margin-top: 0 !important;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .filter-actions {
+        justify-content: stretch;
+        margin-top: 0.25rem !important;
+    }
+    
+    .filter-actions .btn {
+        flex: 1;
+        text-align: center;
+        padding: 0.35rem 0.5rem;
+        font-size: 0.75rem;
+    }
+}
+
+/* ===== APPROVE CREDIT FILTER DEFAULT VISIBLE ===== */
+#creditRequestsTabContent #filterCard{border:1px solid #d1fae5;background:#ffffff;border-radius:16px;box-shadow:0 8px 24px rgba(5,42,71,.06);margin-top:6px!important;margin-bottom:12px!important;}
+#creditRequestsTabContent .filter-content{overflow:visible!important;max-height:none!important;opacity:1!important;padding:10px 16px!important;border-top:0!important;}
+#creditRequestsTabContent .filter-content.collapsed{max-height:none!important;opacity:1!important;padding:10px 16px!important;border-top:0!important;}
+#creditRequestsTabContent .filter-content.always-visible{display:block!important;}
+#creditRequestsTabContent .filter-actions{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:0!important;}
+#creditRequestsTabContent .filter-actions .btn{height:42px;white-space:nowrap;}
+#creditRequestsTabContent #filterCard .row{--bs-gutter-y:.55rem!important;}
+#creditRequestsTabContent #filterCard .form-label{margin-bottom:5px!important;font-size:11px!important;line-height:1.1!important;}
+#creditRequestsTabContent #filterCard .form-select,
+#creditRequestsTabContent #filterCard .form-control{height:36px!important;min-height:36px!important;padding-top:6px!important;padding-bottom:6px!important;}
+#creditRequestsTabContent #filterCard .filter-actions{align-items:end!important;padding-bottom:0!important;}
+
+
+/* ===== PRINT / EXPORT BUTTONS SAME AS PLACE ORDER ===== */
+#creditRequestsTabContent .filter-actions .filter-action-primary {
+    background: linear-gradient(135deg, #059669, #047857) !important;
+    border: none !important;
+    border-radius: 10px !important;
+    padding: 0.7rem 1.5rem !important;
+    font-weight: 600 !important;
+    font-size: 0.95rem !important;
+    color: #ffffff !important;
+    box-shadow: 0 4px 8px rgba(5, 150, 105, 0.25) !important;
+    transition: all 0.3s ease !important;
+    height: 42px !important;
+    min-width: 98px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    white-space: nowrap;
+}
+
+#creditRequestsTabContent .filter-actions .filter-action-primary:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 8px 18px rgba(5, 150, 105, 0.35) !important;
+    background: linear-gradient(135deg, #047857, #065f46) !important;
+    color: #ffffff !important;
+}
+
+#creditRequestsTabContent .filter-actions .filter-action-primary i {
+    margin-right: 0 !important;
+    font-size: 0.95rem !important;
+}
+
+@media (max-width: 768px) {
+    #creditRequestsTabContent .filter-actions .filter-action-primary {
+        flex: 1;
+        width: 100%;
+        min-width: 0;
+    }
+}
+
+
+/* ===== REQUEST FILTER ONE-LINE ALIGNMENT FIX ===== */
+#creditRequestsTabContent #filterCard .request-filter-grid {
+    display: grid !important;
+    grid-template-columns: minmax(190px, 1fr) minmax(190px, 1fr) minmax(320px, 1.35fr) auto !important;
+    gap: 12px 14px !important;
+    align-items: end !important;
+    width: 100% !important;
+}
+
+#creditRequestsTabContent #filterCard .filter-field {
+    min-width: 0 !important;
+}
+
+#creditRequestsTabContent #filterCard .request-filter-actions {
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    justify-content: flex-end !important;
+    align-items: flex-end !important;
+    gap: 10px !important;
+    margin-top: 0 !important;
+    padding-bottom: 0 !important;
+    white-space: nowrap !important;
+}
+
+#creditRequestsTabContent #filterCard .request-filter-actions .filter-action-primary {
+    width: auto !important;
+    min-width: 104px !important;
+    height: 42px !important;
+    flex: 0 0 auto !important;
+}
+
+@media (max-width: 1199.98px) {
+    #creditRequestsTabContent #filterCard .request-filter-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    }
+
+    #creditRequestsTabContent #filterCard .filter-field-search,
+    #creditRequestsTabContent #filterCard .request-filter-actions {
+        grid-column: 1 / -1 !important;
+    }
+
+    #creditRequestsTabContent #filterCard .request-filter-actions {
+        justify-content: flex-start !important;
+    }
+}
+
+@media (max-width: 768px) {
+    #creditRequestsTabContent #filterCard .request-filter-grid {
+        grid-template-columns: 1fr !important;
+    }
+
+    #creditRequestsTabContent #filterCard .filter-field-search,
+    #creditRequestsTabContent #filterCard .request-filter-actions {
+        grid-column: auto !important;
+    }
+
+    #creditRequestsTabContent #filterCard .request-filter-actions {
+        flex-wrap: wrap !important;
+    }
+
+    #creditRequestsTabContent #filterCard .request-filter-actions .filter-action-primary {
+        flex: 1 1 calc(50% - 5px) !important;
+        width: auto !important;
+        min-width: 120px !important;
+    }
+}
+
+
+/* ===== FORCE OVERRIDE FOR REQUESTS TABLE MOBILE VIEW ===== */
+@media (max-width: 768px) {
+    /* Force hide table header */
+    #requestsTable thead,
+    #requestsTable thead tr,
+    #requestsTable thead th {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        height: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        border: none !important;
+    }
+    
+    /* Force table to block display */
+    #requestsTable,
+    #requestsTable tbody,
+    #requestsTable tbody tr {
+        display: block !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+    }
+    
+    /* Force each row as card */
+    #requestsTable tbody tr.request-row {
+        background: white !important;
+        border-radius: 12px !important;
+        margin-bottom: 12px !important;
+        padding: 14px !important;
+        padding-top: 12px !important;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.08) !important;
+        border: 1px solid #e5e7eb !important;
+        display: block !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        position: relative !important;
+        cursor: pointer !important;
+    }
+    
+    /* FORCE HIDE all original td elements */
+    #requestsTable tbody tr.request-row td {
+        display: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        border: none !important;
+        background: transparent !important;
+    }
+    
+    /* ===== DATE ===== */
+    #requestsTable tbody tr.request-row td.col-date {
+        display: block !important;
+        font-size: 11px !important;
+        color: #9ca3af !important;
+        margin-bottom: 8px !important;
+        padding: 0 !important;
+        background: transparent !important;
+        border: none !important;
+        width: auto !important;
+    }
+    
+    /* ===== STATUS BADGE ===== */
+    #requestsTable tbody tr.request-row td.col-status {
+        display: block !important;
+        position: absolute !important;
+        top: 12px !important;
+        right: 12px !important;
+        padding: 0 !important;
+        background: transparent !important;
+        z-index: 10 !important;
+        width: auto !important;
+        height: auto !important;
+    }
+    
+    #requestsTable tbody tr.request-row td.col-status .status-badge {
+        display: inline-block !important;
+        font-size: 10px !important;
+        padding: 4px 10px !important;
+        border-radius: 20px !important;
+        font-weight: 500 !important;
+        margin: 0 !important;
+        white-space: nowrap !important;
+    }
+    
+    /* ===== CUSTOMER NAME ===== */
+    #requestsTable tbody tr.request-row td.col-customer {
+        display: block !important;
+        padding: 0 !important;
+        margin-top: 5px !important;
+        margin-bottom: 4px !important;
+        background: transparent !important;
+        border: none !important;
+        padding-right: 100px !important;
+    }
+    
+    #requestsTable tbody tr.request-row td.col-customer strong {
+        display: block !important;
+        font-size: 15px !important;
+        font-weight: 600 !important;
+        color: #1f2937 !important;
+        background: transparent !important;
+    }
+    
+    /* ===== CUSTOMER CODE ===== */
+    #requestsTable tbody tr.request-row td.col-customer small {
+        display: block !important;
+        font-size: 10px !important;
+        color: #9ca3af !important;
+        margin-top: 2px !important;
+        background: transparent !important;
+    }
+    
+    /* ===== AGENT ===== */
+    #requestsTable tbody tr.request-row td.col-agent {
+        display: block !important;
+        font-size: 12px !important;
+        color: #6c757d !important;
+        margin-bottom: 8px !important;
+        padding: 0 !important;
+        background: transparent !important;
+    }
+    
+    #requestsTable tbody tr.request-row td.col-agent::before {
+        content: "Agent: ";
+        font-weight: 600;
+        color: #495057;
+    }
+    
+    /* ===== TYPE BADGE ===== */
+    #requestsTable tbody tr.request-row td.col-type {
+        display: block !important;
+        margin-bottom: 10px !important;
+        padding: 0 !important;
+        background: transparent !important;
+    }
+    
+    #requestsTable tbody tr.request-row td.col-type .type-badge {
+        display: inline-block !important;
+        font-size: 10px !important;
+        padding: 3px 10px !important;
+        border-radius: 20px !important;
+        font-weight: 500 !important;
+    }
+    
+    /* ===== CREDIT ===== */
+    #requestsTable tbody tr.request-row td.col-credit {
+        display: inline-block !important;
+        font-size: 12px !important;
+        margin-right: 12px !important;
+        margin-bottom: 6px !important;
+        padding: 0 !important;
+        background: transparent !important;
+    }
+    
+    #requestsTable tbody tr.request-row td.col-credit::before {
+        content: "Credit: ";
+        font-weight: 600;
+        color: #495057;
+    }
+    
+    /* ===== DISCOUNT ===== */
+    #requestsTable tbody tr.request-row td.col-discount {
+        display: inline-block !important;
+        font-size: 12px !important;
+        margin-bottom: 6px !important;
+        padding: 0 !important;
+        background: transparent !important;
+    }
+    
+    #requestsTable tbody tr.request-row td.col-discount::before {
+        content: "Discount: ";
+        font-weight: 600;
+        color: #495057;
+    }
+    
+    /* ===== TERMS ===== */
+    #requestsTable tbody tr.request-row td.col-terms {
+        display: block !important;
+        font-size: 12px !important;
+        margin-bottom: 6px !important;
+        padding: 0 !important;
+        background: transparent !important;
+    }
+    
+    #requestsTable tbody tr.request-row td.col-terms::before {
+        content: "Terms: ";
+        font-weight: 600;
+        color: #495057;
+    }
+    
+    /* ===== VALIDITY ===== */
+    #requestsTable tbody tr.request-row td.col-validity {
+        display: block !important;
+        font-size: 11px !important;
+        color: #6c757d !important;
+        margin-top: 8px !important;
+        padding: 0 !important;
+        background: transparent !important;
+    }
+    
+    #requestsTable tbody tr.request-row td.col-validity::before {
+        content: "Valid: ";
+        font-weight: 600;
+        color: #495057;
+    }
+    
+    /* ===== TAP TO VIEW INDICATOR ===== */
+    #requestsTable tbody tr.request-row::after {
+        content: "Tap to view full details" !important;
+        display: block !important;
+        text-align: left !important;
+        font-size: 9px !important;
+        color: #9ca3af !important;
+        margin-top: 10px !important;
+        padding-top: 8px !important;
+        border-top: 1px solid #f0f0f0 !important;
+        clear: both !important;
+    }
+}
+
+/* Extra small mobile adjustments */
+@media (max-width: 480px) {
+    #requestsTable tbody tr.request-row {
+        padding: 10px !important;
+        padding-top: 10px !important;
+    }
+    
+    #requestsTable tbody tr.request-row td.col-status .status-badge {
+        font-size: 9px !important;
+        padding: 3px 8px !important;
+    }
+    
+    #requestsTable tbody tr.request-row td.col-customer strong {
+        font-size: 14px !important;
+    }
+    
+    #requestsTable tbody tr.request-row td.col-customer {
+        padding-right: 85px !important;
+    }
+    
+    #requestsTable tbody tr.request-row::after {
+        font-size: 8px !important;
+        margin-top: 8px !important;
+        padding-top: 6px !important;
+    }
+    
+    #requestsTable tbody tr.request-row td.col-credit,
+    #requestsTable tbody tr.request-row td.col-discount {
+        font-size: 11px !important;
+    }
+    
+    #requestsTable tbody tr.request-row td.col-terms {
+        font-size: 11px !important;
+    }
+}
+
+/* ===== MODERN VIEW REQUEST MODAL ===== */
+
+/* Modal Container */
+#viewRequestModal .modal-content {
+    border: none !important;
+    border-radius: 20px !important;
+    overflow: hidden !important;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15) !important;
+    max-height: 90vh !important;
+    display: flex !important;
+    flex-direction: column !important;
+}
+
+/* Modal Header */
+#viewRequestModal .modal-header {
+    background: linear-gradient(135deg, #047857, #44D34E) !important;
+    color: white !important;
+    border-bottom: none !important;
+    padding: 1rem 1.5rem !important;
+    flex-shrink: 0 !important;
+}
+
+#viewRequestModal .modal-header .modal-title {
+    font-weight: 600 !important;
+    font-size: 1.2rem !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    color: white !important;
+}
+
+#viewRequestModal .modal-header .modal-title i {
+    font-size: 1.3rem !important;
+    color: white !important;
+}
+
+#viewRequestModal .modal-header .btn-close {
+    filter: brightness(0) invert(1) !important;
+    opacity: 0.8 !important;
+    background: transparent !important;
+    transition: all 0.2s ease !important;
+}
+
+#viewRequestModal .modal-header .btn-close:hover {
+    opacity: 1 !important;
+    transform: rotate(90deg) !important;
+}
+
+/* Modal Body */
+#viewRequestModal .modal-body {
+    padding: 1.5rem !important;
+    overflow-y: auto !important;
+    flex: 1 !important;
+    background: #f8fafc !important;
+}
+
+/* Scrollbar */
+#viewRequestModal .modal-body::-webkit-scrollbar {
+    width: 6px;
+}
+
+#viewRequestModal .modal-body::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 3px;
+}
+
+#viewRequestModal .modal-body::-webkit-scrollbar-thumb {
+    background: #44D34E;
+    border-radius: 3px;
+}
+
+/* Modal Footer */
+#viewRequestModal .modal-footer {
+    border-top: 1px solid #e9ecef !important;
+    padding: 1rem 1.5rem !important;
+    background: white !important;
+    flex-shrink: 0 !important;
+    gap: 0.75rem !important;
+}
+
+#viewRequestModal .modal-footer .btn {
+    padding: 0.5rem 1.25rem !important;
+    font-size: 0.9rem !important;
+    font-weight: 500 !important;
+    border-radius: 8px !important;
+    transition: all 0.2s ease !important;
+}
+
+#viewRequestModal .modal-footer .btn-secondary {
+    background: #6c757d !important;
+    border: none !important;
+    color: white !important;
+}
+
+#viewRequestModal .modal-footer .btn-secondary:hover {
+    background: #5a6268 !important;
+    transform: translateY(-1px) !important;
+}
+
+#viewRequestModal .modal-footer .btn-success {
+    background: linear-gradient(135deg, #047857, #059669) !important;
+    border: none !important;
+    color: white !important;
+}
+
+#viewRequestModal .modal-footer .btn-success:hover {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 12px rgba(5, 150, 105, 0.3) !important;
+}
+
+#viewRequestModal .modal-footer .btn-danger {
+    background: linear-gradient(135deg, #dc3545, #c82333) !important;
+    border: none !important;
+    color: white !important;
+}
+
+#viewRequestModal .modal-footer .btn-danger:hover {
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 12px rgba(220, 53, 69, 0.3) !important;
+}
+
+/* Info Cards inside Modal */
+#viewRequestModal .info-card {
+    background: white !important;
+    border-radius: 12px !important;
+    margin-bottom: 1rem !important;
+    border: 1px solid #e9ecef !important;
+    overflow: hidden !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05) !important;
+}
+
+#viewRequestModal .info-card:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08) !important;
+    border-color: #d1fae5 !important;
+}
+
+#viewRequestModal .card-title {
+    background: #f8fafc !important;
+    border-bottom: 1px solid #e9ecef !important;
+    padding: 0.875rem 1.25rem !important;
+    font-size: 0.9rem !important;
+    font-weight: 600 !important;
+    color: #047857 !important;
+    margin: 0 !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 0.5rem !important;
+}
+
+#viewRequestModal .card-title i {
+    color: #44D34E !important;
+    font-size: 1rem !important;
+}
+
+#viewRequestModal .card-body {
+    padding: 1rem 1.25rem !important;
+    background: white !important;
+}
+
+/* Info Rows */
+#viewRequestModal .info-row {
+    display: flex !important;
+    margin-bottom: 0.75rem !important;
+    line-height: 1.4 !important;
+}
+
+#viewRequestModal .info-row:last-child {
+    margin-bottom: 0 !important;
+}
+
+#viewRequestModal .info-label {
+    width: 110px !important;
+    flex-shrink: 0 !important;
+    font-weight: 600 !important;
+    color: #6c757d !important;
+    font-size: 0.85rem !important;
+}
+
+#viewRequestModal .info-value {
+    flex: 1 !important;
+    color: #1f2937 !important;
+    font-size: 0.85rem !important;
+    word-break: break-word !important;
+    font-weight: 500 !important;
+}
+
+/* Status Badge in Modal */
+#viewRequestModal .status-badge {
+    display: inline-block !important;
+    padding: 0.25rem 0.75rem !important;
+    font-size: 0.7rem !important;
+    font-weight: 600 !important;
+    border-radius: 20px !important;
+}
+
+/* Type Badge in Modal */
+#viewRequestModal .type-badge {
+    display: inline-block !important;
+    padding: 4px 10px !important;
+    font-size: 11px !important;
+    font-weight: 500 !important;
+    border-radius: 4px !important;
+}
+
+#viewRequestModal .type-credit {
+    background-color: #cce5ff !important;
+    color: #004085 !important;
+}
+
+#viewRequestModal .type-discount {
+    background-color: #d4edda !important;
+    color: #155724 !important;
+}
+
+#viewRequestModal .type-both {
+    background-color: #e2d5f2 !important;
+    color: #533f7c !important;
+}
+
+#viewRequestModal .type-credit_terms {
+    background-color: #fff3cd !important;
+    color: #856404 !important;
+}
+
+/* Attachment section in modal */
+.attachment-section {
+    background: white !important;
+    border-radius: 12px !important;
+    margin-top: 1rem !important;
+    border: 1px solid #e9ecef !important;
+    overflow: hidden !important;
+}
+
+.attachment-section .card-title {
+    background: #f8fafc !important;
+    border-bottom: 1px solid #e9ecef !important;
+    padding: 0.875rem 1.25rem !important;
+    font-size: 0.9rem !important;
+    font-weight: 600 !important;
+    color: #047857 !important;
+    margin: 0 !important;
+}
+
+.attachment-section .card-body {
+    padding: 1rem 1.25rem !important;
+}
+
+.attachment-list-modal {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.attachment-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: #f0f0f0;
+    padding: 6px 14px;
+    border-radius: 25px;
+    text-decoration: none;
+    color: #333;
+    font-size: 0.85rem;
+    transition: all 0.2s;
+}
+
+.attachment-item:hover {
+    background: #e0e0e0;
+    transform: translateY(-1px);
+    text-decoration: none;
+    color: #000;
+}
+
+.attachment-item i {
+    font-size: 1rem;
+}
+
+/* Two Column Layout */
+@media (min-width: 768px) {
+    #viewRequestModal .two-columns {
+        display: flex !important;
+        gap: 1rem !important;
+    }
+    
+    #viewRequestModal .two-columns > div {
+        flex: 1 !important;
+    }
+}
+
+/* Mobile Responsive for Modal */
+@media (max-width: 768px) {
+    #viewRequestModal .modal-dialog {
+        margin: 0.5rem !important;
+        max-width: calc(100% - 1rem) !important;
+    }
+    
+    #viewRequestModal .modal-header {
+        padding: 0.85rem 1rem !important;
+    }
+    
+    #viewRequestModal .modal-header .modal-title {
+        font-size: 1rem !important;
+    }
+    
+    #viewRequestModal .modal-body {
+        padding: 1rem !important;
+    }
+    
+    #viewRequestModal .modal-footer {
+        padding: 0.75rem 1rem !important;
+    }
+    
+    #viewRequestModal .modal-footer .btn {
+        flex: 1 !important;
+        padding: 0.45rem 0.75rem !important;
+        font-size: 0.85rem !important;
+    }
+    
+    #viewRequestModal .info-row {
+        flex-direction: column !important;
+        margin-bottom: 0.75rem !important;
+    }
+    
+    #viewRequestModal .info-label {
+        width: 100% !important;
+        margin-bottom: 0.2rem !important;
+        font-size: 0.7rem !important;
+    }
+    
+    #viewRequestModal .info-value {
+        font-size: 0.85rem !important;
+    }
+    
+    #viewRequestModal .card-title {
+        padding: 0.6rem 1rem !important;
+        font-size: 0.8rem !important;
+    }
+    
+    #viewRequestModal .card-body {
+        padding: 0.75rem 1rem !important;
+    }
+}
+
+@media (max-width: 480px) {
+    #viewRequestModal .modal-footer {
+        padding: 0.6rem 0.75rem !important;
+    }
+    
+    #viewRequestModal .modal-footer .btn {
+        font-size: 0.75rem !important;
+        padding: 0.4rem 0.5rem !important;
+    }
+    
+    #viewRequestModal .info-value {
+        font-size: 0.8rem !important;
+    }
+    
+    #viewRequestModal .card-body {
+        padding: 0.6rem 0.75rem !important;
+    }
+}
+/* Approval Modal Styling */
+#approvalModal .modal-content {
+    border: none !important;
+    border-radius: 20px !important;
+    overflow: hidden !important;
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.15) !important;
+}
+
+#approvalModal .modal-header {
+    padding: 1rem 1.5rem !important;
+    border-bottom: none !important;
+}
+
+#approvalModal .modal-header.bg-success {
+    background: linear-gradient(135deg, #047857, #44D34E) !important;
+}
+
+#approvalModal .modal-header.bg-danger {
+    background: linear-gradient(135deg, #dc3545, #f87171) !important;
+}
+
+#approvalModal .modal-header .modal-title {
+    font-weight: 600 !important;
+    font-size: 1.1rem !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    color: white !important;
+}
+
+#approvalModal .modal-header .btn-close {
+    filter: brightness(0) invert(1) !important;
+    opacity: 0.8 !important;
+}
+
+#approvalModal .modal-body {
+    padding: 1.5rem !important;
+    background: #f8fafc !important;
+}
+
+#approvalModal .modal-footer {
+    border-top: 1px solid #e9ecef !important;
+    padding: 1rem 1.5rem !important;
+    background: white !important;
+    gap: 0.75rem !important;
+}
+
+#approvalModal .modal-footer .btn {
+    padding: 0.5rem 1.25rem !important;
+    border-radius: 8px !important;
+    font-weight: 500 !important;
+}
+
+.expiration-slider {
+    background: white !important;
+    border-radius: 12px !important;
+    padding: 1rem !important;
+    margin: 1rem 0 !important;
+    border: 1px solid #e9ecef !important;
+}
+
+.expiration-number-wrap {
+    display: flex !important;
+    align-items: center !important;
+    gap: 1rem !important;
+    flex-wrap: wrap !important;
+}
+
+.expiration-number-input {
+    max-width: 180px !important;
+}
+
+.expiration-value {
+    font-weight: 600 !important;
+    color: #047857 !important;
+}
+/* FORCE FILTER TO WORK ON MOBILE - CRITICAL FIX */
+@media (max-width: 768px) {
+    /* Ensure hidden rows are completely hidden */
+    #requestsTable tbody tr.request-row[style*="display: none"],
+    #requestsTable tbody tr.request-row[style*="display:none"] {
+        display: none !important;
+    }
+    
+    /* Ensure visible rows display as block */
+    #requestsTable tbody tr.request-row:not([style*="display: none"]):not([style*="display:none"]) {
+        display: block !important;
+    }
+}
+/* File Preview Modal - Buttons anchored to image corners */
+#fileViewModal .modal-dialog {
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    max-width: none;
+    width: auto;
+}
+
+#fileViewModal .modal-content {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    width: auto;
+    margin: 0 auto;
+}
+
+#fileViewModal .modal-body {
+    display: flex !important;
+    justify-content: center !important;
+    align-items: center !important;
+    padding: 20px;
+}
+
+/* Attachment container */
+#fileViewModal .attachment-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* Attachment wrapper - position relative para sa absolute buttons */
+#fileViewModal .attachment-wrapper {
+    position: relative;
+    display: inline-block;
+    line-height: 0;
+}
+
+/* Close button - nasa top-right corner ng image mismo */
+#fileViewModal .btn-close-attachment {
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    width: 30px;
+    height: 30px;
+    background-color: rgba(0,0,0,0.6);
+    border-radius: 50%;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    border: none;
+    color: white;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    z-index: 10;
+    padding: 0;
+    margin: 0;
+}
+
+#fileViewModal .btn-close-attachment:hover {
+    background-color: rgba(0,0,0,0.8);
+    transform: scale(1.05);
+}
+
+/* Download button - nasa bottom-right corner ng image mismo */
+#fileViewModal .btn-download-attachment {
+    position: absolute;
+    bottom: 5px;
+    right: 5px;
+    width: 30px;
+    height: 30px;
+    background-color: rgba(0,0,0,0.6);
+    border-radius: 50%;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    color: white;
+    font-size: 12px;
+    transition: all 0.2s ease;
+    z-index: 10;
+}
+
+#fileViewModal .btn-download-attachment:hover {
+    background-color: rgba(0,0,0,0.8);
+    transform: scale(1.05);
+    color: white;
+}
+
+/* Attachment content - the actual image or PDF */
+#fileViewModal .attachment-content {
+    display: inline-block;
+    line-height: 0;
+}
+
+/* For images inside modal */
+#fileViewModal .attachment-content img {
+    max-height: 85vh;
+    max-width: 85vw;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: 8px;
+    box-shadow: 0 4px 30px rgba(0,0,0,0.3);
+    display: block;
+}
+
+/* For PDF embeds */
+#fileViewModal .attachment-content embed {
+    width: 80vw;
+    height: 80vh;
+    border-radius: 8px;
+    box-shadow: 0 4px 30px rgba(0,0,0,0.3);
+    display: block;
+}
+
+/* For other file types */
+#fileViewModal .attachment-content .alert {
+    max-width: 500px;
+    margin: 20px;
+    display: block;
+}
+/* ===== MOBILE BOTTOM NAVIGATION - FIXED DROPDOWN ===== */
+
+
+/* ===== CUSTOMER PAGE MAIN TABS ===== */
+.customer-main-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 18px;border-bottom:1px solid #e5e7eb;padding-bottom:10px}.customer-main-tab-btn{border:1px solid #d1d5db;background:#fff;color:#052A47;border-radius:10px;padding:10px 16px;font-weight:700;font-size:14px;display:inline-flex;align-items:center;gap:8px;transition:all .2s ease;position:relative}.customer-main-tab-btn:hover,.customer-main-tab-btn.active{background:linear-gradient(135deg,#047857,#059669);color:#fff;border-color:#047857}.customer-main-tab-badge{min-width:22px;height:22px;padding:0 7px;border-radius:999px;background:#ef4444;color:#fff;font-size:12px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;line-height:1;box-shadow:0 2px 6px rgba(239,68,68,.25)}.customer-main-tab-btn.active .customer-main-tab-badge{background:#fff;color:#047857}.customer-main-tab-pane{display:none}.customer-main-tab-pane.active{display:block}#creditRequestsTabContent .table-container{background:#fff;border-radius:12px;overflow:auto;box-shadow:0 1px 3px rgba(0,0,0,.08)}#creditRequestsTabContent .custom-table{margin-bottom:0;min-width:980px}#creditRequestsTabContent .custom-table thead th{background:#052A47;color:#fff;font-size:12px;white-space:nowrap}#creditRequestsTabContent .custom-table tbody td{vertical-align:middle;font-size:13px}#creditRequestsTabContent .request-row{cursor:pointer}#creditRequestsTabContent .request-row:hover{background:#f8fafc}
+
+/* Parent */
+.sidebar .nav-link{
+    position:relative;
+}
+.sidebar-parent-icon {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    flex: 0 0 24px;
+}
+
+.task-parent-badge {
+    position: absolute;
+    top: -10px;
+    right: -3px;
+
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+
+    border-radius: 999px;
+    background: #ef4444;
+    color: #fff;
+
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    z-index: 30;
+    pointer-events: none;
+    box-sizing: border-box;
+}
+
+/* Badge sa Tasks child kapag open ang dropdown */
+.task-child-badge {
+    margin-left: auto;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 999px;
+    background: #ef4444;
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    line-height: 1;
+    display: none;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Closed dropdown: parent badge visible */
+.employees-dropdown .task-parent-badge {
+    display: inline-flex;
+}
+
+/* Open dropdown: parent badge hidden */
+.employees-dropdown.employees-menu-open .task-parent-badge {
+    display: none;
+}
+
+/* Open dropdown: Tasks badge visible */
+.employees-dropdown.employees-menu-open .task-child-badge {
+    display: inline-flex;
+}
+
+/* Allow badge to extend outside icon */
+.employees-dropdown > .nav-link,
+.sidebar-parent-icon {
+    overflow: visible !important;
+}
+</style>
 </head>
 <body>
-    <!-- Sidebar -->
-    <div class="sidebar" id="sidebar">
-        <div class="sidebar-header">
-            <h3>
-                <button class="desktop-toggle-btn" id="desktopToggleBtn">
-                    <i class="bi bi-list" id="toggleIcon"></i>
-                </button>
-                <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
-                <span class="nav-text">Branch Admin</span>
-            </h3>
-        </div>
-        <div class="sidebar-content">
-            <div class="sidebar-menu">
-                <ul class="nav flex-column">
-                    <li class="nav-item">
-                <a class="nav-link" href="branchdashboard.php">
-                <i class="bi bi-speedometer2"></i>
-                <span class="nav-text">Dashboard</span></a>
-            </li>
-                    <li class="nav-item dropdown-nav">
-                        <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'warehouseMenu')">
-                            <i class="bi bi-shop"></i>
-                            <span class="nav-text">Warehouse</span>
-                            <i class="bi bi-chevron-down dropdown-arrow"></i>
-                        </a>
-                        <div class="collapse" id="warehouseMenu">
-                            <ul class="nav flex-column ps-4">
-                                <li class="nav-item"><a class="nav-link" href="current_inventory.php"><i class="bi bi-bar-chart-line"></i><span class="nav-text">Current Inventory</span></a></li>
-                                <li class="nav-item"><a class="nav-link" href="bad_orders.php"><i class="bi bi-recycle"></i><span class="nav-text">Bad Orders</span></a></li>
-                                <li class="nav-item"><a class="nav-link" href="pick_list_items.php"><i class="bi bi-list-check"></i><span class="nav-text">Pick List Items</span></a></li>
-                                                                <li class="nav-item">
-                                    <a class="nav-link" href="warehouses.php">
+    <div id="loadingOverlay" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(255,255,255,.8);z-index:9999;justify-content:center;align-items:center;"><div class="spinner-border text-primary" style="width:3rem;height:3rem;" role="status"><span class="visually-hidden">Loading...</span></div></div>
+    <iframe id="printFrame" name="printFrame" style="position:absolute;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0;pointer-events:none;"></iframe>
+  <!-- Sidebar -->
+<div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+        <h3>
+            <button class="desktop-toggle-btn" id="desktopToggleBtn">
+                <i class="bi bi-list" id="toggleIcon"></i>
+            </button>
+
+            <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon">
+
+            <span class="nav-text">Branch Admin</span>
+        </h3>
+    </div>
+
+    <div class="sidebar-content">
+        <div class="sidebar-menu">
+            <ul class="nav flex-column">
+                <!-- Dashboard -->
+                <li class="nav-item">
+                    <a class="nav-link" href="branchdashboard.php">
+                        <i class="bi bi-speedometer2"></i>
+                        <span class="nav-text">Dashboard</span>
+                    </a>
+                </li>
+                <!-- Tasks -->
+                <li class="nav-item">
+                    <a class="nav-link" href="tasks.php">
+                        <i class="bi bi-calendar-check"></i>
+                        <span class="nav-text">Tasks</span>
+                    </a>
+                </li>
+                <!-- Vendor Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'supplierMenu')">
+                        <i class="bi bi-building"></i>
+                        <span class="nav-text">Vendor</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="supplierMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="purchase_order.php">
+                                    <i class="bi bi-file-earmark-text"></i>
+                                    <span class="nav-text">Enter Bills</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="paybills.php">
+                                    <i class="bi bi-currency-dollar"></i>
+                                    <span class="nav-text">Pay Bills</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="supplier.php">
                                     <i class="bi bi-shop"></i>
-                                    <span class="nav-text">Warehouses</span></a>
-                                </li>
-                            </ul>
-                        </div>
-                    </li>
-                    <li class="nav-item dropdown-nav">
-                        <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'supplierMenu')">
-                            <i class="bi bi-building"></i>
-                            <span class="nav-text">Supplier</span>
-                            <i class="bi bi-chevron-down dropdown-arrow"></i>
-                        </a>
-                        <div class="collapse" id="supplierMenu">
-                            <ul class="nav flex-column ps-4">
-                                <li class="nav-item"><a class="nav-link" href="purchase_order.php"><i class="bi bi-box"></i><span class="nav-text">Recieve Inventory</span></a></li>
-                                <li class="nav-item"><a class="nav-link" href="supplier.php"><i class="bi bi-people"></i><span class="nav-text">Supplier List</span></a></li>
-                            </ul>
-                        </div>
-                    </li>
-                    <li class="nav-item dropdown-nav">
-                        <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'customerMenu')">
-                            <i class="bi bi-people"></i>
-                            <span class="nav-text">Customer</span>
-                            <i class="bi bi-chevron-down dropdown-arrow"></i>
-                        </a>
-                        <div class="collapse" id="customerMenu">
-                            <ul class="nav flex-column ps-4">
-                                <li class="nav-item"><a class="nav-link active" href="customer_list.php"><i class="bi bi-person-badge"></i><span class="nav-text">Customer List</span></a></li>
-                                <li class="nav-item"><a class="nav-link" href="approve_credit_requests.php"><i class="bi bi-pencil-square"></i><span class="nav-text">Approve Credit Request</span></a></li>
-                                <li class="nav-item"><a class="nav-link" href="sales_order.php"><i class="bi bi-cart"></i><span class="nav-text">Sales Order</span></a></li>
-                                <li class="nav-item"><a class="nav-link" href="collections.php">
-                <i class="bi bi-cash-stack"></i>
-                    <span class="nav-text">Collections</span>
-                </a>
-            </li>
-                                
-                            </ul>
-                        </div>
-                    </li>
-                    <li class="nav-item dropdown-nav">
-                        <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'deliveryMenu')">
-                            <i class="bi bi-truck"></i>
-                            <span class="nav-text">Delivery</span>
-                            <i class="bi bi-chevron-down dropdown-arrow"></i>
-                        </a>
-                        <div class="collapse" id="deliveryMenu">
-                            <ul class="nav flex-column ps-4">
-                                <li class="nav-item"><a class="nav-link" href="trip_tickets.php"><i class="bi bi-ticket-perforated"></i><span class="nav-text">Trip Tickets</span></a></li>
-                            </ul>
-                        </div>
-                    </li>
-                    <li class="nav-item dropdown-nav">
-                        <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'bankingMenu')">
-                            <i class="bi bi-bank2"></i>
-                            <span class="nav-text">Banking</span>
-                            <i class="bi bi-chevron-down dropdown-arrow"></i>
-                        </a>
-                        <div class="collapse" id="bankingMenu">
-                            <ul class="nav flex-column ps-4">
-                                <li class="nav-item">
-                                    <a class="nav-link" href="deposit.php">
-                                        <i class="bi bi-arrow-down-circle"></i>
-                                        <span class="nav-text">Deposit</span>
-                                    </a>
-                                </li>
-                            </ul>
-                    
+                                    <span class="nav-text">Vendor List</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
 
-                            <ul class="nav flex-column ps-4">
-                                <li class="nav-item">
-                                    <a class="nav-link" href="Withdrawal.php">
-                                        <i class="bi bi-arrow-up-circle"></i>
-                                        <span class="nav-text">Withdrawal</span>
-                                    </a>
-                                </li>
-                            </ul>
+                <!-- Customer Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'customerMenu')">
+                        <i class="bi bi-people-fill"></i>
+                        <span class="nav-text">Customers</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
 
-                            <ul class="nav flex-column ps-4">
-                                <li class="nav-item">
-                                    <a class="nav-link" href="bank_statement.php">
-                                        <i class="bi bi-receipt"></i>
-                                        <span class="nav-text">Bank Statement</span>
-                                    </a>
-                                </li>
-                            </ul>
+                    <div class="collapse" id="customerMenu">
+                        <ul class="nav flex-column ps-4">
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="orderproduct.php">
+                                    <i class="bi bi-receipt"></i>
+                                    <span class="nav-text">Create Invoice</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="collections.php">
+                                    <i class="bi bi-cash-stack"></i>
+                                    <span class="nav-text">Receive Payment</span>
+                                </a>
+                            </li>
                             
-                            <ul class="nav flex-column ps-4">
-                                <li><a class="nav-link" href="expenses.php">
+                            <li class="nav-item">
+                                <a class="nav-link active" href="customer_list.php">
+                                    <i class="bi bi-person-badge"></i>
+                                    <span class="nav-text">Customer List</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+
+                <!-- Employees Dropdown -->
+                <li class="nav-item dropdown-nav employees-dropdown">
+                    <a class="nav-link"
+                    href="#"
+                    onclick="toggleSidebarDropdown(event, 'employeesMenu')">
+
+                        <span class="sidebar-parent-icon">
+                            <i class="bi bi-briefcase"></i>
+
+                            <?php if ($task_badge_count > 0): ?>
+                                <span class="task-parent-badge">
+                                    <?= $task_badge_count ?>
+                                </span>
+                            <?php endif; ?>
+                        </span>
+
+                        <span class="nav-text">Employees</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="employeesMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="employeelist.php">
+                                    <i class="bi bi-person-badge"></i>
+                                    <span class="nav-text">Employee List</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="employee.php">
+                                    <i class="bi bi-clock-history"></i>
+                                    <span class="nav-text">Enter Time</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="tasks.php">
+                                    <i class="bi bi-calendar-check"></i>
+                                    <span class="nav-text">Tasks</span>
+
+                                    <?php if ($task_badge_count > 0): ?>
+                                        <span class="task-child-badge">
+                                            <?= $task_badge_count ?>
+                                        </span>
+                                    <?php endif; ?>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+
+
+                <!-- Banking Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'bankingMenu')">
+                        <i class="bi bi-bank2"></i>
+                        <span class="nav-text">Banking</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="bankingMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="deposit.php">
+                                    <i class="bi bi-bank"></i>
+                                    <span class="nav-text">Record Deposit</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="Withdrawal.php">
+                                    <i class="bi bi-journal-check"></i>
+                                    <span class="nav-text">Write Checks</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="bank_statement.php">
+                                    <i class="bi bi-receipt"></i>
+                                    <span class="nav-text">Bank Statement</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item" hidden>
+                                <a class="nav-link" href="expenses.php">
                                     <i class="bi bi-cash-stack"></i>
                                     <span class="nav-text">Expenses</span>
-                                    </a>
-                                </li>
-                            </ul>
-                        </div>
-                    </li>
-                    
-                    
-                    <!-- Shared Services Dropdown -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'sharedServicesMenu')">
-        <i class="bi bi-grid-3x3-gap"></i>
-        <span class="nav-text">Shared Services</span>
-        <i class="bi bi-chevron-down dropdown-arrow"></i>
-    </a>
-    <div class="collapse" id="sharedServicesMenu">
-        <ul class="nav flex-column ps-4">
-            <li class="nav-item">
-                <a class="nav-link" href="motorpool.php">
-                    <i class="bi bi-truck"></i>
-                    <span class="nav-text">Motorpool</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="central_warehouse.php">
-                    <i class="bi bi-box-seam"></i>
-                    <span class="nav-text">Central Warehouse</span>
-                </a>
-            </li>
-        </ul>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+
+                <!-- Company Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'warehouseMenu')">
+                        <i class="bi bi-building"></i>
+                        <span class="nav-text">Company</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="warehouseMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="current_inventory.php">
+                                    <i class="bi bi-box"></i>
+                                    <span class="nav-text">Items</span>
+                                </a>
+                            </li>
+                            
+                             <li class="nav-item">
+                                <a class="nav-link" href="fixed_assets.php">
+                                    <i class="bi bi-building"></i>
+                                    <span class="nav-text">Fixed Assets</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="warehouses.php">
+                                    <i class="bi bi-shop"></i>
+                                    <span class="nav-text">Warehouses</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="chartofaccounts.php">
+                                    <i class="bi bi-graph-up"></i>
+                                    <span class="nav-text">Chart of Accounts</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item" hidden>
+                                <a class="nav-link" href="trip_tickets.php">
+                                    <i class="bi bi-ticket-perforated"></i>
+                                    <span class="nav-text">Trip Tickets</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="motorpool.php">
+                                    <i class="bi bi-truck"></i>
+                                    <span class="nav-text">Motorpool</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="central_warehouse.php">
+                                    <i class="bi bi-box-seam"></i>
+                                    <span class="nav-text">Central Warehouse</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="drivers.php">
+                                    <i class="bi bi-people-fill"></i>
+                                    <span class="nav-text">Users</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+                <!-- Accounting Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'accountingMenu')">
+                        <i class="bi bi-graph-up"></i>
+                        <span class="nav-text">Accounting</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="accountingMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="journal_entries.php">
+                                    <i class="bi bi-journal"></i>
+                                    <span class="nav-text">Journal Entries</span>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="batch_transaction.php">
+                                    <i class="bi bi-collection"></i>
+                                    <span class="nav-text">Batch Transaction</span>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="item_adjustment.php">
+                                    <i class="bi bi-sliders"></i>
+                                    <span class="nav-text">Item Adjusment</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link" href="it_request.php">
+                        <i class="bi bi-headset"></i>
+                        <span class="nav-text">IT Requests</span>
+                    </a>
+                </li>
+            </ul>
+        </div>
     </div>
-</li>
-                    
-                    <li class="nav-item"><a class="nav-link" href="drivers.php"><i class="bi bi-people-fill"></i><span class="nav-text">Users</span></a></li>
-                    
-                    
-                </ul>
+
+    <div class="sidebar-footer">
+        <div class="user-profile-sidebar">
+            <div class="user-avatar-sidebar">
+                <?php echo htmlspecialchars($user_initials); ?>
+            </div>
+
+            <div class="user-details-sidebar">
+                <span class="user-name-sidebar">
+                    <?php echo htmlspecialchars($user_name); ?>
+                </span>
+
+                <span class="user-role-sidebar">
+                    <?php echo htmlspecialchars(ucfirst($user_role)); ?>
+                </span>
             </div>
         </div>
-        <div class="sidebar-footer">
-            <div class="user-profile-sidebar">
-                <div class="user-avatar-sidebar"><?php echo $user_initials; ?></div>
-                <div class="user-details-sidebar">
-                    <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-                    <span class="user-role-sidebar"><?php echo ucfirst($user_role); ?></span>
-                </div>
-            </div>
-            <button class="logout-btn-sidebar" onclick="logout()">
-                <i class="bi bi-box-arrow-right"></i>
-                <span class="logout-text">Logout</span>
-            </button>
-        </div>
+
+        <button class="logout-btn-sidebar" onclick="logout()">
+            <i class="bi bi-box-arrow-right"></i>
+            <span class="logout-text">Logout</span>
+        </button>
     </div>
+</div>
+
 
     <!-- Main Content -->
     <div class="main-content" id="mainContent">
@@ -2932,6 +6180,13 @@ if ($check_price_levels && $check_price_levels->num_rows > 0) {
                 </div>
             </div>
 
+            <!-- Main Tabs -->
+            <div class="customer-main-tabs" id="customerMainTabs">
+                <button type="button" class="customer-main-tab-btn active" data-tab="customerListTabContent" onclick="switchCustomerMainTab('customerListTabContent')"><i class="bi bi-person-badge"></i> Customer List</button>
+                <button type="button" class="customer-main-tab-btn" data-tab="creditRequestsTabContent" onclick="switchCustomerMainTab('creditRequestsTabContent')"><i class="bi bi-pencil-square"></i> Approve Credit Request <?php if ((int)$pending_requests > 0): ?><span class="customer-main-tab-badge" id="pendingRequestsBadge"><?= (int)$pending_requests ?></span><?php endif; ?></button>
+            </div>
+
+            <div class="customer-main-tab-pane active" id="customerListTabContent">
             <!-- Filter Section -->
             <div class="filter-section">
                 <div class="search-box">
@@ -2954,11 +6209,21 @@ if ($check_price_levels && $check_price_levels->num_rows > 0) {
                 </div>
             </div>
 
-            <!-- ADD NEW CUSTOMER BUTTON -->
+            <!-- CUSTOMER ACTION BUTTONS -->
             <div class="add-button-wrapper">
-                <button class="btn-primary-custom" onclick="showAddCustomerModal()">
-                    <i class="bi bi-plus-lg"></i> Add New Customer
-                </button>
+                <div class="add-button-left">
+                    <button class="btn-primary-custom" onclick="showCustomerGroupsModal()">
+                        <i class="bi bi-collection"></i> Customer Groups
+                    </button>
+                </div>
+                <div class="add-button-right">
+                    <button class="btn-primary-custom" onclick="openOrderProductFlexible()">
+                        <i class="bi bi-cart-plus"></i> Place Order
+                    </button>
+                    <button class="btn-primary-custom" onclick="showAddCustomerModal()">
+                        <i class="bi bi-plus-lg"></i> Add New Customer
+                    </button>
+                </div>
             </div>
 
             <!-- Customer Group Tabs -->
@@ -3070,8 +6335,365 @@ if ($check_price_levels && $check_price_levels->num_rows > 0) {
             </div>
 
             <!-- Dynamic group tabs filter the cards above -->
+            </div>
+
+            <div class="customer-main-tab-pane" id="creditRequestsTabContent">
+                <!-- Table Missing Alert -->
+                <?php if (!$credit_requests_table_exists): ?>
+                    <div class="alert alert-info alert-dismissible fade show" role="alert">
+                        <i class="bi bi-info-circle"></i> 
+                        <strong>The <code>credit_discount_requests</code> table does not exist.</strong> 
+                        <br><br>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="copySQL()">
+                            <i class="bi bi-files"></i> Copy SQL
+                        </button>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <?php endif; ?>
+
+                <!-- Add effective columns alert if missing -->
+                <?php if ($credit_requests_table_exists && !$effective_columns_exist): ?>
+                    <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                        <i class="bi bi-exclamation-triangle"></i> 
+                        <strong>Database update recommended!</strong> The <code>effective_from</code> and <code>effective_until</code> columns are missing.
+                        Please run the SQL below to add expiration date tracking:
+                        <br><br>
+                        <code class="small">ALTER TABLE `credit_discount_requests` ADD COLUMN `effective_from` datetime DEFAULT NULL AFTER `admin_notes`, ADD COLUMN `effective_until` datetime DEFAULT NULL AFTER `effective_from`;</code>
+                        <br><br>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="copyEffectiveSQL()">
+                            <i class="bi bi-files"></i> Copy SQL
+                        </button>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <?php endif; ?>
+
+                <!-- Attachments Table Missing Alert -->
+                <?php if ($credit_requests_table_exists && !$attachments_table_exists): ?>
+                    <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                        <i class="bi bi-exclamation-triangle"></i> 
+                        <strong>Attachments table missing!</strong> The <code>credit_discount_attachments</code> table does not exist.
+                        Please run the SQL below to add attachment support:
+                        <br><br>
+                        <code class="small">CREATE TABLE `credit_discount_attachments` (
+  `attachment_id` int(11) NOT NULL AUTO_INCREMENT,
+  `request_id` int(11) NOT NULL,
+  `file_name` varchar(255) NOT NULL,
+  `original_file_name` varchar(255) NOT NULL,
+  `file_path` varchar(500) NOT NULL,
+  `file_size` int(11) DEFAULT NULL,
+  `file_type` varchar(100) DEFAULT NULL,
+  `uploaded_by` int(11) NOT NULL,
+  `uploaded_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`attachment_id`),
+  KEY `request_id` (`request_id`),
+  KEY `uploaded_by` (`uploaded_by`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;</code>
+                        <br><br>
+                        <button type="button" class="btn btn-sm btn-primary" onclick="copyAttachmentsSQL()">
+                            <i class="bi bi-files"></i> Copy SQL
+                        </button>
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                <?php endif; ?>
+
+                <!-- Stats Section -->
+                <div class="row stat-card-row g-1 g-sm-2 mb-4">
+                    <!-- Stat 1: Total Requests -->
+                    <div class="col">
+                        <div class="stat-card total">
+                            <i class="bi bi-inbox stat-icon"></i>
+                            <div class="stat-content">
+                                <div class="stat-value"><?= $total_requests ?></div>
+                                <div class="stat-label">Total Requests</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Stat 2: Pending -->
+                    <div class="col">
+                        <div class="stat-card pending">
+                            <i class="bi bi-clock-history stat-icon"></i>
+                            <div class="stat-content">
+                                <div class="stat-value"><?= $pending_requests ?></div>
+                                <div class="stat-label">Pending</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Stat 3: Approved -->
+                    <div class="col">
+                        <div class="stat-card approved">
+                            <i class="bi bi-check-circle stat-icon"></i>
+                            <div class="stat-content">
+                                <div class="stat-value"><?= $approved_requests ?></div>
+                                <div class="stat-label">Approved</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Stat 4: Rejected -->
+                    <div class="col">
+                        <div class="stat-card rejected">
+                            <i class="bi bi-x-circle stat-icon"></i>
+                            <div class="stat-content">
+                                <div class="stat-value"><?= $rejected_requests ?></div>
+                                <div class="stat-label">Rejected</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- FILTER SECTION - DEFAULT VISIBLE -->
+                <div class="form-card mb-2" id="filterCard">
+                    <div class="filter-content always-visible" id="filterContent">
+                        <div class="request-filter-grid">
+                            <div class="filter-field filter-field-status">
+                                <label class="form-label">
+                                    <i class="bi bi-flag"></i> Status
+                                </label>
+                                <select class="form-select" id="statusFilter" onchange="filterRequests()">
+                                    <option value="all">All Status</option>
+                                    <option value="pending">Pending</option>
+                                    <option value="approved">Approved</option>
+                                    <option value="rejected">Rejected</option>
+                                </select>
+                            </div>
+
+                            <div class="filter-field filter-field-type">
+                                <label class="form-label">
+                                    <i class="bi bi-tag"></i> Type
+                                </label>
+                                <select class="form-select" id="typeFilter" onchange="filterRequests()">
+                                    <option value="all">All Types</option>
+                                    <option value="credit">Credit Limit</option>
+                                    <option value="discount">Discount</option>
+                                    <option value="both">Credit & Discount</option>
+                                    <option value="credit_terms">Credit Terms</option>
+                                </select>
+                            </div>
+
+                            <div class="filter-field filter-field-search">
+                                <label class="form-label">
+                                    <i class="bi bi-search"></i> Search
+                                </label>
+                                <div class="search-box-wrapper">
+                                    <input type="text" class="form-control" id="creditSearchInput" placeholder="Search customer, agent, reason..." onkeyup="filterRequests()">
+                                </div>
+                            </div>
+
+                            <div class="filter-actions request-filter-actions">
+                                <button class="btn-primary-custom filter-action-primary" type="button" onclick="printRequests()">
+                                    <i class="bi bi-printer"></i> Print
+                                </button>
+                                <button class="btn-primary-custom filter-action-primary" type="button" onclick="exportToExcel()">
+                                    <i class="bi bi-file-earmark-excel"></i> Export
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Requests Table -->
+                <div class="table-container">
+                    <table class="table custom-table compact-table" id="requestsTable">
+                        <thead>
+                            <tr>
+                                <th class="col-date">DATE</th>
+                                <th class="col-customer">CUSTOMER</th>
+                                <th class="col-agent">AGENT</th>
+                                <th class="col-type">TYPE</th>
+                                <th class="col-credit">CREDIT (₱)</th>
+                                <th class="col-discount">DISCOUNT (%)</th>
+                                <th class="col-terms">TERMS (DAYS)</th>
+                                <th class="col-status">STATUS</th>
+                                <th class="col-validity">VALIDITY</th>
+                            </tr>
+                        </thead>
+                        <tbody id="requestsTableBody">
+                            <?php if (empty($requests) && $credit_requests_table_exists): ?>
+                            <tr>
+                                <td colspan="9" class="empty-state-table">
+                                    <i class="bi bi-inbox"></i>
+                                    <h5>No Requests Found</h5>
+                                    <p class="text-muted">There are no credit/discount requests to display.</p>
+                                </td>
+                            </tr>
+                            <?php elseif (!$credit_requests_table_exists): ?>
+                            <tr>
+                                <td colspan="9" class="empty-state-table">
+                                    <i class="bi bi-database"></i>
+                                    <h5>Table Missing</h5>
+                                    <p class="text-muted">The credit_discount_requests table does not exist.</p>
+                                </td>
+                            </tr>
+                            <?php else: ?>
+                                <?php foreach ($requests as $req): 
+                                    $type_class = match($req['request_type']) {
+                                        'credit' => 'type-credit',
+                                        'discount' => 'type-discount',
+                                        'both' => 'type-both',
+                                        'credit_terms' => 'type-credit_terms',
+                                        default => 'type-credit'
+                                    };
+                                    $is_expired = isRequestExpired($req['effective_until']);
+                                    $status_display = $req['status'];
+                                    if ($req['status'] === 'approved' && $is_expired) {
+                                        $status_display = 'Expired';
+                                    }
+                                    $attachments = $attachments_by_request[$req['request_id']] ?? [];
+                                ?>
+                                <tr class="request-row" 
+                                    data-id="<?= $req['request_id'] ?>"
+                                    data-status="<?= $req['status'] ?>"
+                                    data-type="<?= $req['request_type'] ?>"
+                                    data-customer="<?= htmlspecialchars($req['customer_name']) ?>"
+                                    data-agent="<?= htmlspecialchars($req['agent_name'] ?? '') ?>"
+                                    data-credit="<?= $req['requested_credit_limit'] ?>"
+                                    data-discount="<?= $req['requested_discount_percent'] ?>"
+                                    data-terms="<?= $req['credit_terms_days'] ?>">
+                                    <td class="col-date"><?= creditFormatDate($req['created_at']) ?></td>
+                                    <td class="col-customer">
+                                        <strong><?= htmlspecialchars($req['customer_name']) ?></strong>
+                                        <br><small class="text-muted"><?= htmlspecialchars($req['customer_code']) ?></small>
+                                    </td>
+                                    <td class="col-agent"><?= htmlspecialchars($req['agent_name'] ?? 'N/A') ?></td>
+                                    <td class="col-type">
+                                        <span class="type-badge <?= $type_class ?>">
+                                            <?= getRequestTypeText($req['request_type']) ?>
+                                        </span>
+                                    </td>
+                                    <td class="col-credit">
+                                        <?= $req['requested_credit_limit'] ? '₱' . number_format($req['requested_credit_limit'], 2) : '—' ?>
+                                    </td>
+                                    <td class="col-discount">
+                                        <?= $req['requested_discount_percent'] ? $req['requested_discount_percent'] . '%' : '—' ?>
+                                    </td>
+                                    <td class="col-terms">
+                                        <?= $req['credit_terms_days'] ? $req['credit_terms_days'] . ' days' : '—' ?>
+                                    </td>
+                                    <td class="col-status">
+                                        <span class="status-badge <?= $req['status'] === 'approved' && $is_expired ? 'status-expired' : getRequestStatusClass($req['status']) ?>">
+                                            <?= $status_display ?>
+                                        </span>
+                                    </td>
+                                    <td class="col-validity">
+                                        <?php if ($req['status'] === 'approved' && $req['effective_until']): ?>
+                                            <small>Until:<br><?= date('M d, Y', strtotime($req['effective_until'])) ?></small>
+                                        <?php elseif ($req['status'] === 'approved'): ?>
+                                            <small>No expiry set</small>
+                                        <?php else: ?>
+                                            —
+                                        <?php endif; ?>
+                                    </td>
+                                </tr>
+                                <?php endforeach; ?>
+                            <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
+
+    <!-- View Request Modal -->
+<div class="modal fade" id="viewRequestModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-eye me-2"></i>Request Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="viewRequestContent">
+                <!-- Content will be loaded here -->
+            </div>
+            <div class="modal-footer" id="modalFooterActions">
+                <!-- Approve/Reject buttons will be dynamically added here for pending requests -->
+            </div>
+        </div>
+    </div>
+</div>
+    <!-- Approve/Reject Modal -->
+    <div class="modal fade" id="approvalModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header" id="approvalModalHeader">
+                    <h5 class="modal-title" id="approvalModalTitle">Approve Request</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p id="approvalMessage">Approve this request?</p>
+                    <?php if (!$view_all_branches && $customers_branch_column_exists): ?>
+                       
+                    <?php endif; ?>
+                    <div id="approvalFields">
+                        <div class="mb-3">
+                            <label class="form-label">Admin Notes</label>
+                            <textarea class="form-control" id="adminNotes" rows="3" placeholder="Enter any notes..."></textarea>
+                        </div>
+                        <div class="mb-3 expiration-slider">
+                            <label class="form-label fw-bold">Validity Period (Days)</label>
+                            <div class="expiration-number-wrap">
+                                <div class="input-group expiration-number-input">
+                                    <input 
+                                        type="number" 
+                                        class="form-control" 
+                                        id="expirationDays" 
+                                        min="1" 
+                                        max="365" 
+                                        value="30"
+                                        oninput="updateExpirationValue(this.value)"
+                                    >
+                                    <span class="input-group-text">days</span>
+                                </div>
+                                <span class="expiration-value" id="expirationValue">30 days</span>
+                            </div>
+                            <small class="text-muted">Set how many days this approval will be valid. The customer can only use this until the expiration date.</small>
+                        </div>
+                    </div>
+                    <div id="rejectionFields" style="display: none;">
+                        <div class="mb-3">
+                            <label class="form-label">Rejection Reason *</label>
+                            <textarea class="form-control" id="rejectionReason" rows="3" placeholder="Enter reason for rejection..."></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-success" id="approveBtn" onclick="confirmApproval('approve')">Approve</button>
+                    <button type="button" class="btn btn-danger" id="rejectBtn" onclick="confirmApproval('reject')" style="display: none;">Reject</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+   <!-- File Preview Modal -->
+<div class="modal fade" id="fileViewModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-transparent border-0 shadow-none">
+            <div class="modal-body p-0">
+                <div class="attachment-container">
+                    <div class="attachment-wrapper">
+                        <!-- Close button -->
+                        <button type="button" class="btn-close-attachment" data-bs-dismiss="modal" aria-label="Close">
+                            <i class="bi bi-x-lg"></i>
+                        </button>
+                        <!-- Download button -->
+                        <a href="#" id="downloadLink" class="btn-download-attachment" download>
+                            <i class="bi bi-download"></i>
+                        </a>
+                        <!-- Content will be loaded here -->
+                        <div class="attachment-content">
+                            <div class="spinner-border text-light" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 
    <!-- Mobile Bottom Navigation - Clean Version (No Arrows) -->
 <div class="mobile-nav" id="mobileNav">
@@ -3122,7 +6744,7 @@ if ($check_price_levels && $check_price_levels->num_rows > 0) {
             </a>
             <div class="more-dropdown" id="supplierMobileMenu">
                 <a href="purchase_order.php" class="dropdown-item <?php echo ($current_page == 'purchase_order.php') ? 'active' : ''; ?>">
-                    <i class="bi bi-box"></i><span>Receive Inventory</span>
+                    <i class="bi bi-file-earmark-text"></i><span>Enter Bills</span>
                 </a>
                 <a href="supplier.php" class="dropdown-item <?php echo ($current_page == 'supplier.php') ? 'active' : ''; ?>">
                     <i class="bi bi-people"></i><span>Supplier List</span>
@@ -3417,6 +7039,78 @@ if ($check_price_levels && $check_price_levels->num_rows > 0) {
     </div>
     
 
+
+    <!-- CUSTOMER GROUPS MODAL -->
+    <div class="modal fade" id="customerGroupsModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-lg modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-primary-custom">
+                    <h5 class="modal-title">
+                        <i class="bi bi-collection"></i> Customer Groups
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-info d-flex gap-2 align-items-start">
+                        <i class="bi bi-info-circle mt-1"></i>
+                        <div>
+                            Edit the customer group name here if there is a typo. All customers under the selected group will be updated automatically.
+                        </div>
+                    </div>
+
+                    <div class="table-responsive customer-groups-table-scroll">
+                        <table class="table table-hover align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Customer Group</th>
+                                    <th class="text-center" style="width: 140px;">Customers</th>
+                                    <th class="text-end" style="width: 120px;">Action</th>
+                                </tr>
+                            </thead>
+                            <tbody id="customerGroupsTableBody">
+                                <?php if (count($customer_groups) > 0): ?>
+                                    <?php foreach ($customer_groups as $group_name): ?>
+                                        <?php
+                                            $group_count_key = mb_strtolower(trim($group_name), 'UTF-8');
+                                            $group_customer_count = $customer_group_counts[$group_count_key] ?? 0;
+                                        ?>
+                                        <tr>
+                                            <td>
+                                                <strong><?php echo htmlspecialchars($group_name); ?></strong>
+                                            </td>
+                                            <td class="text-center">
+                                                <span class="badge bg-light text-dark border"><?php echo number_format($group_customer_count); ?></span>
+                                            </td>
+                                            <td class="text-end">
+                                                <button type="button"
+                                                        class="btn btn-sm btn-success customer-group-edit-btn"
+                                                        onclick='openEditCustomerGroup(<?php echo json_encode($group_name); ?>)'>
+                                                    <i class="bi bi-pencil-square"></i> Edit
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                <?php else: ?>
+                                    <tr id="noCustomerGroupsRow">
+                                        <td colspan="3" class="text-center py-4 text-muted">
+                                            <i class="bi bi-collection fs-1 d-block mb-2"></i>
+                                            No customer groups found
+                                        </td>
+                                    </tr>
+                                <?php endif; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer customer-groups-footer">
+                    <button type="button" class="btn btn-success customer-group-new-btn" onclick="addNewCustomerGroupRow()">
+                        <i class="bi bi-plus-circle"></i> New Customer Group
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- EDIT CUSTOMER MODAL (Based on customer.php but NO MAP editing) -->
     <div class="modal fade" id="editCustomerModal" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-lg">
@@ -3639,6 +7333,268 @@ if ($check_price_levels && $check_price_levels->num_rows > 0) {
     const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
     const customersBranchColumnExists = <?php echo $customers_branch_column_exists ? 'true' : 'false'; ?>;
     
+
+    function showCustomerGroupsModal() {
+        const modalElement = document.getElementById('customerGroupsModal');
+        if (!modalElement) return;
+        cleanupNewCustomerGroupRow();
+        const modal = bootstrap.Modal.getOrCreateInstance(modalElement);
+        modal.show();
+    }
+
+    function cleanupNewCustomerGroupRow() {
+        const row = document.getElementById('newCustomerGroupRow');
+        if (row) row.remove();
+
+        const tbody = document.getElementById('customerGroupsTableBody');
+        if (tbody && tbody.children.length === 0) {
+            tbody.innerHTML = `
+                <tr id="noCustomerGroupsRow">
+                    <td colspan="3" class="text-center py-4 text-muted">
+                        <i class="bi bi-collection fs-1 d-block mb-2"></i>
+                        No customer groups found
+                    </td>
+                </tr>
+            `;
+        }
+    }
+
+    const customerGroupsModalElementForReset = document.getElementById('customerGroupsModal');
+    if (customerGroupsModalElementForReset) {
+        customerGroupsModalElementForReset.addEventListener('hidden.bs.modal', function () {
+            cleanupNewCustomerGroupRow();
+        });
+    }
+
+    let hasNewCustomerGroupRow = false;
+
+    function addNewCustomerGroupRow() {
+        const tbody = document.getElementById('customerGroupsTableBody');
+        if (!tbody) return;
+
+        const existingInput = document.getElementById('newCustomerGroupRowInput');
+        if (existingInput) {
+            existingInput.focus();
+            return;
+        }
+
+        const emptyRow = document.getElementById('noCustomerGroupsRow');
+        if (emptyRow) emptyRow.remove();
+
+        const row = document.createElement('tr');
+        row.id = 'newCustomerGroupRow';
+        row.className = 'customer-group-new-row';
+        row.innerHTML = `
+            <td>
+                <input type="text" id="newCustomerGroupRowInput" class="form-control customer-group-inline-input" placeholder="Type new customer group" maxlength="100" autocomplete="off">
+            </td>
+            <td class="text-center">
+                <span class="badge bg-light text-dark border">0</span>
+            </td>
+            <td class="text-end">
+                <button type="button" class="btn btn-sm btn-success customer-group-save-btn" onclick="saveNewCustomerGroupRow()">
+                    <i class="bi bi-check2"></i> Save
+                </button>
+            </td>
+        `;
+        tbody.appendChild(row);
+
+        const input = document.getElementById('newCustomerGroupRowInput');
+        if (input) {
+            input.focus();
+            input.addEventListener('keydown', function(event) {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    saveNewCustomerGroupRow();
+                }
+            });
+        }
+    }
+
+    function saveNewCustomerGroupRow() {
+        const input = document.getElementById('newCustomerGroupRowInput');
+        const groupName = input ? input.value.trim() : '';
+
+        if (!groupName) {
+            Swal.fire('Error', 'Customer group name is required.', 'error');
+            if (input) input.focus();
+            return;
+        }
+
+        if (groupName.length > 100) {
+            Swal.fire('Error', 'Customer group name must not exceed 100 characters.', 'error');
+            if (input) input.focus();
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('action', 'create_customer_group');
+        formData.append('new_group', groupName);
+
+        fetch(window.location.href, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const row = document.getElementById('newCustomerGroupRow');
+                if (row) {
+                    row.className = '';
+                    row.innerHTML = `
+                        <td><strong>${escapeHtml(groupName)}</strong></td>
+                        <td class="text-center"><span class="badge bg-light text-dark border">0</span></td>
+                        <td class="text-end">
+                            <button type="button" class="btn btn-sm btn-success customer-group-edit-btn" onclick='openEditCustomerGroup(${JSON.stringify(groupName)})'>
+                                <i class="bi bi-pencil-square"></i> Edit
+                            </button>
+                        </td>
+                    `;
+                    row.removeAttribute('id');
+                }
+
+                const showSuccessThenRefresh = () => {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Added',
+                        text: data.message || 'Customer group added successfully.',
+                        confirmButtonColor: '#047857',
+                        confirmButtonText: 'OK'
+                    }).then(() => {
+                        window.location.reload();
+                    });
+                };
+
+                const customerGroupsModalEl = document.getElementById('customerGroupsModal');
+                const customerGroupsModal = customerGroupsModalEl ? bootstrap.Modal.getOrCreateInstance(customerGroupsModalEl) : null;
+
+                if (customerGroupsModal && customerGroupsModalEl.classList.contains('show')) {
+                    customerGroupsModalEl.addEventListener('hidden.bs.modal', function showAddedAlertOnce() {
+                        customerGroupsModalEl.removeEventListener('hidden.bs.modal', showAddedAlertOnce);
+                        showSuccessThenRefresh();
+                    });
+                    customerGroupsModal.hide();
+                } else {
+                    showSuccessThenRefresh();
+                }
+            } else {
+                Swal.fire('Error', data.message || 'Failed to add customer group.', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Customer group create error:', error);
+            Swal.fire('Error', 'Something went wrong while adding the customer group.', 'error');
+        });
+    }
+
+    function openEditCustomerGroup(oldGroupName) {
+        const currentName = String(oldGroupName || '').trim();
+
+        if (!currentName) {
+            Swal.fire('Error', 'Invalid customer group name.', 'error');
+            return;
+        }
+
+        const customerGroupsModalEl = document.getElementById('customerGroupsModal');
+        const customerGroupsModal = customerGroupsModalEl ? bootstrap.Modal.getOrCreateInstance(customerGroupsModalEl) : null;
+
+        // Hide the Bootstrap modal first. This removes the Bootstrap focus trap
+        // that prevents typing inside the SweetAlert input.
+        if (customerGroupsModal) {
+            customerGroupsModal.hide();
+        }
+
+        setTimeout(() => {
+            Swal.fire({
+                title: 'Edit Customer Group',
+                html: `
+                    <div class="text-start">
+                        <label class="form-label">Current Customer Group</label>
+                        <input type="text" class="form-control mb-3" value="${escapeHtml(currentName)}" readonly>
+                        <label class="form-label">New Customer Group</label>
+                        <input type="text" id="newCustomerGroupName" class="form-control" value="${escapeHtml(currentName)}" maxlength="100" autocomplete="off">
+                        <small class="text-muted d-block mt-2">This will update all customers under this group.</small>
+                    </div>
+                `,
+                showCancelButton: true,
+                confirmButtonText: 'Save Changes',
+                cancelButtonText: 'Cancel',
+                confirmButtonColor: '#047857',
+                allowOutsideClick: false,
+                didOpen: () => {
+                    const input = document.getElementById('newCustomerGroupName');
+                    if (input) {
+                        input.removeAttribute('readonly');
+                        input.disabled = false;
+                        input.focus();
+                        input.select();
+                    }
+                },
+                preConfirm: () => {
+                    const input = document.getElementById('newCustomerGroupName');
+                    const newName = input ? input.value.trim() : '';
+
+                    if (!newName) {
+                        Swal.showValidationMessage('Customer group name is required.');
+                        return false;
+                    }
+
+                    if (newName.length > 100) {
+                        Swal.showValidationMessage('Customer group name must not exceed 100 characters.');
+                        return false;
+                    }
+
+                    return newName;
+                }
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    saveCustomerGroupEdit(currentName, result.value);
+                } else if (customerGroupsModal) {
+                    customerGroupsModal.show();
+                }
+            });
+        }, 250);
+    }
+
+    function saveCustomerGroupEdit(oldGroupName, newGroupName) {
+        const formData = new FormData();
+        formData.append('action', 'update_customer_group');
+        formData.append('old_group', oldGroupName);
+        formData.append('new_group', newGroupName);
+
+        Swal.fire({
+            title: 'Saving...',
+            text: 'Updating customer group name.',
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            didOpen: () => Swal.showLoading()
+        });
+
+        fetch(window.location.href, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Updated',
+                    text: data.message || 'Customer group updated successfully.',
+                    confirmButtonColor: '#047857'
+                }).then(() => {
+                    window.location.reload();
+                });
+            } else {
+                Swal.fire('Error', data.message || 'Failed to update customer group.', 'error');
+            }
+        })
+        .catch(error => {
+            console.error('Customer group update error:', error);
+            Swal.fire('Error', 'Something went wrong while updating the customer group.', 'error');
+        });
+    }
+
     // Philippine location data
     const provincesByRegion = <?php echo json_encode($provinces); ?>;
     const citiesByProvince = <?php echo json_encode($cities); ?>;
@@ -3859,7 +7815,25 @@ if ($check_price_levels && $check_price_levels->num_rows > 0) {
     
     // Show loading
     function showLoading() {
-        Swal.fire({ title: 'Processing...', text: 'Please wait', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                title: 'Processing...',
+                text: 'Please wait',
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                showConfirmButton: false,
+                didOpen: () => Swal.showLoading()
+            });
+        } else {
+            const overlay = document.getElementById('loadingOverlay');
+            if (overlay) overlay.style.display = 'flex';
+        }
+    }
+
+    function hideLoading() {
+        const overlay = document.getElementById('loadingOverlay');
+        if (overlay) overlay.style.display = 'none';
+        if (typeof Swal !== 'undefined') Swal.close();
     }
     
     // Load city codes
@@ -4728,7 +8702,7 @@ citySelect.addEventListener('change', function() {
         showLoading();
         const formData = new FormData();
         formData.append('action', 'generate_code');
-        fetch('customer_list.php', { method: 'POST', body: formData })
+        fetch(window.location.href, { method: 'POST', body: formData })
             .then(res => res.json())
             .then(data => {
                 Swal.close();
@@ -4809,7 +8783,7 @@ citySelect.addEventListener('change', function() {
             formData.append('branch_id', branchId);
         }
         
-        fetch('customer_list.php', { method: 'POST', body: formData })
+        fetch(window.location.href, { method: 'POST', body: formData })
             .then(res => res.json())
             .then(data => {
                 Swal.close();
@@ -5004,7 +8978,7 @@ citySelect.addEventListener('change', function() {
         const formData = new FormData();
         formData.append('action', 'get_customer');
         formData.append('customer_id', id);
-        fetch('customer_list.php', { method: 'POST', body: formData })
+        fetch(window.location.href, { method: 'POST', body: formData })
             .then(res => res.json())
             .then(data => {
                 Swal.close();
@@ -5264,7 +9238,7 @@ citySelect.addEventListener('change', function() {
             formData.append('action', 'get_customer_orders');
             formData.append('customer_id', customerId);
             
-            fetch('customer_list.php', { method: 'POST', body: formData })
+            fetch(window.location.href, { method: 'POST', body: formData })
                 .then(res => res.json())
                 .then(data => {
                     if (data.success) {
@@ -5300,7 +9274,7 @@ function viewOrderDetails(orderId) {
     modal.show();
     
     // Fetch order details via AJAX
-    fetch('customer_list.php', {
+    fetch(window.location.href, {
         method: 'POST',
         headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
@@ -5543,7 +9517,7 @@ function printOrderFromCustomer() {
     formData.append('action', 'print_order');
     formData.append('so_id', currentOrderIdFromCustomer);
     
-    fetch('customer_list.php', {
+    fetch(window.location.href, {
         method: 'POST',
         body: formData
     })
@@ -5722,7 +9696,7 @@ function escapeHtml(str) {
         formData.append('action', 'get_customer');
         formData.append('customer_id', id);
         
-        fetch('customer_list.php', { method: 'POST', body: formData })
+        fetch(window.location.href, { method: 'POST', body: formData })
             .then(res => res.json())
             .then(data => {
                 Swal.close();
@@ -5856,7 +9830,7 @@ function escapeHtml(str) {
             const updateController = new AbortController();
             const updateTimeout = setTimeout(() => updateController.abort(), 20000);
 
-            fetch('customer_list.php', {
+            fetch(window.location.href, {
                 method: 'POST',
                 body: formData,
                 signal: updateController.signal,
@@ -5942,7 +9916,7 @@ function escapeHtml(str) {
         const formData = new FormData();
         formData.append('action', 'delete_customer');
         formData.append('customer_id', deleteCustomerId);
-        fetch('customer_list.php', { method: 'POST', body: formData })
+        fetch(window.location.href, { method: 'POST', body: formData })
             .then(res => res.json())
             .then(data => {
                 Swal.close();
@@ -5954,6 +9928,23 @@ function escapeHtml(str) {
                     Swal.fire('Error', data.message, 'error');
                 }
             }).catch(() => { Swal.close(); Swal.fire('Error', 'An error occurred', 'error'); });
+    }
+    
+    function openOrderProductFlexible() {
+        Swal.fire({
+            title: 'Create Order',
+            text: 'You will be redirected to Order Products. You can select or change the customer from the dropdown.',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#059669',
+            cancelButtonColor: '#6c757d',
+            confirmButtonText: 'Continue',
+            cancelButtonText: 'Cancel'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                window.location.href = 'orderproduct.php';
+            }
+        });
     }
     
     function orderProduct(customerId, customerName, isWalkin = false) {
@@ -5971,7 +9962,7 @@ function escapeHtml(str) {
             cancelButtonText: 'Cancel'
         }).then((result) => {
             if (result.isConfirmed) {
-                window.location.href = 'orderproduct.php?customer_id=' + customerId + '&customer_name=' + encodeURIComponent(customerName);
+                window.location.href = 'orderproduct.php?customer_id=' + customerId + '&customer_name=' + encodeURIComponent(customerName) + '&lock_customer=1';
             }
         });
     }
@@ -5999,6 +9990,7 @@ function escapeHtml(str) {
             setTimeout(() => {
                 document.querySelectorAll('.sidebar .collapse.show').forEach(collapse => { if (collapse.id !== targetId) collapse.classList.remove('show'); });
                 target.classList.add('show');
+                updateEmployeesTaskBadge();
                 if (arrow) arrow.style.transform = 'translateY(-50%) rotate(180deg)';
             }, 50);
             return;
@@ -6011,6 +10003,7 @@ function escapeHtml(str) {
             target.classList.add('show');
             if (arrow) arrow.style.transform = 'translateY(-50%) rotate(180deg)';
         }
+        updateEmployeesTaskBadge();
     }
     
     function toggleSidebar() {
@@ -6119,7 +10112,1093 @@ function confirmLogout() {
                 container.insertBefore(walkinCard, container.firstChild);
             }
         }, 100);
+        document.addEventListener('DOMContentLoaded', function () {
+    updateEmployeesTaskBadge();
+});
     });
+</script>
+
+<script>
+(function(){
+    function initCreditRequestFilterDropdown(){
+        const content = document.getElementById('filterContent');
+        if (content) {
+            content.classList.remove('collapsed');
+            content.style.display = 'block';
+            content.style.maxHeight = 'none';
+            content.style.opacity = '1';
+        }
+    }
+    if(document.readyState === 'loading'){
+        document.addEventListener('DOMContentLoaded', initCreditRequestFilterDropdown);
+    }else{
+        initCreditRequestFilterDropdown();
+    }
+    window.initCreditRequestFilterDropdown = initCreditRequestFilterDropdown;
+})();
+</script>
+<script>
+function switchCustomerMainTab(tabId){document.querySelectorAll('.customer-main-tab-pane').forEach(p=>p.classList.remove('active'));document.querySelectorAll('.customer-main-tab-btn').forEach(b=>b.classList.remove('active'));const t=document.getElementById(tabId);if(t)t.classList.add('active');const b=document.querySelector(`.customer-main-tab-btn[data-tab="${tabId}"]`);if(b)b.classList.add('active');const title=document.querySelector('.page-title h2');const sub=document.querySelector('.page-title p');if(title&&sub){if(tabId==='creditRequestsTabContent'){title.textContent='Approve Credit/Discount Requests';sub.textContent='Review and approve/reject requests from sales agents';if(typeof initCreditRequestFilterDropdown==='function'){setTimeout(initCreditRequestFilterDropdown,0);}}else{title.textContent='Customer List';sub.textContent='Manage all customers';}}}
+document.addEventListener('DOMContentLoaded',function(){if(window.location.hash==='#credit-requests'){switchCustomerMainTab('creditRequestsTabContent');}});
+</script>
+<script>
+let selectedRequestId = null;
+    let currentAction = null;
+    const creditBranchId = <?php echo $branch_id; ?>;
+    const creditViewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
+    const creditCustomersBranchColumnExists = <?php echo $customers_branch_column_exists ? 'true' : 'false'; ?>;
+    const creditEffectiveColumnsExist = <?php echo $effective_columns_exist ? 'true' : 'false'; ?>;
+    const creditLogoBase64 = '<?php echo $logo_base64; ?>';
+    let globalScrollTimeout;
+
+    // Update expiration value display
+    function updateExpirationValue(value) {
+        let num = parseInt(value, 10);
+        if (isNaN(num) || num < 1) {
+            num = 1;
+        } else if (num > 365) {
+            num = 365;
+        }
+        const input = document.getElementById('expirationDays');
+        const label = document.getElementById('expirationValue');
+        if (input) input.value = num;
+        if (label) label.innerText = num + ' day' + (num > 1 ? 's' : '');
+    }
+
+    // ========== SIDEBAR FUNCTIONS ==========
+    function toggleSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const isMobile = window.innerWidth <= 992;
+        
+        if (isMobile) {
+            sidebar.classList.toggle('active');
+            if (!document.querySelector('.sidebar-overlay')) {
+                const overlay = document.createElement('div');
+                overlay.className = 'sidebar-overlay';
+                document.body.appendChild(overlay);
+                overlay.addEventListener('click', closeMobileSidebar);
+                setTimeout(() => overlay.classList.add('active'), 10);
+            }
+        } else {
+            sidebar.classList.toggle('collapsed');
+            localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+            document.querySelectorAll('.nav-text').forEach(text => {
+                text.style.display = sidebar.classList.contains('collapsed') ? 'none' : 'inline-block';
+            });
+        }
+    }
+
+    function closeMobileSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.querySelector('.sidebar-overlay');
+        sidebar.classList.remove('active');
+        if (overlay) {
+            overlay.classList.remove('active');
+            setTimeout(() => overlay.remove(), 300);
+        }
+    }
+
+    function initializeSidebar() {
+        const sidebar = document.getElementById('sidebar');
+        if (window.innerWidth > 992) {
+            const savedCollapsed = localStorage.getItem('sidebarCollapsed');
+            if (savedCollapsed === 'true') {
+                sidebar.classList.add('collapsed');
+                document.querySelectorAll('.nav-text').forEach(text => text.style.display = 'none');
+            }
+        }
+    }
+
+    function showLoading() {
+        if (typeof Swal !== 'undefined') {
+            Swal.fire({
+                title: 'Processing...',
+                text: 'Please wait',
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                showConfirmButton: false,
+                didOpen: () => Swal.showLoading()
+            });
+        } else {
+            const overlay = document.getElementById('loadingOverlay');
+            if (overlay) overlay.style.display = 'flex';
+        }
+    }
+
+    function hideLoading() {
+        const overlay = document.getElementById('loadingOverlay');
+        if (overlay) overlay.style.display = 'none';
+        if (typeof Swal !== 'undefined') Swal.close();
+    }
+
+    // ========== VIEW ATTACHMENT FUNCTION ==========
+// ========== VIEW ATTACHMENT FUNCTION ==========
+let fileViewModal;
+
+function viewAttachment(filePath, fileName) {
+    // Get the current view request modal instance
+    const viewModalElement = document.getElementById('viewRequestModal');
+    const viewModal = bootstrap.Modal.getInstance(viewModalElement);
+    
+    // Store the current content to restore later (optional)
+    const currentContent = document.getElementById('viewRequestContent')?.innerHTML;
+    if (currentContent) {
+        sessionStorage.setItem('savedContent', currentContent);
+    }
+    
+    // Hide the view request modal first with a class to prevent flicker
+    if (viewModal) {
+        viewModalElement.classList.add('hiding-for-attachment');
+        viewModal.hide();
+        setTimeout(() => {
+            viewModalElement.classList.remove('hiding-for-attachment');
+        }, 300);
+    }
+    
+    // Store in session that we came from view modal
+    sessionStorage.setItem('returnToViewModal', 'true');
+    
+    if (!fileViewModal) {
+        fileViewModal = new bootstrap.Modal(document.getElementById('fileViewModal'));
+    }
+    
+    const attachmentContent = document.querySelector('#fileViewModal .attachment-content');
+    const downloadLink = document.getElementById('downloadLink');
+    
+    // Set download link
+    downloadLink.href = filePath;
+    downloadLink.download = fileName;
+    
+    const ext = fileName.split('.').pop().toLowerCase();
+    
+    // Clear previous content
+    attachmentContent.innerHTML = '';
+    
+    if (['jpg', 'jpeg', 'png', 'gif'].includes(ext)) {
+        const img = document.createElement('img');
+        img.src = filePath;
+        img.alt = fileName;
+        img.style.opacity = '0';
+        img.onload = function() {
+            img.style.opacity = '1';
+            console.log('Image loaded:', img.width, 'x', img.height);
+        };
+        attachmentContent.appendChild(img);
+    } else if (ext === 'pdf') {
+        const embed = document.createElement('embed');
+        embed.src = filePath;
+        embed.type = 'application/pdf';
+        attachmentContent.appendChild(embed);
+    } else {
+        attachmentContent.innerHTML = `
+            <div class="alert alert-info m-0">
+                <i class="bi bi-info-circle me-2"></i> 
+                This file type cannot be previewed directly. Please download to view.
+            </div>
+        `;
+    }
+    
+    // Remove existing event listener to avoid duplicates
+    document.getElementById('fileViewModal').removeEventListener('hidden.bs.modal', handleFileModalHidden);
+    document.getElementById('fileViewModal').addEventListener('hidden.bs.modal', handleFileModalHidden);
+    
+    fileViewModal.show();
+}
+
+function handleFileModalHidden() {
+    // Use requestAnimationFrame for smooth transition
+    requestAnimationFrame(function() {
+        // Clean up backdrops without flicker
+        const backdrops = document.querySelectorAll('.modal-backdrop');
+        if (backdrops.length > 1) {
+            backdrops.forEach((backdrop, index) => {
+                if (index < backdrops.length - 1 && backdrop.parentNode) {
+                    backdrop.remove();
+                }
+            });
+        }
+        
+        // Reset attachment content silently
+        const attachmentContent = document.querySelector('#fileViewModal .attachment-content');
+        if (attachmentContent) {
+            attachmentContent.innerHTML = '<div class="spinner-border text-light" role="status"><span class="visually-hidden">Loading...</span></div>';
+        }
+        
+        // Check if we need to return to view modal
+        if (sessionStorage.getItem('returnToViewModal') === 'true') {
+            sessionStorage.removeItem('returnToViewModal');
+            
+            // Get the view request modal element
+            const viewModalElement = document.getElementById('viewRequestModal');
+            if (viewModalElement) {
+                // Use a very short delay and ensure no white flash
+                setTimeout(function() {
+                    // Ensure body has modal-open class
+                    if (!document.body.classList.contains('modal-open')) {
+                        document.body.classList.add('modal-open');
+                    }
+                    
+                    // Show the modal without recreating the instance
+                    const viewModal = bootstrap.Modal.getInstance(viewModalElement);
+                    if (viewModal) {
+                        viewModal.show();
+                    } else {
+                        new bootstrap.Modal(viewModalElement).show();
+                    }
+                    
+                    // Ensure backdrop is correct
+                    setTimeout(function() {
+                        const modalBackdrop = document.querySelector('.modal-backdrop');
+                        if (!modalBackdrop && viewModalElement.classList.contains('show')) {
+                            const newBackdrop = document.createElement('div');
+                            newBackdrop.className = 'modal-backdrop fade show';
+                            document.body.appendChild(newBackdrop);
+                        }
+                    }, 50);
+                }, 50);
+            }
+        } else {
+            // If no modal to return to, just clean up
+            const anyModalOpen = document.querySelector('.modal.show');
+            if (!anyModalOpen) {
+                if (backdrops.length > 0) {
+                    backdrops.forEach(backdrop => {
+                        if (backdrop && backdrop.parentNode) backdrop.remove();
+                    });
+                }
+                document.body.classList.remove('modal-open');
+                document.body.style.removeProperty('overflow');
+                document.body.style.removeProperty('padding-right');
+            }
+        }
+    });
+}
+
+
+    // ========== FILTER FUNCTION ==========
+    function filterRequests() {
+        console.log("filterRequests called");
+        
+        const statusFilter = document.getElementById('statusFilter');
+        const typeFilter = document.getElementById('typeFilter');
+        const searchInput = document.getElementById('creditSearchInput');
+        
+        const statusValue = statusFilter ? statusFilter.value : 'all';
+        const typeValue = typeFilter ? typeFilter.value : 'all';
+        const searchTerm = searchInput ? searchInput.value.toLowerCase().trim() : '';
+        
+        console.log("Filters - Status:", statusValue, "Type:", typeValue, "Search:", searchTerm);
+        
+        const rows = document.querySelectorAll('#requestsTable tbody tr.request-row');
+        let visibleCount = 0;
+        
+        rows.forEach(row => {
+            if (row.querySelector('.empty-state-table')) {
+                row.style.display = '';
+                return;
+            }
+            
+            let showRow = true;
+            const rowStatus = row.getAttribute('data-status') || '';
+            const rowType = row.getAttribute('data-type') || '';
+            
+            const customerCell = row.querySelector('td.col-customer');
+            let customerName = '';
+            let customerCode = '';
+            
+            if (customerCell) {
+                const strongElement = customerCell.querySelector('strong');
+                if (strongElement) {
+                    customerName = strongElement.innerText.toLowerCase();
+                }
+                const smallElement = customerCell.querySelector('small');
+                if (smallElement) {
+                    customerCode = smallElement.innerText.toLowerCase();
+                }
+            }
+            
+            const dataCustomer = (row.getAttribute('data-customer') || '').toLowerCase();
+            const searchableCustomerText = customerName + ' ' + customerCode + ' ' + dataCustomer;
+            
+            let agentName = (row.getAttribute('data-agent') || '').toLowerCase();
+            const agentCell = row.querySelector('td.col-agent');
+            if (agentCell && !agentName) {
+                agentName = agentCell.innerText.toLowerCase();
+            }
+            
+            const rowCredit = row.getAttribute('data-credit');
+            const rowDiscount = row.getAttribute('data-discount');
+            const hasCredit = rowCredit && rowCredit !== '' && rowCredit !== 'null' && parseFloat(rowCredit) > 0;
+            const hasDiscount = rowDiscount && rowDiscount !== '' && rowDiscount !== 'null' && parseFloat(rowDiscount) > 0;
+            
+            if (statusValue !== 'all' && rowStatus !== statusValue) {
+                showRow = false;
+            }
+            
+            if (showRow && typeValue !== 'all') {
+                switch (typeValue) {
+                    case 'credit':
+                        showRow = hasCredit;
+                        break;
+                    case 'discount':
+                        showRow = hasDiscount;
+                        break;
+                    case 'both':
+                        showRow = hasCredit && hasDiscount;
+                        break;
+                    case 'credit_terms':
+                        showRow = rowType === 'credit_terms';
+                        break;
+                    default:
+                        showRow = true;
+                }
+            }
+            
+            if (showRow && searchTerm !== '') {
+                const searchableText = searchableCustomerText + ' ' + agentName;
+                if (!searchableText.includes(searchTerm)) {
+                    showRow = false;
+                }
+            }
+            
+            if (showRow) {
+                row.style.display = '';
+                visibleCount++;
+            } else {
+                row.style.display = 'none';
+            }
+        });
+        
+        console.log("Visible rows:", visibleCount, "Total rows:", rows.length);
+        showEmptyFilterMessage(visibleCount === 0 && rows.length > 0);
+        
+        // Reinitialize tap to view after filtering
+        setTimeout(function() {
+            setupTapToView();
+        }, 100);
+    }
+    
+    function showEmptyFilterMessage(show) {
+        let emptyMsg = document.getElementById('filterEmptyMessage');
+        
+        if (show) {
+            if (!emptyMsg) {
+                const tableBody = document.querySelector('#requestsTable tbody');
+                if (tableBody && !tableBody.querySelector('#filterEmptyMessage')) {
+                    emptyMsg = document.createElement('tr');
+                    emptyMsg.id = 'filterEmptyMessage';
+                    emptyMsg.innerHTML = `
+                        <td colspan="9" class="empty-state-table">
+                            <i class="bi bi-search"></i>
+                            <h5>No matching requests</h5>
+                            <p class="text-muted">Try adjusting your filters or search term</p>
+                        </td>
+                    `;
+                    tableBody.appendChild(emptyMsg);
+                }
+            } else {
+                emptyMsg.style.display = '';
+            }
+        } else {
+            if (emptyMsg) {
+                emptyMsg.style.display = 'none';
+            }
+        }
+    }
+
+    // ========== RE-INITIALIZE FILTER EVENTS ==========
+    function initFilterEvents() {
+        console.log("Initializing filter events");
+        
+        const statusFilter = document.getElementById('statusFilter');
+        const typeFilter = document.getElementById('typeFilter');
+        const searchInput = document.getElementById('creditSearchInput');
+        
+        if (statusFilter) {
+            statusFilter.removeAttribute('onchange');
+            const newStatusFilter = statusFilter.cloneNode(true);
+            statusFilter.parentNode.replaceChild(newStatusFilter, statusFilter);
+            newStatusFilter.addEventListener('change', function() {
+                filterRequests();
+            });
+        }
+        
+        if (typeFilter) {
+            typeFilter.removeAttribute('onchange');
+            const newTypeFilter = typeFilter.cloneNode(true);
+            typeFilter.parentNode.replaceChild(newTypeFilter, typeFilter);
+            newTypeFilter.addEventListener('change', function() {
+                filterRequests();
+            });
+        }
+        
+        if (searchInput) {
+            searchInput.removeAttribute('onkeyup');
+            const newSearchInput = searchInput.cloneNode(true);
+            searchInput.parentNode.replaceChild(newSearchInput, searchInput);
+            newSearchInput.addEventListener('input', function() {
+                filterRequests();
+            });
+            newSearchInput.addEventListener('keyup', function(e) {
+                if (e.key === 'Enter') {
+                    filterRequests();
+                }
+            });
+        }
+        
+        console.log("Filter events initialized");
+    }
+
+    // ========== TAP TO VIEW - WORKS ON ALL DEVICES (Desktop & Mobile) ==========
+    function setupTapToView() {
+        const requestRows = document.querySelectorAll('#requestsTable tbody tr.request-row');
+        
+        requestRows.forEach(row => {
+            // Skip empty state rows
+            if (row.querySelector('.empty-state-table')) return;
+            
+            // Check if row is visible
+            const isVisible = row.style.display !== 'none';
+            
+            if (isVisible) {
+                // Remove existing listeners to avoid duplicates
+                if (row.hasAttribute('data-tap-listener')) {
+                    row.removeEventListener('click', handleRowClick);
+                    row.removeAttribute('data-tap-listener');
+                }
+                
+                // Add click listener to the entire row
+                row.setAttribute('data-tap-listener', 'true');
+                row.addEventListener('click', handleRowClick);
+                row.style.cursor = 'pointer';
+                
+                // Add hover effect for desktop
+                row.addEventListener('mouseenter', function() {
+                    this.style.backgroundColor = '#f8f9fa';
+                    this.style.transition = 'background-color 0.2s ease';
+                });
+                row.addEventListener('mouseleave', function() {
+                    this.style.backgroundColor = '';
+                });
+            } else {
+                // Remove listeners for hidden rows
+                if (row.hasAttribute('data-tap-listener')) {
+                    row.removeEventListener('click', handleRowClick);
+                    row.removeAttribute('data-tap-listener');
+                    row.style.cursor = '';
+                }
+            }
+        });
+    }
+
+    // Handle row click
+    function handleRowClick(event) {
+        // Don't trigger if clicked on a button or inside a button
+        if (event.target.closest('.btn-action') || 
+            event.target.closest('.attachment-badge') || 
+            event.target.closest('.btn')) {
+            return;
+        }
+        
+        const row = event.currentTarget;
+        const requestId = row.getAttribute('data-id');
+        if (requestId && typeof viewRequest === 'function') {
+            event.preventDefault();
+            viewRequest(requestId);
+        }
+    }
+
+    // ========== VIEW REQUEST DETAILS ==========
+    function viewRequest(id) {
+        showLoading();
+        
+        const formData = new FormData();
+        formData.append('action', 'view_request');
+        formData.append('request_id', id);
+        
+        fetch(window.location.href, {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            hideLoading();
+            
+            if (data.success) {
+                const r = data.request;
+                const attachments = data.attachments || [];
+                
+                let typeText = r.request_type === 'credit' ? 'Credit Limit Increase' :
+                               r.request_type === 'discount' ? 'Discount' :
+                               r.request_type === 'both' ? 'Credit & Discount' :
+                               r.request_type === 'credit_terms' ? 'Credit Terms' : 'Unknown';
+                
+                let creditHtml = r.requested_credit_limit ? '₱' + parseFloat(r.requested_credit_limit).toFixed(2) : '—';
+                let discountHtml = r.requested_discount_percent ? r.requested_discount_percent + '%' : '—';
+                let termsHtml = r.credit_terms_days ? r.credit_terms_days + ' days' : '—';
+                let validityHtml = '—';
+                if (r.effective_until) {
+                    validityHtml = 'Until: ' + new Date(r.effective_until).toLocaleDateString();
+                } else if (r.status === 'approved') {
+                    validityHtml = 'No expiry set';
+                }
+                
+                let statusClass = '';
+                let isExpired = r.effective_until && new Date(r.effective_until) < new Date();
+                if (r.status === 'pending') statusClass = 'status-pending';
+                else if (r.status === 'approved' && isExpired) statusClass = 'status-expired';
+                else if (r.status === 'approved') statusClass = 'status-approved';
+                else statusClass = 'status-rejected';
+                
+                let statusDisplay = r.status;
+                if (r.status === 'approved' && isExpired) statusDisplay = 'Expired';
+                
+                // Build attachments HTML
+                let attachmentsHtml = '';
+                if (attachments.length > 0) {
+                    let attachmentItems = '';
+                    attachments.forEach(att => {
+                        const ext = att.original_file_name.split('.').pop().toLowerCase();
+                        let iconClass = 'file-earmark-text';
+                        if (['jpg', 'jpeg', 'png', 'gif'].includes(ext)) iconClass = 'file-earmark-image';
+                        else if (ext === 'pdf') iconClass = 'file-earmark-pdf';
+                        else if (['doc', 'docx'].includes(ext)) iconClass = 'file-earmark-word';
+                        else if (['xls', 'xlsx'].includes(ext)) iconClass = 'file-earmark-excel';
+                        
+                        attachmentItems += `
+                            <a href="#" class="attachment-item" onclick="viewAttachment('${att.file_path}', '${escapeHtml(att.original_file_name)}'); return false;">
+                                <i class="bi bi-${iconClass}"></i>
+                                ${escapeHtml(att.original_file_name)}
+                                <small class="text-muted">(${(att.file_size / 1024).toFixed(1)} KB)</small>
+                            </a>
+                        `;
+                    });
+                    attachmentsHtml = `
+                        <div class="attachment-section">
+                            <div class="card-title">
+                                <i class="bi bi-paperclip"></i> Supporting Documents (${attachments.length} files)
+                            </div>
+                            <div class="card-body">
+                                <div class="attachment-list-modal">
+                                    ${attachmentItems}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                let reasonHtml = escapeHtml(r.reason).replace(/\n/g, '<br>');
+                if (!reasonHtml) reasonHtml = '—';
+                
+                const content = document.getElementById('viewRequestContent');
+                content.innerHTML = `
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="info-card">
+                                <div class="card-title">
+                                    <i class="bi bi-info-circle"></i> Request Information
+                                </div>
+                                <div class="card-body">
+                                    <div class="info-row">
+                                        <div class="info-label">Request ID:</div>
+                                        <div class="info-value">${r.request_id}</div>
+                                    </div>
+                                    <div class="info-row">
+                                        <div class="info-label">Customer:</div>
+                                        <div class="info-value"><strong>${escapeHtml(r.customer_name)}</strong><br><small>${escapeHtml(r.customer_code)}</small></div>
+                                    </div>
+                                    <div class="info-row">
+                                        <div class="info-label">Agent:</div>
+                                        <div class="info-value">${escapeHtml(r.first_name)} ${escapeHtml(r.last_name)}<br><small>${escapeHtml(r.agent_email)}</small></div>
+                                    </div>
+                                    <div class="info-row">
+                                        <div class="info-label">Request Type:</div>
+                                        <div class="info-value"><span class="type-badge ${r.request_type === 'credit' ? 'type-credit' : (r.request_type === 'discount' ? 'type-discount' : (r.request_type === 'both' ? 'type-both' : 'type-credit_terms'))}">${typeText}</span></div>
+                                    </div>
+                                    <div class="info-row">
+                                        <div class="info-label">Credit Limit:</div>
+                                        <div class="info-value">${creditHtml}</div>
+                                    </div>
+                                    <div class="info-row">
+                                        <div class="info-label">Discount %:</div>
+                                        <div class="info-value">${discountHtml}</div>
+                                    </div>
+                                    <div class="info-row">
+                                        <div class="info-label">Credit Terms:</div>
+                                        <div class="info-value">${termsHtml}</div>
+                                    </div>
+                                    <div class="info-row">
+                                        <div class="info-label">Validity:</div>
+                                        <div class="info-value">${validityHtml}</div>
+                                    </div>
+                                    <div class="info-row">
+                                        <div class="info-label">Status:</div>
+                                        <div class="info-value"><span class="status-badge ${statusClass}">${statusDisplay}</span></div>
+                                    </div>
+                                    <div class="info-row">
+                                        <div class="info-label">Created:</div>
+                                        <div class="info-value">${new Date(r.created_at).toLocaleString()}</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="info-card">
+                                <div class="card-title">
+                                    <i class="bi bi-chat-text"></i> Reason for Request
+                                </div>
+                                <div class="card-body">
+                                    <div class="info-row">
+                                        <div class="info-value">${reasonHtml}</div>
+                                    </div>
+                                    ${r.admin_notes ? `
+                                    <div class="info-row mt-3">
+                                        <div class="info-label">Admin Notes:</div>
+                                        <div class="info-value">${escapeHtml(r.admin_notes).replace(/\n/g, '<br>')}</div>
+                                    </div>
+                                    ` : ''}
+                                    ${r.approved_at ? `
+                                    <div class="info-row mt-3">
+                                        <div class="info-label">Approved at:</div>
+                                        <div class="info-value">${new Date(r.approved_at).toLocaleString()}</div>
+                                    </div>
+                                    ` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    ${attachmentsHtml}
+                `;
+                
+                const modalFooter = document.getElementById('modalFooterActions');
+                    if (modalFooter) {
+                        // Clear existing buttons
+                        modalFooter.innerHTML = '';
+                        
+                        if (r.status === 'pending') {
+                            modalFooter.innerHTML += `
+                                <button type="button" class="btn btn-danger" onclick="closeModalAndShowReject(${r.request_id})">
+                                    <i class="bi bi-x-circle"></i> Reject
+                                </button>
+                                <button type="button" class="btn btn-success" onclick="closeModalAndShowApprove(${r.request_id})">
+                                    <i class="bi bi-check-circle"></i> Approve
+                                </button>
+                            `;
+                        }
+                    }
+                
+                selectedRequestId = id;
+                new bootstrap.Modal(document.getElementById('viewRequestModal')).show();
+            } else {
+                Swal.fire('Error', data.message, 'error');
+            }
+        })
+        .catch(error => {
+            hideLoading();
+            Swal.fire('Error', 'An error occurred while fetching request details', 'error');
+        });
+    }
+
+    function closeModalAndShowApprove(requestId) {
+        const modal = bootstrap.Modal.getInstance(document.getElementById('viewRequestModal'));
+        if (modal) {
+            modal.hide();
+        }
+        setTimeout(() => {
+            showApprovalModal(requestId, 'approve');
+        }, 300);
+    }
+
+    function closeModalAndShowReject(requestId) {
+        const modal = bootstrap.Modal.getInstance(document.getElementById('viewRequestModal'));
+        if (modal) {
+            modal.hide();
+        }
+        setTimeout(() => {
+            showApprovalModal(requestId, 'reject');
+        }, 300);
+    }
+
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
+
+    function showApprovalModal(id, action) {
+        selectedRequestId = id;
+        currentAction = action;
+        
+        const modalTitle = document.getElementById('approvalModalTitle');
+        const modalHeader = document.getElementById('approvalModalHeader');
+        const approvalMessage = document.getElementById('approvalMessage');
+        const approvalFields = document.getElementById('approvalFields');
+        const rejectionFields = document.getElementById('rejectionFields');
+        const approveBtn = document.getElementById('approveBtn');
+        const rejectBtn = document.getElementById('rejectBtn');
+        
+        if (action === 'approve') {
+            modalTitle.textContent = 'Approve Request';
+            modalHeader.className = 'modal-header bg-success text-white';
+            approvalMessage.textContent = 'Approve this request?';
+            approvalFields.style.display = 'block';
+            rejectionFields.style.display = 'none';
+            approveBtn.style.display = 'inline-block';
+            rejectBtn.style.display = 'none';
+            document.getElementById('adminNotes').value = '';
+            document.getElementById('expirationDays').value = '30';
+            updateExpirationValue(30);
+        } else {
+            modalTitle.textContent = 'Reject Request';
+            modalHeader.className = 'modal-header bg-danger text-white';
+            approvalMessage.textContent = 'Reject this request?';
+            approvalFields.style.display = 'none';
+            rejectionFields.style.display = 'block';
+            approveBtn.style.display = 'none';
+            rejectBtn.style.display = 'inline-block';
+            document.getElementById('rejectionReason').value = '';
+        }
+        
+        new bootstrap.Modal(document.getElementById('approvalModal')).show();
+    }
+
+    function confirmApproval(action) {
+        if (action === 'approve') {
+            const adminNotes = document.getElementById('adminNotes').value;
+            let expirationDays = parseInt(document.getElementById('expirationDays').value, 10);
+
+            if (isNaN(expirationDays) || expirationDays < 1) {
+                Swal.fire('Warning', 'Please enter a valid number of days', 'warning');
+                return;
+            }
+
+            if (expirationDays > 365) {
+                expirationDays = 365;
+                document.getElementById('expirationDays').value = 365;
+                updateExpirationValue(365);
+            }
+            
+            showLoading();
+            
+            const formData = new FormData();
+            formData.append('action', 'approve_request');
+            formData.append('request_id', selectedRequestId);
+            formData.append('admin_notes', adminNotes);
+            formData.append('expiration_days', expirationDays);
+            
+            fetch(window.location.href, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                
+                if (data.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Approved!',
+                        text: data.message,
+                        timer: 3000,
+                        showConfirmButton: false
+                    }).then(() => {
+                        bootstrap.Modal.getInstance(document.getElementById('approvalModal')).hide();
+                        location.reload();
+                    });
+                } else {
+                    Swal.fire('Error', data.message, 'error');
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                console.error('Fetch error:', error);
+                Swal.fire('Error', 'Network error: ' + error.message, 'error');
+            });
+        } else {
+            const rejectionReason = document.getElementById('rejectionReason').value;
+            
+            if (!rejectionReason) {
+                Swal.fire('Warning', 'Please enter a rejection reason', 'warning');
+                return;
+            }
+            
+            showLoading();
+            
+            const formData = new FormData();
+            formData.append('action', 'reject_request');
+            formData.append('request_id', selectedRequestId);
+            formData.append('rejection_reason', rejectionReason);
+            
+            fetch(window.location.href, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                hideLoading();
+                
+                if (data.success) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Rejected!',
+                        text: data.message,
+                        timer: 2000,
+                        showConfirmButton: false
+                    }).then(() => {
+                        bootstrap.Modal.getInstance(document.getElementById('approvalModal')).hide();
+                        location.reload();
+                    });
+                } else {
+                    Swal.fire('Error', data.message, 'error');
+                }
+            })
+            .catch(error => {
+                hideLoading();
+                Swal.fire('Error', 'An error occurred while rejecting request', 'error');
+            });
+        }
+    }
+
+    // ========== PRINT FUNCTION ==========
+    function printRequests() {
+        const printBtn = document.querySelector('.btn-outline-primary');
+        if (printBtn && printBtn.innerText.includes('Print')) {
+            const originalText = printBtn.innerHTML;
+            printBtn.innerHTML = '<i class="bi bi-printer"></i> Preparing...';
+            printBtn.disabled = true;
+            
+            setTimeout(() => {
+                printBtn.innerHTML = originalText;
+                printBtn.disabled = false;
+            }, 2000);
+        }
+
+        const visibleRows = document.querySelectorAll('.request-row:not([style*="display: none"])');
+        
+        if (visibleRows.length === 0) {
+            Swal.fire('Warning', 'No requests to print', 'warning');
+            return;
+        }
+        
+        let tableRows = '';
+        let totalPending = 0, totalApproved = 0, totalRejected = 0;
+        
+        visibleRows.forEach(row => {
+            const cells = row.querySelectorAll('td');
+            let idx = 0;
+            const id = cells[idx++]?.innerText || '';
+            const date = cells[idx++]?.innerText || '';
+            const customer = cells[idx]?.querySelector('strong')?.innerText || cells[idx]?.innerText || '';
+            idx++;
+            const agent = cells[idx++]?.innerText || '';
+            const typeCell = cells[idx++]?.innerText.trim() || '';
+            const credit = cells[idx++]?.innerText || '';
+            const discount = cells[idx++]?.innerText || '';
+            const terms = cells[idx++]?.innerText || '';
+            const reason = cells[idx++]?.innerText || '';
+            const status = cells[idx++]?.innerText || '';
+            const validity = cells[idx++]?.innerText || '';
+            
+            if (status === 'Pending') totalPending++;
+            else if (status === 'Approved') totalApproved++;
+            else if (status === 'Rejected') totalRejected++;
+            
+            tableRows += '<tr>';
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${escapeHtml(id)}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${escapeHtml(date)}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${escapeHtml(customer)}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${escapeHtml(agent)}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${escapeHtml(typeCell)}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000; text-align: right;">${escapeHtml(credit)}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000; text-align: right;">${escapeHtml(discount)}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000; text-align: right;">${escapeHtml(terms)}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${escapeHtml(reason)}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${escapeHtml(status)}</td>`;
+            tableRows += `<td style="padding: 3px; border: 1px solid #000;">${escapeHtml(validity)}</td>`;
+            tableRows += '</tr>';
+        });
+        
+        const currentDate = new Date().toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'short', 
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+        
+        const htmlContent = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Credit/Discount Requests</title><style>body{font-family:Arial;margin:0;padding:0;font-size:9px}.print-container{max-width:100%;margin:0}.print-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;border-bottom:1px solid #000;padding-bottom:3px}.logo-section{display:flex;align-items:center;gap:5px}.company-logo{width:30px;height:auto}.company-info h1{font-size:14px;margin:0;font-weight:bold}.company-info p{font-size:8px;margin:0}.report-title h2{font-size:12px;margin:0}.report-title .date-info{font-size:8px}.summary-box{border:1px solid #000;padding:3px;margin-bottom:5px;display:flex}.summary-item{flex:1;text-align:center;border-right:1px solid #000}.summary-item:last-child{border-right:none}.summary-label{font-size:8px;font-weight:bold}.summary-value{font-size:11px;font-weight:bold}table{width:100%;border-collapse:collapse;font-size:8px}th{border:1px solid #000;padding:3px;text-align:left;font-weight:bold;background:white !important;color:black !important}td{border:1px solid #000;padding:3px}.print-footer{margin-top:5px;border-top:1px solid #000;padding-top:3px;display:flex;justify-content:space-between;font-size:8px}</style></head><body><div class="print-container"><div class="print-header"><div class="logo-section"><img src="${creditLogoBase64}" alt="AMGC Logo" class="company-logo"><div class="company-info"><h1>AMGC</h1><p>Requests Report</p></div></div><div class="report-title"><h2>CREDIT/DISCOUNT REQUESTS</h2><div class="date-info">${currentDate}</div></div></div><div class="summary-box"><div class="summary-item"><div class="summary-label">Total</div><div class="summary-value">${visibleRows.length}</div></div><div class="summary-item"><div class="summary-label">Pending</div><div class="summary-value">${totalPending}</div></div><div class="summary-item"><div class="summary-label">Approved</div><div class="summary-value">${totalApproved}</div></div><div class="summary-item"><div class="summary-label">Rejected</div><div class="summary-value">${totalRejected}</div></div><div class="summary-item"><div class="summary-label">Branch</div><div class="summary-value">${!creditViewAllBranches ? 'Branch ' + creditBranchId : 'All'}</div></div></div><table><thead><tr><th>ID</th><th>Date</th><th>Customer</th><th>Agent</th><th>Type</th><th style="text-align:right">Credit</th><th style="text-align:right">Discount</th><th style="text-align:right">Terms</th><th>Reason</th><th>Status</th><th>Validity</th></tr></thead><tbody>${tableRows}</tbody></table><div class="print-footer"><div>Generated: ${currentDate}</div><div>${document.querySelector('.user-name-sidebar')?.textContent || 'Branch Admin'}</div></div></div></body></html>`;
+        
+        hideLoading();
+        
+        const iframe = document.getElementById('printFrame');
+        const iframeDoc = iframe.contentWindow.document;
+        
+        iframeDoc.open();
+        iframeDoc.write(htmlContent);
+        iframeDoc.close();
+        
+        setTimeout(() => {
+            iframe.contentWindow.focus();
+            iframe.contentWindow.print();
+        }, 250);
+    }
+
+    // ========== EXCEL EXPORT ==========
+    function exportToExcel() {
+        const rows = document.querySelectorAll('.request-row:not([style*="display: none"])');
+        if (rows.length === 0) {
+            Swal.fire('Warning', 'No requests to export', 'warning');
+            return;
+        }
+        
+        const excelData = [['Request ID', 'Date', 'Customer', 'Agent', 'Type', 'Credit Limit (₱)', 'Discount (%)', 'Credit Terms (Days)', 'Reason', 'Status', 'Validity']];
+        
+        rows.forEach(row => {
+            const cells = row.querySelectorAll('td');
+            let idx = 0;
+            const id = cells[idx++]?.innerText || '';
+            const date = cells[idx++]?.innerText || '';
+            const customer = cells[idx]?.querySelector('strong')?.innerText || cells[idx]?.innerText || '';
+            idx++;
+            const agent = cells[idx++]?.innerText || '';
+            const type = cells[idx++]?.innerText || '';
+            const credit = cells[idx++]?.innerText.replace('₱', '').replace(/,/g, '') || '';
+            const discount = cells[idx++]?.innerText.replace('%', '') || '';
+            const terms = cells[idx++]?.innerText.replace(' days', '') || '';
+            const reason = cells[idx++]?.innerText || '';
+            const status = cells[idx++]?.innerText || '';
+            const validity = cells[idx++]?.innerText || '';
+            
+            excelData.push([id, date, customer, agent, type, credit, discount, terms, reason, status, validity]);
+        });
+        
+        const wb = XLSX.utils.book_new();
+        const ws = XLSX.utils.aoa_to_sheet(excelData);
+        ws['!cols'] = [{ wch: 8 }, { wch: 15 }, { wch: 25 }, { wch: 20 }, { wch: 12 }, { wch: 15 }, { wch: 12 }, { wch: 15 }, { wch: 30 }, { wch: 12 }, { wch: 15 }];
+        XLSX.utils.book_append_sheet(wb, ws, 'CreditDiscountRequests');
+        
+        const date = new Date();
+        const dateStr = date.toISOString().slice(0,10).replace(/-/g, '');
+        let filename = `Credit_Discount_Requests_${dateStr}`;
+        if (!creditViewAllBranches) filename += `_Branch_${creditBranchId}`;
+        filename += '.xlsx';
+        
+        XLSX.writeFile(wb, filename);
+        Swal.fire({ icon: 'success', title: 'Export Complete', timer: 2000, showConfirmButton: false });
+    }
+
+    // ========== COPY SQL FUNCTIONS ==========
+    function copySQL() {
+        const sql = `CREATE TABLE IF NOT EXISTS \`credit_discount_requests\` (...)`;
+        navigator.clipboard.writeText(sql).then(() => {
+            Swal.fire({ icon: 'success', title: 'Copied!', timer: 1500, showConfirmButton: false });
+        });
+    }
+    
+    function copyEffectiveSQL() {
+        const sql = "ALTER TABLE `credit_discount_requests` ADD COLUMN `effective_from` datetime DEFAULT NULL AFTER `admin_notes`, ADD COLUMN `effective_until` datetime DEFAULT NULL AFTER `effective_from`;";
+        navigator.clipboard.writeText(sql).then(() => {
+            Swal.fire({ icon: 'success', title: 'Copied!', timer: 1500, showConfirmButton: false });
+        });
+    }
+    
+    function copyAttachmentsSQL() {
+        const sql = `CREATE TABLE \`credit_discount_attachments\` (
+  \`attachment_id\` int(11) NOT NULL AUTO_INCREMENT,
+  \`request_id\` int(11) NOT NULL,
+  \`file_name\` varchar(255) NOT NULL,
+  \`original_file_name\` varchar(255) NOT NULL,
+  \`file_path\` varchar(500) NOT NULL,
+  \`file_size\` int(11) DEFAULT NULL,
+  \`file_type\` varchar(100) DEFAULT NULL,
+  \`uploaded_by\` int(11) NOT NULL,
+  \`uploaded_at\` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (\`attachment_id\`),
+  KEY \`request_id\` (\`request_id\`),
+  KEY \`uploaded_by\` (\`uploaded_by\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;`;
+        navigator.clipboard.writeText(sql).then(() => {
+            Swal.fire({ icon: 'success', title: 'Copied!', timer: 1500, showConfirmButton: false });
+        });
+    }
+
+    
+
+
+    // ========== MERGED PAGE FUNCTION SAFETY FIX ==========
+    // This keeps Customer List and Approve Credit Request functions working after merging.
+    (function () {
+        function closeAllLoaders() {
+            const overlay = document.getElementById('loadingOverlay');
+            if (overlay) overlay.style.display = 'none';
+            if (typeof Swal !== 'undefined' && Swal.isVisible && Swal.isVisible()) {
+                Swal.close();
+            }
+        }
+
+        // Make inline onclick handlers work even if this script is inside merged tab content.
+        if (typeof editCustomer === 'function') window.editCustomer = editCustomer;
+        if (typeof saveEditCustomer === 'function') window.saveEditCustomer = saveEditCustomer;
+        if (typeof deleteCustomer === 'function') window.deleteCustomer = deleteCustomer;
+        if (typeof confirmDeleteCustomer === 'function') window.confirmDeleteCustomer = confirmDeleteCustomer;
+        if (typeof viewRequest === 'function') window.viewRequest = viewRequest;
+        if (typeof showApprovalModal === 'function') window.showApprovalModal = showApprovalModal;
+        if (typeof confirmApproval === 'function') window.confirmApproval = confirmApproval;
+        if (typeof closeModalAndShowApprove === 'function') window.closeModalAndShowApprove = closeModalAndShowApprove;
+        if (typeof closeModalAndShowReject === 'function') window.closeModalAndShowReject = closeModalAndShowReject;
+        if (typeof filterRequests === 'function') window.filterRequests = filterRequests;
+        if (typeof printRequests === 'function') window.printRequests = printRequests;
+        if (typeof exportRequests === 'function') window.exportRequests = exportRequests;
+        if (typeof resetFilters === 'function') window.resetFilters = resetFilters;
+        if (typeof viewAttachment === 'function') window.viewAttachment = viewAttachment;
+
+        // Approve Credit Request row click fallback. This avoids lost listeners after tab switching/filtering.
+        document.addEventListener('click', function (e) {
+            const row = e.target.closest('#requestsTable tbody tr.request-row');
+            if (!row) return;
+            if (e.target.closest('button, a, input, select, textarea, .btn, .attachment-badge')) return;
+            const requestId = row.getAttribute('data-id');
+            if (requestId && typeof window.viewRequest === 'function') {
+                e.preventDefault();
+                window.viewRequest(requestId);
+            }
+        }, true);
+
+        // Customer card row click fallback. Buttons inside the card will not trigger this.
+        document.addEventListener('click', function (e) {
+            const card = e.target.closest('.customer-card[data-customer-id]');
+            if (!card) return;
+            if (e.target.closest('button, a, input, select, textarea, .btn, .dropdown-menu, .dropdown-toggle')) return;
+            const customerId = card.getAttribute('data-customer-id');
+            if (customerId && typeof window.viewCustomer === 'function') {
+                e.preventDefault();
+                window.viewCustomer(customerId);
+            }
+        }, true);
+
+        // Prevent loader from staying over an opened Bootstrap modal.
+        document.addEventListener('shown.bs.modal', function () {
+            closeAllLoaders();
+        });
+
+        window.addEventListener('unhandledrejection', closeAllLoaders);
+        window.addEventListener('error', closeAllLoaders);
+    })();
+    function updateEmployeesTaskBadge() {
+    const employeesMenu = document.getElementById('employeesMenu');
+    const employeesDropdown = employeesMenu?.closest('.employees-dropdown');
+
+    if (!employeesMenu || !employeesDropdown) return;
+
+    employeesDropdown.classList.toggle(
+        'employees-menu-open',
+        employeesMenu.classList.contains('show')
+    );
+}
 </script>
 </body>
 </html>

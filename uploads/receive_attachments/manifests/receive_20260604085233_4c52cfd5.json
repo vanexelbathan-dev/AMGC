@@ -1,0 +1,33 @@
+{
+    "manifest_id": "receive_20260604085233_4c52cfd5",
+    "source": "supplier",
+    "supplier_id": 4,
+    "supplier_name": "Van",
+    "po_number": "PO-RCV-20260604085233",
+    "reference_type": "purchase_order",
+    "reference_id": 42,
+    "receive_date": "2026-06-04",
+    "encoded_date": "2026-06-04",
+    "receive_memo": "cash",
+    "created_at": "2026-06-04 08:52:33",
+    "created_by": 2,
+    "branch_id": 1,
+    "transaction_ids": [
+        298
+    ],
+    "attachments": [],
+    "items": [
+        {
+            "item_id": 2,
+            "item_name": "Product B",
+            "item_code": "ITEM002",
+            "item_description": "Product B",
+            "category": "Oil",
+            "uom": "Piece",
+            "qty": 20,
+            "unit_price": 150,
+            "unit_cost": 150,
+            "total_cost": 3000
+        }
+    ]
+}

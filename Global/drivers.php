@@ -167,14 +167,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $driver_id = $conn->insert_id;
             
             $password_hash = password_hash($password, PASSWORD_DEFAULT);
-<<<<<<< HEAD
             $profile_picture = handleProfilePictureUpload();
             $insert_user = $conn->prepare("INSERT INTO users (email, password_hash, first_name, last_name, role, branch_id, driver_id, contact_number, profile_picture, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'delivery', ?, ?, ?, ?, ?, NOW(), NOW())");
             $insert_user->bind_param("ssssiisss", $email, $password_hash, $first_name, $last_name, $branch_id, $driver_id, $contact_number, $profile_picture, $status);
-=======
-            $insert_user = $conn->prepare("INSERT INTO users (email, password_hash, first_name, last_name, role, branch_id, driver_id, contact_number, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'delivery', ?, ?, ?, ?, NOW(), NOW())");
-            $insert_user->bind_param("ssssiiss", $email, $password_hash, $first_name, $last_name, $branch_id, $driver_id, $contact_number, $status);
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             if (!$insert_user->execute()) throw new Exception('Failed to create user account');
             
             $conn->commit();
@@ -207,14 +202,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             if ($check_email->get_result()->num_rows > 0) throw new Exception('Email already exists');
             
             $password_hash = password_hash($password, PASSWORD_DEFAULT);
-<<<<<<< HEAD
             $profile_picture = handleProfilePictureUpload();
             $insert_user = $conn->prepare("INSERT INTO users (email, password_hash, first_name, last_name, role, branch_id, contact_number, profile_picture, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'branch_admin', ?, ?, ?, ?, NOW(), NOW())");
             $insert_user->bind_param("ssssisss", $email, $password_hash, $first_name, $last_name, $branch_id, $contact_number, $profile_picture, $status);
-=======
-            $insert_user = $conn->prepare("INSERT INTO users (email, password_hash, first_name, last_name, role, branch_id, contact_number, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'branch_admin', ?, ?, ?, NOW(), NOW())");
-            $insert_user->bind_param("ssssiss", $email, $password_hash, $first_name, $last_name, $branch_id, $contact_number, $status);
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             if (!$insert_user->execute()) throw new Exception('Failed to create branch admin');
             
             $conn->commit();
@@ -279,14 +269,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             if ($check_email->get_result()->num_rows > 0) throw new Exception('Email already exists');
             
             $password_hash = password_hash($password, PASSWORD_DEFAULT);
-<<<<<<< HEAD
             $profile_picture = handleProfilePictureUpload();
             $insert_user = $conn->prepare("INSERT INTO users (email, password_hash, first_name, last_name, role, branch_id, category, contact_number, profile_picture, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'warehouse', ?, ?, ?, ?, ?, NOW(), NOW())");
             $insert_user->bind_param("ssssissss", $email, $password_hash, $first_name, $last_name, $branch_id, $category, $contact_number, $profile_picture, $status);
-=======
-            $insert_user = $conn->prepare("INSERT INTO users (email, password_hash, first_name, last_name, role, branch_id, category, contact_number, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'warehouse', ?, ?, ?, ?, NOW(), NOW())");
-            $insert_user->bind_param("ssssisss", $email, $password_hash, $first_name, $last_name, $branch_id, $category, $contact_number, $status);
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             if (!$insert_user->execute()) throw new Exception('Failed to create warehouse staff');
             
             $conn->commit();
@@ -314,14 +299,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             if ($check_email->get_result()->num_rows > 0) throw new Exception('Email already exists');
             
             $password_hash = password_hash($password, PASSWORD_DEFAULT);
-<<<<<<< HEAD
             $profile_picture = handleProfilePictureUpload();
             $insert_user = $conn->prepare("INSERT INTO users (email, password_hash, first_name, last_name, role, branch_id, contact_number, profile_picture, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'sales', ?, ?, ?, ?, NOW(), NOW())");
             $insert_user->bind_param("ssssisss", $email, $password_hash, $first_name, $last_name, $branch_id, $contact_number, $profile_picture, $status);
-=======
-            $insert_user = $conn->prepare("INSERT INTO users (email, password_hash, first_name, last_name, role, branch_id, contact_number, status, created_at, updated_at) VALUES (?, ?, ?, ?, 'sales', ?, ?, ?, NOW(), NOW())");
-            $insert_user->bind_param("ssssiss", $email, $password_hash, $first_name, $last_name, $branch_id, $contact_number, $status);
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             if (!$insert_user->execute()) throw new Exception('Failed to create sales agent');
             
             $conn->commit();
@@ -356,15 +336,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $check_email->execute();
             if ($check_email->get_result()->num_rows > 0) throw new Exception('Email is already in use');
             
-<<<<<<< HEAD
             $get_current_picture = $conn->prepare("SELECT profile_picture FROM users WHERE user_id = ?");
             $get_current_picture->bind_param("i", $user_id);
             $get_current_picture->execute();
             $current_picture_data = $get_current_picture->get_result()->fetch_assoc();
             $profile_picture = handleProfilePictureUpload($current_picture_data['profile_picture'] ?? null);
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             if ($user_role_type === 'driver') {
                 $driver_id = (int)$_POST['driver_id'];
                 $driver_name = trim($_POST['driver_name']);
@@ -400,7 +377,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
             }
             if (!$update_user->execute()) throw new Exception('Failed to update user');
-<<<<<<< HEAD
 
             if ($user_role_type === 'branch_admin' && $branch_id > 0 && $branches_business_unit_column_exists) {
                 if (empty($business_unit)) throw new Exception('Business Unit is required');
@@ -408,8 +384,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $update_branch_bu->bind_param("si", $business_unit, $branch_id);
                 if (!$update_branch_bu->execute()) throw new Exception('Failed to update business unit');
             }
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             
             $conn->commit();
             $response = ['success' => true, 'message' => 'User updated successfully'];
@@ -437,11 +411,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         }
         elseif ($_POST['action'] === 'get_user') {
             $user_id = (int)$_POST['user_id'];
-<<<<<<< HEAD
             $query = "SELECT u.*, d.driver_id, d.driver_name, d.license_number, d.license_expiry, d.vehicle_type, d.vehicle_plate_number, d.status as driver_status, b.branch_name, b.business_unit 
-=======
-            $query = "SELECT u.*, d.driver_id, d.driver_name, d.license_number, d.license_expiry, d.vehicle_type, d.vehicle_plate_number, d.status as driver_status, b.branch_name 
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                      FROM users u 
                      LEFT JOIN drivers d ON u.driver_id = d.driver_id 
                      LEFT JOIN branches b ON u.branch_id = b.branch_id
@@ -923,7 +893,6 @@ if (empty($user_initials)) $user_initials = 'GA';
             background: white;
             border-radius: 10px;
             box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-<<<<<<< HEAD
         }
         .page-title h2 { margin: 0; font-size: 20px; font-weight: 600; color: #1e293b; }
         .page-title p { margin: 3px 0 0 0; color: #666; font-size: 12px; }
@@ -1266,22 +1235,6 @@ body.modal-open {
 }
 
 </style>
-=======
-        }
-        .page-title h2 { margin: 0; font-size: 20px; font-weight: 600; color: #1e293b; }
-        .page-title p { margin: 3px 0 0 0; color: #666; font-size: 12px; }
-        
-        /* Remove badges from details column */
-        .details-text {
-            font-size: 0.75rem;
-            line-height: 1.4;
-        }
-        .details-text i {
-            font-size: 0.7rem;
-            margin-right: 2px;
-        }
-    </style>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 </head>
 <body>
     <div id="appPage">
@@ -1297,15 +1250,12 @@ body.modal-open {
             </div>
             <div class="sidebar-menu">
                 <ul class="nav flex-column">
-<<<<<<< HEAD
                     <li class="nav-item">
                         <a class="nav-link" href="dashboard.php">
                             <i class="bi bi-speedometer2"></i>
                             <span class="nav-text">Dashboard</span>
                         </a>
                     </li>
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     <li class="nav-item"><a class="nav-link" href="sales_reports.php"><i class="bi bi-graph-up"></i><span class="nav-text">Sales Reports</span></a></li>
                     <li class="nav-item"><a class="nav-link" href="branch_records.php"><i class="bi bi-file-text"></i><span class="nav-text">Branch Records</span></a></li>
                     <li class="nav-item"><a class="nav-link" href="all_items.php"><i class="bi bi-box"></i><span class="nav-text">All Items</span></a></li>
@@ -1362,13 +1312,8 @@ body.modal-open {
                     </div>
                     <div class="buttons-container">
                         <button onclick="exportToExcel()" class="action-btn export-btn"><i class="bi bi-file-earmark-excel"></i><span>Export</span></button>
-<<<<<<< HEAD
                         <button onclick="showAddBranchModal()" class="action-btn branch-btn"><i class="bi bi-diagram-3"></i><span>Branch</span></button>
                         <button onclick="showAddBranchAdminModal()" class="action-btn admin-btn"><i class="bi bi-person-badge"></i><span>Branch Admin</span></button>
-=======
-                        <button onclick="showAddBranchAdminModal()" class="action-btn admin-btn"><i class="bi bi-person-badge"></i><span>Branch Admin</span></button>
-                        <button onclick="showAddBranchModal()" class="action-btn branch-btn"><i class="bi bi-diagram-3"></i><span>Branch</span></button>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         <button onclick="showAddDriverModal()" class="action-btn driver-btn"><i class="bi bi-truck"></i><span>Driver</span></button>
                         <button onclick="showAddWarehouseModal()" class="action-btn warehouse-btn"><i class="bi bi-building"></i><span>Warehouse</span></button>
                         <button onclick="showAddSalesModal()" class="action-btn sales-btn"><i class="bi bi-graph-up"></i><span>Sales</span></button>
@@ -1386,13 +1331,8 @@ body.modal-open {
                                     <th>NAME</th>
                                     <th>ROLE</th>
                                     <th>DETAILS</th>
-<<<<<<< HEAD
                                     <th>CONTACT</th>
                                     <th>STATUS</th>
-=======
-                                    <th>STATUS</th>
-                                    <th>ACTIONS</th>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                 </tr>
                             </thead>
                             <tbody id="usersTableBody">
@@ -1421,18 +1361,12 @@ body.modal-open {
                                         </td>
                                         <td class="details-text">
                                             <?php if ($user['role'] === 'branch_admin'): ?>
-<<<<<<< HEAD
                                                 <i class="bi bi-briefcase"></i> Position: Branch Admin
-=======
-                                                <i class="bi bi-briefcase"></i> Position: Branch Admin<br>
-                                                <i class="bi bi-telephone"></i> Contact: <?= formatPhoneNumber($user['contact_number']) ?>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                             <?php elseif ($user['role'] === 'delivery'): ?>
                                                 <i class="bi bi-card-text"></i> License: <?= htmlspecialchars($user['license_number'] ?? 'N/A') ?><br>
                                                 <i class="bi bi-calendar"></i> Exp: <?= formatDate($user['license_expiry']) ?><br>
                                                 <i class="bi bi-truck"></i> <?= htmlspecialchars($user['vehicle_type'] ?? 'N/A') ?> - <?= htmlspecialchars($user['vehicle_plate_number'] ?? 'N/A') ?>
                                             <?php elseif ($user['role'] === 'warehouse'): ?>
-<<<<<<< HEAD
                                                 <i class="bi bi-briefcase"></i> Category: <?= htmlspecialchars($user['category'] ?? 'General') ?>
                                             <?php elseif ($user['role'] === 'sales'): ?>
                                                 <i class="bi bi-briefcase"></i> Position: Sales Agent
@@ -1440,22 +1374,6 @@ body.modal-open {
                                         </td>
                                         <td><i class="bi bi-telephone"></i> <?= formatPhoneNumber($user['contact_number']) ?></td>
                                         <td><span class="status-badge <?= $user['user_status'] === 'active' ? 'status-active' : 'status-inactive' ?>"><?= ucfirst($user['user_status']) ?></span></td>
-=======
-                                                <i class="bi bi-briefcase"></i> Category: <?= htmlspecialchars($user['category'] ?? 'General') ?><br>
-                                                <i class="bi bi-telephone"></i> Contact: <?= formatPhoneNumber($user['contact_number']) ?>
-                                            <?php elseif ($user['role'] === 'sales'): ?>
-                                                <i class="bi bi-briefcase"></i> Position: Sales Agent<br>
-                                                <i class="bi bi-telephone"></i> Contact: <?= formatPhoneNumber($user['contact_number']) ?>
-                                            <?php endif; ?>
-                                        </td>
-                                        <td><span class="status-badge <?= $user['user_status'] === 'active' ? 'status-active' : 'status-inactive' ?>"><?= ucfirst($user['user_status']) ?></span></td>
-                                        <td class="text-center align-middle">
-                                            <div class="action-buttons" style="display: flex; gap: 5px; justify-content: center;">
-                                                <button class="btn-action btn-edit" onclick="event.stopPropagation(); editUser(<?= $user['user_id'] ?>)" title="Edit"><i class="bi bi-pencil"></i></button>
-                                                <button class="btn-action btn-delete" onclick="event.stopPropagation(); deleteUser(<?= $user['user_id'] ?>, '<?= $user['role'] ?>', <?= $user['driver_id'] ?? 'null' ?>)" title="Delete"><i class="bi bi-trash"></i></button>
-                                            </div>
-                                        </td>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                     </tr>
                                     <?php endforeach; ?>
                                 <?php endif; ?>
@@ -1483,7 +1401,6 @@ body.modal-open {
     <!-- MODALS -->
     <div class="modal fade" id="profileModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title"><i class="bi bi-person-circle me-2"></i>User Profile</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body text-center"><div class="user-avatar-large mb-3"><?php echo $user_initials; ?></div><h4 class="mb-1"><?php echo htmlspecialchars($user_name); ?></h4><p class="text-muted mb-3"><span class="badge bg-success"><?php echo ucfirst($user_role); ?></span></p><button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()"><i class="bi bi-box-arrow-right me-2"></i>Logout</button></div></div></div></div>
 
-<<<<<<< HEAD
     <div class="modal fade" id="branchModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content"><div class="modal-header" style="background-color: #6f42c1; color: white;"><h5 class="modal-title"><i class="bi bi-diagram-3 me-2"></i><span id="branchModalTitle">Add Branch</span></h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><form id="branchForm"><div class="form-section"><div class="form-section-title"><i class="bi bi-diagram-3 me-2"></i>Branch Information</div><div class="row g-3"><div class="col-md-6"><label class="form-label">Branch Name *</label><input type="text" class="form-control" id="branchName" name="branch_name" required></div><div class="col-md-6"><label class="form-label">Branch Code *</label><input type="text" class="form-control" id="branchCode" name="branch_code" required></div><div class="col-md-6"><label class="form-label">Business Unit *</label><select class="form-select" id="branchBusinessUnit" name="business_unit" required onchange="toggleBusinessUnitCustomField()"><option value="">Select Business Unit</option><option value="Cement">Cement</option><option value="Oil">Oil</option><option value="General">General</option><option value="ETC">Others</option></select></div><div class="col-md-6" id="branchBusinessUnitCustomWrapper" style="display: none;"><label class="form-label">New Business Unit *</label><input type="text" class="form-control" id="branchBusinessUnitCustom" name="business_unit_custom" placeholder="Enter new business unit"></div><div class="col-md-6"><label class="form-label">Status</label><select class="form-select" id="branchStatus" name="status"><option value="active">Active</option><option value="inactive">Inactive</option></select></div></div></div></form></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn" style="background-color: #6f42c1; color: white;" onclick="saveBranch()">Save</button></div></div></div></div>
 
     <div class="modal fade" id="branchAdminModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content"><div class="modal-header" style="background-color: #dc3545; color: white;"><h5 class="modal-title"><i class="bi bi-person-badge me-2"></i><span id="branchAdminModalTitle">Add Branch Admin</span></h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><form id="branchAdminForm" enctype="multipart/form-data"><input type="hidden" id="branchAdminId" name="user_id"><div class="form-section"><div class="form-section-title"><i class="bi bi-person-workspace me-2"></i>Admin Information</div><div class="row g-3"><div class="col-md-6"><label class="form-label">First Name *</label><input type="text" class="form-control" id="branchAdminFirstName" name="first_name" required></div><div class="col-md-6"><label class="form-label">Last Name *</label><input type="text" class="form-control" id="branchAdminLastName" name="last_name" required></div><div class="col-md-6"><label class="form-label">Email *</label><input type="email" class="form-control" id="branchAdminEmail" name="email" required></div><div class="col-md-6"><label class="form-label">Password</label><input type="password" class="form-control" id="branchAdminPassword" name="password" minlength="6"><div class="password-note" id="branchAdminPasswordNote"><i class="bi bi-info-circle"></i> Required for new users</div></div><div class="col-md-6"><label class="form-label">Profile Picture <small class="text-muted">(optional)</small></label><div class="profile-upload-wrapper"><label class="profile-upload-box">
@@ -1537,21 +1454,6 @@ body.modal-open {
     <div class="modal fade" id="viewUserModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered modal-lg"><div class="modal-content"><div class="modal-header bg-info text-white"><h5 class="modal-title"><i class="bi bi-eye me-2"></i>User Details</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="row" id="viewUserContent"></div></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button><button type="button" class="btn btn-global-green" onclick="editFromView()"><i class="bi bi-pencil me-1"></i>Edit User</button><button type="button" class="btn btn-danger" onclick="deleteFromView()"><i class="bi bi-trash me-1"></i>Deactivate</button></div></div></div></div>
 
     <div class="modal fade" id="deleteUserModal" tabindex="-1"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header bg-danger text-white"><h5 class="modal-title"><i class="bi bi-trash me-2"></i>Confirm Deactivate</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><p>Are you sure you want to deactivate this user?</p><p class="fw-bold" id="deleteUserName"></p><div class="alert alert-warning"><i class="bi bi-exclamation-triangle me-2"></i>This action will deactivate the user. They will no longer be able to log in.</div></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-danger" onclick="confirmDeleteUser()">Deactivate</button></div></div></div></div>
-=======
-    <div class="modal fade" id="branchModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header" style="background-color: #6f42c1; color: white;"><h5 class="modal-title"><i class="bi bi-diagram-3 me-2"></i><span id="branchModalTitle">Add Branch</span></h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><form id="branchForm"><div class="form-section"><div class="form-section-title"><i class="bi bi-diagram-3 me-2"></i>Branch Information</div><div class="row g-3"><div class="col-md-6"><label class="form-label">Branch Name *</label><input type="text" class="form-control" id="branchName" name="branch_name" required></div><div class="col-md-6"><label class="form-label">Branch Code *</label><input type="text" class="form-control" id="branchCode" name="branch_code" required></div><div class="col-md-6"><label class="form-label">Business Unit *</label><select class="form-select" id="branchBusinessUnit" name="business_unit" required onchange="toggleBusinessUnitCustomField()"><option value="">Select Business Unit</option><option value="Cement">Cement</option><option value="Oil">Oil</option><option value="General">General</option><option value="ETC">ETC.</option></select></div><div class="col-md-6" id="branchBusinessUnitCustomWrapper" style="display: none;"><label class="form-label">New Business Unit *</label><input type="text" class="form-control" id="branchBusinessUnitCustom" name="business_unit_custom" placeholder="Enter new business unit"></div><div class="col-md-6"><label class="form-label">Status</label><select class="form-select" id="branchStatus" name="status"><option value="active">Active</option><option value="inactive">Inactive</option></select></div></div></div></form></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn" style="background-color: #6f42c1; color: white;" onclick="saveBranch()">Save</button></div></div></div></div>
-
-    <div class="modal fade" id="branchAdminModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header" style="background-color: #dc3545; color: white;"><h5 class="modal-title"><i class="bi bi-person-badge me-2"></i><span id="branchAdminModalTitle">Add Branch Admin</span></h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><form id="branchAdminForm"><input type="hidden" id="branchAdminId" name="user_id"><div class="form-section"><div class="form-section-title"><i class="bi bi-person-workspace me-2"></i>Admin Information</div><div class="row g-3"><div class="col-md-6"><label class="form-label">First Name *</label><input type="text" class="form-control" id="branchAdminFirstName" name="first_name" required></div><div class="col-md-6"><label class="form-label">Last Name *</label><input type="text" class="form-control" id="branchAdminLastName" name="last_name" required></div><div class="col-md-6"><label class="form-label">Email *</label><input type="email" class="form-control" id="branchAdminEmail" name="email" required></div><div class="col-md-6"><label class="form-label">Password</label><input type="password" class="form-control" id="branchAdminPassword" name="password" minlength="6"><div class="password-note" id="branchAdminPasswordNote"><i class="bi bi-info-circle"></i> Required for new users</div></div><div class="col-md-6"><label class="form-label">Contact</label><input type="text" class="form-control" id="branchAdminContact" name="contact_number"></div><div class="col-md-6"><label class="form-label">Branch *</label><select class="form-select" id="branchAdminBranchId" name="branch_id" required><option value="">Select Branch</option><?php foreach ($branches as $branch): ?><option value="<?php echo $branch['branch_id']; ?>"><?php echo htmlspecialchars($branch['branch_name']); ?></option><?php endforeach; ?></select></div><div class="col-md-6"><label class="form-label">Status</label><select class="form-select" id="branchAdminStatus" name="status"><option value="active">Active</option><option value="inactive">Inactive</option></select></div></div></div></form></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-danger" onclick="saveBranchAdmin()">Save</button></div></div></div></div>
-
-    <div class="modal fade" id="driverModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header" style="background-color: #0d6efd; color: white;"><h5 class="modal-title"><i class="bi bi-truck me-2"></i><span id="driverModalTitle">Add Driver</span></h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><form id="driverForm"><input type="hidden" id="driverId" name="driver_id"><input type="hidden" id="driverUserId" name="user_id"><div class="form-section"><div class="form-section-title"><i class="bi bi-truck me-2"></i>Driver Information</div><div class="row g-3"><div class="col-md-6"><label class="form-label">Driver Name *</label><input type="text" class="form-control" id="driverName" name="driver_name" required></div><div class="col-md-6"><label class="form-label">License # *</label><input type="text" class="form-control" id="licenseNumber" name="license_number" required></div><div class="col-md-6"><label class="form-label">License Expiry</label><input type="date" class="form-control" id="licenseExpiry" name="license_expiry"></div><div class="col-md-6"><label class="form-label">Contact</label><input type="text" class="form-control" id="contactNumber" name="contact_number"></div><div class="col-md-6"><label class="form-label">Vehicle Type</label><select class="form-select" id="vehicleType" name="vehicle_type"><option value="">Select</option><option value="Van">Van</option><option value="Truck">Truck</option><option value="Motorcycle">Motorcycle</option><option value="Car">Car</option></select></div><div class="col-md-6"><label class="form-label">Plate #</label><input type="text" class="form-control" id="vehiclePlate" name="vehicle_plate_number"></div><div class="col-md-6"><label class="form-label">Branch *</label><select class="form-select" id="driverBranchId" name="branch_id" required><option value="">Select Branch</option><?php foreach ($branches as $branch): ?><option value="<?php echo $branch['branch_id']; ?>"><?php echo htmlspecialchars($branch['branch_name']); ?></option><?php endforeach; ?></select></div><div class="col-md-6"><label class="form-label">Status</label><select class="form-select" id="driverStatus" name="status"><option value="active">Active</option><option value="inactive">Inactive</option></select></div></div></div><div class="form-section"><div class="form-section-title"><i class="bi bi-person-circle me-2"></i>User Account</div><div class="row g-3"><div class="col-md-6"><label class="form-label">First Name *</label><input type="text" class="form-control" id="driverFirstName" name="first_name" required></div><div class="col-md-6"><label class="form-label">Last Name *</label><input type="text" class="form-control" id="driverLastName" name="last_name" required></div><div class="col-md-6"><label class="form-label">Email *</label><input type="email" class="form-control" id="driverEmail" name="email" required></div><div class="col-md-6"><label class="form-label">Password</label><input type="password" class="form-control" id="driverPassword" name="password" minlength="6"><div class="password-note" id="driverPasswordNote"><i class="bi bi-info-circle"></i> Required for new users</div></div></div></div></form></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-primary" onclick="saveDriver()">Save</button></div></div></div></div>
-
-    <div class="modal fade" id="warehouseModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header" style="background-color: #198754; color: white;"><h5 class="modal-title"><i class="bi bi-building me-2"></i><span id="warehouseModalTitle">Add Warehouse Staff</span></h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><form id="warehouseForm"><input type="hidden" id="warehouseId" name="user_id"><div class="form-section"><div class="form-section-title"><i class="bi bi-person-badge me-2"></i>Staff Information</div><div class="row g-3"><div class="col-md-6"><label class="form-label">First Name *</label><input type="text" class="form-control" id="warehouseFirstName" name="first_name" required></div><div class="col-md-6"><label class="form-label">Last Name *</label><input type="text" class="form-control" id="warehouseLastName" name="last_name" required></div><div class="col-md-6"><label class="form-label">Email *</label><input type="email" class="form-control" id="warehouseEmail" name="email" required></div><div class="col-md-6"><label class="form-label">Password</label><input type="password" class="form-control" id="warehousePassword" name="password" minlength="6"><div class="password-note"><i class="bi bi-info-circle"></i> Required for new users</div></div><div class="col-md-6"><label class="form-label">Category</label><select class="form-select" id="warehouseCategory" name="category"><option value="">Select</option><option value="Oil">Oil</option><option value="Cement">Cement</option><option value="General">General</option></select></div><div class="col-md-6"><label class="form-label">Contact</label><input type="text" class="form-control" id="warehouseContact" name="contact_number"></div><div class="col-md-6"><label class="form-label">Branch *</label><select class="form-select" id="warehouseBranchId" name="branch_id" required><option value="">Select Branch</option><?php foreach ($branches as $branch): ?><option value="<?php echo $branch['branch_id']; ?>"><?php echo htmlspecialchars($branch['branch_name']); ?></option><?php endforeach; ?></select></div><div class="col-md-6"><label class="form-label">Status</label><select class="form-select" id="warehouseStatus" name="status"><option value="active">Active</option><option value="inactive">Inactive</option></select></div></div></div></form></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-success" onclick="saveWarehouse()">Save</button></div></div></div></div>
-
-    <div class="modal fade" id="salesModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header" style="background-color: #ffc107; color: #212529;"><h5 class="modal-title"><i class="bi bi-graph-up me-2"></i><span id="salesModalTitle">Add Sales Agent</span></h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div><div class="modal-body"><form id="salesForm"><input type="hidden" id="salesId" name="user_id"><div class="form-section"><div class="form-section-title"><i class="bi bi-person-workspace me-2"></i>Agent Information</div><div class="row g-3"><div class="col-md-6"><label class="form-label">First Name *</label><input type="text" class="form-control" id="salesFirstName" name="first_name" required></div><div class="col-md-6"><label class="form-label">Last Name *</label><input type="text" class="form-control" id="salesLastName" name="last_name" required></div><div class="col-md-6"><label class="form-label">Email *</label><input type="email" class="form-control" id="salesEmail" name="email" required></div><div class="col-md-6"><label class="form-label">Password</label><input type="password" class="form-control" id="salesPassword" name="password" minlength="6"><div class="password-note"><i class="bi bi-info-circle"></i> Required for new users</div></div><div class="col-md-6"><label class="form-label">Contact</label><input type="text" class="form-control" id="salesContact" name="contact_number"></div><div class="col-md-6"><label class="form-label">Branch *</label><select class="form-select" id="salesBranchId" name="branch_id" required><option value="">Select Branch</option><?php foreach ($branches as $branch): ?><option value="<?php echo $branch['branch_id']; ?>"><?php echo htmlspecialchars($branch['branch_name']); ?></option><?php endforeach; ?></select></div><div class="col-md-6"><label class="form-label">Status</label><select class="form-select" id="salesStatus" name="status"><option value="active">Active</option><option value="inactive">Inactive</option></select></div></div></div></form></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn" style="background-color: #ffc107; color: #212529;" onclick="saveSales()">Save</button></div></div></div></div>
-
-    <div class="modal fade" id="viewUserModal" tabindex="-1"><div class="modal-dialog modal-lg"><div class="modal-content"><div class="modal-header bg-info text-white"><h5 class="modal-title"><i class="bi bi-eye me-2"></i>User Details</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><div class="row" id="viewUserContent"></div></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button><button type="button" class="btn btn-warning" onclick="editFromView()">Edit User</button></div></div></div></div>
-
-    <div class="modal fade" id="deleteUserModal" tabindex="-1"><div class="modal-dialog"><div class="modal-content"><div class="modal-header bg-danger text-white"><h5 class="modal-title"><i class="bi bi-trash me-2"></i>Confirm Deactivate</h5><button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button></div><div class="modal-body"><p>Are you sure you want to deactivate this user?</p><p class="fw-bold" id="deleteUserName"></p><div class="alert alert-warning"><i class="bi bi-exclamation-triangle me-2"></i>This action will deactivate the user. They will no longer be able to log in.</div></div><div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button><button type="button" class="btn btn-danger" onclick="confirmDeleteUser()">Deactivate</button></div></div></div></div>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
@@ -1565,7 +1467,6 @@ body.modal-open {
         viewUser(userId);
     }
 
-<<<<<<< HEAD
     function logout() {
         Swal.fire({
             title: 'Logout',
@@ -1592,8 +1493,6 @@ body.modal-open {
         logout();
     }
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     function toggleSidebar() {
         const sidebar = document.getElementById('sidebar');
         if (window.innerWidth <= 992) {
@@ -1747,7 +1646,6 @@ body.modal-open {
         }
     }
 
-<<<<<<< HEAD
     function setBranchAdminBusinessUnitValue(value) {
         const select = document.getElementById('branchAdminBusinessUnit');
         const customInput = document.getElementById('branchAdminBusinessUnitCustom');
@@ -1787,20 +1685,14 @@ body.modal-open {
         setBranchAdminBusinessUnitValue(selectedOption ? (selectedOption.dataset.businessUnit || '') : '');
     }
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     function showAddBranchAdminModal() {
         document.getElementById('branchAdminForm').reset();
         document.getElementById('branchAdminId').value = '';
         document.getElementById('branchAdminModalTitle').textContent = 'Add Branch Admin';
         document.getElementById('branchAdminPassword').required = true;
-<<<<<<< HEAD
         setBranchAdminBusinessUnitValue('');
         document.getElementById('branchAdminPasswordNote').innerHTML = '<i class="bi bi-info-circle"></i> Required for new users';
         resetProfileUpload('branchAdminForm');
-=======
-        document.getElementById('branchAdminPasswordNote').innerHTML = '<i class="bi bi-info-circle"></i> Required for new users';
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         new bootstrap.Modal(document.getElementById('branchAdminModal')).show();
     }
 
@@ -1813,10 +1705,7 @@ body.modal-open {
         document.getElementById('driverPasswordNote').innerHTML = '<i class="bi bi-info-circle"></i> Required for new users';
         const d = new Date(); d.setFullYear(d.getFullYear() + 1);
         document.getElementById('licenseExpiry').value = d.toISOString().split('T')[0];
-<<<<<<< HEAD
         resetProfileUpload('driverForm');
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         new bootstrap.Modal(document.getElementById('driverModal')).show();
     }
 
@@ -1825,10 +1714,7 @@ body.modal-open {
         document.getElementById('warehouseId').value = '';
         document.getElementById('warehouseModalTitle').textContent = 'Add Warehouse Staff';
         document.getElementById('warehousePassword').required = true;
-<<<<<<< HEAD
         resetProfileUpload('warehouseForm');
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         new bootstrap.Modal(document.getElementById('warehouseModal')).show();
     }
 
@@ -1837,10 +1723,7 @@ body.modal-open {
         document.getElementById('salesId').value = '';
         document.getElementById('salesModalTitle').textContent = 'Add Sales Agent';
         document.getElementById('salesPassword').required = true;
-<<<<<<< HEAD
         resetProfileUpload('salesForm');
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         new bootstrap.Modal(document.getElementById('salesModal')).show();
     }
 
@@ -1899,7 +1782,6 @@ body.modal-open {
                 if (u.role === 'branch_admin') {
                     html = `<div class="col-12"><div class="form-section"><h6 class="fw-bold mb-3">Branch Admin Info</h6><table class="table table-sm">\n<th>Name:</th><td>${u.first_name} ${u.last_name}</td><tr>\n<th>Email:</th><td>${u.email}</td></tr>\n<th>Contact:</th><td>${u.contact_number || 'N/A'}</td></tr>\n<th>Branch:</th><td>${u.branch_name || 'Branch ' + u.branch_id}</td></tr>\n<th>Status:</th><td><span class="badge ${u.status === 'active' ? 'bg-success' : 'bg-secondary'}">${u.status}</span></td></tr>\n<th>Created:</th><td>${created}</td></tr></table></div></div>`;
                 } else if (u.role === 'delivery') {
-<<<<<<< HEAD
                     html = `<div class="col-md-6"><div class="form-section"><h6 class="fw-bold mb-3">Driver Info</h6><table class="table table-sm"><tr><th>Driver Name:</th><td>${u.driver_name || u.full_name}</td></tr><tr><th>License:</th><td>${u.license_number || 'N/A'}</td></tr><tr><th>Expiry:</th><td>${u.license_expiry ? new Date(u.license_expiry).toLocaleDateString() : 'N/A'}</td></tr><tr><th>Vehicle:</th><td>${u.vehicle_type || 'N/A'} - ${u.vehicle_plate_number || 'N/A'}</td></tr></table></div></div><div class="col-md-6"><div class="form-section"><h6 class="fw-bold mb-3">User Account</h6><table class="table table-sm"><tr><th>Name:</th><td>${u.first_name} ${u.last_name}</td></tr><tr><th>Email:</th><td>${u.email}</td></tr><tr><th>Branch:</th><td>${u.branch_name || 'Branch ' + u.branch_id}</td></tr><tr><th>Status:</th><td><span class="badge ${u.status === 'active' ? 'bg-success' : 'bg-secondary'}">${u.status}</span></td></tr></tr></div></div>`;
                 } else if (u.role === 'warehouse') {
                     html = `<div class="col-12"><div class="form-section"><h6 class="fw-bold mb-3">Warehouse Staff Info</h6><table class="table table-sm"><tr><th>Name:</th><td>${u.first_name} ${u.last_name}</td></tr><tr><th>Email:</th><td>${u.email}</td></tr><tr><th>Category:</th><td>${u.category || 'General'}</td></tr><tr><th>Contact:</th><td>${u.contact_number || 'N/A'}</td></tr><tr><th>Branch:</th><td>${u.branch_name || 'Branch ' + u.branch_id}</td></tr><tr><th>Status:</th><td><span class="badge ${u.status === 'active' ? 'bg-success' : 'bg-secondary'}">${u.status}</span></td></td><tr><th>Created:</th><td>${created}</td></tr></table></div></div>`;
@@ -1907,30 +1789,18 @@ body.modal-open {
                     html = `<div class="col-12"><div class="form-section"><h6 class="fw-bold mb-3">Sales Agent Info</h6><table class="table table-sm"><tr><th>Name:</th><td>${u.first_name} ${u.last_name}</td></tr><tr><th>Email:</th><td>${u.email}</td></tr><tr><th>Contact:</th><td>${u.contact_number || 'N/A'}</td></tr><tr><th>Branch:</th><td>${u.branch_name || 'Branch ' + u.branch_id}</td></tr><tr><th>Status:</th><td><span class="badge ${u.status === 'active' ? 'bg-success' : 'bg-secondary'}">${u.status}</span></td></tr><tr><th>Created:</th><td>${created}</td></tr></table></div></div>`;
                 }
                 document.getElementById('viewUserContent').innerHTML = getProfilePictureHtml(u) + html;
-=======
-                    html = `<div class="col-md-6"><div class="form-section"><h6 class="fw-bold mb-3">Driver Info</h6><table class="table table-sm"><tr><th>Driver Name:</th><td>${u.driver_name || u.full_name}</td></tr><tr><th>License:</th><td>${u.license_number || 'N/A'}</td></tr><tr><th>Expiry:</th><td>${u.license_expiry ? new Date(u.license_expiry).toLocaleDateString() : 'N/A'}</td></tr><tr><th>Vehicle:</th><td>${u.vehicle_type || 'N/A'} - ${u.vehicle_plate_number || 'N/A'}</td></tr></table></div></div><div class="col-md-6"><div class="form-section"><h6 class="fw-bold mb-3">User Account</h6><table class="table table-sm"><tr><th>Name:</th><td>${u.first_name} ${u.last_name}</td></tr><tr><th>Email:</th><td>${u.email}</td></tr><tr><th>Branch:</th><td>${u.branch_name || 'Branch ' + u.branch_id}</td></tr><tr><th>Status:</th><td><span class="badge ${u.status === 'active' ? 'bg-success' : 'bg-secondary'}">${u.status}</span></td></tr></table></div></div>`;
-                } else if (u.role === 'warehouse') {
-                    html = `<div class="col-12"><div class="form-section"><h6 class="fw-bold mb-3">Warehouse Staff Info</h6><table class="table table-sm"><tr><th>Name:</th><td>${u.first_name} ${u.last_name}</td></tr><tr><th>Email:</th><td>${u.email}</td></tr><tr><th>Category:</th><td>${u.category || 'General'}</td></tr><tr><th>Contact:</th><td>${u.contact_number || 'N/A'}</td></tr><tr><th>Branch:</th><td>${u.branch_name || 'Branch ' + u.branch_id}</td></tr><tr><th>Status:</th><td><span class="badge ${u.status === 'active' ? 'bg-success' : 'bg-secondary'}">${u.status}</span></td></tr><tr><th>Created:</th><td>${created}</td></tr></table></div></div>`;
-                } else {
-                    html = `<div class="col-12"><div class="form-section"><h6 class="fw-bold mb-3">Sales Agent Info</h6><table class="table table-sm"><tr><th>Name:</th><td>${u.first_name} ${u.last_name}</td></tr><tr><th>Email:</th><td>${u.email}</td></tr><tr><th>Contact:</th><td>${u.contact_number || 'N/A'}</td></tr><tr><th>Branch:</th><td>${u.branch_name || 'Branch ' + u.branch_id}</td></tr><tr><th>Status:</th><td><span class="badge ${u.status === 'active' ? 'bg-success' : 'bg-secondary'}">${u.status}</span></td></tr><tr><th>Created:</th><td>${created}</td></tr></table></div></div>`;
-                }
-                document.getElementById('viewUserContent').innerHTML = html;
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 new bootstrap.Modal(document.getElementById('viewUserModal')).show();
             } else { Swal.fire('Error', data.message, 'error'); }
         }).catch(e => { Swal.close(); console.error(e); Swal.fire('Error', 'An error occurred', 'error'); });
     }
 
     function editFromView() { bootstrap.Modal.getInstance(document.getElementById('viewUserModal')).hide(); setTimeout(() => editUser(currentUserId), 300); }
-<<<<<<< HEAD
 
     function deleteFromView() {
         const viewModal = bootstrap.Modal.getInstance(document.getElementById('viewUserModal'));
         if (viewModal) viewModal.hide();
         setTimeout(() => deleteUser(currentUserId, currentUserRole, currentDriverId), 300);
     }
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
     function editUser(id) {
         showLoading();
@@ -1953,10 +1823,7 @@ body.modal-open {
                     document.getElementById('branchAdminPassword').required = false;
                     document.getElementById('branchAdminPassword').value = '';
                     document.getElementById('branchAdminPasswordNote').innerHTML = '<i class="bi bi-info-circle"></i> Leave blank to keep current password';
-<<<<<<< HEAD
                     setProfileUploadPreview('branchAdminForm', u.profile_picture, u.profile_picture ? 'Current profile picture' : 'Default profile icon');
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     new bootstrap.Modal(document.getElementById('branchAdminModal')).show();
                 } else if (u.role === 'delivery') {
                     document.getElementById('driverModalTitle').textContent = 'Edit Driver';
@@ -1976,10 +1843,7 @@ body.modal-open {
                     document.getElementById('driverPassword').required = false;
                     document.getElementById('driverPassword').value = '';
                     document.getElementById('driverPasswordNote').innerHTML = '<i class="bi bi-info-circle"></i> Leave blank to keep current password';
-<<<<<<< HEAD
                     setProfileUploadPreview('driverForm', u.profile_picture, u.profile_picture ? 'Current profile picture' : 'Default profile icon');
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     new bootstrap.Modal(document.getElementById('driverModal')).show();
                 } else if (u.role === 'warehouse') {
                     document.getElementById('warehouseModalTitle').textContent = 'Edit Warehouse Staff';
@@ -1993,10 +1857,7 @@ body.modal-open {
                     document.getElementById('warehouseStatus').value = u.status || 'active';
                     document.getElementById('warehousePassword').required = false;
                     document.getElementById('warehousePassword').value = '';
-<<<<<<< HEAD
                     setProfileUploadPreview('warehouseForm', u.profile_picture, u.profile_picture ? 'Current profile picture' : 'Default profile icon');
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     new bootstrap.Modal(document.getElementById('warehouseModal')).show();
                 } else if (u.role === 'sales') {
                     document.getElementById('salesModalTitle').textContent = 'Edit Sales Agent';
@@ -2009,10 +1870,7 @@ body.modal-open {
                     document.getElementById('salesStatus').value = u.status || 'active';
                     document.getElementById('salesPassword').required = false;
                     document.getElementById('salesPassword').value = '';
-<<<<<<< HEAD
                     setProfileUploadPreview('salesForm', u.profile_picture, u.profile_picture ? 'Current profile picture' : 'Default profile icon');
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     new bootstrap.Modal(document.getElementById('salesModal')).show();
                 }
             } else { Swal.fire('Error', data.message, 'error'); }
@@ -2033,7 +1891,6 @@ body.modal-open {
     function saveBranchAdmin() {
         const userId = document.getElementById('branchAdminId').value;
         const fd = new FormData(document.getElementById('branchAdminForm'));
-<<<<<<< HEAD
 
         // Ensure Business Unit is always submitted, especially on edit.
         const buSelect = document.getElementById('branchAdminBusinessUnit');
@@ -2045,8 +1902,6 @@ body.modal-open {
             fd.set('business_unit_custom', buCustom.value || '');
         }
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         if (userId) { fd.append('action', 'update_user'); fd.append('user_role_type', 'branch_admin'); fd.append('user_id', userId); }
         else { fd.append('action', 'add_branch_admin'); }
         showLoading();
@@ -2060,11 +1915,8 @@ body.modal-open {
     function saveDriver() {
         const driverId = document.getElementById('driverId').value;
         const fd = new FormData();
-<<<<<<< HEAD
         const driverProfilePicture = document.querySelector('#driverForm input[name="profile_picture"]');
         if (driverProfilePicture && driverProfilePicture.files.length > 0) fd.append('profile_picture', driverProfilePicture.files[0]);
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         if (driverId) {
             fd.append('action', 'update_user'); fd.append('user_role_type', 'driver');
             fd.append('user_id', document.getElementById('driverUserId').value);

@@ -366,6 +366,19 @@ if ($check_delivery_driver_column && $check_delivery_driver_column->num_rows > 0
     $delivery_driver_column_exists = true;
 }
 
+// Ensure customer delivery signature column exists for Complete Delivery modal.
+$delivery_signature_column_exists = false;
+$check_delivery_signature_column = $conn->query("SHOW COLUMNS FROM deliveries LIKE 'delivery_signature'");
+if ($check_delivery_signature_column && $check_delivery_signature_column->num_rows > 0) {
+    $delivery_signature_column_exists = true;
+} else {
+    @$conn->query("ALTER TABLE deliveries ADD COLUMN delivery_signature LONGTEXT NULL AFTER signed_by");
+    $check_delivery_signature_column = $conn->query("SHOW COLUMNS FROM deliveries LIKE 'delivery_signature'");
+    if ($check_delivery_signature_column && $check_delivery_signature_column->num_rows > 0) {
+        $delivery_signature_column_exists = true;
+    }
+}
+
 // Determine filter conditions
 $delivery_branch_condition = "";
 $delivery_driver_condition = "";
@@ -399,15 +412,12 @@ if ($user_role == 'delivery' && $driver_id > 0) {
             GROUP_CONCAT(CONCAT(i.item_name, ' (', soi.quantity_ordered, ' pcs)') SEPARATOR ', ') as items
         FROM deliveries d
         INNER JOIN sales_orders so ON d.so_id = so.so_id
-<<<<<<< HEAD
         LEFT JOIN (
             SELECT so_id, MAX(NULLIF(si_number, '')) AS si_number
             FROM invoices
             WHERE NULLIF(si_number, '') IS NOT NULL
             GROUP BY so_id
         ) inv_si ON inv_si.so_id = so.so_id
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         INNER JOIN customers c ON d.customer_id = c.customer_id
         LEFT JOIN sales_order_items soi ON so.so_id = soi.so_id
         LEFT JOIN items i ON soi.item_id = i.item_id
@@ -659,11 +669,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $so_id = (int)($_POST['so_id'] ?? 0);
         $delivery_date_raw = trim((string)($_POST['delivery_date'] ?? ''));
         $signed_by = trim((string)($_POST['signed_by'] ?? ''));
+        $delivery_signature = trim((string)($_POST['delivery_signature'] ?? ''));
         $remarks = trim((string)($_POST['remarks'] ?? ''));
 
         if ($delivery_id <= 0) throw new Exception('Invalid delivery ID.');
         if ($so_id <= 0) throw new Exception('Invalid sales order.');
         if ($signed_by === '') throw new Exception('Signed by is required.');
+        if ($delivery_signature === '') throw new Exception('Customer signature is required.');
 
         $delivery_date = $delivery_date_raw !== '' ? date('Y-m-d H:i:s', strtotime($delivery_date_raw)) : date('Y-m-d H:i:s');
 
@@ -706,6 +718,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         ];
         $types = 'sss';
         $values = [$signed_by, $delivery_date, $remarks];
+
+        if (fdColumnExists($conn, 'deliveries', 'delivery_signature')) {
+            $update_parts[] = "delivery_signature = ?";
+            $types .= 's';
+            $values[] = $delivery_signature;
+        }
 
         if (fdColumnExists($conn, 'deliveries', 'proof_delivery_photo')) {
             $update_parts[] = "proof_delivery_photo = ?";
@@ -1620,7 +1638,6 @@ if (empty($user_initials)) {
             border-top: 1px solid #dee2e6;
         }
         @media print {
-<<<<<<< HEAD
     @page {
     size: 80mm auto;
     margin: 3mm;
@@ -1737,44 +1754,6 @@ td{
         display: none !important;
     }
 }
-=======
-            body * {
-                visibility: hidden;
-            }
-            #thermalReceipt, #thermalReceipt * {
-                visibility: visible;
-            }
-            #thermalReceipt {
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                background: white;
-                margin: 0;
-                padding: 0;
-                z-index: 9999;
-            }
-            .thermal-receipt {
-                width: 72mm;
-                margin: 0 auto;
-                padding: 2mm;
-                background: white;
-                font-family: 'Courier New', monospace;
-                font-size: 11px;
-                line-height: 1.3;
-                box-sizing: border-box;
-                border: none;
-                box-shadow: none;
-            }
-            @page {
-                margin: 0;
-            }
-        }
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .tracking-indicator {
             display: inline-block;
             width: 12px;
@@ -2008,7 +1987,6 @@ td{
         .mobile-nav .nav-link.logout-btn:hover i {
             color: #dc3545;
         }
-<<<<<<< HEAD
         
         /* CLICKABLE ROW STYLES */
         .clickable-row {
@@ -2069,8 +2047,6 @@ td{
             }
         }
         
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         @media (max-width: 768px) {
             .custom-table thead {
                 display: none;
@@ -2424,7 +2400,7 @@ td{
         #receiptModal .modal-header {
             background: linear-gradient(135deg, #047857, #44D34E);
             border-bottom: 1px solid rgba(255,255,255,0.2);
-            padding: 1rem 1.5rem;
+            padding: 1rem 1rem;
         }
         #receiptModal .modal-header .modal-title {
             color: white !important;
@@ -2435,7 +2411,7 @@ td{
         }
         #receiptModal .modal-header .modal-title i {
             color: white !important;
-            font-size: 1.2rem;
+            font-size: 1rem;
         }
         #receiptModal .modal-header .btn-close {
             filter: brightness(0) invert(1);
@@ -2581,7 +2557,6 @@ td{
         .gap-2 {
             gap: 0.5rem !important;
         }
-<<<<<<< HEAD
         
         /* Toggle Switch Styles for Collect Payment */
         .toggle-switch {
@@ -2652,6 +2627,83 @@ td{
             line-height: 1.4;
         }
         
+        /* Delivery Signature Pad Styles */
+        .delivery-signature-card {
+            border: 1px solid #d8e0ea;
+            border-radius: 12px;
+            background: #ffffff;
+            padding: 12px;
+            margin: 0.75rem 0 1rem;
+        }
+        .delivery-signature-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 5px;
+            flex-wrap: wrap;
+            margin-bottom: 5px;
+        }
+        .delivery-signature-title {
+            font-size: .9rem;
+            font-weight: 600;
+            color: #374151;
+        }
+        .delivery-signature-preview-box {
+            min-height: 92px;
+            border: 1px dashed #b8c2cc;
+            border-radius: 10px;
+            background: #f8fafc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 8px;
+        }
+        .delivery-signature-preview-empty {
+            color: #6c757d;
+            font-size: .9rem;
+            text-align: center;
+        }
+        .delivery-signature-preview-image {
+            max-width: 100%;
+            max-height: 78px;
+            object-fit: contain;
+        }
+        .delivery-signature-pad-box {
+            border: 1px solid #ced4da;
+            border-radius: 10px;
+            padding: 12px;
+            background: #ffffff;
+        }
+        .delivery-signature-pad-canvas {
+            width: 100%;
+            height: 320px;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            cursor: crosshair;
+            background: #ffffff;
+            touch-action: none;
+            display: block;
+        }
+        #deliverySignatureModal .modal-dialog {
+            max-width: 920px;
+        }
+        #deliverySignatureModal .modal-content {
+            border-radius: 14px;
+        }
+        #deliverySignatureModal .modal-body {
+            padding: 18px;
+        }
+        @media (max-width: 576px) {
+            #deliverySignatureModal .modal-dialog {
+                max-width: calc(100% - 16px);
+                margin-left: auto;
+                margin-right: auto;
+            }
+            .delivery-signature-pad-canvas {
+                height: 260px;
+            }
+        }
+        
         /* Divert button styles */
         .btn-divert {
             background-color: #ffc107;
@@ -2667,9 +2719,17 @@ td{
         .btn-divert:active {
             transform: translateY(0);
         }
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
-    </style>
+    
+        /* Clickable whole filter header */
+        .filter-header {
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .filter-header .filter-toggle-btn {
+            pointer-events: none;
+        }
+</style>
 </head>
 <body>
 
@@ -2807,11 +2867,11 @@ td{
 
             <!-- FILTER SECTION - SALES ORDERS -->
 <div class="form-card mb-4">
-    <div class="filter-header">
+    <div class="filter-header" id="salesFilterHeader" role="button" tabindex="0" aria-controls="salesFilterContent">
         <h5>
             <i class="bi bi-funnel"></i> Filter Sales Orders
         </h5>
-        <button class="filter-toggle-btn" type="button" id="salesFilterToggle" aria-expanded="false">
+        <button class="filter-toggle-btn" type="button" id="salesFilterToggle" aria-expanded="false" aria-label="Toggle filters">
             <i class="bi bi-chevron-down" id="salesFilterIcon"></i>
         </button>
     </div>
@@ -2865,11 +2925,7 @@ td{
                 <div class="table-container">
                     <table class="table custom-table compact-table">
                         <thead class="table-light">
-<<<<<<< HEAD
                             <tr>
-=======
-                                <tr>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                     <th>Order ID</th>
                                     <th>Customer Name</th>
                                     <th>Address</th>
@@ -2901,18 +2957,9 @@ td{
                                     <?php endif; ?>
                                 </td>
                                 <td>
-<<<<<<< HEAD
                                     <span class="customer-name-text"><?php echo htmlspecialchars($order['customer_name']); ?></span>
                                     <!-- Action buttons for MOBILE only (hidden on desktop) -->
                                     <div class="action-buttons d-flex d-md-none" onclick="event.stopPropagation()">
-=======
-                                    <?php echo htmlspecialchars($order['customer_name']); ?>
-                                    <!-- Action buttons for MOBILE only (hidden on desktop) -->
-                                    <div class="action-buttons d-flex d-md-none" style="display: inline-flex !important; margin-left: 8px;">
-                                        <button class="btn-action btn-view" title="View Details" onclick="viewDeliveryDetails(<?php echo $order['delivery_id']; ?>)">
-                                            <i class="bi bi-eye"></i>
-                                        </button>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                         
                                         
                                         <?php if ($has_coordinates): ?>
@@ -3008,20 +3055,10 @@ td{
                                     <span class="badge <?php echo $status_badge; ?>">
                                         <?php echo $status_text; ?>
                                     </span>
-<<<<<<< HEAD
                                  </td>
                                 <td class="text-center align-middle desktop-actions">
                                     <!-- Desktop action buttons (hidden on mobile) -->
                                     <div class="action-buttons d-none d-md-inline-flex" onclick="event.stopPropagation()">
-=======
-                                </td>
-                                <td class="text-center align-middle">
-                                    <!-- Desktop action buttons (hidden on mobile) -->
-                                    <div class="action-buttons d-none d-md-inline-flex" style="justify-content: center; gap: 8px;">
-                                        <button class="btn-action btn-view" title="View Details" onclick="viewDeliveryDetails(<?php echo $order['delivery_id']; ?>)">
-                                            <i class="bi bi-eye"></i>
-                                        </button>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                         
                                         <?php if ($has_coordinates): ?>
                                             <button class="btn-action btn-map" title="Navigate to Customer" onclick="openLiveNavigation(
@@ -3387,6 +3424,21 @@ td{
                         <span class="toggle-label">Collect payment now (optional)</span>
                     </div>
 
+                    <input type="hidden" name="delivery_signature" id="deliverySignatureInput">
+                    <div class="delivery-signature-card" id="deliverySignatureSection">
+                        <div class="delivery-signature-header">
+                            <div class="delivery-signature-title">
+                                <i class="bi bi-pen me-1 text-success"></i>Customer Signature <span class="text-danger">*</span>
+                            </div>
+                            <button type="button" class="btn btn-sm btn-success" onclick="openDeliverySignatureModal()">
+                                <i class="bi bi-pencil-square me-1"></i>Add Signature
+                            </button>
+                        </div>
+                        <div class="delivery-signature-preview-box" id="deliverySignaturePreviewBox">
+                            <span class="delivery-signature-preview-empty">No signature yet. Click Add Signature.</span>
+                        </div>
+                    </div>
+
                     <div id="deliveryPaymentSection" class="border rounded p-3 mb-3" style="display:none; background:#f8f9fa;">
                         <div class="mb-2 fw-bold text-success">Collection Details</div>
                         <div class="row g-2 mb-2">
@@ -3477,6 +3529,29 @@ td{
     </div>
 </div>
 
+<!-- Delivery Signature Modal -->
+<div class="modal fade" id="deliverySignatureModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title"><i class="bi bi-pen me-2 text-success"></i>Customer Signature</h5>
+                <button type="button" class="btn-close" onclick="cancelDeliverySignatureModal()" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="delivery-signature-pad-box">
+                    <canvas id="deliverySignaturePad" class="delivery-signature-pad-canvas"></canvas>
+                </div>
+                <small class="text-muted d-block mt-2">Draw the customer signature inside the box.</small>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" onclick="cancelDeliverySignatureModal()">Cancel</button>
+                <button type="button" class="btn btn-outline-danger" onclick="clearDeliverySignaturePadOnly()"><i class="bi bi-eraser me-1"></i>Clear</button>
+                <button type="button" class="btn btn-success" onclick="saveDeliverySignatureFromModal()"><i class="bi bi-check-circle me-1"></i>Use Signature</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Thermal Receipt Modal -->
 <div class="modal fade" id="receiptModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered modal-dialog-scrollable" style="max-width: 500px;">
@@ -3548,7 +3623,6 @@ td{
     </div>
 </div>
 
-<<<<<<< HEAD
 <!-- ========== DIVERT MODAL ========== -->
 <div class="modal fade" id="divertModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-scrollable">
@@ -3556,21 +3630,9 @@ td{
             <div class="modal-header" style="background: linear-gradient(135deg, #ffc107, #e0a800); color: #856404;">
                 <h5 class="modal-title">
                     <i class="bi bi-share-fill me-2"></i>Divert Partial Delivery to Another Driver
-=======
-<!-- PICKUP TASKS MODAL - Driver's first login modal -->
-<?php if ($has_pending_tasks && $show_pickup_modal): ?>
-<div class="modal fade" id="pickupTasksModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
-    <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
-        <div class="modal-content">
-            <div class="modal-header pickup-modal-header">
-                <h5 class="modal-title">
-                    <i class="bi bi-box-seam me-2"></i>
-                    Warehouse Pickup Required
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 </h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-<<<<<<< HEAD
             <div class="modal-body">
                 <div id="divertLoading" class="text-center py-4">
                     <div class="spinner-border text-primary"></div>
@@ -3599,7 +3661,7 @@ td{
 
 <!-- PICKUP TASKS MODAL - Driver's first login modal -->
 <?php if ($has_pending_tasks && $show_pickup_modal): ?>
-<div class="modal fade" id="pickupTasksModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+<div class="modal fade" id="pickupTasksModal" tabindex="-1" data-bs-backdrop="true" data-bs-keyboard="true">
     <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
         <div class="modal-content">
             <div class="modal-header pickup-modal-header">
@@ -3647,46 +3709,6 @@ td{
         </div>
     </div>
 </div>
-=======
-            <div class="modal-body" style="background: #f8f9fa;">
-                <div class="alert alert-warning mb-3">
-                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
-                    <strong>Attention:</strong> Please claim the items below from the warehouse before starting your deliveries.
-                </div>
-                
-                <div id="pickupTasksContainer">
-                    <?php foreach ($pending_pickup_tasks as $task): ?>
-                    <div class="pickup-task-card" id="task_<?php echo $task['delivery_id']; ?>">
-                        <div class="pickup-task-header">
-                            <span class="pickup-order-number"><?php echo htmlspecialchars($task['so_number']); ?></span>
-                            <span class="pickup-badge">Ready for Pickup</span>
-                        </div>
-                        <div class="pickup-customer-name">
-                            <i class="bi bi-person"></i> <?php echo htmlspecialchars($task['customer_name']); ?>
-                        </div>
-                        <div class="pickup-address">
-                            <i class="bi bi-geo-alt"></i> <?php echo htmlspecialchars($task['address']); ?>
-                        </div>
-                        <div class="pickup-items">
-                            <i class="bi bi-box"></i> <strong>Items:</strong><br>
-                            <?php echo htmlspecialchars($task['items']); ?>
-                        </div>
-                        <button class="btn-claim" onclick="claimWarehousePickup(<?php echo $task['delivery_id']; ?>, this)">
-                            <i class="bi bi-check2-circle"></i> Claim Items from Warehouse
-                        </button>
-                    </div>
-                    <?php endforeach; ?>
-                </div>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                    <i class="bi bi-x-circle"></i> Close
-                </button>
-            </div>
-        </div>
-    </div>
-</div>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 <?php endif; ?>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
@@ -3748,7 +3770,6 @@ td{
         // Cache ng huling posisyon para sa mabilis na initial load
         let lastKnownPosition = null;
         
-<<<<<<< HEAD
 
         // Keep user on the same page after successful actions.
         // This replaces full page reloads so SweetAlert stays on the current screen.
@@ -3783,8 +3804,6 @@ td{
             window.history.replaceState({}, '', window.location.pathname + window.location.search);
         }
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         // ================= WAREHOUSE PICKUP FUNCTIONS =================
         function claimWarehousePickup(deliveryId, button) {
             Swal.fire({
@@ -3814,15 +3833,11 @@ td{
                         method: 'POST',
                         body: formData
                     })
-<<<<<<< HEAD
                     .then(async response => {
                         const text = await response.text();
                         try { return JSON.parse(text); }
                         catch (e) { throw new Error(text.substring(0, 300) || 'Invalid server response'); }
                     })
-=======
-                    .then(response => response.json())
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     .then(data => {
                         if (data.success) {
                             // Remove the task card with animation
@@ -3848,13 +3863,8 @@ td{
                                             if (modal) {
                                                 modal.hide();
                                             }
-<<<<<<< HEAD
                                             // Keep the user on this page instead of full reload.
                                             keepCurrentPageAfterSuccess({ modalIds: ['pickupTasksModal'] });
-=======
-                                            // Reload page to update delivery list
-                                            location.reload();
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                         });
                                     } else {
                                         Swal.fire({
@@ -3892,7 +3902,6 @@ td{
                 }
             });
         }
-<<<<<<< HEAD
 
         // ================= DIVERT FUNCTIONALITY =================
         let currentDivertDeliveryId = null;
@@ -4096,8 +4105,6 @@ td{
                 return m;
             });
         }
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
         // ================= MOBILE NAVIGATION FUNCTIONS =================
         function initMobileNav() {
@@ -5233,6 +5240,7 @@ td{
             document.getElementById('modalSoId').value = soId;
             document.getElementById('modalSoNumber').value = orderNumber;
             document.getElementById('deliveryForm').reset();
+            resetDeliverySignaturePad();
             const safeAmount = parseFloat(totalAmount || 0);
             document.getElementById('deliveryAmountDueDisplay').textContent = '₱' + safeAmount.toLocaleString('en-PH', {minimumFractionDigits: 2, maximumFractionDigits: 2});
             document.getElementById('deliveryPaymentAmount').value = safeAmount.toFixed(2);
@@ -5258,6 +5266,202 @@ td{
             modal.show();
         }
 
+        // ========== DELIVERY SIGNATURE MODAL ==========
+        let deliverySignatureCanvas = null;
+        let deliverySignatureCtx = null;
+        let isDeliverySigning = false;
+        let deliverySignatureHasInk = false;
+        let deliverySignatureDraftValue = '';
+        let deliverySignatureReturnScrollTop = 0;
+
+        function initDeliverySignaturePad() {
+            deliverySignatureCanvas = document.getElementById('deliverySignaturePad');
+            if (!deliverySignatureCanvas || deliverySignatureCanvas.dataset.initialized === '1') return;
+            deliverySignatureCanvas.dataset.initialized = '1';
+            deliverySignatureCtx = deliverySignatureCanvas.getContext('2d');
+            resizeDeliverySignatureCanvas();
+
+            deliverySignatureCanvas.addEventListener('mousedown', startDeliverySignatureDraw);
+            deliverySignatureCanvas.addEventListener('mouseup', stopDeliverySignatureDraw);
+            deliverySignatureCanvas.addEventListener('mouseleave', stopDeliverySignatureDraw);
+            deliverySignatureCanvas.addEventListener('mousemove', drawDeliverySignature);
+            deliverySignatureCanvas.addEventListener('touchstart', startDeliverySignatureDraw, { passive: false });
+            deliverySignatureCanvas.addEventListener('touchend', stopDeliverySignatureDraw, { passive: false });
+            deliverySignatureCanvas.addEventListener('touchcancel', stopDeliverySignatureDraw, { passive: false });
+            deliverySignatureCanvas.addEventListener('touchmove', drawDeliverySignature, { passive: false });
+        }
+
+        function getDeliverySignatureHeight() {
+            return window.innerWidth <= 576 ? 260 : 320;
+        }
+
+        function resizeDeliverySignatureCanvas() {
+            deliverySignatureCanvas = deliverySignatureCanvas || document.getElementById('deliverySignaturePad');
+            if (!deliverySignatureCanvas) return;
+            const previousSignature = deliverySignatureHasInk ? deliverySignatureCanvas.toDataURL('image/png') : deliverySignatureDraftValue;
+            const ratio = window.devicePixelRatio || 1;
+            const rect = deliverySignatureCanvas.getBoundingClientRect();
+            const width = rect.width || deliverySignatureCanvas.offsetWidth || 700;
+            const height = getDeliverySignatureHeight();
+            deliverySignatureCanvas.width = width * ratio;
+            deliverySignatureCanvas.height = height * ratio;
+            deliverySignatureCanvas.style.height = height + 'px';
+            deliverySignatureCtx = deliverySignatureCanvas.getContext('2d');
+            deliverySignatureCtx.setTransform(ratio, 0, 0, ratio, 0, 0);
+            deliverySignatureCtx.lineWidth = 2;
+            deliverySignatureCtx.lineCap = 'round';
+            deliverySignatureCtx.lineJoin = 'round';
+            deliverySignatureCtx.strokeStyle = '#000';
+            if (previousSignature) drawDeliverySignatureImage(previousSignature);
+        }
+
+        function drawDeliverySignatureImage(dataUrl) {
+            if (!deliverySignatureCanvas || !deliverySignatureCtx || !dataUrl) return;
+            const rect = deliverySignatureCanvas.getBoundingClientRect();
+            const width = rect.width || deliverySignatureCanvas.offsetWidth || 700;
+            const height = getDeliverySignatureHeight();
+            const image = new Image();
+            image.onload = function() {
+                deliverySignatureCtx.clearRect(0, 0, width, height);
+                deliverySignatureCtx.drawImage(image, 0, 0, width, height);
+                deliverySignatureHasInk = true;
+            };
+            image.src = dataUrl;
+        }
+
+        function getDeliverySignaturePoint(e) {
+            const rect = deliverySignatureCanvas.getBoundingClientRect();
+            const source = e.touches && e.touches.length ? e.touches[0] : e;
+            return { x: source.clientX - rect.left, y: source.clientY - rect.top };
+        }
+
+        function startDeliverySignatureDraw(e) {
+            if (!deliverySignatureCanvas || !deliverySignatureCtx) return;
+            e.preventDefault();
+            isDeliverySigning = true;
+            const point = getDeliverySignaturePoint(e);
+            deliverySignatureCtx.beginPath();
+            deliverySignatureCtx.moveTo(point.x, point.y);
+        }
+
+        function stopDeliverySignatureDraw(e) {
+            if (e) e.preventDefault();
+            if (!isDeliverySigning) return;
+            isDeliverySigning = false;
+            deliverySignatureHasInk = true;
+            deliverySignatureCtx.beginPath();
+        }
+
+        function drawDeliverySignature(e) {
+            if (!isDeliverySigning || !deliverySignatureCanvas || !deliverySignatureCtx) return;
+            e.preventDefault();
+            const point = getDeliverySignaturePoint(e);
+            deliverySignatureCtx.lineTo(point.x, point.y);
+            deliverySignatureCtx.stroke();
+            deliverySignatureCtx.beginPath();
+            deliverySignatureCtx.moveTo(point.x, point.y);
+        }
+
+        function updateDeliverySignaturePreview() {
+            const input = document.getElementById('deliverySignatureInput');
+            const previewBox = document.getElementById('deliverySignaturePreviewBox');
+            if (!input || !previewBox) return;
+            if (input.value) {
+                previewBox.innerHTML = '<img src="' + input.value + '" alt="Customer Signature" class="delivery-signature-preview-image">';
+            } else {
+                previewBox.innerHTML = '<span class="delivery-signature-preview-empty">No signature yet. Click Add Signature.</span>';
+            }
+        }
+
+        function openDeliverySignatureModal() {
+            const deliveryModalEl = document.getElementById('deliveryModal');
+            const deliveryModalBody = deliveryModalEl ? deliveryModalEl.querySelector('.modal-body') : null;
+            deliverySignatureReturnScrollTop = deliveryModalBody ? deliveryModalBody.scrollTop : 0;
+            const input = document.getElementById('deliverySignatureInput');
+            deliverySignatureDraftValue = input ? input.value : '';
+
+            const deliveryModal = bootstrap.Modal.getInstance(deliveryModalEl) || new bootstrap.Modal(deliveryModalEl);
+            deliveryModal.hide();
+
+            setTimeout(function() {
+                const signatureModalEl = document.getElementById('deliverySignatureModal');
+                const signatureModal = bootstrap.Modal.getInstance(signatureModalEl) || new bootstrap.Modal(signatureModalEl, { backdrop: 'static', keyboard: false });
+                signatureModal.show();
+                setTimeout(function() {
+                    initDeliverySignaturePad();
+                    resizeDeliverySignatureCanvas();
+                    if (deliverySignatureDraftValue) drawDeliverySignatureImage(deliverySignatureDraftValue);
+                }, 250);
+            }, 250);
+        }
+
+        function returnToDeliveryModal() {
+            const signatureModalEl = document.getElementById('deliverySignatureModal');
+            const signatureModal = bootstrap.Modal.getInstance(signatureModalEl);
+            if (signatureModal) signatureModal.hide();
+            setTimeout(function() {
+                const deliveryModalEl = document.getElementById('deliveryModal');
+                const deliveryModal = bootstrap.Modal.getInstance(deliveryModalEl) || new bootstrap.Modal(deliveryModalEl);
+                deliveryModal.show();
+                setTimeout(function() {
+                    const deliveryModalBody = deliveryModalEl ? deliveryModalEl.querySelector('.modal-body') : null;
+                    if (deliveryModalBody) deliveryModalBody.scrollTop = deliverySignatureReturnScrollTop;
+                }, 250);
+            }, 250);
+        }
+
+        function cancelDeliverySignatureModal() {
+            returnToDeliveryModal();
+        }
+
+        function clearDeliverySignaturePadOnly() {
+            deliverySignatureCanvas = deliverySignatureCanvas || document.getElementById('deliverySignaturePad');
+            if (!deliverySignatureCanvas) return;
+            deliverySignatureCtx = deliverySignatureCanvas.getContext('2d');
+            const rect = deliverySignatureCanvas.getBoundingClientRect();
+            const width = rect.width || deliverySignatureCanvas.offsetWidth || 700;
+            const height = getDeliverySignatureHeight();
+            deliverySignatureCtx.clearRect(0, 0, width, height);
+            deliverySignatureHasInk = false;
+            deliverySignatureDraftValue = '';
+        }
+
+        function saveDeliverySignatureFromModal() {
+            if (!deliverySignatureCanvas || !deliverySignatureHasInk) {
+                Swal.fire({
+                    icon: 'warning',
+                    title: 'Missing Signature',
+                    text: 'Please draw the customer signature first.',
+                    confirmButtonColor: '#047857'
+                });
+                return;
+            }
+            const dataUrl = deliverySignatureCanvas.toDataURL('image/png');
+            const input = document.getElementById('deliverySignatureInput');
+            if (input) input.value = dataUrl;
+            deliverySignatureDraftValue = dataUrl;
+            updateDeliverySignaturePreview();
+            returnToDeliveryModal();
+        }
+
+        function resetDeliverySignaturePad() {
+            const input = document.getElementById('deliverySignatureInput');
+            if (input) input.value = '';
+            deliverySignatureDraftValue = '';
+            deliverySignatureHasInk = false;
+            if (deliverySignatureCanvas && deliverySignatureCtx) {
+                const rect = deliverySignatureCanvas.getBoundingClientRect();
+                deliverySignatureCtx.clearRect(0, 0, rect.width || 700, getDeliverySignatureHeight());
+            }
+            updateDeliverySignaturePreview();
+        }
+
+        window.addEventListener('resize', function() {
+            if (document.getElementById('deliverySignatureModal')?.classList.contains('show')) {
+                resizeDeliverySignatureCanvas();
+            }
+        });
+
         document.addEventListener('DOMContentLoaded', function () {
             const collectToggle = document.getElementById('collectPaymentToggle');
             const paymentSection = document.getElementById('deliveryPaymentSection');
@@ -5270,6 +5474,22 @@ td{
             const cashChange = document.getElementById('deliveryCashChange');
             const attachmentFields = document.getElementById('deliveryAttachmentFields');
             const paymentAttachments = document.getElementById('deliveryPaymentAttachments');
+            const deliveryForm = document.getElementById('deliveryForm');
+
+            if (deliveryForm) {
+                deliveryForm.addEventListener('submit', function(e) {
+                    const signatureInput = document.getElementById('deliverySignatureInput');
+                    if (!signatureInput || !signatureInput.value) {
+                        e.preventDefault();
+                        Swal.fire({
+                            icon: 'warning',
+                            title: 'Missing Signature',
+                            text: 'Please add the customer signature before confirming delivery.',
+                            confirmButtonColor: '#047857'
+                        });
+                    }
+                });
+            }
 
             function updatePaymentVisibility() {
                 if (!paymentSection) return;
@@ -5691,13 +5911,10 @@ td{
                 hour12: true
             });
 
-<<<<<<< HEAD
             const cleanSINumber = (siNumber || '').toString().trim();
             const formattedSINumber = cleanSINumber ? (cleanSINumber.toUpperCase().startsWith('SI:') ? cleanSINumber : 'SI:' + cleanSINumber) : '';
             const siReceiptLine = formattedSINumber ? `<div class="info-line"><span class="info-label"></span><span class="info-value"> ${formattedSINumber}</span></div>` : '';
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             // Use delivery date for receipt header
             const receiptNumber = 'DR' + date.getFullYear() +
                                  String(date.getMonth() + 1).padStart(2, '0') +
@@ -5710,7 +5927,7 @@ td{
             let total = 0;
 
             if (items.length === 0) {
-                itemsHtml = '<tr><td colspan="4" style="text-align: center; padding: 8px;">No items</td> </tr>';
+                itemsHtml = '<tr><td colspan="4" style="text-align: center; padding: 8px;">No items</td></tr>';
             } else {
                 items.forEach(item => {
                     const parts = item.split(' x ');
@@ -5724,7 +5941,6 @@ td{
                             total += subtotal;
 
                             itemsHtml += `
-<<<<<<< HEAD
 <tr>
     <td colspan="4" class="item-name">
         ${itemName}
@@ -5749,15 +5965,6 @@ td{
 
 </tr>
 `;
-=======
-                                 <tr>
-                                    <td class="item-name">${itemName}</td>
-                                    <td class="text-center">${qty}</td>
-                                    <td class="text-right">₱${price.toFixed(2)}</td>
-                                    <td class="text-right">₱${subtotal.toFixed(2)}</td>
-                                 </tr>
-                            `;
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         }
                     }
                 });
@@ -5773,12 +5980,8 @@ td{
                     </div>
                     
                     <div class="receipt-info">
-<<<<<<< HEAD
                         <div class="info-line"><span class="info-value">${soNumber || '-'}</span></div>
                         ${siReceiptLine}
-=======
-                        <div class="info-line"><span class="info-label">Order:</span><span class="info-value">${soNumber}</span></div>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         <div class="info-line"><span class="info-label">Received:</span><span class="info-value">${signedBy}</span></div>
                     </div>
                     
@@ -5789,11 +5992,7 @@ td{
                                 <th class="text-center">Qty</th>
                                 <th class="text-right">Price</th>
                                 <th class="text-right">Total</th>
-<<<<<<< HEAD
                               </tr>
-=======
-                             </tr>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         </thead>
                         <tbody>
                             ${itemsHtml}
@@ -5822,7 +6021,6 @@ td{
         }
 
         function printThermalReceipt() {
-<<<<<<< HEAD
     if (!currentThermalReceipt || currentThermalReceipt.trim() === '') {
         alert('Walang receipt content na ipi-print.');
         return;
@@ -6018,21 +6216,6 @@ window.onload = function () {
 `);
     printWindow.document.close();
 }
-=======
-            const thermalDiv = document.getElementById('thermalReceipt');
-            thermalDiv.style.display = 'block';
-            thermalDiv.innerHTML = currentThermalReceipt;
-
-            setTimeout(() => {
-                window.print();
-
-                setTimeout(() => {
-                    thermalDiv.style.display = 'none';
-                    thermalDiv.innerHTML = '';
-                }, 100);
-            }, 100);
-        }
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
         function showLocation(lat, lng, customerName, address) {
             currentLat = parseFloat(lat);
@@ -6597,7 +6780,24 @@ window.onload = function () {
         document.addEventListener('DOMContentLoaded', function() {
             initDeliveryFilterState();
             
-            document.getElementById('salesFilterToggle')?.addEventListener('click', toggleDeliveryFilter);
+            const salesFilterHeader = document.getElementById('salesFilterHeader');
+
+            // Buong filter header ang clickable, kasama ang icon.
+            // Hindi na maliit na button area lang ang mag-oopen/close.
+            if (salesFilterHeader) {
+                salesFilterHeader.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    toggleDeliveryFilter();
+                });
+
+                salesFilterHeader.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggleDeliveryFilter();
+                    }
+                });
+            }
+
             document.getElementById('searchInput')?.addEventListener('input', applyDeliveryFilters);
             document.getElementById('statusFilter')?.addEventListener('change', applyDeliveryFilters);
             

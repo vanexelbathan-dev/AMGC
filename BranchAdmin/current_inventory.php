@@ -200,10 +200,7 @@ error_log("Price levels found: " . json_encode($priceLevels));
 $create_unit_types = "CREATE TABLE IF NOT EXISTS `unit_types` (
     `unit_type_id` int(11) NOT NULL AUTO_INCREMENT,
     `unit_type_name` varchar(100) NOT NULL,
-<<<<<<< HEAD
     `uom_initial` varchar(20) DEFAULT NULL,
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     `barcode` varchar(100) DEFAULT NULL,
     `quantity_smallest_pack` int(11) DEFAULT 1,
     `is_default_uom` tinyint(4) DEFAULT 0,
@@ -218,14 +215,11 @@ $create_unit_types = "CREATE TABLE IF NOT EXISTS `unit_types` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
 $conn->query($create_unit_types);
 
-<<<<<<< HEAD
 $check_uom_initial_column = $conn->query("SHOW COLUMNS FROM unit_types LIKE 'uom_initial'");
 if (!$check_uom_initial_column || $check_uom_initial_column->num_rows == 0) {
     $conn->query("ALTER TABLE unit_types ADD COLUMN uom_initial VARCHAR(20) DEFAULT NULL AFTER unit_type_name");
 }
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 $check_pricing_table = $conn->query("SHOW TABLES LIKE 'item_unit_pricing'");
 if ($check_pricing_table && $check_pricing_table->num_rows == 0) {
     $create_pricing = "CREATE TABLE IF NOT EXISTS `item_unit_pricing` (
@@ -275,7 +269,6 @@ $create_item_unit_pricing_schedule = "CREATE TABLE IF NOT EXISTS `item_unit_pric
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
 $conn->query($create_item_unit_pricing_schedule);
 
-<<<<<<< HEAD
 $create_item_unit_pricing_history = "CREATE TABLE IF NOT EXISTS `item_unit_pricing_history` (
     `history_id` int(11) NOT NULL AUTO_INCREMENT,
     `item_id` int(11) NOT NULL,
@@ -294,8 +287,6 @@ $create_item_unit_pricing_history = "CREATE TABLE IF NOT EXISTS `item_unit_prici
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
 $conn->query($create_item_unit_pricing_history);
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 $create_item_unit_inventory = "CREATE TABLE IF NOT EXISTS `item_unit_inventory` (
     `inventory_id` int(11) NOT NULL AUTO_INCREMENT,
     `item_id` int(11) NOT NULL,
@@ -303,10 +294,7 @@ $create_item_unit_inventory = "CREATE TABLE IF NOT EXISTS `item_unit_inventory` 
     `current_inventory` decimal(12,2) NOT NULL DEFAULT 0.00,
     `as_of_date` date DEFAULT NULL,
     `unit_cost` decimal(12,2) NOT NULL DEFAULT 0.00,
-<<<<<<< HEAD
     `total_cost` decimal(14,2) NOT NULL DEFAULT 0.00,
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
     `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
     PRIMARY KEY (`inventory_id`),
@@ -316,7 +304,137 @@ $create_item_unit_inventory = "CREATE TABLE IF NOT EXISTS `item_unit_inventory` 
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
 $conn->query($create_item_unit_inventory);
 
-<<<<<<< HEAD
+
+// Per-item UOM table. This keeps each item's UOM barcode separate.
+// Do NOT rely on unit_types.barcode only, because unit_types is shared by many items
+// (Piece/Ream/Box can exist on multiple products with different barcodes).
+$create_item_unit_types = "CREATE TABLE IF NOT EXISTS `item_unit_types` (
+    `item_unit_type_id` int(11) NOT NULL AUTO_INCREMENT,
+    `item_id` int(11) NOT NULL,
+    `unit_type_id` int(11) NOT NULL,
+    `unit_type_name` varchar(100) NOT NULL,
+    `uom_initial` varchar(20) DEFAULT NULL,
+    `barcode` varchar(100) DEFAULT NULL,
+    `smallest_pack_quantity` decimal(12,4) NOT NULL DEFAULT 1.0000,
+    `is_default_uom` tinyint(1) NOT NULL DEFAULT 0,
+    `branch_id` int(11) DEFAULT NULL,
+    `status` enum('active','inactive') DEFAULT 'active',
+    `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+    `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+    PRIMARY KEY (`item_unit_type_id`),
+    UNIQUE KEY `item_unit_type_unique` (`item_id`, `unit_type_id`),
+    KEY `idx_item_unit_types_item` (`item_id`),
+    KEY `idx_item_unit_types_barcode` (`barcode`),
+    KEY `idx_item_unit_types_unit` (`unit_type_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci";
+$conn->query($create_item_unit_types);
+
+
+// Repair older/failed item_unit_types table definitions before any ALTER TABLE runs.
+// Correct structure must be:
+//   item_unit_type_id = row primary key / auto increment
+//   unit_type_id      = master UOM id from unit_types
+// Older DB exports used unit_type_id as AUTO_INCREMENT PRIMARY KEY, which makes one UOM row shared
+// across many items. That is the cause of barcode from one multi-UOM item appearing on another item.
+try {
+    $hasItemUnitTypes = $conn->query("SHOW TABLES LIKE 'item_unit_types'");
+    if ($hasItemUnitTypes && $hasItemUnitTypes->num_rows > 0) {
+        $hasItemUnitTypeId = $conn->query("SHOW COLUMNS FROM item_unit_types LIKE 'item_unit_type_id'");
+        $unitTypeCol = $conn->query("SHOW COLUMNS FROM item_unit_types LIKE 'unit_type_id'");
+        $unitTypeExtra = '';
+        if ($unitTypeCol && $unitTypeRow = $unitTypeCol->fetch_assoc()) {
+            $unitTypeExtra = strtolower((string)($unitTypeRow['Extra'] ?? ''));
+        }
+
+        // If unit_type_id is AUTO_INCREMENT, remove it first. It must be a normal FK-like column.
+        if (strpos($unitTypeExtra, 'auto_increment') !== false) {
+            @$conn->query("ALTER TABLE item_unit_types MODIFY unit_type_id INT(11) NOT NULL");
+        }
+
+        // Drop wrong primary key if it is not item_unit_type_id.
+        $primaryResult = $conn->query("SHOW INDEX FROM item_unit_types WHERE Key_name = 'PRIMARY'");
+        $primaryColumns = [];
+        if ($primaryResult) {
+            while ($pk = $primaryResult->fetch_assoc()) {
+                $primaryColumns[] = (string)($pk['Column_name'] ?? '');
+            }
+        }
+        if (!empty($primaryColumns) && !(count($primaryColumns) === 1 && $primaryColumns[0] === 'item_unit_type_id')) {
+            @$conn->query("ALTER TABLE item_unit_types DROP PRIMARY KEY");
+        }
+
+        // Add correct row id if missing.
+        if (!$hasItemUnitTypeId || $hasItemUnitTypeId->num_rows == 0) {
+            @$conn->query("ALTER TABLE item_unit_types ADD COLUMN item_unit_type_id INT(11) NOT NULL AUTO_INCREMENT PRIMARY KEY FIRST");
+        } else {
+            // Ensure item_unit_type_id is the primary key and auto increment.
+            $primaryResult2 = $conn->query("SHOW INDEX FROM item_unit_types WHERE Key_name = 'PRIMARY' AND Column_name = 'item_unit_type_id'");
+            if (!$primaryResult2 || $primaryResult2->num_rows == 0) {
+                @$conn->query("ALTER TABLE item_unit_types ADD PRIMARY KEY (item_unit_type_id)");
+            }
+            @$conn->query("ALTER TABLE item_unit_types MODIFY item_unit_type_id INT(11) NOT NULL AUTO_INCREMENT");
+        }
+    }
+} catch (Throwable $e) {
+    error_log('item_unit_types repair skipped: ' . $e->getMessage());
+}
+
+// IMPORTANT:
+// Do not mass-update unit_types.barcode here.
+// unit_types is a shared/master UOM table, and changing it while opening current_inventory.php
+// can make unrelated items appear to have changed. Item-specific barcode values are handled
+// only while saving the currently edited item.
+
+// Safety for older databases where item_unit_types already exists but lacks newer columns/indexes.
+foreach ([
+    'uom_initial' => "ALTER TABLE item_unit_types ADD COLUMN uom_initial VARCHAR(20) DEFAULT NULL AFTER unit_type_name",
+    'barcode' => "ALTER TABLE item_unit_types ADD COLUMN barcode VARCHAR(100) DEFAULT NULL AFTER uom_initial",
+    'smallest_pack_quantity' => "ALTER TABLE item_unit_types ADD COLUMN smallest_pack_quantity DECIMAL(12,4) NOT NULL DEFAULT 1.0000 AFTER barcode",
+    'is_default_uom' => "ALTER TABLE item_unit_types ADD COLUMN is_default_uom TINYINT(1) NOT NULL DEFAULT 0 AFTER smallest_pack_quantity",
+    'branch_id' => "ALTER TABLE item_unit_types ADD COLUMN branch_id INT(11) DEFAULT NULL AFTER is_default_uom",
+    'status' => "ALTER TABLE item_unit_types ADD COLUMN status ENUM('active','inactive') DEFAULT 'active' AFTER branch_id",
+    'created_at' => "ALTER TABLE item_unit_types ADD COLUMN created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER status",
+    'updated_at' => "ALTER TABLE item_unit_types ADD COLUMN updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER created_at"
+] as $colName => $alterSql) {
+    try {
+        if (!amgcColumnExists($conn, 'item_unit_types', $colName)) {
+            $conn->query($alterSql);
+        }
+    } catch (Throwable $e) {
+        error_log('item_unit_types alter skipped for ' . $colName . ': ' . $e->getMessage());
+    }
+}
+
+// Remove duplicates before applying the item+UOM unique key.
+try {
+    if (amgcColumnExists($conn, 'item_unit_types', 'item_unit_type_id')) {
+        $conn->query("CREATE TEMPORARY TABLE IF NOT EXISTS tmp_keep_item_unit_types AS
+            SELECT MAX(item_unit_type_id) AS keep_id
+            FROM item_unit_types
+            GROUP BY item_id, unit_type_id");
+        $conn->query("DELETE iut FROM item_unit_types iut
+            LEFT JOIN tmp_keep_item_unit_types k ON k.keep_id = iut.item_unit_type_id
+            WHERE k.keep_id IS NULL");
+        $conn->query("DROP TEMPORARY TABLE IF EXISTS tmp_keep_item_unit_types");
+    }
+} catch (Throwable $e) {
+    error_log('item_unit_types dedupe skipped: ' . $e->getMessage());
+}
+try {
+    if (!amgcIndexExists($conn, 'item_unit_types', 'item_unit_type_unique')) {
+        $conn->query("ALTER TABLE item_unit_types ADD UNIQUE KEY item_unit_type_unique (item_id, unit_type_id)");
+    }
+} catch (Throwable $e) {
+    error_log('item_unit_types unique index skipped: ' . $e->getMessage());
+}
+try {
+    if (!amgcIndexExists($conn, 'item_unit_types', 'idx_item_unit_types_barcode')) {
+        $conn->query("ALTER TABLE item_unit_types ADD KEY idx_item_unit_types_barcode (barcode)");
+    }
+} catch (Throwable $e) {
+    error_log('item_unit_types barcode index skipped: ' . $e->getMessage());
+}
+
 
 // ========== DEDUPLICATION / STRICT UPSERT HELPERS ==========
 // These helpers prevent duplicate UoM/pricing rows when updating from Excel export/import
@@ -333,6 +451,69 @@ function amgcIndexExists($conn, $table, $index_name) {
     $index_name_escaped = $conn->real_escape_string($index_name);
     $result = $conn->query("SHOW INDEX FROM `$table` WHERE Key_name = '$index_name_escaped'");
     return ($result && $result->num_rows > 0);
+}
+
+function amgcResolveUnitTypeIdForItemUom($conn, $unit_type_name, $uom_initial, $branch_id, $items_branch_column_exists) {
+    $unit_type_name = trim((string)$unit_type_name);
+    $uom_initial = strtoupper(trim((string)$uom_initial));
+    $branch_id = (int)$branch_id;
+
+    if ($unit_type_name === '') {
+        $unit_type_name = 'Piece';
+    }
+
+    // unit_types is a shared/master list only. Do not update an existing unit_types row
+    // with item-specific barcode/default/current qty values because that affects every item
+    // using the same UOM. Just resolve the id.
+    $query = "SELECT unit_type_id FROM unit_types WHERE unit_type_name = ?";
+    $types = "s";
+    $params = [$unit_type_name];
+
+    if ($items_branch_column_exists) {
+        $query .= " AND (branch_id = ? OR branch_id IS NULL OR branch_id = 0)";
+        $types .= "i";
+        $params[] = $branch_id;
+    }
+
+    $query .= " ORDER BY CASE WHEN branch_id = ? THEN 0 WHEN branch_id IS NULL OR branch_id = 0 THEN 1 ELSE 2 END, unit_type_id ASC LIMIT 1";
+    $types .= "i";
+    $params[] = $branch_id;
+
+    $stmt = $conn->prepare($query);
+    if (!$stmt) {
+        throw new Exception('Database prepare error while resolving unit type');
+    }
+
+    $stmt->bind_param($types, ...$params);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    if ($row = $result->fetch_assoc()) {
+        $unit_type_id = (int)$row['unit_type_id'];
+        $stmt->close();
+        return $unit_type_id;
+    }
+    $stmt->close();
+
+    // Create a master UOM row only if it does not exist yet. No item barcode here.
+    $status = 'active';
+    $qty_smallest = 1;
+    $is_default = 0;
+
+    $insert = "INSERT INTO unit_types (unit_type_name, uom_initial, barcode, quantity_smallest_pack, is_default_uom, multiplier, branch_id, status)
+               VALUES (?, ?, NULL, ?, ?, 1.00, ?, ?)";
+    $insert_stmt = $conn->prepare($insert);
+    if (!$insert_stmt) {
+        throw new Exception('Database prepare error while creating unit type');
+    }
+
+    $insert_stmt->bind_param("ssiiis", $unit_type_name, $uom_initial, $qty_smallest, $is_default, $branch_id, $status);
+    if (!$insert_stmt->execute()) {
+        throw new Exception('Failed to create unit type: ' . $insert_stmt->error);
+    }
+
+    $new_id = (int)$conn->insert_id;
+    $insert_stmt->close();
+    return $new_id;
 }
 
 function amgcDeleteDuplicatePricingRows($conn) {
@@ -494,22 +675,17 @@ function amgcUpsertItemUnitScheduleStrict($conn, $item_id, $unit_type_id, $price
 
 amgcEnsureNoDuplicateItemUnitTables($conn);
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 $check_beginning_inventory_column = $conn->query("SHOW COLUMNS FROM item_unit_inventory LIKE 'beginning_inventory'");
 if (!$check_beginning_inventory_column || $check_beginning_inventory_column->num_rows == 0) {
     $conn->query("ALTER TABLE item_unit_inventory ADD COLUMN beginning_inventory decimal(12,2) NOT NULL DEFAULT 0.00 AFTER current_inventory");
 }
 $conn->query("UPDATE item_unit_inventory SET beginning_inventory = current_inventory WHERE beginning_inventory IS NULL OR beginning_inventory = 0");
-<<<<<<< HEAD
 $check_total_cost_column = $conn->query("SHOW COLUMNS FROM item_unit_inventory LIKE 'total_cost'");
 if (!$check_total_cost_column || $check_total_cost_column->num_rows == 0) {
     $conn->query("ALTER TABLE item_unit_inventory ADD COLUMN total_cost decimal(14,2) NOT NULL DEFAULT 0.00 AFTER unit_cost");
     $conn->query("UPDATE item_unit_inventory SET total_cost = COALESCE(current_inventory, 0) * COALESCE(unit_cost, 0) WHERE total_cost IS NULL OR total_cost = 0");
 }
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
 $create_item_images = "CREATE TABLE IF NOT EXISTS `item_images` (
     `image_id` int(11) NOT NULL AUTO_INCREMENT,
@@ -529,7 +705,6 @@ if (!$check_product_image_column || $check_product_image_column->num_rows == 0) 
     $conn->query($add_product_image_column);
 }
 
-<<<<<<< HEAD
 // Principal field for inventory items (optional). Blank values are displayed as "No Principal".
 $check_principal_column = $conn->query("SHOW COLUMNS FROM items LIKE 'principal'");
 if (!$check_principal_column || $check_principal_column->num_rows == 0) {
@@ -555,12 +730,30 @@ if (!$check_item_barcode_column || $check_item_barcode_column->num_rows == 0) {
     $conn->query("ALTER TABLE items ADD COLUMN barcode VARCHAR(100) DEFAULT NULL AFTER item_code");
 }
 
+
+// Loyalty points eligibility flag for POS. 1 = earns points, 0 = exempted from points.
+$check_points_eligible_column = $conn->query("SHOW COLUMNS FROM items LIKE 'points_eligible'");
+if (!$check_points_eligible_column || $check_points_eligible_column->num_rows == 0) {
+    $conn->query("ALTER TABLE items ADD COLUMN points_eligible TINYINT(1) NOT NULL DEFAULT 1 AFTER status");
+}
+
+// QuickBooks-style linked accounts for inventory items
+$check_income_account_column = $conn->query("SHOW COLUMNS FROM items LIKE 'income_account_id'");
+if (!$check_income_account_column || $check_income_account_column->num_rows == 0) {
+    $conn->query("ALTER TABLE items ADD COLUMN income_account_id INT(11) DEFAULT NULL AFTER oil_type");
+}
+$check_cogs_account_column = $conn->query("SHOW COLUMNS FROM items LIKE 'cogs_account_id'");
+if (!$check_cogs_account_column || $check_cogs_account_column->num_rows == 0) {
+    $conn->query("ALTER TABLE items ADD COLUMN cogs_account_id INT(11) DEFAULT NULL AFTER income_account_id");
+}
+$check_asset_account_column = $conn->query("SHOW COLUMNS FROM items LIKE 'asset_account_id'");
+if (!$check_asset_account_column || $check_asset_account_column->num_rows == 0) {
+    $conn->query("ALTER TABLE items ADD COLUMN asset_account_id INT(11) DEFAULT NULL AFTER cogs_account_id");
+}
+
 // ========== CALCULATE AVERAGE DAILY OFFTAKE ==========
 // Calculate average daily offtake based on items currently in inventory
 // This should be the average daily quantity used/sold of items that are currently stocked
-=======
-// ========== CALCULATE AVERAGE DAILY OFFTAKE ==========
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 $avg_offtake_query = "
     SELECT 
         COALESCE(SUM(soi.quantity_ordered), 0) as total_quantity_30d,
@@ -606,7 +799,6 @@ if (file_exists($logo_path)) {
     $logo_base64 = 'data:image/png;base64,' . base64_encode($image_data);
 }
 
-<<<<<<< HEAD
 function saveItemUnitPricingHistory($conn, $item_id, $unit_type_id, $price_level, $unit_price, $unit_quantity, $effective_date, $history_type = 'previous', $created_by = null) {
     $history_check = $conn->query("SHOW TABLES LIKE 'item_unit_pricing_history'");
     if (!$history_check || $history_check->num_rows == 0) {
@@ -628,8 +820,6 @@ function saveItemUnitPricingHistory($conn, $item_id, $unit_type_id, $price_level
     $history_stmt->execute();
     $history_stmt->close();
 }
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 function syncItemPriceSummaryFromPricing($conn, $item_id) {
     $price_query = "SELECT 
             i.default_unit_type_id,
@@ -749,47 +939,28 @@ function applyDueScheduledPriceUpdates($conn) {
 
 applyDueScheduledPriceUpdates($conn);
 
-<<<<<<< HEAD
 function upsertItemUnitInventory($conn, $item_id, $unit_type_id, $current_inventory, $as_of_date, $unit_cost, $total_cost = null) {
-=======
-function upsertItemUnitInventory($conn, $item_id, $unit_type_id, $current_inventory, $as_of_date, $unit_cost) {
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     $current_inventory = is_numeric($current_inventory) ? (float)$current_inventory : 0;
     $unit_cost = is_numeric($unit_cost) ? (float)$unit_cost : 0;
     $as_of_date = !empty($as_of_date) ? $as_of_date : null;
     $beginning_inventory = $current_inventory;
-<<<<<<< HEAD
     $total_cost = ($total_cost !== null && is_numeric($total_cost)) ? (float)$total_cost : ($current_inventory * $unit_cost);
 
     // For add/edit item, save the exact stock and total cost shown in the inventory form.
     // Receive Inventory uses its own additive update so different unit costs are accumulated correctly.
     $query = "INSERT INTO item_unit_inventory (item_id, unit_type_id, current_inventory, beginning_inventory, as_of_date, unit_cost, total_cost)
               VALUES (?, ?, ?, ?, ?, ?, ?)
-=======
-
-    // When inserting new record, use current_inventory as beginning_inventory
-    // When updating (duplicate key), keep existing beginning_inventory but update current_inventory
-    $query = "INSERT INTO item_unit_inventory (item_id, unit_type_id, current_inventory, beginning_inventory, as_of_date, unit_cost)
-              VALUES (?, ?, ?, ?, ?, ?)
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
               ON DUPLICATE KEY UPDATE
                   current_inventory = VALUES(current_inventory),
                   as_of_date = VALUES(as_of_date),
                   unit_cost = VALUES(unit_cost),
-<<<<<<< HEAD
                   total_cost = VALUES(total_cost),
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                   updated_at = NOW()";
     $stmt = $conn->prepare($query);
     if (!$stmt) {
         throw new Exception('Database prepare error while saving unit inventory');
     }
-<<<<<<< HEAD
     $stmt->bind_param('iiddsdd', $item_id, $unit_type_id, $current_inventory, $beginning_inventory, $as_of_date, $unit_cost, $total_cost);
-=======
-    $stmt->bind_param('iiddsd', $item_id, $unit_type_id, $current_inventory, $beginning_inventory, $as_of_date, $unit_cost);
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     if (!$stmt->execute()) {
         error_log("[v0] UPSERT ERROR - Item: $item_id, Unit: $unit_type_id, Qty: $current_inventory - Error: " . $stmt->error);
         throw new Exception('Failed to save unit inventory: ' . $stmt->error);
@@ -797,19 +968,54 @@ function upsertItemUnitInventory($conn, $item_id, $unit_type_id, $current_invent
     error_log("[v0] UPSERT SUCCESS - Item: $item_id, Unit: $unit_type_id, New Qty: $current_inventory");
 }
 
+
+function upsertItemUnitTypeRow($conn, $item_id, $unit_type_id, $unit_type_name, $uom_initial, $barcode, $smallest_pack_quantity, $is_default_uom, $branch_id, $status = 'active') {
+    $item_id = (int)$item_id;
+    $unit_type_id = (int)$unit_type_id;
+    $unit_type_name = trim((string)$unit_type_name);
+    $uom_initial = strtoupper(trim((string)$uom_initial));
+    $barcode = trim((string)$barcode);
+    $smallest_pack_quantity = max(1, (float)$smallest_pack_quantity);
+    $is_default_uom = (int)$is_default_uom === 1 ? 1 : 0;
+    $branch_id = (int)$branch_id;
+    $status = trim((string)$status) !== '' ? trim((string)$status) : 'active';
+
+    if ($item_id <= 0 || $unit_type_id <= 0 || $unit_type_name === '') {
+        return;
+    }
+
+    $query = "INSERT INTO item_unit_types
+        (item_id, unit_type_id, unit_type_name, uom_initial, barcode, smallest_pack_quantity, is_default_uom, branch_id, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
+        ON DUPLICATE KEY UPDATE
+            unit_type_name = VALUES(unit_type_name),
+            uom_initial = VALUES(uom_initial),
+            barcode = VALUES(barcode),
+            smallest_pack_quantity = VALUES(smallest_pack_quantity),
+            is_default_uom = VALUES(is_default_uom),
+            branch_id = VALUES(branch_id),
+            status = VALUES(status),
+            updated_at = NOW()";
+    $stmt = $conn->prepare($query);
+    if (!$stmt) {
+        throw new Exception('Database prepare error while saving item UOM barcode');
+    }
+    $stmt->bind_param('iisssdiis', $item_id, $unit_type_id, $unit_type_name, $uom_initial, $barcode, $smallest_pack_quantity, $is_default_uom, $branch_id, $status);
+    if (!$stmt->execute()) {
+        throw new Exception('Failed to save item UOM barcode: ' . $stmt->error);
+    }
+    $stmt->close();
+}
+
 function syncItemSummaryFromDefaultInventory($conn, $item_id) {
     $summary_query = "SELECT 
             i.default_unit_type_id,
             ut.unit_type_name,
             inv.current_inventory,
-<<<<<<< HEAD
             CASE
                 WHEN COALESCE(inv.current_inventory, 0) > 0 AND COALESCE(inv.total_cost, 0) > 0 THEN COALESCE(inv.total_cost, 0) / COALESCE(inv.current_inventory, 1)
                 ELSE COALESCE(inv.unit_cost, 0)
             END AS unit_cost
-=======
-            inv.unit_cost
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         FROM items i
         LEFT JOIN unit_types ut ON i.default_unit_type_id = ut.unit_type_id
         LEFT JOIN item_unit_inventory inv ON inv.item_id = i.item_id AND inv.unit_type_id = i.default_unit_type_id
@@ -859,7 +1065,6 @@ function syncItemSummaryFromDefaultInventory($conn, $item_id) {
 }
 
 
-<<<<<<< HEAD
 /**
  * Recompute visible stock from the inventory ledger without changing the UI.
  * This fixes cases where the same item has stock split across PC/BUNDLE/DOZEN rows.
@@ -919,8 +1124,6 @@ function amgcSyncAllBranchStocksFromLedger(mysqli $conn, int $branch_id = 0, boo
 }
 
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
 // ========== SYNC RECEIVE INVENTORY / RETURNED MERCHANDISE TO PER-UOM INVENTORY ==========
 // Current Inventory displays stocks from item_unit_inventory.
@@ -1000,7 +1203,6 @@ function syncReceivedInventoryTransactionsToUnitInventory($conn, $branch_id, $us
             " . ($trans_branch_col ? "it.`$trans_branch_col`" : "0") . " AS tx_branch_id,
             " . ($created_at_col ? "it.`$created_at_col`" : "NOW()") . " AS tx_created_at,
             i.default_unit_type_id,
-<<<<<<< HEAD
             COALESCE(utd_sync.unit_type_name, 'Piece') AS unit_type,
             i.unit_price,
             " . (in_array('unit_cost', $trans_cols, true) ? "COALESCE(it.unit_cost, 0)" : "0") . " AS tx_unit_cost,
@@ -1012,15 +1214,6 @@ function syncReceivedInventoryTransactionsToUnitInventory($conn, $branch_id, $us
         FROM inventory_transactions it
         JOIN items i ON i.item_id = it.item_id
         LEFT JOIN unit_types utd_sync ON utd_sync.unit_type_id = i.default_unit_type_id
-=======
-            i.unit_type,
-            i.unit_price,
-            inv.current_inventory,
-            inv.unit_cost,
-            log.transaction_id AS already_synced
-        FROM inventory_transactions it
-        JOIN items i ON i.item_id = it.item_id
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         LEFT JOIN item_unit_inventory_receive_sync_log log ON log.transaction_id = it.transaction_id
         LEFT JOIN item_unit_inventory inv ON inv.item_id = i.item_id AND inv.unit_type_id = i.default_unit_type_id
         $where
@@ -1042,12 +1235,8 @@ function syncReceivedInventoryTransactionsToUnitInventory($conn, $branch_id, $us
         $unit_type_id = (int)($row['default_unit_type_id'] ?? 0);
         $reference_type = (string)($row['reference_type'] ?? '');
         $reference_id = (int)($row['reference_id'] ?? 0);
-<<<<<<< HEAD
         $unit_cost = isset($row['tx_unit_cost']) ? (float)$row['tx_unit_cost'] : 0;
         $received_total_cost = isset($row['tx_total_cost']) ? (float)$row['tx_total_cost'] : 0;
-=======
-        $unit_cost = isset($row['unit_cost']) ? (float)$row['unit_cost'] : 0;
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
         if ($transaction_id <= 0 || $item_id <= 0 || $quantity_added <= 0) {
             error_log("[v0] SYNC SKIP - Trans: $transaction_id, Item: $item_id, Qty: $quantity_added");
@@ -1084,14 +1273,9 @@ function syncReceivedInventoryTransactionsToUnitInventory($conn, $branch_id, $us
         }
 
         $current_inventory = isset($row['current_inventory']) ? (float)$row['current_inventory'] : 0;
-<<<<<<< HEAD
         $existing_total_cost = isset($row['existing_total_cost']) ? (float)$row['existing_total_cost'] : 0;
 
         $check_current_stmt = $conn->prepare("SELECT current_inventory, unit_cost, COALESCE(NULLIF(total_cost, 0), COALESCE(current_inventory, 0) * COALESCE(unit_cost, 0)) AS total_cost FROM item_unit_inventory WHERE item_id = ? AND unit_type_id = ? LIMIT 1");
-=======
-
-        $check_current_stmt = $conn->prepare("SELECT current_inventory, unit_cost FROM item_unit_inventory WHERE item_id = ? AND unit_type_id = ? LIMIT 1");
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         if ($check_current_stmt) {
             $check_current_stmt->bind_param('ii', $item_id, $unit_type_id);
             $check_current_stmt->execute();
@@ -1099,10 +1283,7 @@ function syncReceivedInventoryTransactionsToUnitInventory($conn, $branch_id, $us
             if ($check_current_row = $check_current_result->fetch_assoc()) {
                 $current_inventory = (float)($check_current_row['current_inventory'] ?? 0);
                 $existing_unit_cost = (float)($check_current_row['unit_cost'] ?? 0);
-<<<<<<< HEAD
                 $existing_total_cost = (float)($check_current_row['total_cost'] ?? $existing_total_cost);
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 if ($unit_cost <= 0) {
                     $unit_cost = $existing_unit_cost;
                 }
@@ -1110,7 +1291,6 @@ function syncReceivedInventoryTransactionsToUnitInventory($conn, $branch_id, $us
             $check_current_stmt->close();
         }
 
-<<<<<<< HEAD
         if ($received_total_cost <= 0) {
             $received_total_cost = $quantity_added * $unit_cost;
         }
@@ -1119,11 +1299,6 @@ function syncReceivedInventoryTransactionsToUnitInventory($conn, $branch_id, $us
         $new_average_unit_cost = $new_inventory > 0 ? ($new_total_cost / $new_inventory) : $unit_cost;
 
         upsertItemUnitInventory($conn, $item_id, $unit_type_id, $new_inventory, date('Y-m-d'), $new_average_unit_cost, $new_total_cost);
-=======
-        $new_inventory = $current_inventory + $quantity_added;
-
-        upsertItemUnitInventory($conn, $item_id, $unit_type_id, $new_inventory, date('Y-m-d'), $unit_cost);
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         syncItemSummaryFromDefaultInventory($conn, $item_id);
 
         $log_stmt = $conn->prepare("INSERT IGNORE INTO item_unit_inventory_receive_sync_log (transaction_id, item_id, unit_type_id, quantity_added, reference_type, reference_id) VALUES (?, ?, ?, ?, ?, ?)");
@@ -1210,29 +1385,23 @@ function importCreateOrGetUnitType($conn, $unit_type_name, $barcode, $qty_smalle
 
     if ($ut_result && $ut_result->num_rows > 0) {
         $ut_row = $ut_result->fetch_assoc();
-        $ut_id = (int)$ut_row['unit_type_id'];
-        $update_ut_query = "UPDATE unit_types SET barcode = ?, quantity_smallest_pack = ?, is_default_uom = ?, status = ?, updated_at = NOW() WHERE unit_type_id = ?";
-        $update_ut_stmt = $conn->prepare($update_ut_query);
-        if ($update_ut_stmt) {
-            $update_ut_stmt->bind_param("siisi", $barcode, $qty_smallest_pack, $is_default_uom, $status, $ut_id);
-            $update_ut_stmt->execute();
-        }
-        return $ut_id;
+        // Existing unit_types rows are shared by many items. Never update barcode,
+        // default flag, or smallest pack here because it will affect unrelated items.
+        return (int)$ut_row['unit_type_id'];
     }
 
-    $insert_ut_query = "INSERT INTO unit_types (unit_type_name, barcode, quantity_smallest_pack, is_default_uom, multiplier, branch_id, status) VALUES (?, ?, ?, ?, 1.00, ?, ?)";
+    $insert_ut_query = "INSERT INTO unit_types (unit_type_name, barcode, quantity_smallest_pack, is_default_uom, multiplier, branch_id, status) VALUES (?, NULL, ?, ?, 1.00, ?, ?)";
     $insert_ut_stmt = $conn->prepare($insert_ut_query);
     if (!$insert_ut_stmt) {
         throw new Exception('Database prepare error while creating unit type');
     }
-    $insert_ut_stmt->bind_param("ssiiis", $unit_type_name, $barcode, $qty_smallest_pack, $is_default_uom, $branch_id, $status);
+    $insert_ut_stmt->bind_param("siiis", $unit_type_name, $qty_smallest_pack, $is_default_uom, $branch_id, $status);
     if (!$insert_ut_stmt->execute()) {
         throw new Exception('Failed to create unit type: ' . $insert_ut_stmt->error);
     }
     return (int)$conn->insert_id;
 }
 
-<<<<<<< HEAD
 function importValueProvided($row, $key) {
     return array_key_exists($key, $row) && trim((string)$row[$key]) !== '';
 }
@@ -1330,56 +1499,10 @@ function importCreateOrUpdateItemFromGroupedRows($conn, $group, $branch_id, $use
     $status = importValueProvided($base, 'status') ? trim((string)$base['status']) : ($is_update ? ($existing_item['status'] ?? 'active') : 'active');
     $unit_type = importValueProvided($firstRow, 'unit_type') ? trim((string)$firstRow['unit_type']) : ($is_update ? ($existing_item['unit_type'] ?? 'Piece') : 'Piece');
     $unit_price = importValueProvided($firstRow, 'unit_price') ? (float)$firstRow['unit_price'] : ($is_update ? (float)($existing_item['unit_price'] ?? 0) : 0);
-=======
-function importCreateItemFromGroupedRows($conn, $group, $branch_id, $user_id, $items_branch_column_exists, $view_all_branches) {
-    $base = $group['base'];
-    $item_code = trim((string)($base['item_code'] ?? ''));
-    if ($item_code === '') {
-        $item_code = generateNextItemCodeValue($conn, $branch_id, $items_branch_column_exists, $view_all_branches);
-    }
-
-    $item_name = trim((string)($base['item_name'] ?? ''));
-    $description = trim((string)($base['description'] ?? ''));
-    $category = trim((string)($base['category'] ?? 'General')) ?: 'General';
-    $stock = (float)($base['stock'] ?? ($group['rows'][0]['current_inventory'] ?? 0));
-    $reorder_level = (int)($base['reorder_level'] ?? 0);
-    $status = trim((string)($base['status'] ?? 'active')) ?: 'active';
-
-    if ($item_name === '') {
-        throw new Exception('Item name is required for code ' . $item_code);
-    }
-    if ($description === '') {
-        $description = $item_name;
-    }
-
-    $check_query = "SELECT item_id FROM items WHERE item_code = ?";
-    $check_params = [$item_code];
-    $param_types = "s";
-    if ($items_branch_column_exists && !$view_all_branches && $branch_id > 0) {
-        $check_query .= " AND branch_id = ?";
-        $check_params[] = $branch_id;
-        $param_types .= "i";
-    }
-    $check_stmt = $conn->prepare($check_query);
-    if (!$check_stmt) {
-        throw new Exception('Database prepare error while checking item code');
-    }
-    $check_stmt->bind_param($param_types, ...$check_params);
-    $check_stmt->execute();
-    $check_result = $check_stmt->get_result();
-    if ($check_result && $check_result->num_rows > 0) {
-        throw new Exception('Item code already exists' . ($items_branch_column_exists && !$view_all_branches && $branch_id > 0 ? ' in this branch' : '') . ': ' . $item_code);
-    }
-
-    $firstRow = $group['rows'][0];
-    $unit_type = trim((string)($firstRow['unit_type'] ?? 'Piece')) ?: 'Piece';
-    $unit_price = (float)($firstRow['unit_price'] ?? 0);
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     $price_case = $unit_price * 12;
     $price_inner_pack = $unit_price * 6;
     $price_box = $unit_price * 24;
     $price_carton = $unit_price * 48;
-<<<<<<< HEAD
     $product_image_url = $is_update ? ($existing_item['product_image_url'] ?? null) : null;
 
     if ($is_update) {
@@ -1517,103 +1640,6 @@ function importCreateItemFromGroupedRows($conn, $group, $branch_id, $user_id, $i
     syncItemSummaryFromDefaultInventory($conn, $item_id);
     syncItemPriceSummaryFromPricing($conn, $item_id);
     return ['item_id' => $item_id, 'item_code' => $item_code, 'item_name' => $item_name, 'mode' => $is_update ? 'updated' : 'created'];
-=======
-    $product_image_url = null;
-
-    // We'll insert item first, then set default_unit_type_id later after we know the unit_type_id
-    $item_id = 0;
-
-    if ($items_branch_column_exists) {
-        $insert_query = "INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, price_case, price_inner_pack, price_box, price_carton, reorder_level, status, product_image_url, branch_id, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
-        $insert_stmt = $conn->prepare($insert_query);
-        if (!$insert_stmt) {
-            throw new Exception('Database prepare error while inserting item');
-        }
-        $insert_stmt->bind_param("ssssisdddddissii", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $price_case, $price_inner_pack, $price_box, $price_carton, $reorder_level, $status, $product_image_url, $branch_id, $user_id);
-    } else {
-        $insert_query = "INSERT INTO items (item_code, item_name, description, category, stock, unit_type, unit_price, price_case, price_inner_pack, price_box, price_carton, reorder_level, status, product_image_url, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
-        $insert_stmt = $conn->prepare($insert_query);
-        if (!$insert_stmt) {
-            throw new Exception('Database prepare error while inserting item');
-        }
-        $insert_stmt->bind_param("ssssisdddddissi", $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price, $price_case, $price_inner_pack, $price_box, $price_carton, $reorder_level, $status, $product_image_url, $user_id);
-    }
-
-    if (!$insert_stmt->execute()) {
-        throw new Exception('Failed to add imported item: ' . $insert_stmt->error);
-    }
-
-    $item_id = (int)$conn->insert_id;
-    $seenPricing = [];
-    $default_unit_type_id = null;
-
-    foreach ($group['rows'] as $row) {
-        $ut_name = trim((string)($row['unit_type'] ?? 'Piece')) ?: 'Piece';
-        $ut_barcode = trim((string)($row['barcode'] ?? ''));
-        $ut_qty_smallest = max(1, (int)($row['qty_smallest_pack'] ?? 1));
-        $ut_is_default = normalizeImportBoolean($row['default_uom'] ?? 0);
-        $ut_status = trim((string)($row['unit_status'] ?? 'active')) ?: 'active';
-        $ut_quantity = max(1, (int)($row['unit_quantity'] ?? $ut_qty_smallest));
-        $ut_price = (float)($row['unit_price'] ?? 0);
-        $effective_date = trim((string)($row['effective_date'] ?? '')) ?: null;
-        $price_level = trim((string)($row['price_level'] ?? 'Standard')) ?: 'Standard';
-        $current_inventory = (float)($row['current_inventory'] ?? $row['stock'] ?? 0);
-        $as_of_date = trim((string)($row['as_of_date'] ?? '')) ?: null;
-        $unit_cost = (float)($row['unit_cost'] ?? $ut_price ?? 0);
-
-        $ut_id = importCreateOrGetUnitType($conn, $ut_name, $ut_barcode, $ut_qty_smallest, $ut_is_default, $ut_status, $branch_id, $items_branch_column_exists);
-        if ($ut_is_default) {
-            $default_unit_type_id = $ut_id;
-        }
-
-        upsertItemUnitInventory($conn, $item_id, $ut_id, $current_inventory, $as_of_date, $unit_cost);
-
-        $pricingKey = $ut_id . '|' . $price_level;
-        if (isset($seenPricing[$pricingKey])) {
-            continue;
-        }
-        $seenPricing[$pricingKey] = true;
-
-        $insert_pricing_query = "INSERT INTO item_unit_pricing (item_id, unit_type_id, unit_price, unit_quantity, effective_date, price_level) VALUES (?, ?, ?, ?, ?, ?)";
-        $insert_pricing_stmt = $conn->prepare($insert_pricing_query);
-        if (!$insert_pricing_stmt) {
-            throw new Exception('Database prepare error while inserting pricing');
-        }
-        $insert_pricing_stmt->bind_param("iidiss", $item_id, $ut_id, $ut_price, $ut_quantity, $effective_date, $price_level);
-        if (!$insert_pricing_stmt->execute()) {
-            throw new Exception('Failed to insert imported unit pricing: ' . $insert_pricing_stmt->error);
-        }
-    }
-
-    // If a default was found, update the item
-    if ($default_unit_type_id) {
-        $update_default = "UPDATE items SET default_unit_type_id = ? WHERE item_id = ?";
-        $upd_stmt = $conn->prepare($update_default);
-        $upd_stmt->bind_param("ii", $default_unit_type_id, $item_id);
-        $upd_stmt->execute();
-    } else {
-        // No default marked, set to first unit type
-        $first_ut_query = "SELECT unit_type_id FROM item_unit_pricing WHERE item_id = ? LIMIT 1";
-        $first_stmt = $conn->prepare($first_ut_query);
-        $first_stmt->bind_param("i", $item_id);
-        $first_stmt->execute();
-        $first_res = $first_stmt->get_result();
-        if ($first_row = $first_res->fetch_assoc()) {
-            $update_default = "UPDATE items SET default_unit_type_id = ? WHERE item_id = ?";
-            $upd_stmt = $conn->prepare($update_default);
-            $upd_stmt->bind_param("ii", $first_row['unit_type_id'], $item_id);
-            $upd_stmt->execute();
-        }
-    }
-
-    syncItemSummaryFromDefaultInventory($conn, $item_id);
-
-    return [
-        'item_id' => $item_id,
-        'item_code' => $item_code,
-        'item_name' => $item_name
-    ];
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 }
 
 // ========== HANDLE AJAX REQUESTS ==========
@@ -1627,23 +1653,136 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     
     try {
         $conn->begin_transaction();
-        
+
+        // ADD CHART OF ACCOUNT DIRECTLY FROM ITEM ACCOUNT DROPDOWNS
+        if ($_POST['action'] === 'add_item_chart_account') {
+            $account_kind = trim($_POST['account_kind'] ?? '');
+            $account_title = trim($_POST['account_title'] ?? '');
+            $account_code = trim($_POST['account_code'] ?? '');
+            $description = trim($_POST['description'] ?? '');
+            $parent_account_id = (int)($_POST['parent_account_id'] ?? 0);
+
+            $accountTypeMap = [
+                'income' => 'Income',
+                'cogs' => 'Cost of Goods Sold',
+                'asset' => 'Other Current Asset'
+            ];
+
+            if (!isset($accountTypeMap[$account_kind])) {
+                throw new Exception('Invalid account category selected.');
+            }
+            if ($account_title === '') {
+                throw new Exception('Account title is required.');
+            }
+
+            $account_type = $accountTypeMap[$account_kind];
+            $coa_branch_id = (!$view_all_branches && $branch_id > 0) ? (int)$branch_id : ((int)$branch_id > 0 ? (int)$branch_id : 0);
+
+            if ($parent_account_id > 0) {
+                $parent_query = "SELECT account_id FROM chart_of_accounts WHERE account_id = ? AND account_type = ? AND status = 'active'";
+                $parent_types = 'is';
+                $parent_params = [$parent_account_id, $account_type];
+                if (!$view_all_branches && $branch_id > 0) {
+                    $parent_query .= " AND (branch_id = ? OR branch_id = 0)";
+                    $parent_types .= 'i';
+                    $parent_params[] = $branch_id;
+                }
+                $parent_stmt = $conn->prepare($parent_query);
+                if (!$parent_stmt) {
+                    throw new Exception('Database prepare error while checking parent account.');
+                }
+                $parent_stmt->bind_param($parent_types, ...$parent_params);
+                $parent_stmt->execute();
+                $parent_result = $parent_stmt->get_result();
+                if (!$parent_result || $parent_result->num_rows === 0) {
+                    throw new Exception('Parent Account must have the same Account Type.');
+                }
+                $parent_stmt->close();
+            } else {
+                $parent_account_id = null;
+            }
+
+            $check_query = "SELECT account_id, account_code, account_title, account_type
+                            FROM chart_of_accounts
+                            WHERE LOWER(TRIM(account_title)) = LOWER(TRIM(?))
+                              AND account_type = ?
+                              AND status = 'active'
+                              AND branch_id = ?
+                            LIMIT 1";
+            $check_stmt = $conn->prepare($check_query);
+            if (!$check_stmt) {
+                throw new Exception('Database prepare error while checking chart account.');
+            }
+            $check_stmt->bind_param('ssi', $account_title, $account_type, $coa_branch_id);
+            $check_stmt->execute();
+            $existing_result = $check_stmt->get_result();
+            if ($existing_result && $existing_row = $existing_result->fetch_assoc()) {
+                $label_code = trim((string)($existing_row['account_code'] ?? ''));
+                $label_title = trim((string)($existing_row['account_title'] ?? ''));
+                $existing_label = ($label_code !== '' ? $label_code . ' · ' : '') . $label_title;
+
+                $conn->commit();
+                echo json_encode([
+                    'success' => true,
+                    'message' => 'Account already exists. It has been selected.',
+                    'account' => [
+                        'id' => (int)$existing_row['account_id'],
+                        'label' => $existing_label,
+                        'type' => $existing_row['account_type'],
+                        'kind' => $account_kind
+                    ]
+                ]);
+                exit;
+            }
+            $check_stmt->close();
+
+            $insert_account_query = "INSERT INTO chart_of_accounts
+                (branch_id, parent_account_id, account_code, account_title, account_type, description, balance, status, created_by, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, 0.00, 'active', ?, NOW(), NOW())";
+            $insert_account_stmt = $conn->prepare($insert_account_query);
+            if (!$insert_account_stmt) {
+                throw new Exception('Database prepare error while creating chart account.');
+            }
+            $insert_account_stmt->bind_param('iissssi', $coa_branch_id, $parent_account_id, $account_code, $account_title, $account_type, $description, $user_id);
+            if (!$insert_account_stmt->execute()) {
+                throw new Exception('Failed to create chart account: ' . $insert_account_stmt->error);
+            }
+
+            $new_account_id = (int)$conn->insert_id;
+            $insert_account_stmt->close();
+
+            $label = ($account_code !== '' ? $account_code . ' · ' : '') . $account_title;
+
+            $conn->commit();
+            echo json_encode([
+                'success' => true,
+                'message' => 'Account added successfully.',
+                'account' => [
+                    'id' => $new_account_id,
+                    'label' => $label,
+                    'type' => $account_type,
+                    'kind' => $account_kind
+                ]
+            ]);
+            exit;
+        }
+
         // ADD ITEM
         if ($_POST['action'] === 'add_item') {
             $item_code = $_POST['item_code'] ?? '';
             $barcode = trim($_POST['barcode'] ?? '');
             $item_name = $_POST['item_name'] ?? '';
-            $description = $_POST['description'] ?? null;
+            $description = trim($_POST['description'] ?? '');
             $category = $_POST['category'] ?? 'General';
-<<<<<<< HEAD
             $principal = trim($_POST['principal'] ?? '');
             $principal = ($principal !== '' && strtolower($principal) !== 'no principal') ? $principal : null;
             $volume = (strtolower($category) === 'oil') ? trim($_POST['volume'] ?? '') : null;
             $volume = (empty($volume)) ? null : $volume;
             $oil_type = (strtolower($category) === 'oil') ? trim($_POST['oil_type'] ?? '') : null;
             $oil_type = (empty($oil_type)) ? null : $oil_type;
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
+            $income_account_id = (int)($_POST['income_account_id'] ?? 0);
+            $cogs_account_id = (int)($_POST['cogs_account_id'] ?? 0);
+            $asset_account_id = (int)($_POST['asset_account_id'] ?? 0);
             $stock = 0;
             
             $unit_types_json = $_POST['unit_types'] ?? '[]';
@@ -1662,10 +1801,49 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             
             $reorder_level = (int)($_POST['reorder_level'] ?? 0);
             $status = $_POST['status'] ?? 'active';
+            $points_eligible = isset($_POST['points_eligible']) ? (int)$_POST['points_eligible'] : 1;
+            $points_eligible = $points_eligible === 1 ? 1 : 0;
             
             if (empty($item_code)) throw new Exception('Item code is required');
             if (empty($item_name)) throw new Exception('Item name is required');
-            if (empty($description)) throw new Exception('Description is required');
+            if (empty($description)) $description = $item_name;
+
+            $validateAccount = function($accountId, $allowedTypes, $label) use ($conn, $branch_id, $view_all_branches) {
+                $query = "SELECT account_id FROM chart_of_accounts WHERE account_id = ? AND status = 'active'";
+                $types = 'i';
+                $params = [$accountId];
+                if (!$view_all_branches && $branch_id > 0) {
+                    $query .= " AND (branch_id = ? OR branch_id = 0)";
+                    $types .= 'i';
+                    $params[] = $branch_id;
+                }
+                if (!empty($allowedTypes)) {
+                    $placeholders = implode(',', array_fill(0, count($allowedTypes), '?'));
+                    $query .= " AND account_type IN ($placeholders)";
+                    $types .= str_repeat('s', count($allowedTypes));
+                    foreach ($allowedTypes as $type) {
+                        $params[] = $type;
+                    }
+                }
+                $stmt = $conn->prepare($query);
+                if (!$stmt) throw new Exception('Database prepare error while validating ' . $label);
+                $stmt->bind_param($types, ...$params);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                if (!$result || $result->num_rows === 0) {
+                    throw new Exception('Please select a valid ' . $label);
+                }
+                $stmt->close();
+            };
+            if ($income_account_id > 0) {
+                $validateAccount($income_account_id, ['Income'], 'Income Account');
+            }
+            if ($cogs_account_id > 0) {
+                $validateAccount($cogs_account_id, ['Cost of Goods Sold'], 'COGS Account');
+            }
+            if ($asset_account_id > 0) {
+                $validateAccount($asset_account_id, ['Other Current Asset'], 'Asset Account');
+            }
             
             $price_case = $unit_price * 12;
             $price_inner_pack = $unit_price * 6;
@@ -1688,7 +1866,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             if ($check_result->num_rows > 0) {
                 throw new Exception('Item code already exists' . ($items_branch_column_exists && !$view_all_branches && $branch_id > 0 ? ' in this branch' : ''));
             }
-<<<<<<< HEAD
 
             if ($barcode !== '') {
                 $barcode_check_query = "SELECT item_id FROM items WHERE barcode = ?";
@@ -1708,8 +1885,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     throw new Exception('Barcode number already exists' . ($items_branch_column_exists && !$view_all_branches && $branch_id > 0 ? ' in this branch' : ''));
                 }
             }
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             
             $product_image_url = null;
             if (isset($_FILES['item_image']) && $_FILES['item_image']['error'] === UPLOAD_ERR_OK) {
@@ -1730,43 +1905,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             // Insert item without default_unit_type_id first
             if ($items_branch_column_exists) {
                 $insert_query = "INSERT INTO items (
-                    item_code, barcode, item_name, description, category, principal, volume, oil_type, stock, unit_type, unit_price, 
+                    item_code, barcode, item_name, description, category, principal, volume, oil_type, income_account_id, cogs_account_id, asset_account_id, stock, unit_type, unit_price, 
                     price_case, price_inner_pack, price_box, price_carton, reorder_level, status, 
                     product_image_url, branch_id, created_by, created_at, updated_at
-<<<<<<< HEAD
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
                 $insert_stmt = $conn->prepare($insert_query);
                 if (!$insert_stmt) throw new Exception('Database prepare error');
-                $insert_stmt->bind_param("ssssssssdsdddddissii", 
-                    $item_code, $barcode, $item_name, $description, $category, $principal, $volume, $oil_type, $stock, $unit_type, $unit_price,
-=======
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
-                $insert_stmt = $conn->prepare($insert_query);
-                if (!$insert_stmt) throw new Exception('Database prepare error');
-                $insert_stmt->bind_param("ssssisdddddissii", 
-                    $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price,
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
+                $insert_stmt->bind_param("ssssssssiiidsdddddissii", 
+                    $item_code, $barcode, $item_name, $description, $category, $principal, $volume, $oil_type, $income_account_id, $cogs_account_id, $asset_account_id, $stock, $unit_type, $unit_price,
                     $price_case, $price_inner_pack, $price_box, $price_carton,
                     $reorder_level, $status, $product_image_url, $branch_id, $user_id
                 );
             } else {
                 $insert_query = "INSERT INTO items (
-                    item_code, barcode, item_name, description, category, principal, volume, oil_type, stock, unit_type, unit_price, 
+                    item_code, barcode, item_name, description, category, principal, volume, oil_type, income_account_id, cogs_account_id, asset_account_id, stock, unit_type, unit_price, 
                     price_case, price_inner_pack, price_box, price_carton, reorder_level, status, 
                     product_image_url, created_by, created_at, updated_at
-<<<<<<< HEAD
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
                 $insert_stmt = $conn->prepare($insert_query);
                 if (!$insert_stmt) throw new Exception('Database prepare error');
-                $insert_stmt->bind_param("ssssssssdsdddddissi", 
-                    $item_code, $barcode, $item_name, $description, $category, $principal, $volume, $oil_type, $stock, $unit_type, $unit_price,
-=======
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())";
-                $insert_stmt = $conn->prepare($insert_query);
-                if (!$insert_stmt) throw new Exception('Database prepare error');
-                $insert_stmt->bind_param("ssssisdddddissi", 
-                    $item_code, $item_name, $description, $category, $stock, $unit_type, $unit_price,
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
+                $insert_stmt->bind_param("ssssssssiiidsdddddissi", 
+                    $item_code, $barcode, $item_name, $description, $category, $principal, $volume, $oil_type, $income_account_id, $cogs_account_id, $asset_account_id, $stock, $unit_type, $unit_price,
                     $price_case, $price_inner_pack, $price_box, $price_carton,
                     $reorder_level, $status, $product_image_url, $user_id
                 );
@@ -1780,6 +1939,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $principal_update_stmt->bind_param("si", $principal, $item_id);
                 $principal_update_stmt->execute();
                 $principal_update_stmt->close();
+            }
+            $points_update_stmt = $conn->prepare("UPDATE items SET points_eligible = ? WHERE item_id = ?");
+            if ($points_update_stmt) {
+                $points_update_stmt->bind_param("ii", $points_eligible, $item_id);
+                $points_update_stmt->execute();
+                $points_update_stmt->close();
             }
             
             // Get unique unit types
@@ -1796,7 +1961,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $ut_price = (float)$ut_data['unit_price'];
                 $ut_quantity = (int)($ut_data['unit_quantity'] ?? 1);
                 $ut_initial = strtoupper(trim($ut_data['uom_initial'] ?? ''));
-                $ut_barcode = ''; // Barcode is saved to items.barcode only
+                $ut_barcode = trim($ut_data['barcode'] ?? '');
                 $ut_qty_smallest = (int)($ut_data['qty_smallest_pack'] ?? 1);
                 $ut_is_default = (int)($ut_data['default_uom'] ?? 0);
                 $ut_status = $ut_data['status'] ?? 'active';
@@ -1804,43 +1969,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $ut_as_of_date = !empty($ut_data['as_of_date']) ? $ut_data['as_of_date'] : null;
                 $ut_unit_cost = isset($ut_data['unit_cost']) ? (float)$ut_data['unit_cost'] : $ut_price;
                 
-                $check_ut_query = "SELECT unit_type_id FROM unit_types WHERE unit_type_name = ?";
-                if ($items_branch_column_exists) {
-                    $check_ut_query .= " AND (branch_id = ? OR branch_id IS NULL)";
-                }
-                $check_ut_stmt = $conn->prepare($check_ut_query);
-                if ($items_branch_column_exists) {
-                    $check_ut_stmt->bind_param("si", $ut_name, $branch_id);
-                } else {
-                    $check_ut_stmt->bind_param("s", $ut_name);
-                }
-                $check_ut_stmt->execute();
-                $ut_result = $check_ut_stmt->get_result();
-                
-                if ($ut_result->num_rows > 0) {
-                    $ut_row = $ut_result->fetch_assoc();
-                    $ut_id = $ut_row['unit_type_id'];
-                    $update_ut_query = "UPDATE unit_types SET uom_initial = ?, barcode = ?, quantity_smallest_pack = ?, is_default_uom = ?, status = ?, updated_at = NOW() WHERE unit_type_id = ?";
-                    $update_ut_stmt = $conn->prepare($update_ut_query);
-                    if ($update_ut_stmt) {
-                        $update_ut_stmt->bind_param("ssiisi", $ut_initial, $ut_barcode, $ut_qty_smallest, $ut_is_default, $ut_status, $ut_id);
-                        $update_ut_stmt->execute();
-                    }
-                } else {
-                    $insert_ut_query = "INSERT INTO unit_types (unit_type_name, uom_initial, barcode, quantity_smallest_pack, is_default_uom, multiplier, branch_id, status) VALUES (?, ?, ?, ?, ?, 1.00, ?, ?)";
-                    $insert_ut_stmt = $conn->prepare($insert_ut_query);
-                    $insert_ut_stmt->bind_param("sssiiis", $ut_name, $ut_initial, $ut_barcode, $ut_qty_smallest, $ut_is_default, $branch_id, $ut_status);
-                    if (!$insert_ut_stmt->execute()) {
-                        throw new Exception('Failed to create unit type: ' . $insert_ut_stmt->error);
-                    }
-                    $ut_id = $conn->insert_id;
-                }
-                
-                if ($ut_is_default) {
+                $ut_id = amgcResolveUnitTypeIdForItemUom($conn, $ut_name, $ut_initial, $branch_id, $items_branch_column_exists);
+if ($ut_is_default) {
                     $default_unit_type_id = $ut_id;
                 }
 
                 upsertItemUnitInventory($conn, $item_id, $ut_id, $ut_current_inventory, $ut_as_of_date, $ut_unit_cost);
+                upsertItemUnitTypeRow($conn, $item_id, $ut_id, $ut_name, $ut_initial, $ut_barcode, $ut_qty_smallest, $ut_is_default, $branch_id, $ut_status);
                 
                 if (!empty($pricing_data) && is_array($pricing_data)) {
                     foreach ($pricing_data as $pricing_row) {
@@ -1874,131 +2009,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $upd_def_stmt->execute();
             }
 
-            syncItemSummaryFromDefaultInventory($conn, $item_id);
-            
-            if (isset($_FILES['itemImages']) && !empty($_FILES['itemImages']['name'][0])) {
-                $uploaded_images = handleMultipleImageUpload($_FILES['itemImages'], $item_id);
-                foreach ($uploaded_images as $index => $img_file) {
-                    $img_query = "INSERT INTO item_images (item_id, image_path, image_order, is_primary) VALUES (?, ?, ?, ?)";
-                    $img_stmt = $conn->prepare($img_query);
-                    $img_order = $index;
-                    $primary = ($index === 0) ? 1 : 0;
-                    $img_stmt->bind_param("isii", $item_id, $img_file, $img_order, $primary);
-                    $img_stmt->execute();
-                }
-            }
-            
-<<<<<<< HEAD
-=======
-            // Get unique unit types
-            $unique_unit_types = [];
-            foreach ($unit_types_array as $ut_data) {
-                $ut_name = trim($ut_data['unit_type']);
-                if (!isset($unique_unit_types[$ut_name])) {
-                    $unique_unit_types[$ut_name] = $ut_data;
-                }
-            }
-            
-            $default_unit_type_id = null;
-            foreach ($unique_unit_types as $ut_name => $ut_data) {
-                $ut_price = (float)$ut_data['unit_price'];
-                $ut_quantity = (int)($ut_data['unit_quantity'] ?? 1);
-                $ut_barcode = $ut_data['barcode'] ?? '';
-                $ut_qty_smallest = (int)($ut_data['qty_smallest_pack'] ?? 1);
-                $ut_is_default = (int)($ut_data['default_uom'] ?? 0);
-                $ut_status = $ut_data['status'] ?? 'active';
-                $ut_current_inventory = isset($ut_data['current_inventory']) ? (float)$ut_data['current_inventory'] : 0;
-                $ut_as_of_date = !empty($ut_data['as_of_date']) ? $ut_data['as_of_date'] : null;
-                $ut_unit_cost = isset($ut_data['unit_cost']) ? (float)$ut_data['unit_cost'] : $ut_price;
-                
-                $check_ut_query = "SELECT unit_type_id FROM unit_types WHERE unit_type_name = ?";
-                if ($items_branch_column_exists) {
-                    $check_ut_query .= " AND (branch_id = ? OR branch_id IS NULL)";
-                }
-                $check_ut_stmt = $conn->prepare($check_ut_query);
-                if ($items_branch_column_exists) {
-                    $check_ut_stmt->bind_param("si", $ut_name, $branch_id);
-                } else {
-                    $check_ut_stmt->bind_param("s", $ut_name);
-                }
-                $check_ut_stmt->execute();
-                $ut_result = $check_ut_stmt->get_result();
-                
-                if ($ut_result->num_rows > 0) {
-                    $ut_row = $ut_result->fetch_assoc();
-                    $ut_id = $ut_row['unit_type_id'];
-                    $update_ut_query = "UPDATE unit_types SET barcode = ?, quantity_smallest_pack = ?, is_default_uom = ?, status = ?, updated_at = NOW() WHERE unit_type_id = ?";
-                    $update_ut_stmt = $conn->prepare($update_ut_query);
-                    if ($update_ut_stmt) {
-                        $update_ut_stmt->bind_param("siisi", $ut_barcode, $ut_qty_smallest, $ut_is_default, $ut_status, $ut_id);
-                        $update_ut_stmt->execute();
-                    }
-                } else {
-                    $insert_ut_query = "INSERT INTO unit_types (unit_type_name, barcode, quantity_smallest_pack, is_default_uom, multiplier, branch_id, status) VALUES (?, ?, ?, ?, 1.00, ?, ?)";
-                    $insert_ut_stmt = $conn->prepare($insert_ut_query);
-                    $insert_ut_stmt->bind_param("ssiiis", $ut_name, $ut_barcode, $ut_qty_smallest, $ut_is_default, $branch_id, $ut_status);
-                    if (!$insert_ut_stmt->execute()) {
-                        throw new Exception('Failed to create unit type: ' . $insert_ut_stmt->error);
-                    }
-                    $ut_id = $conn->insert_id;
-                }
-                
-                if ($ut_is_default) {
-                    $default_unit_type_id = $ut_id;
-                }
-
-                upsertItemUnitInventory($conn, $item_id, $ut_id, $ut_current_inventory, $ut_as_of_date, $ut_unit_cost);
-                
-                if (!empty($pricing_data) && is_array($pricing_data)) {
-                    foreach ($pricing_data as $pricing_row) {
-                        if (isset($pricing_row['prices'][$ut_name])) {
-                            $ut_price = (float)$pricing_row['prices'][$ut_name];
-                            $effective_date = !empty($pricing_row['effective_date']) ? $pricing_row['effective_date'] : null;
-                            $price_level = !empty($pricing_row['price_level']) ? $pricing_row['price_level'] : 'Standard';
-                            
-                            $check_pricing_query = "SELECT pricing_id FROM item_unit_pricing WHERE item_id = ? AND unit_type_id = ? AND price_level = ?";
-                            $check_pricing_stmt = $conn->prepare($check_pricing_query);
-                            $check_pricing_stmt->bind_param("iis", $item_id, $ut_id, $price_level);
-                            $check_pricing_stmt->execute();
-                            $check_pricing_result = $check_pricing_stmt->get_result();
-                            
-                            if ($check_pricing_result->num_rows > 0) {
-                                $update_pricing_query = "UPDATE item_unit_pricing SET unit_price = ?, unit_quantity = ?, effective_date = ?, updated_at = NOW() WHERE item_id = ? AND unit_type_id = ? AND price_level = ?";
-                                $update_pricing_stmt = $conn->prepare($update_pricing_query);
-                                $update_pricing_stmt->bind_param("dissis", $ut_price, $ut_quantity, $effective_date, $item_id, $ut_id, $price_level);
-                                if (!$update_pricing_stmt->execute()) {
-                                    throw new Exception('Failed to update unit pricing: ' . $update_pricing_stmt->error);
-                                }
-                            } else {
-                                $insert_pricing_query = "INSERT INTO item_unit_pricing (item_id, unit_type_id, unit_price, unit_quantity, effective_date, price_level) VALUES (?, ?, ?, ?, ?, ?)";
-                                $insert_pricing_stmt = $conn->prepare($insert_pricing_query);
-                                $insert_pricing_stmt->bind_param("iidiss", $item_id, $ut_id, $ut_price, $ut_quantity, $effective_date, $price_level);
-                                if (!$insert_pricing_stmt->execute()) {
-                                    throw new Exception('Failed to insert unit pricing: ' . $insert_pricing_stmt->error);
-                                }
-                            }
+            // Keep items.barcode as the default/base UOM barcode only.
+            // Other UOM barcodes stay per item in item_unit_types and will not affect other items.
+            if ($default_unit_type_id) {
+                $default_barcode_stmt = $conn->prepare("SELECT barcode FROM item_unit_types WHERE item_id = ? AND unit_type_id = ? AND status = 'active' LIMIT 1");
+                if ($default_barcode_stmt) {
+                    $default_barcode_stmt->bind_param("ii", $item_id, $default_unit_type_id);
+                    $default_barcode_stmt->execute();
+                    $default_barcode_row = $default_barcode_stmt->get_result()->fetch_assoc();
+                    $default_barcode_stmt->close();
+                    $default_item_barcode = trim((string)($default_barcode_row['barcode'] ?? ''));
+                    if ($default_item_barcode !== '') {
+                        $update_item_barcode_stmt = $conn->prepare("UPDATE items SET barcode = ? WHERE item_id = ?");
+                        if ($update_item_barcode_stmt) {
+                            $update_item_barcode_stmt->bind_param("si", $default_item_barcode, $item_id);
+                            $update_item_barcode_stmt->execute();
+                            $update_item_barcode_stmt->close();
                         }
                     }
                 }
             }
-            
-            // If no default was marked, set the first unit type as default
-            if (!$default_unit_type_id) {
-                $first_ut_query = "SELECT unit_type_id FROM item_unit_pricing WHERE item_id = ? LIMIT 1";
-                $first_stmt = $conn->prepare($first_ut_query);
-                $first_stmt->bind_param("i", $item_id);
-                $first_stmt->execute();
-                $first_res = $first_stmt->get_result();
-                if ($first_row = $first_res->fetch_assoc()) {
-                    $default_unit_type_id = $first_row['unit_type_id'];
-                }
-            }
-            if ($default_unit_type_id) {
-                $update_default = "UPDATE items SET default_unit_type_id = ? WHERE item_id = ?";
-                $upd_def_stmt = $conn->prepare($update_default);
-                $upd_def_stmt->bind_param("ii", $default_unit_type_id, $item_id);
-                $upd_def_stmt->execute();
-            }
 
             syncItemSummaryFromDefaultInventory($conn, $item_id);
             
@@ -2014,13 +2044,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
             }
             
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             $conn->commit();
             echo json_encode(['success' => true, 'message' => 'Item added successfully', 'item_id' => $item_id]);
             exit;
         }
         
-<<<<<<< HEAD
         // EXPORT ACTUAL ITEMS FOR EXCEL IMPORT/UPDATE
         elseif ($_POST['action'] === 'export_items_data') {
             // Export current item rows in the same import-template format.
@@ -2036,9 +2064,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     COALESCE(inv_default.current_inventory, i.stock, 0) AS stock,
                     i.reorder_level,
                     i.status,
-                    COALESCE(ut.unit_type_name, i.unit_type, 'Piece') AS unit_type,
-                    COALESCE(ut.barcode, '') AS barcode,
-                    COALESCE(ut.quantity_smallest_pack, iup.unit_quantity, 1) AS qty_smallest_pack,
+                    COALESCE(iut.unit_type_name, ut.unit_type_name, i.unit_type, 'Piece') AS unit_type,
+                    COALESCE(iut.barcode, '') AS barcode,
+                    COALESCE(iut.smallest_pack_quantity, ut.quantity_smallest_pack, iup.unit_quantity, 1) AS qty_smallest_pack,
                     CASE
                         WHEN i.default_unit_type_id IS NOT NULL AND i.default_unit_type_id = iup.unit_type_id THEN 'yes'
                         WHEN i.default_unit_type_id IS NULL AND COALESCE(ut.unit_type_name, i.unit_type, 'Piece') = COALESCE(i.unit_type, 'Piece') THEN 'yes'
@@ -2055,6 +2083,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 FROM items i
                 LEFT JOIN item_unit_pricing iup ON iup.item_id = i.item_id
                 LEFT JOIN unit_types ut ON ut.unit_type_id = iup.unit_type_id
+                LEFT JOIN item_unit_types iut ON iut.item_id = i.item_id AND iut.unit_type_id = iup.unit_type_id AND (iut.status IS NULL OR iut.status = 'active')
                 LEFT JOIN item_unit_inventory inv ON inv.item_id = i.item_id AND inv.unit_type_id = iup.unit_type_id
                 LEFT JOIN item_unit_inventory inv_default ON inv_default.item_id = i.item_id AND inv_default.unit_type_id = i.default_unit_type_id
                 WHERE i.status <> 'deleted'
@@ -2129,47 +2158,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $conn->commit();
             echo json_encode([
                 'success' => true,
-=======
-        // IMPORT ITEMS FROM EXCEL/CSV
-        elseif ($_POST['action'] === 'import_items') {
-            $rows_json = $_POST['rows'] ?? '[]';
-            $rows = json_decode($rows_json, true);
-            if (!is_array($rows) || count($rows) === 0) {
-                throw new Exception('No import rows were received');
-            }
-            $grouped_items = [];
-            foreach ($rows as $index => $row) {
-                if (!is_array($row)) continue;
-                $item_code = trim((string)($row['item_code'] ?? ''));
-                $item_name = trim((string)($row['item_name'] ?? ''));
-                $group_key = $item_code !== '' ? strtoupper($item_code) : ('ROW_' . $index . '_' . strtoupper($item_name));
-                if (!isset($grouped_items[$group_key])) {
-                    $grouped_items[$group_key] = [
-                        'base' => [
-                            'item_code' => $item_code,
-                            'item_name' => $item_name,
-                            'description' => $row['description'] ?? '',
-                            'category' => $row['category'] ?? 'General',
-                            'stock' => $row['stock'] ?? 0,
-                            'reorder_level' => $row['reorder_level'] ?? 0,
-                            'status' => $row['status'] ?? 'active'
-                        ],
-                        'rows' => []
-                    ];
-                }
-                $grouped_items[$group_key]['rows'][] = $row;
-            }
-            if (count($grouped_items) === 0) {
-                throw new Exception('No valid rows found for import');
-            }
-            $imported_items = [];
-            foreach ($grouped_items as $group) {
-                $imported_items[] = importCreateItemFromGroupedRows($conn, $group, $branch_id, $user_id, $items_branch_column_exists, $view_all_branches);
-            }
-            $conn->commit();
-            echo json_encode([
-                'success' => true,
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 'message' => count($imported_items) . ' item(s) imported successfully',
                 'imported_count' => count($imported_items),
                 'items' => $imported_items
@@ -2188,15 +2176,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $barcode = trim($_POST['barcode'] ?? '');
             $description = $_POST['description'] ?? null;
             $category = $_POST['category'] ?? 'General';
-<<<<<<< HEAD
             $principal = trim($_POST['principal'] ?? '');
             $principal = ($principal !== '' && strtolower($principal) !== 'no principal') ? $principal : null;
             $volume = (strtolower($category) === 'oil') ? trim($_POST['volume'] ?? '') : null;
             $volume = (empty($volume)) ? null : $volume;
             $oil_type = (strtolower($category) === 'oil') ? trim($_POST['oil_type'] ?? '') : null;
             $oil_type = (empty($oil_type)) ? null : $oil_type;
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
+            $income_account_id = (int)($_POST['income_account_id'] ?? 0);
+            $cogs_account_id = (int)($_POST['cogs_account_id'] ?? 0);
+            $asset_account_id = (int)($_POST['asset_account_id'] ?? 0);
             $stock = 0;
             
             $unit_types_json = $_POST['unit_types'] ?? '[]';
@@ -2214,10 +2202,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $unit_price = (float)$first_unit['unit_price'];
             $reorder_level = (int)($_POST['reorder_level'] ?? 0);
             $status = $_POST['status'] ?? 'active';
+            $points_eligible = isset($_POST['points_eligible']) ? (int)$_POST['points_eligible'] : 1;
+            $points_eligible = $points_eligible === 1 ? 1 : 0;
             
             if ($item_id <= 0) throw new Exception('Invalid item ID');
             if (empty($item_name)) throw new Exception('Item name is required');
-            if (empty($description)) throw new Exception('Description is required');
+            if (empty($description)) $description = $item_name;
+
+            $validateAccount = function($accountId, $allowedTypes, $label) use ($conn, $view_all_branches, $branch_id) {
+                if ((int)$accountId <= 0) {
+                    throw new Exception($label . ' is required');
+                }
+
+                $query = "SELECT account_id FROM chart_of_accounts WHERE account_id = ? AND status = 'active'";
+                $types = 'i';
+                $params = [(int)$accountId];
+
+                if (!$view_all_branches && $branch_id > 0) {
+                    $query .= " AND (branch_id = ? OR branch_id = 0 OR branch_id IS NULL)";
+                    $types .= 'i';
+                    $params[] = (int)$branch_id;
+                }
+
+                if (!empty($allowedTypes)) {
+                    $placeholders = implode(',', array_fill(0, count($allowedTypes), '?'));
+                    $query .= " AND account_type IN ($placeholders)";
+                    $types .= str_repeat('s', count($allowedTypes));
+                    foreach ($allowedTypes as $type) {
+                        $params[] = $type;
+                    }
+                }
+
+                $stmt = $conn->prepare($query);
+                if (!$stmt) throw new Exception('Database prepare error while validating ' . $label);
+                $stmt->bind_param($types, ...$params);
+                $stmt->execute();
+                $result = $stmt->get_result();
+                if (!$result || $result->num_rows === 0) {
+                    throw new Exception('Please select a valid ' . $label);
+                }
+                $stmt->close();
+            };
+
+            $validateAccount($income_account_id, ['Income'], 'Income Account');
+            $validateAccount($cogs_account_id, ['Cost of Goods Sold'], 'COGS Account');
+            $validateAccount($asset_account_id, ['Other Current Asset'], 'Asset Account');
             
             $item_code = $_POST['item_code'] ?? '';
             if ($items_branch_column_exists && !$view_all_branches && $branch_id > 0) {
@@ -2229,7 +2258,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $dup_result = $dup_stmt->get_result();
                 if ($dup_result->num_rows > 0) {
                     throw new Exception('Item code already exists in this branch');
-<<<<<<< HEAD
                 }
             }
 
@@ -2249,8 +2277,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $barcode_dup_result = $barcode_dup_stmt->get_result();
                 if ($barcode_dup_result->num_rows > 0) {
                     throw new Exception('Barcode number already exists' . ($items_branch_column_exists ? ' in this branch' : ''));
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 }
             }
             
@@ -2276,27 +2302,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             }
             
             if ($product_image_url) {
-<<<<<<< HEAD
-                $update_query = "UPDATE items SET barcode = ?, item_name = ?, description = ?, category = ?, volume = ?, oil_type = ?, stock = ?, unit_type = ?, unit_price = ?, price_case = ?, price_inner_pack = ?, price_box = ?, price_carton = ?, reorder_level = ?, status = ?, product_image_url = ?, updated_at = NOW() WHERE item_id = ?";
+                $update_query = "UPDATE items SET barcode = ?, item_name = ?, description = ?, category = ?, volume = ?, oil_type = ?, income_account_id = ?, cogs_account_id = ?, asset_account_id = ?, stock = ?, unit_type = ?, unit_price = ?, price_case = ?, price_inner_pack = ?, price_box = ?, price_carton = ?, reorder_level = ?, status = ?, product_image_url = ?, updated_at = NOW() WHERE item_id = ?";
                 $update_stmt = $conn->prepare($update_query);
                 if (!$update_stmt) throw new Exception('Database prepare error');
-                $update_stmt->bind_param("ssssssdsdddddissi", $barcode, $item_name, $description, $category, $volume, $oil_type, $stock, $unit_type, $unit_price, $price_case, $price_inner_pack, $price_box, $price_carton, $reorder_level, $status, $product_image_url, $item_id);
+                $update_stmt->bind_param("ssssssiiidsdddddissi", $barcode, $item_name, $description, $category, $volume, $oil_type, $income_account_id, $cogs_account_id, $asset_account_id, $stock, $unit_type, $unit_price, $price_case, $price_inner_pack, $price_box, $price_carton, $reorder_level, $status, $product_image_url, $item_id);
             } else {
-                $update_query = "UPDATE items SET barcode = ?, item_name = ?, description = ?, category = ?, volume = ?, oil_type = ?, stock = ?, unit_type = ?, unit_price = ?, price_case = ?, price_inner_pack = ?, price_box = ?, price_carton = ?, reorder_level = ?, status = ?, updated_at = NOW() WHERE item_id = ?";
+                $update_query = "UPDATE items SET barcode = ?, item_name = ?, description = ?, category = ?, volume = ?, oil_type = ?, income_account_id = ?, cogs_account_id = ?, asset_account_id = ?, stock = ?, unit_type = ?, unit_price = ?, price_case = ?, price_inner_pack = ?, price_box = ?, price_carton = ?, reorder_level = ?, status = ?, updated_at = NOW() WHERE item_id = ?";
                 $update_stmt = $conn->prepare($update_query);
                 if (!$update_stmt) throw new Exception('Database prepare error');
-                $update_stmt->bind_param("ssssssdsdddddisi", $barcode, $item_name, $description, $category, $volume, $oil_type, $stock, $unit_type, $unit_price, $price_case, $price_inner_pack, $price_box, $price_carton, $reorder_level, $status, $item_id);
-=======
-                $update_query = "UPDATE items SET item_name = ?, description = ?, category = ?, stock = ?, unit_type = ?, unit_price = ?, price_case = ?, price_inner_pack = ?, price_box = ?, price_carton = ?, reorder_level = ?, status = ?, product_image_url = ?, updated_at = NOW() WHERE item_id = ?";
-                $update_stmt = $conn->prepare($update_query);
-                if (!$update_stmt) throw new Exception('Database prepare error');
-                $update_stmt->bind_param("sssisdddddissi", $item_name, $description, $category, $stock, $unit_type, $unit_price, $price_case, $price_inner_pack, $price_box, $price_carton, $reorder_level, $status, $product_image_url, $item_id);
-            } else {
-                $update_query = "UPDATE items SET item_name = ?, description = ?, category = ?, stock = ?, unit_type = ?, unit_price = ?, price_case = ?, price_inner_pack = ?, price_box = ?, price_carton = ?, reorder_level = ?, status = ?, updated_at = NOW() WHERE item_id = ?";
-                $update_stmt = $conn->prepare($update_query);
-                if (!$update_stmt) throw new Exception('Database prepare error');
-                $update_stmt->bind_param("sssisdddddisi", $item_name, $description, $category, $stock, $unit_type, $unit_price, $price_case, $price_inner_pack, $price_box, $price_carton, $reorder_level, $status, $item_id);
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
+                $update_stmt->bind_param("ssssssiiidsdddddisi", $barcode, $item_name, $description, $category, $volume, $oil_type, $income_account_id, $cogs_account_id, $asset_account_id, $stock, $unit_type, $unit_price, $price_case, $price_inner_pack, $price_box, $price_carton, $reorder_level, $status, $item_id);
             }
             if (!$update_stmt->execute()) {
                 throw new Exception('Failed to update item: ' . $update_stmt->error);
@@ -2306,6 +2320,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $principal_update_stmt->bind_param("si", $principal, $item_id);
                 $principal_update_stmt->execute();
                 $principal_update_stmt->close();
+            }
+            $points_update_stmt = $conn->prepare("UPDATE items SET points_eligible = ? WHERE item_id = ?");
+            if ($points_update_stmt) {
+                $points_update_stmt->bind_param("ii", $points_eligible, $item_id);
+                $points_update_stmt->execute();
+                $points_update_stmt->close();
             }
             
             // Process unit types and pricing
@@ -2321,12 +2341,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $ut_name_to_id_map = [];
             
             foreach ($unique_unit_types as $ut_name => $ut_data) {
-<<<<<<< HEAD
                 $ut_initial = strtoupper(trim($ut_data['uom_initial'] ?? ''));
-                $ut_barcode = ''; // Barcode is saved to items.barcode only
-=======
-                $ut_barcode = $ut_data['barcode'] ?? '';
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
+                $ut_barcode = trim($ut_data['barcode'] ?? '');
                 $ut_qty_smallest = (int)($ut_data['qty_smallest_pack'] ?? 1);
                 $ut_is_default = (int)($ut_data['default_uom'] ?? 0);
                 $ut_status = $ut_data['status'] ?? 'active';
@@ -2334,82 +2350,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $ut_as_of_date = !empty($ut_data['as_of_date']) ? $ut_data['as_of_date'] : null;
                 $ut_unit_cost = isset($ut_data['unit_cost']) ? (float)$ut_data['unit_cost'] : $ut_price;
                 
-                $check_ut_query = "SELECT unit_type_id FROM unit_types WHERE unit_type_name = ?";
-                if ($items_branch_column_exists) {
-                    $check_ut_query .= " AND (branch_id = ? OR branch_id IS NULL)";
-                }
-                $check_ut_stmt = $conn->prepare($check_ut_query);
-                if ($items_branch_column_exists) {
-                    $check_ut_stmt->bind_param("si", $ut_name, $branch_id);
-                } else {
-                    $check_ut_stmt->bind_param("s", $ut_name);
-                }
-                $check_ut_stmt->execute();
-                $ut_result = $check_ut_stmt->get_result();
-                
-                if ($ut_result->num_rows > 0) {
-                    $ut_row = $ut_result->fetch_assoc();
-                    $ut_id = $ut_row['unit_type_id'];
-<<<<<<< HEAD
-                    $update_ut_query = "UPDATE unit_types SET uom_initial = ?, barcode = ?, quantity_smallest_pack = ?, is_default_uom = ?, status = ?, updated_at = NOW() WHERE unit_type_id = ?";
-                    $update_ut_stmt = $conn->prepare($update_ut_query);
-                    if (!$update_ut_stmt) throw new Exception('Database prepare error');
-                    $update_ut_stmt->bind_param("ssiisi", $ut_initial, $ut_barcode, $ut_qty_smallest, $ut_is_default, $ut_status, $ut_id);
-=======
-                    $update_ut_query = "UPDATE unit_types SET barcode = ?, quantity_smallest_pack = ?, is_default_uom = ?, status = ?, updated_at = NOW() WHERE unit_type_id = ?";
-                    $update_ut_stmt = $conn->prepare($update_ut_query);
-                    if (!$update_ut_stmt) throw new Exception('Database prepare error');
-                    $update_ut_stmt->bind_param("siisi", $ut_barcode, $ut_qty_smallest, $ut_is_default, $ut_status, $ut_id);
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
-                    if (!$update_ut_stmt->execute()) {
-                        throw new Exception('Failed to update unit type: ' . $update_ut_stmt->error);
-                    }
-                } else {
-<<<<<<< HEAD
-                    $insert_ut_query = "INSERT INTO unit_types (unit_type_name, uom_initial, barcode, quantity_smallest_pack, is_default_uom, multiplier, branch_id, status) VALUES (?, ?, ?, ?, ?, 1.00, ?, ?)";
-                    $insert_ut_stmt = $conn->prepare($insert_ut_query);
-                    if (!$insert_ut_stmt) throw new Exception('Database prepare error');
-                    $insert_ut_stmt->bind_param("sssiiis", $ut_name, $ut_initial, $ut_barcode, $ut_qty_smallest, $ut_is_default, $branch_id, $ut_status);
-=======
-                    $insert_ut_query = "INSERT INTO unit_types (unit_type_name, barcode, quantity_smallest_pack, is_default_uom, multiplier, branch_id, status) VALUES (?, ?, ?, ?, 1.00, ?, ?)";
-                    $insert_ut_stmt = $conn->prepare($insert_ut_query);
-                    if (!$insert_ut_stmt) throw new Exception('Database prepare error');
-                    $insert_ut_stmt->bind_param("ssiiis", $ut_name, $ut_barcode, $ut_qty_smallest, $ut_is_default, $branch_id, $ut_status);
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
-                    if (!$insert_ut_stmt->execute()) {
-                        throw new Exception('Failed to create unit type: ' . $insert_ut_stmt->error);
-                    }
-                    $ut_id = $conn->insert_id;
-                }
-                
-                $ut_name_to_id_map[$ut_name] = $ut_id;
+                $ut_id = amgcResolveUnitTypeIdForItemUom($conn, $ut_name, $ut_initial, $branch_id, $items_branch_column_exists);
+$ut_name_to_id_map[$ut_name] = $ut_id;
                 if ($ut_is_default) {
                     $default_unit_type_id = $ut_id;
                 }
 
                 upsertItemUnitInventory($conn, $item_id, $ut_id, $ut_current_inventory, $ut_as_of_date, $ut_unit_cost);
+                upsertItemUnitTypeRow($conn, $item_id, $ut_id, $ut_name, $ut_initial, $ut_barcode, $ut_qty_smallest, $ut_is_default, $branch_id, $ut_status);
             }
             
-<<<<<<< HEAD
             // Update pricing without creating duplicate rows
             $seenPricingUpdates = [];
             foreach ($unique_unit_types as $ut_name => $ut_data) {
                 if (isset($ut_name_to_id_map[$ut_name])) {
                     $ut_id = $ut_name_to_id_map[$ut_name];
                     $ut_quantity = max(1, (int)($ut_data['unit_quantity'] ?? 1));
-=======
-            // Update pricing
-            foreach ($unique_unit_types as $ut_name => $ut_data) {
-                if (isset($ut_name_to_id_map[$ut_name])) {
-                    $ut_id = $ut_name_to_id_map[$ut_name];
-                    $ut_quantity = (int)($ut_data['unit_quantity'] ?? 1);
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     
                     if (!empty($pricing_data) && is_array($pricing_data)) {
                         foreach ($pricing_data as $pricing_row) {
                             if (isset($pricing_row['prices'][$ut_name])) {
                                 $ut_price = (float)$pricing_row['prices'][$ut_name];
-<<<<<<< HEAD
                                 $effective_date = !empty($pricing_row['effective_date']) ? normalizeImportDateValue($pricing_row['effective_date']) : null;
                                 $price_level = !empty($pricing_row['price_level']) ? trim($pricing_row['price_level']) : 'Standard';
                                 $pricingKey = $item_id . '|' . $ut_id . '|' . $price_level . '|' . ($effective_date ?: 'current');
@@ -2424,17 +2385,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                                     amgcUpsertItemUnitScheduleStrict($conn, $item_id, $ut_id, $price_level, $ut_price, $ut_quantity, $effective_date);
                                 } else {
                                     amgcUpsertItemUnitPricingStrict($conn, $item_id, $ut_id, $ut_price, $ut_quantity, $effective_date, $price_level);
-=======
-                                $effective_date = !empty($pricing_row['effective_date']) ? $pricing_row['effective_date'] : null;
-                                $price_level = !empty($pricing_row['price_level']) ? $pricing_row['price_level'] : 'Standard';
-                                
-                                $upsert_pricing_query = "INSERT INTO item_unit_pricing (item_id, unit_type_id, unit_price, unit_quantity, effective_date, price_level) VALUES (?, ?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE unit_price = VALUES(unit_price), unit_quantity = VALUES(unit_quantity), effective_date = VALUES(effective_date), updated_at = NOW()";
-                                $upsert_pricing_stmt = $conn->prepare($upsert_pricing_query);
-                                if (!$upsert_pricing_stmt) throw new Exception('Database prepare error');
-                                $upsert_pricing_stmt->bind_param("iidiss", $item_id, $ut_id, $ut_price, $ut_quantity, $effective_date, $price_level);
-                                if (!$upsert_pricing_stmt->execute()) {
-                                    throw new Exception('Failed to save unit pricing: ' . $upsert_pricing_stmt->error);
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                 }
                             }
                         }
@@ -2442,7 +2392,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
             }
             
-<<<<<<< HEAD
             // Delete removed Unit Types & Pricing for this item.
             // Before this fix, update only inserted/updated submitted UOM rows.
             // Rows removed in the edit modal stayed in item_unit_pricing/item_unit_inventory,
@@ -2481,13 +2430,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $delete_removed_inventory->close();
                 }
 
+                $delete_removed_item_unit_types = $conn->prepare("DELETE FROM item_unit_types WHERE item_id = ? AND unit_type_id NOT IN ($delete_placeholders)");
+                if ($delete_removed_item_unit_types) {
+                    $delete_removed_item_unit_types->bind_param($delete_types, ...$delete_params);
+                    if (!$delete_removed_item_unit_types->execute()) {
+                        throw new Exception('Failed to delete removed item UOM barcodes: ' . $delete_removed_item_unit_types->error);
+                    }
+                    $delete_removed_item_unit_types->close();
+                }
+
                 if (!$default_unit_type_id || !in_array((int)$default_unit_type_id, $submitted_unit_type_ids, true)) {
                     $default_unit_type_id = (int)$submitted_unit_type_ids[0];
                 }
             }
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             // Set default_unit_type_id if found
             if ($default_unit_type_id) {
                 $update_default = "UPDATE items SET default_unit_type_id = ? WHERE item_id = ?";
@@ -2554,10 +2510,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $today = date('Y-m-d');
             $updated_count = 0;
             $affected_items = [];
-<<<<<<< HEAD
             $updated_items = [];
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
             foreach ($updates as $row) {
                 $item_id = (int)($row['item_id'] ?? 0);
@@ -2569,7 +2522,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     continue;
                 }
 
-<<<<<<< HEAD
                 $row_changed = false;
                 $old_price_for_details = null;
                 $old_effective_for_details = null;
@@ -2630,9 +2582,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         continue;
                     }
 
-=======
-                if ($effective_date > $today) {
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     $schedule_query = "INSERT INTO item_unit_pricing_schedule (item_id, unit_type_id, price_level, unit_price, unit_quantity, effective_date)
                         VALUES (?, ?, ?, ?, ?, ?)
                         ON DUPLICATE KEY UPDATE unit_price = VALUES(unit_price), unit_quantity = VALUES(unit_quantity), updated_at = NOW()";
@@ -2658,7 +2607,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $check_stmt->close();
 
                     if ($pricing_row) {
-<<<<<<< HEAD
                         $current_snapshot_stmt = $conn->prepare("SELECT unit_price, COALESCE(unit_quantity, 1) as unit_quantity, effective_date FROM item_unit_pricing WHERE pricing_id = ? LIMIT 1");
                         if ($current_snapshot_stmt) {
                             $pricing_id_for_snapshot = (int)$pricing_row['pricing_id'];
@@ -2684,8 +2632,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                             continue;
                         }
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         $update_query = "UPDATE item_unit_pricing SET unit_price = ?, unit_quantity = ?, effective_date = ?, updated_at = NOW() WHERE pricing_id = ?";
                         $update_stmt = $conn->prepare($update_query);
                         if (!$update_stmt) {
@@ -2708,10 +2654,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                             throw new Exception('Failed to insert current price: ' . $insert_stmt->error);
                         }
                         $insert_stmt->close();
-<<<<<<< HEAD
                         $row_changed = true;
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     }
 
                     $delete_schedule_stmt = $conn->prepare("DELETE FROM item_unit_pricing_schedule WHERE item_id = ? AND unit_type_id = ? AND price_level = ? AND effective_date <= ?");
@@ -2722,7 +2665,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     }
                 }
 
-<<<<<<< HEAD
                 if (!$row_changed) {
                     continue;
                 }
@@ -2749,10 +2691,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
             if ($updated_count === 0) {
                 throw new Exception('No actual price changes detected. Only edited prices with changes will be updated.');
-=======
-                $updated_count++;
-                $affected_items[$item_id] = true;
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             }
 
             foreach (array_keys($affected_items) as $affected_item_id) {
@@ -2764,19 +2702,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 'success' => true,
                 'message' => ($effective_date > $today ? 'Price updates scheduled successfully' : 'Price updates applied successfully'),
                 'updated_count' => $updated_count,
-<<<<<<< HEAD
                 'updated_items' => $updated_items,
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 'scheduled' => ($effective_date > $today)
             ]);
             exit;
         }
 
-<<<<<<< HEAD
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         // DELETE ITEM
         elseif ($_POST['action'] === 'delete_item') {
             $item_id = (int)($_POST['item_id'] ?? 0);
@@ -2914,42 +2846,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             SELECT DISTINCT 
                 ut.unit_type_id, 
                 ut.unit_type_name, 
-<<<<<<< HEAD
                 ut.uom_initial,
-                CASE 
-                    WHEN ut.unit_type_id = i.default_unit_type_id OR ut.is_default_uom = 1 THEN COALESCE(i.barcode, ut.barcode, '')
-                    ELSE COALESCE(ut.barcode, '')
-                END AS barcode, 
-=======
-                ut.barcode, 
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
-                ut.quantity_smallest_pack, 
-                ut.is_default_uom, 
-                ut.status as unit_status, 
+                COALESCE(NULLIF(iut.barcode, ''), CASE 
+                    WHEN ut.unit_type_id = i.default_unit_type_id OR COALESCE(iut.is_default_uom, ut.is_default_uom, 0) = 1 THEN COALESCE(i.barcode, '')
+                    ELSE ''
+                END, '') AS barcode, 
+                COALESCE(iut.smallest_pack_quantity, ut.quantity_smallest_pack, 1) AS quantity_smallest_pack, 
+                COALESCE(iut.is_default_uom, ut.is_default_uom, 0) AS is_default_uom, 
+                COALESCE(iut.status, ut.status) as unit_status, 
                 COALESCE(iup.unit_quantity, 1) as unit_quantity, 
                 COALESCE(inv.current_inventory, 0) as current_inventory, 
                 COALESCE(inv.beginning_inventory, inv.current_inventory, 0) as beginning_inventory, 
                 inv.as_of_date, 
-<<<<<<< HEAD
                 COALESCE(inv.unit_cost, 0) as unit_cost,
                 CASE
                     WHEN COALESCE(inv.current_inventory, 0) > 0 AND COALESCE(inv.total_cost, 0) > 0 THEN COALESCE(inv.total_cost, 0) / COALESCE(inv.current_inventory, 1)
                     ELSE COALESCE(NULLIF(inv.unit_cost, 0), NULLIF(iup.unit_price, 0), 0)
                 END as average_cost,
                 COALESCE(NULLIF(inv.total_cost, 0), COALESCE(inv.current_inventory, 0) * COALESCE(NULLIF(inv.unit_cost, 0), NULLIF(iup.unit_price, 0), 0)) as total_cost,
-=======
-                COALESCE(inv.unit_cost, 0) as unit_cost, 
-                (COALESCE(inv.current_inventory, 0) * COALESCE(inv.unit_cost, 0)) as total_cost,
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 i.reorder_level
             FROM unit_types ut
             LEFT JOIN item_unit_pricing iup ON iup.unit_type_id = ut.unit_type_id AND iup.item_id = ?
             LEFT JOIN item_unit_inventory inv ON inv.item_id = ? AND inv.unit_type_id = ut.unit_type_id
             LEFT JOIN items i ON i.item_id = ?
+            LEFT JOIN item_unit_types iut ON iut.item_id = i.item_id AND iut.unit_type_id = ut.unit_type_id
             WHERE 
                 (iup.item_id = ? OR inv.item_id = ?)
                 AND ut.status = 'active'
-            ORDER BY ut.is_default_uom DESC, ut.unit_type_name ASC
+            ORDER BY COALESCE(iut.is_default_uom, ut.is_default_uom, 0) DESC, ut.unit_type_name ASC
             ";
             $unit_types_stmt = $conn->prepare($unit_types_query);
             if (!$unit_types_stmt) throw new Exception('Database prepare error');
@@ -2966,7 +2890,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $images_result = $images_stmt->get_result();
             $images = $images_result->fetch_all(MYSQLI_ASSOC);
 
-<<<<<<< HEAD
             $pricing_details_query = "
                 SELECT effective_date, price_level, unit_type_id, unit_type_name, unit_price, unit_quantity, is_default_uom
                 FROM (
@@ -3006,12 +2929,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $pricing_details_stmt = $conn->prepare($pricing_details_query);
             if (!$pricing_details_stmt) throw new Exception('Database prepare error');
             $pricing_details_stmt->bind_param("ii", $item_id, $item_id);
-=======
-            $pricing_details_query = "SELECT iup.effective_date, iup.price_level, ut.unit_type_name, iup.unit_price, COALESCE(iup.unit_quantity, 1) as unit_quantity, ut.is_default_uom FROM item_unit_pricing iup JOIN unit_types ut ON iup.unit_type_id = ut.unit_type_id WHERE iup.item_id = ? ORDER BY CASE WHEN iup.effective_date IS NULL THEN 1 ELSE 0 END, iup.effective_date DESC, iup.price_level ASC, ut.is_default_uom DESC, ut.unit_type_name ASC";
-            $pricing_details_stmt = $conn->prepare($pricing_details_query);
-            if (!$pricing_details_stmt) throw new Exception('Database prepare error');
-            $pricing_details_stmt->bind_param("i", $item_id);
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             $pricing_details_stmt->execute();
             $pricing_details_result = $pricing_details_stmt->get_result();
             $pricing_rows_map = [];
@@ -3025,10 +2942,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     ];
                 }
                 $pricing_rows_map[$pricing_key]['prices'][$pricing_detail['unit_type_name']] = [
-<<<<<<< HEAD
                     'unit_type_id' => (int)$pricing_detail['unit_type_id'],
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                     'unit_price' => (float)$pricing_detail['unit_price'],
                     'unit_quantity' => (int)$pricing_detail['unit_quantity']
                 ];
@@ -3036,16 +2950,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $pricing_rows = array_values($pricing_rows_map);
 
             $pricing_history = [];
-<<<<<<< HEAD
             $pricing_history_query = "SELECT 'current' as history_source, iup.effective_date, iup.price_level, ut.unit_type_name, iup.unit_price, COALESCE(iup.unit_quantity, 1) as unit_quantity, iup.created_at, iup.updated_at, COALESCE(iup.updated_at, iup.created_at) as sort_datetime
-=======
-            $pricing_history_query = "SELECT 'current' as history_source, iup.effective_date, iup.price_level, ut.unit_type_name, iup.unit_price, COALESCE(iup.unit_quantity, 1) as unit_quantity, iup.created_at, iup.updated_at
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 FROM item_unit_pricing iup
                 JOIN unit_types ut ON iup.unit_type_id = ut.unit_type_id
                 WHERE iup.item_id = ?
                 UNION ALL
-<<<<<<< HEAD
                 SELECT 'scheduled' as history_source, ips.effective_date, ips.price_level, ut.unit_type_name, ips.unit_price, COALESCE(ips.unit_quantity, 1) as unit_quantity, ips.created_at, ips.updated_at, COALESCE(ips.updated_at, ips.created_at) as sort_datetime
                 FROM item_unit_pricing_schedule ips
                 JOIN unit_types ut ON ips.unit_type_id = ut.unit_type_id
@@ -3068,16 +2977,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $pricing_history_stmt = $conn->prepare($pricing_history_query);
             if ($pricing_history_stmt) {
                 $pricing_history_stmt->bind_param("iii", $item_id, $item_id, $item_id);
-=======
-                SELECT 'scheduled' as history_source, ips.effective_date, ips.price_level, ut.unit_type_name, ips.unit_price, COALESCE(ips.unit_quantity, 1) as unit_quantity, ips.created_at, ips.updated_at
-                FROM item_unit_pricing_schedule ips
-                JOIN unit_types ut ON ips.unit_type_id = ut.unit_type_id
-                WHERE ips.item_id = ?
-                ORDER BY effective_date ASC, price_level ASC, unit_type_name ASC, history_source ASC";
-            $pricing_history_stmt = $conn->prepare($pricing_history_query);
-            if ($pricing_history_stmt) {
-                $pricing_history_stmt->bind_param("ii", $item_id, $item_id);
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 $pricing_history_stmt->execute();
                 $pricing_history_result = $pricing_history_stmt->get_result();
                 $pricing_history = $pricing_history_result ? $pricing_history_result->fetch_all(MYSQLI_ASSOC) : [];
@@ -3155,7 +3054,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 if ($qty_col && $created_at_col) {
                     $inventory_select_parts = [
                         "it.item_id",
-<<<<<<< HEAD
                         (in_array('transaction_id', $inventory_transaction_columns, true) ? "it.transaction_id AS transaction_id" : "NULL AS transaction_id"),
                         "it.transaction_type",
                         "it.$qty_col AS quantity",
@@ -3165,12 +3063,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         ($reference_type_col ? "it.$reference_type_col AS reference_type" : "'' AS reference_type"),
                         ($reference_id_col ? "it.$reference_id_col AS reference_id" : "NULL AS reference_id"),
                         "NULL AS notes",
-=======
-                        "it.transaction_type",
-                        "it.$qty_col AS quantity",
-                        ($reference_type_col ? "it.$reference_type_col AS reference_type" : "'' AS reference_type"),
-                        ($reference_id_col ? "it.$reference_id_col AS reference_id" : "NULL AS reference_id"),
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         "it.$created_at_col AS created_at",
                         "po.po_number",
                         "po.supplier_name",
@@ -3196,11 +3088,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 
                     $inventory_transactions_query = "SELECT " . implode(", ", $inventory_select_parts) . "
                         FROM inventory_transactions it
-<<<<<<< HEAD
                         LEFT JOIN items i ON i.item_id = it.item_id
                         LEFT JOIN unit_types ut_tx ON ut_tx.unit_type_id = i.default_unit_type_id
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         LEFT JOIN purchase_orders po
                             ON " . ($reference_type_col ? "it.$reference_type_col = 'purchase_order'" : "1=0") . "
                             AND " . ($reference_id_col ? "it.$reference_id_col = po.po_id" : "1=0") . "
@@ -3253,23 +3142,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $sales_customer_col = in_array('customer_name', $sales_order_columns, true) ? 'customer_name' : (in_array('store_name', $sales_order_columns, true) ? 'store_name' : (in_array('customer', $sales_order_columns, true) ? 'customer' : null));
                 $sales_created_by_col = in_array('created_by', $sales_order_columns, true) ? 'created_by' : (in_array('encoded_by', $sales_order_columns, true) ? 'encoded_by' : null);
                 $sales_status_col = in_array('order_status', $sales_order_columns, true) ? 'order_status' : (in_array('status', $sales_order_columns, true) ? 'status' : null);
-<<<<<<< HEAD
                 $sales_uom_col = in_array('unit_type', $sales_item_columns, true) ? 'unit_type' : (in_array('uom', $sales_item_columns, true) ? 'uom' : (in_array('unit', $sales_item_columns, true) ? 'unit' : null));
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
                 if ($sales_qty_col && $sales_created_at_col) {
                     $sales_select_parts = [
                         "soi.item_id",
-<<<<<<< HEAD
                         (in_array('so_item_id', $sales_item_columns, true) ? "soi.so_item_id AS transaction_id" : (in_array('sales_order_item_id', $sales_item_columns, true) ? "soi.sales_order_item_id AS transaction_id" : "NULL AS transaction_id")),
                         "'sale' AS transaction_type",
                         "(0 - ABS(COALESCE(soi.$sales_qty_col, 0))) AS quantity",
                         ($sales_uom_col ? "COALESCE(soi.$sales_uom_col, ut_sales.unit_type_name, '') AS uom" : "COALESCE(ut_tx.unit_type_name, '') AS uom"),
-=======
-                        "'sale' AS transaction_type",
-                        "(0 - ABS(COALESCE(soi.$sales_qty_col, 0))) AS quantity",
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         "'sales_order' AS reference_type",
                         "so.so_id AS reference_id",
                         "NULL AS notes",
@@ -3285,11 +3166,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $sales_query = "SELECT " . implode(", ", $sales_select_parts) . "
                         FROM sales_order_items soi
                         INNER JOIN sales_orders so ON soi.so_id = so.so_id
-<<<<<<< HEAD
                         LEFT JOIN items i ON i.item_id = soi.item_id
                         LEFT JOIN unit_types ut_sales ON ut_sales.unit_type_id = i.default_unit_type_id
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         LEFT JOIN users u ON " . ($sales_created_by_col ? "so.$sales_created_by_col = u.user_id" : "1=0") . "
                         WHERE soi.item_id = ?" . (($sales_branch_col && !$view_all_branches && $branch_id > 0) ? " AND so.$sales_branch_col = ?" : "") . ($sales_status_col ? " AND so.$sales_status_col IN ('pending','confirmed','processing','ready','delivered','completed')" : "");
 
@@ -3391,11 +3269,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         
         // GET ALL UNIT TYPES (for dropdown)
         elseif ($_POST['action'] === 'get_unit_types') {
-<<<<<<< HEAD
-            $unit_types_query = "SELECT unit_type_id, unit_type_name, uom_initial, barcode, quantity_smallest_pack, is_default_uom, status FROM unit_types WHERE status = 'active'";
-=======
-            $unit_types_query = "SELECT unit_type_id, unit_type_name, barcode, quantity_smallest_pack, is_default_uom, status FROM unit_types WHERE status = 'active'";
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
+            $unit_types_query = "SELECT unit_type_id, unit_type_name, uom_initial, '' AS barcode, quantity_smallest_pack, is_default_uom, status FROM unit_types WHERE status = 'active'";
             if ($items_branch_column_exists && !$view_all_branches && $branch_id > 0) {
                 $unit_types_query .= " AND (branch_id = $branch_id OR branch_id IS NULL)";
             }
@@ -3447,11 +3321,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $po_result = $po_stmt->get_result();
             $purchase_orders = $po_result->fetch_all(MYSQLI_ASSOC);
             foreach ($purchase_orders as &$po) {
-<<<<<<< HEAD
                 $items_query = "SELECT poi.*, i.item_name, i.item_code, COALESCE(ut_po.unit_type_name, '') AS unit_type FROM purchase_order_items poi JOIN items i ON poi.item_id = i.item_id LEFT JOIN unit_types ut_po ON ut_po.unit_type_id = i.default_unit_type_id WHERE poi.po_id = ?";
-=======
-                $items_query = "SELECT poi.*, i.item_name, i.item_code, i.unit_type FROM purchase_order_items poi JOIN items i ON poi.item_id = i.item_id WHERE poi.po_id = ?";
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 $items_stmt = $conn->prepare($items_query);
                 if (!$items_stmt) throw new Exception('Database prepare error');
                 $items_stmt->bind_param("i", $po['po_id']);
@@ -3465,7 +3335,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         
         // GET LOW STOCK ITEMS
         elseif ($_POST['action'] === 'get_low_stock_items') {
-<<<<<<< HEAD
             $low_stock_query = "
                 SELECT 
                     i.item_id,
@@ -3485,11 +3354,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             
             if ($items_branch_column_exists && !$view_all_branches && $branch_id > 0) {
                 $low_stock_query .= " AND i.branch_id = ?";
-=======
-            $low_stock_query = "SELECT item_id, item_code, item_name, stock, reorder_level, unit_type, unit_price, category FROM items WHERE stock <= reorder_level AND status = 'active'";
-            if ($items_branch_column_exists && !$view_all_branches) {
-                $low_stock_query .= " AND branch_id = ?";
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 $low_stock_stmt = $conn->prepare($low_stock_query);
                 if (!$low_stock_stmt) throw new Exception('Database prepare error');
                 $low_stock_stmt->bind_param("i", $branch_id);
@@ -3497,17 +3361,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $low_stock_stmt = $conn->prepare($low_stock_query);
                 if (!$low_stock_stmt) throw new Exception('Database prepare error');
             }
+            
             $low_stock_stmt->execute();
             $low_stock_result = $low_stock_stmt->get_result();
             $low_stock_items = $low_stock_result->fetch_all(MYSQLI_ASSOC);
             echo json_encode(['success' => true, 'items' => $low_stock_items]);
             exit;
         }
-<<<<<<< HEAD
                 
-=======
-        
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         // GET OFFTAKE DATA
         elseif ($_POST['action'] === 'get_offtake_data') {
             $start_date = $_POST['start_date'] ?? date('Y-m-d', strtotime('-30 days'));
@@ -3609,19 +3470,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $quantity_sold = (float)($_POST['quantity'] ?? 0);
             $unit_type = isset($_POST['unit_type']) ? trim($_POST['unit_type']) : '';
             $so_id = (int)($_POST['so_id'] ?? 0);
-<<<<<<< HEAD
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             if ($item_id <= 0 || $quantity_sold <= 0 || $so_id <= 0 || $unit_type === '') {
                 throw new Exception('Invalid parameters');
             }
 
-<<<<<<< HEAD
             if ($items_branch_column_exists && !$view_all_branches && $branch_id > 0) {
-=======
-            if ($items_branch_column_exists && !$view_all_branches) {
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 $check_query = "SELECT item_id FROM items WHERE item_id = ? AND branch_id = ?";
                 $check_stmt = $conn->prepare($check_query);
                 if (!$check_stmt) throw new Exception('Database prepare error');
@@ -3631,7 +3485,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 if ($check_result->num_rows === 0) {
                     throw new Exception('Item not found or access denied');
                 }
-<<<<<<< HEAD
                 $check_stmt->close();
             }
 
@@ -3666,26 +3519,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $inventory_row = $inventory_stmt->get_result()->fetch_assoc();
                 $inventory_stmt->close();
             }
-=======
-            }
-
-            $inventory_query = "SELECT inv.inventory_id, inv.current_inventory, ut.unit_type_id
-                FROM item_unit_inventory inv
-                JOIN unit_types ut ON inv.unit_type_id = ut.unit_type_id
-                WHERE inv.item_id = ? AND ut.unit_type_name = ?
-                LIMIT 1";
-            $inventory_stmt = $conn->prepare($inventory_query);
-            if (!$inventory_stmt) throw new Exception('Database prepare error');
-            $inventory_stmt->bind_param('is', $item_id, $unit_type);
-            $inventory_stmt->execute();
-            $inventory_result = $inventory_stmt->get_result();
-            $inventory_row = $inventory_result ? $inventory_result->fetch_assoc() : null;
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
             if (!$inventory_row) {
                 throw new Exception('Inventory record for selected unit type not found');
             }
-<<<<<<< HEAD
 
             // Before deducting, sync this item from the ledger so old PC/BUNDLE split rows do not cause false zero stock.
             amgcSyncItemStockFromLedger($conn, $item_id, (!$view_all_branches ? (int)$branch_id : 0));
@@ -3789,164 +3626,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 }
             }
 
-=======
-            if ((float)$inventory_row['current_inventory'] < $quantity_sold) {
-                throw new Exception('Insufficient stock for selected unit type');
-            }
-
-            $new_inventory = (float)$inventory_row['current_inventory'] - $quantity_sold;
-            $update_query = "UPDATE item_unit_inventory SET current_inventory = ?, updated_at = NOW() WHERE inventory_id = ?";
-            $update_stmt = $conn->prepare($update_query);
-            if (!$update_stmt) throw new Exception('Database prepare error');
-            $update_stmt->bind_param('di', $new_inventory, $inventory_row['inventory_id']);
-            if (!$update_stmt->execute()) {
-                throw new Exception('Failed to update stock');
-            }
-
-            // FIXED: Sync from the ACTUAL unit type that was deducted, not always from default
-            // Get the default unit type for this item
-            $get_default_query = "SELECT default_unit_type_name FROM items WHERE item_id = ?";
-            $get_default_stmt = $conn->prepare($get_default_query);
-            if ($get_default_stmt) {
-                $get_default_stmt->bind_param('i', $item_id);
-                $get_default_stmt->execute();
-                $default_result = $get_default_stmt->get_result();
-                $default_row = $default_result ? $default_result->fetch_assoc() : null;
-                $default_unit_type = $default_row['default_unit_type_name'] ?? null;
-                $get_default_stmt->close();
-                
-                // Only sync if the deducted unit type IS the default unit type
-                if ($unit_type === $default_unit_type) {
-                    // This was a deduction from the default unit, sync it
-                    syncItemSummaryFromDefaultInventory($conn, $item_id);
-                } else {
-                    // This was a deduction from a NON-DEFAULT unit type
-                    // Just update the timestamp but don't overwrite items.stock
-                    // because items.stock should remain showing only the default unit type's inventory
-                    $update_items = "UPDATE items SET updated_at = NOW() WHERE item_id = ?";
-                    $items_stmt = $conn->prepare($update_items);
-                    if ($items_stmt) {
-                        $items_stmt->bind_param('i', $item_id);
-                        $items_stmt->execute();
-                        $items_stmt->close();
-                    }
-                }
-            } else {
-                syncItemSummaryFromDefaultInventory($conn, $item_id);
-            }
-
-            $check_transaction_table = $conn->query("SHOW TABLES LIKE 'inventory_transactions'");
-            if ($check_transaction_table && $check_transaction_table->num_rows > 0) {
-                $trans_cols = [];
-                $trans_cols_result = $conn->query("SHOW COLUMNS FROM inventory_transactions");
-                if ($trans_cols_result) {
-                    while ($col = $trans_cols_result->fetch_assoc()) {
-                        $trans_cols[] = $col['Field'];
-                    }
-                }
-
-                $insert_cols = [];
-                $placeholders = [];
-                $types = '';
-                $values = [];
-
-                if (in_array('branch_id', $trans_cols, true)) {
-                    $insert_cols[] = 'branch_id';
-                    $placeholders[] = '?';
-                    $types .= 'i';
-                    $values[] = $branch_id;
-                }
-
-                if (in_array('item_id', $trans_cols, true)) {
-                    $insert_cols[] = 'item_id';
-                    $placeholders[] = '?';
-                    $types .= 'i';
-                    $values[] = $item_id;
-                }
-
-                if (in_array('transaction_type', $trans_cols, true)) {
-                    $insert_cols[] = 'transaction_type';
-                    $placeholders[] = '?';
-                    $types .= 's';
-                    $values[] = 'sale';
-                }
-
-                $qty_insert_col = null;
-                foreach (['quantity_changed', 'quantity', 'qty'] as $candidate_col) {
-                    if (in_array($candidate_col, $trans_cols, true)) {
-                        $qty_insert_col = $candidate_col;
-                        break;
-                    }
-                }
-                if ($qty_insert_col) {
-                    $insert_cols[] = $qty_insert_col;
-                    $placeholders[] = '?';
-                    $types .= 'd';
-                    $values[] = $quantity_sold;
-                }
-
-                if (in_array('previous_stock', $trans_cols, true)) {
-                    $insert_cols[] = 'previous_stock';
-                    $placeholders[] = '?';
-                    $types .= 'd';
-                    $values[] = (float)$inventory_row['current_inventory'];
-                }
-
-                if (in_array('new_stock', $trans_cols, true)) {
-                    $insert_cols[] = 'new_stock';
-                    $placeholders[] = '?';
-                    $types .= 'd';
-                    $values[] = $new_inventory;
-                }
-
-                if (in_array('reference_id', $trans_cols, true)) {
-                    $insert_cols[] = 'reference_id';
-                    $placeholders[] = '?';
-                    $types .= 's';
-                    $values[] = 'SO-' . $so_id;
-                }
-
-                $notes_text = 'Sales order deduction for unit type: ' . $unit_type;
-                if (in_array('notes', $trans_cols, true)) {
-                    $insert_cols[] = 'notes';
-                    $placeholders[] = '?';
-                    $types .= 's';
-                    $values[] = $notes_text;
-                } elseif (in_array('remarks', $trans_cols, true)) {
-                    $insert_cols[] = 'remarks';
-                    $placeholders[] = '?';
-                    $types .= 's';
-                    $values[] = $notes_text;
-                }
-
-                if (in_array('created_by', $trans_cols, true)) {
-                    $insert_cols[] = 'created_by';
-                    $placeholders[] = '?';
-                    $types .= 'i';
-                    $values[] = $user_id;
-                }
-
-                if (in_array('created_at', $trans_cols, true)) {
-                    $insert_cols[] = 'created_at';
-                    $placeholders[] = 'NOW()';
-                } elseif (in_array('transaction_date', $trans_cols, true)) {
-                    $insert_cols[] = 'transaction_date';
-                    $placeholders[] = 'NOW()';
-                }
-
-                if (!empty($insert_cols)) {
-                    $trans_query = "INSERT INTO inventory_transactions (" . implode(', ', $insert_cols) . ")
-                                    VALUES (" . implode(', ', $placeholders) . ")";
-                    $trans_stmt = $conn->prepare($trans_query);
-                    if ($trans_stmt) {
-                        if (!empty($values)) {
-                            $trans_stmt->bind_param($types, ...$values);
-                        }
-                        $trans_stmt->execute();
-                    }
-                }
-            }
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             $conn->commit();
             echo json_encode(['success' => true, 'message' => 'Stock updated successfully']);
             exit;
@@ -3964,7 +3643,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 
-<<<<<<< HEAD
 // Receive Inventory already updates item_unit_inventory directly.
 // Do NOT auto-sync inventory_transactions here, because it can add the same received quantity again on page load.
 // syncReceivedInventoryTransactionsToUnitInventory($conn, (int)$branch_id, (int)$user_id, $items_branch_column_exists, (bool)$view_all_branches);
@@ -3973,10 +3651,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 // This fixes items like item_id 170 where 48 + 52 - 74 should remain 26, not 0.
 // Disabled: do not recompute inventory on page load. This caused wrong stocks and duplicate rows.
 // amgcSyncAllBranchStocksFromLedger($conn, (int)$branch_id, (bool)$view_all_branches);
-=======
-// Sync stocks received from Receive Inventory / Returned Merchandise before displaying Current Inventory.
-syncReceivedInventoryTransactionsToUnitInventory($conn, (int)$branch_id, (int)$user_id, $items_branch_column_exists, (bool)$view_all_branches);
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
 // FETCH ALL ITEMS FROM items TABLE
 // Only show inventory from item_unit_inventory table (which is synced from inventory_transactions)
@@ -3985,7 +3659,6 @@ $items_query = "
     SELECT 
         i.item_id,
         i.item_code,
-<<<<<<< HEAD
         i.barcode,
         i.item_name,
         i.description,
@@ -3993,13 +3666,6 @@ $items_query = "
         COALESCE(NULLIF(TRIM(i.principal), ''), 'No Principal') as principal,
         COALESCE(inv_summary.total_inventory, 0) as quantity_on_hand,
         COALESCE(ut.unit_type_name, '') as unit_type,
-=======
-        i.item_name,
-        i.description,
-        i.category,
-        COALESCE(inv.current_inventory, 0) as quantity_on_hand,
-        COALESCE(ut.unit_type_name, i.unit_type) as unit_type,
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         i.unit_price,
         i.price_case,
         i.price_inner_pack,
@@ -4007,22 +3673,19 @@ $items_query = "
         i.price_carton,
         i.reorder_level,
         i.status,
+        COALESCE(i.points_eligible, 1) AS points_eligible,
         i.branch_id,
         i.created_at,
         i.updated_at,
         i.default_unit_type_id
     FROM items i
     LEFT JOIN unit_types ut ON i.default_unit_type_id = ut.unit_type_id
-<<<<<<< HEAD
     LEFT JOIN (
         SELECT item_id, SUM(COALESCE(current_inventory, 0)) AS total_inventory
         FROM item_unit_inventory
         WHERE status = 'active'
         GROUP BY item_id
     ) inv_summary ON inv_summary.item_id = i.item_id
-=======
-    LEFT JOIN item_unit_inventory inv ON inv.item_id = i.item_id AND inv.unit_type_id = i.default_unit_type_id
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     WHERE 1=1
     $items_branch_condition
     ORDER BY i.category, i.item_name ASC
@@ -4050,7 +3713,6 @@ if (!$items_result) {
         error_log("[Stock Display] Item {$item_id}: Default UOM = {$default_unit_type}, Multiplier = {$default_multiplier}, Current Stock = {$quantity_on_hand}");
     }
     unset($item);
-<<<<<<< HEAD
 }
 $total_value = 0;
 $received_total_value = 0;
@@ -4143,48 +3805,43 @@ if (!is_numeric($total_value) || $total_value < 0) {
 }
 
 $total_stock = array_sum(array_column($items, 'quantity_on_hand'));
-$statInventoryValue = '₱' . number_format($total_value, 2);
-=======
-}
 
 $total_value = 0;
-foreach ($items as $item) {
-    $item_id = $item['item_id'];
-    $quantity_on_hand = $item['quantity_on_hand'];
-    $default_price = $item['unit_price'];
-    $price_query = "SELECT iup.unit_price FROM item_unit_pricing iup JOIN unit_types ut ON iup.unit_type_id = ut.unit_type_id WHERE iup.item_id = ? AND ut.is_default_uom = 1 AND iup.price_level = 'Standard' ORDER BY COALESCE(iup.effective_date, '1000-01-01') DESC LIMIT 1";
-    $price_stmt = $conn->prepare($price_query);
-    if ($price_stmt) {
-        $price_stmt->bind_param("i", $item_id);
-        $price_stmt->execute();
-        $price_result = $price_stmt->get_result();
-        $price_data = $price_result->fetch_assoc();
-        if ($price_data && $price_data['unit_price'] > 0) {
-            $total_value += $quantity_on_hand * $price_data['unit_price'];
-        } else {
-            $total_value += $quantity_on_hand * $default_price;
-        }
-        $price_stmt->close();
-    } else {
-        $total_value += $quantity_on_hand * $default_price;
-    }
+
+$valueSql = "
+    SELECT COALESCE(SUM(inv.total_cost), 0) AS total_value
+    FROM item_unit_inventory inv
+    INNER JOIN items i ON i.item_id = inv.item_id
+    WHERE COALESCE(i.status, 'active') = 'active'
+";
+
+if ($items_branch_column_exists && !$view_all_branches && $branch_id > 0) {
+    $valueSql .= " AND i.branch_id = " . intval($branch_id);
 }
-$total_stock = array_sum(array_column($items, 'quantity_on_hand'));
+
+$valueQuery = $conn->query($valueSql);
+
+if ($valueQuery && $valueRow = $valueQuery->fetch_assoc()) {
+    $total_value = (float)$valueRow['total_value'];
+}
+
 $statInventoryValue = '₱' . number_format($total_value, 2);
 
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
+/* IBALIK ITO */
 $items_by_category = [];
 $unique_categories = [];
+
 foreach ($items as $item) {
     $category = $item['category'] ?? 'Uncategorized';
+
     if (!isset($items_by_category[$category])) {
         $items_by_category[$category] = [];
         $unique_categories[] = $category;
     }
+
     $items_by_category[$category][] = $item;
 }
 
-<<<<<<< HEAD
 $principalOptions = [];
 $principal_query = "SELECT DISTINCT TRIM(i.principal) AS principal FROM items i WHERE i.status <> 'deleted' AND i.principal IS NOT NULL AND TRIM(i.principal) <> '' $items_branch_condition ORDER BY principal ASC";
 $principal_result = $conn->query($principal_query);
@@ -4196,8 +3853,40 @@ if ($principal_result) {
     }
 }
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
+
+$itemIncomeAccounts = [];
+$itemCogsAccounts = [];
+$itemAssetAccounts = [];
+$chartAccountBranchCondition = "";
+if (!$view_all_branches && $branch_id > 0) {
+    $chartAccountBranchCondition = " AND (branch_id = " . intval($branch_id) . " OR branch_id = 0)";
+}
+$chartAccountQuery = "SELECT account_id, account_code, account_title, account_type FROM chart_of_accounts WHERE status = 'active' $chartAccountBranchCondition ORDER BY account_type ASC, account_title ASC";
+$chartAccountResult = $conn->query($chartAccountQuery);
+if ($chartAccountResult) {
+    while ($accountRow = $chartAccountResult->fetch_assoc()) {
+        $accountType = trim((string)($accountRow['account_type'] ?? ''));
+        $accountTitle = trim((string)($accountRow['account_title'] ?? ''));
+        $accountCode = trim((string)($accountRow['account_code'] ?? ''));
+        $label = ($accountCode !== '' ? $accountCode . ' · ' : '') . $accountTitle;
+        $accountOption = [
+            'id' => (int)$accountRow['account_id'],
+            'label' => $label,
+            'type' => $accountType
+        ];
+
+        if ($accountType === 'Income') {
+            $itemIncomeAccounts[] = $accountOption;
+        }
+        if ($accountType === 'Cost of Goods Sold') {
+            $itemCogsAccounts[] = $accountOption;
+        }
+        if ($accountType === 'Other Current Asset') {
+            $itemAssetAccounts[] = $accountOption;
+        }
+    }
+}
+
 $supplier_items_query = "
     SELECT DISTINCT
         s.supplier_id,
@@ -4208,14 +3897,9 @@ $supplier_items_query = "
         i.item_name,
         i.description,
         i.category,
-<<<<<<< HEAD
         COALESCE(NULLIF(TRIM(i.principal), ''), 'No Principal') as principal,
         COALESCE(inv.current_inventory, 0) as quantity_on_hand,
         COALESCE(ut.unit_type_name, '') as unit_type,
-=======
-        COALESCE(inv.current_inventory, 0) as quantity_on_hand,
-        COALESCE(ut.unit_type_name, i.unit_type) as unit_type,
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         i.reorder_level,
         i.status,
         i.branch_id
@@ -4274,10 +3958,7 @@ if (!empty($items)) {
 $next_item_code = 'ITEM' . str_pad($next_number, 3, '0', STR_PAD_LEFT);
 
 $total_items = count($items);
-<<<<<<< HEAD
 // Calculate low stock and out of stock counts using item_unit_inventory
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 $low_stock_items = array_filter($items, function($item) {
     return $item['quantity_on_hand'] <= $item['reorder_level'] && $item['quantity_on_hand'] > 0;
 });
@@ -4318,7 +3999,6 @@ function getItemImagesHtml($item_id) {
     }
     return $images_html;
 }
-<<<<<<< HEAD
 
 // ================= SYSTEM-WIDE TASK TABLE MODAL =================
 $system_tasks = [];
@@ -4473,8 +4153,6 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
         AFTER item_code
     ");
 }
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -4488,11 +4166,8 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-<<<<<<< HEAD
     <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
@@ -4539,6 +4214,11 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
         .category-tabs { border-bottom: 2px solid #dee2e6; margin-bottom: 20px; padding-bottom: 5px; display: flex; flex-wrap: wrap; gap: 5px; }
         .category-tab { display: inline-flex; align-items: center; padding: 10px 20px; background-color: #f8f9fa; border: 1px solid #dee2e6; border-bottom: none; border-radius: 8px 8px 0 0; cursor: pointer; font-weight: 500; color: #495057; transition: all 0.2s; }
         .category-tab.active { background-color: #2E7D32; color: white; border-color: #2E7D32; }
+        .category-group-header td { background: #f3f8f3 !important; border-top: 2px solid #d9ead9 !important; border-bottom: 1px solid #d9ead9 !important; color: #052A47; padding: 12px 16px !important; }
+        .category-group-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-weight: 700; }
+        .category-group-name { display: inline-flex; align-items: center; gap: 8px; }
+        .category-group-name i { color: #047857; }
+        .category-group-count { background: #e8f7ea; color: #047857; border: 1px solid #bdecc3; border-radius: 999px; padding: 3px 10px; font-size: 0.75rem; font-weight: 700; white-space: nowrap; }
         .tab-content { display: none; }
         .tab-content.active { display: block; }
         
@@ -5291,9 +4971,11 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
     .table-container tbody tr.inventory-row:not([style*="display: none"]):not([style*="display:none"]) {
         display: block !important;
     }
+    .table-container tbody tr.category-group-header:not([style*="display: none"]):not([style*="display:none"]) {
+        display: table-row !important;
+    }
 }
          /* Modal responsive styles */
-<<<<<<< HEAD
     #itemModal .modal-dialog,
     #editItemModal .modal-dialog {
         margin: 0.5rem;
@@ -5309,14 +4991,6 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
     @media (min-width: 576px) {
         #itemModal .modal-dialog,
         #editItemModal .modal-dialog {
-=======
-    #itemModal .modal-dialog {
-        margin: 0.5rem;
-    }
-    
-    @media (min-width: 576px) {
-        #itemModal .modal-dialog {
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             margin: 1.75rem auto;
         }
     }
@@ -5479,7 +5153,6 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
         
         .modal-footer .btn {
             width: 100%;
-<<<<<<< HEAD
         }
     }
     /* ============================================ */
@@ -6245,6 +5918,69 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
     width: 6% !important;
 }
 
+
+/* Fix SweetAlert input typing inside Add Item modal */
+#itemModal .swal2-container {
+    z-index: 20000 !important;
+}
+#itemModal .swal2-popup input.form-control {
+    pointer-events: auto !important;
+    user-select: text !important;
+}
+
+
+/* ===== Inventory Page Merge Tabs: Items | Bad Orders | Picklist ===== */
+.inventory-merge-tabs{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:14px 0 16px;padding:8px;background:#fff;border:1px solid #e5e7eb;border-radius:14px;box-shadow:0 4px 14px rgba(5,42,71,.06)}
+.inventory-merge-tab{border:1px solid #d1fae5;background:#f8fafc;color:#052A47;border-radius:10px;padding:9px 15px;font-weight:700;font-size:.92rem;display:inline-flex;align-items:center;gap:8px;transition:.2s ease;cursor:pointer;text-decoration:none}
+.inventory-merge-tab:hover{background:#ecfdf5;color:#047857;border-color:#44D34E}
+.inventory-merge-tab.active{background:linear-gradient(135deg,#047857,#44D34E);color:#fff;border-color:#047857;box-shadow:0 5px 14px rgba(4,120,87,.22)}
+.inventory-merge-frame-wrap{display:none;background:#fff;border:0;border-radius:0;overflow:hidden;min-height:calc(100vh - 130px);box-shadow:none;margin-top:10px}
+.inventory-merge-frame-wrap.active{display:block}
+.inventory-merge-frame{width:100%;min-height:calc(100vh - 130px);border:0;display:block;background:#fff;opacity:0;transition:opacity .18s ease}
+.inventory-merge-frame.amgc-frame-ready{opacity:1}
+/* Make Bad Orders and Pick List iframe modals behave like page-level modals */
+.inventory-merge-frame-wrap.amgc-frame-modal-active{
+    position:fixed!important;
+    inset:0!important;
+    z-index:2147483000!important;
+    width:100vw!important;
+    height:100vh!important;
+    margin:0!important;
+    padding:0!important;
+    border-radius:0!important;
+    overflow:hidden!important;
+    background:transparent!important;
+    box-shadow:none!important;
+}
+.inventory-merge-frame-wrap.amgc-frame-modal-active .inventory-merge-frame{
+    position:absolute!important;
+    inset:0!important;
+    width:100vw!important;
+    height:100vh!important;
+    min-height:100vh!important;
+    opacity:1!important;
+    background:transparent!important;
+}
+body.amgc-iframe-modal-open{overflow:hidden!important}
+body.amgc-iframe-modal-open::before{
+    content:"";
+    position:fixed;
+    inset:0;
+    z-index:2147482990;
+    background:rgba(0,0,0,.46);
+    pointer-events:none;
+}
+body.inventory-external-tab-active .stat-card-row,
+body.inventory-external-tab-active #stockAlertToast,
+body.inventory-external-tab-active #filterCard,
+body.inventory-external-tab-active .view-toggle,
+body.inventory-external-tab-active .responsive-search-box,
+body.inventory-external-tab-active #importItemsFile,
+body.inventory-external-tab-active #categoryView,
+body.inventory-external-tab-active #supplierView,
+body.inventory-external-tab-active .d-flex.justify-content-between.align-items-center.mb-3.flex-wrap.gap-2{display:none!important}
+body.inventory-external-tab-active .inventory-merge-tabs{margin-top:0}
+@media(max-width:768px){.inventory-merge-tabs{gap:6px}.inventory-merge-tab{flex:1;justify-content:center;padding:8px 10px;font-size:.82rem}.inventory-merge-frame-wrap,.inventory-merge-frame{min-height:calc(100vh - 150px)}}
 </style>
 
 <style>
@@ -6398,6 +6134,11 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
 #uomBarcodeScannerModal { z-index: 1085 !important; }
 .modal-backdrop.uom-scanner-backdrop { z-index: 1080 !important; opacity: 0.55 !important; }
 #itemModal.show, #editItemModal.show { z-index: 1055 !important; }
+
+/* Nested Add Account modal from Add Item. Keeps child backdrop from covering the parent after close. */
+#itemLinkedAccountModal { z-index: 1095 !important; }
+.modal-backdrop.item-linked-account-backdrop { z-index: 1090 !important; opacity: 0.62 !important; }
+.modal-backdrop.item-parent-backdrop { z-index: 1040 !important; opacity: 0.5 !important; }
 
 /* Search barcode button */
 #searchInput + .scan-barcode-btn{
@@ -6631,506 +6372,6 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
     }
 }
 </style>
-=======
-        }
-    }
-    /* ============================================ */
-/* ADD ITEM MODAL - INTERNAL CONTENT STYLES     */
-/* (Input Elements, Tables, Form Controls)     */
-/* ============================================ */
-
-/* Form Labels - Clean and readable */
-.modal-body .form-label {
-    font-weight: 600;
-    font-size: 0.8rem;
-    margin-bottom: 0.35rem;
-    color: #1e293b;
-    letter-spacing: -0.2px;
-}
-
-/* Required field indicator */
-.modal-body .form-label:has(+ .form-control[required])::after,
-.modal-body .form-label:has(+ input[required])::after {
-    content: '*';
-    color: #ef4444;
-    margin-left: 4px;
-}
-
-/* Form Inputs - Modern and clean */
-.modal-body .form-control,
-.modal-body .form-select {
-    border-radius: 8px;
-    border: 1px solid #e2e8f0;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.85rem;
-    transition: all 0.2s ease;
-    background-color: #ffffff;
-}
-
-.modal-body .form-control:hover,
-.modal-body .form-select:hover {
-    border-color: #cbd5e1;
-}
-
-.modal-body .form-control:focus,
-.modal-body .form-select:focus {
-    border-color: #2E7D32;
-    box-shadow: 0 0 0 3px rgba(46, 125, 50, 0.1);
-    outline: none;
-}
-
-/* Small form inputs (for tables) */
-.modal-body .form-control-sm {
-    font-size: 0.75rem;
-    padding: 0.35rem 0.6rem;
-    border-radius: 6px;
-}
-
-/* Readonly inputs */
-.modal-body .form-control[readonly] {
-    background-color: #f8fafc;
-    cursor: not-allowed;
-    color: #64748b;
-}
-
-.modal-body .form-control[readonly]:focus {
-    border-color: #e2e8f0;
-    box-shadow: none;
-}
-
-/* Textarea */
-.modal-body textarea.form-control {
-    resize: vertical;
-    min-height: 70px;
-}
-
-/* Input Group (Item Code with Edit button) */
-.modal-body .input-group {
-    flex-wrap: nowrap;
-}
-
-.modal-body .input-group .form-control {
-    border-radius: 8px 0 0 8px;
-    border-right: none;
-}
-
-.modal-body .input-group .btn {
-    border-radius: 0 8px 8px 0;
-    font-size: 0.75rem;
-    padding: 0.5rem 0.75rem;
-    white-space: nowrap;
-}
-
-.modal-body .input-group .btn-outline-secondary {
-    border-color: #e2e8f0;
-    color: #64748b;
-}
-
-.modal-body .input-group .btn-outline-secondary:hover {
-    background-color: #f1f5f9;
-    border-color: #cbd5e1;
-    color: #1e293b;
-}
-
-.modal-body .input-group .btn-success {
-    background-color: #2E7D32;
-    border-color: #2E7D32;
-}
-
-/* Section Headers */
-.modal-body .section-header,
-.modal-body h6 {
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: #1e293b;
-    margin-bottom: 1rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 2px solid #2E7D32;
-    display: inline-block;
-}
-/* ============================================ */
-/* ADD ITEM MODAL - FIXED MOBILE CARD VIEW     */
-/* (Same as Offtake Modal - Clean Layout)      */
-/* ============================================ */
-
-/* Desktop: Normal table */
-@media (min-width: 769px) {
-    #itemModal .table-responsive {
-        overflow-x: visible !important;
-    }
-    
-    #itemModal .table {
-        min-width: auto !important;
-        width: 100% !important;
-    }
-    
-    #itemModal .table thead {
-        display: table-header-group !important;
-    }
-    
-    #itemModal .table tbody tr {
-        display: table-row !important;
-    }
-    
-    #itemModal .table tbody td {
-        display: table-cell !important;
-    }
-}
-
-/* Mobile: Convert table to card view (like Offtake Modal) */
-@media (max-width: 768px) {
-    /* Hide table header */
-    #itemModal .table thead {
-        display: none !important;
-    }
-    
-    /* Table container - allow normal flow */
-    #itemModal .table-responsive {
-        overflow-x: visible !important;
-        overflow-y: visible !important;
-        margin: 0 !important;
-        padding: 0 !important;
-        border: none !important;
-    }
-    
-    /* Convert table to block */
-    #itemModal .table,
-    #itemModal .table tbody,
-    #itemModal .table tbody tr {
-        display: block !important;
-        width: 100% !important;
-    }
-    
-    /* Each row as a card */
-    #itemModal .table tbody tr {
-        background: white !important;
-        border-radius: 12px !important;
-        margin-bottom: 16px !important;
-        padding: 0 !important;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08) !important;
-        border: 1px solid #e9ecef !important;
-        overflow: hidden !important;
-    }
-    
-    /* Each cell as block with its own styling */
-    #itemModal .table tbody td {
-        display: block !important;
-        padding: 12px 16px !important;
-        border: none !important;
-        border-bottom: 1px solid #f0f0f0 !important;
-        background: white !important;
-        width: 100% !important;
-        box-sizing: border-box !important;
-    }
-    
-    /* Remove border from last cell */
-    #itemModal .table tbody td:last-child {
-        border-bottom: none !important;
-    }
-    
-    /* ===== LABEL STYLES - Like Offtake Modal ===== */
-    #unitTypesTable tbody td::before {
-        content: attr(data-label) !important;
-        display: block !important;
-        font-weight: 600 !important;
-        color: #6c757d !important;
-        font-size: 11px !important;
-        text-transform: uppercase !important;
-        letter-spacing: 0.5px !important;
-        margin-bottom: 6px !important;
-    }
-    
-    /* Set specific labels for each column */
-    #unitTypesTable tbody td:first-child::before {
-        content: "Unit Type" !important;
-    }
-    
-    #unitTypesTable tbody td:nth-child(2)::before {
-        content: "Barcode" !important;
-    }
-    
-    #unitTypesTable tbody td:nth-child(3)::before {
-        content: "Qty (Smallest Pack)" !important;
-    }
-    
-    #unitTypesTable tbody td:nth-child(4)::before {
-        content: "Default UoM" !important;
-    }
-    
-    #unitTypesTable tbody td:nth-child(5)::before {
-        content: "Status" !important;
-    }
-    
-    #unitTypesTable tbody td:last-child::before {
-        content: "Action" !important;
-    }
-    
-    /* Pricing table labels */
-    #pricingTable tbody td:first-child::before {
-        content: "Effective Date" !important;
-    }
-    
-    #pricingTable tbody td:nth-child(2)::before {
-        content: "Price Level" !important;
-    }
-    
-    #pricingTable tbody td:nth-child(n+3)::before {
-        content: "Price" !important;
-    }
-    
-    /* ===== INPUT STYLES - Full width ===== */
-    #itemModal .table .form-control,
-    #itemModal .table .form-select,
-    #unitTypesTable input,
-    #pricingTable input {
-        width: 100% !important;
-        display: block !important;
-        margin-top: 4px !important;
-    }
-    
-    #itemModal .table .form-control-sm {
-        padding: 8px 10px !important;
-        font-size: 14px !important;
-    }
-    
-    /* Checkbox - inline with label */
-    #unitTypesTable tbody td:nth-child(4) .form-check-input {
-        display: inline-block !important;
-        width: 20px !important;
-        height: 20px !important;
-        margin: 0 !important;
-    }
-    
-    /* Toggle switch - inline */
-    #unitTypesTable tbody td:nth-child(5) {
-        display: flex !important;
-        align-items: center !important;
-        justify-content: space-between !important;
-        flex-direction: row !important;
-    }
-    
-    #unitTypesTable tbody td:nth-child(5)::before {
-        margin-bottom: 0 !important;
-    }
-    
-    .unit-toggle-switch {
-        width: 40px !important;
-        height: 22px !important;
-    }
-    
-    .unit-toggle-slider:before {
-        height: 18px !important;
-        width: 18px !important;
-    }
-    
-    /* Delete button */
-    #unitTypesTable tbody td:last-child {
-        display: flex !important;
-        align-items: center !important;
-        justify-content: space-between !important;
-        flex-direction: row !important;
-    }
-    
-    #unitTypesTable tbody td:last-child::before {
-        margin-bottom: 0 !important;
-    }
-    
-    .modal-body .btn-outline-danger {
-        padding: 6px 12px !important;
-        font-size: 0.75rem !important;
-    }
-    
-    /* Price inputs - right aligned like Offtake */
-    .pricing-input,
-    .edit-pricing-input {
-        text-align: left !important;
-    }
-}
-
-/* ===== SMALL MOBILE (480px and below) ===== */
-@media (max-width: 480px) {
-    #itemModal .table tbody td {
-        padding: 10px 12px !important;
-    }
-    
-    #itemModal .table .form-control-sm {
-        padding: 6px 8px !important;
-        font-size: 13px !important;
-    }
-    
-    .unit-toggle-switch {
-        width: 36px !important;
-        height: 20px !important;
-    }
-    
-    .unit-toggle-slider:before {
-        height: 16px !important;
-        width: 16px !important;
-    }
-    
-    .unit-toggle-switch input:checked + .unit-toggle-slider:before {
-        transform: translateX(16px) !important;
-    }
-    
-    .modal-body .btn-outline-danger {
-        padding: 4px 10px !important;
-        font-size: 0.7rem !important;
-    }
-}
-
-/* ===== LANDSCAPE MODE ===== */
-@media (max-width: 768px) and (orientation: landscape) {
-    #itemModal .table tbody tr {
-        margin-bottom: 12px !important;
-    }
-    
-    #itemModal .table tbody td {
-        padding: 8px 12px !important;
-    }
-    
-    #itemModal .table .form-control-sm {
-        padding: 5px 8px !important;
-        font-size: 12px !important;
-    }
-}
-/* ===== ROW CURSOR STYLES ===== */
-/* Para sa lahat ng table rows - gawing pointer (clickable) */
-.table-container tbody tr {
-    cursor: pointer;
-    transition: background-color 0.2s ease, transform 0.2s ease;
-}
-
-/* Desktop hover effect */
-@media (min-width: 769px) {
-    .table-container tbody tr:hover {
-        background-color: rgba(46, 125, 50, 0.08) !important;
-    }
-    
-    /* Para sa edit/delete buttons - ibalik sa default cursor */
-    .table-container tbody tr:hover .btn-action {
-        cursor: pointer;
-    }
-}
-
-/* Mobile tap feedback */
-@media (max-width: 768px) {
-    .table-container tbody tr:active {
-        transform: scale(0.99);
-        background-color: rgba(46, 125, 50, 0.1);
-    }
-}
-
-/* Siguraduhin na ang edit at delete buttons ay hindi nagpapalit ng cursor sa pointer (stay as default arrow) */
-.btn-action {
-    cursor: pointer !important;
-}
-
-/* Optional: Para sa status toggle - maintain clickability */
-.status-toggle {
-    cursor: default;
-}
-
-.toggle-switch {
-    cursor: pointer;
-}
-
-/* ===== UoM TABLE RESPONSIVE IMPROVEMENTS (ADD + EDIT) ===== */
-#unitTypesTable,
-#editUnitTypesTable {
-    table-layout: fixed;
-    width: 100%;
-}
-
-#unitTypesTable th,
-#unitTypesTable td,
-#editUnitTypesTable th,
-#editUnitTypesTable td {
-    vertical-align: middle;
-}
-
-#unitTypesTable .form-control,
-#editUnitTypesTable .form-control,
-#unitTypesTable .form-select,
-#editUnitTypesTable .form-select {
-    min-width: 0;
-}
-
-#unitTypesTable input[readonly],
-#editUnitTypesTable input[readonly] {
-    background-color: #f8f9fa !important;
-}
-
-@media (max-width: 991.98px) {
-    #itemModal .table-responsive,
-    #editItemModal .table-responsive {
-        overflow-x: auto;
-        -webkit-overflow-scrolling: touch;
-    }
-
-    #unitTypesTable,
-    #editUnitTypesTable {
-        min-width: 980px;
-    }
-}
-
-@media (max-width: 768px) {
-    #unitTypesTable,
-    #editUnitTypesTable {
-        min-width: 0 !important;
-    }
-
-    #unitTypesTable thead,
-    #editUnitTypesTable thead {
-        display: none !important;
-    }
-
-    #unitTypesTable tbody,
-    #unitTypesTable tr,
-    #unitTypesTable td,
-    #editUnitTypesTable tbody,
-    #editUnitTypesTable tr,
-    #editUnitTypesTable td {
-        display: block !important;
-        width: 100% !important;
-    }
-
-    #unitTypesTable tbody tr,
-    #editUnitTypesTable tbody tr {
-        background: #fff !important;
-        border: 1px solid #e5e7eb !important;
-        border-radius: 12px !important;
-        margin-bottom: 14px !important;
-        padding: 10px !important;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.04) !important;
-    }
-
-    #unitTypesTable tbody td,
-    #editUnitTypesTable tbody td {
-        border: none !important;
-        border-bottom: 1px solid #f1f3f5 !important;
-        padding: 10px 12px !important;
-    }
-
-    #unitTypesTable tbody td:last-child,
-    #editUnitTypesTable tbody td:last-child {
-        border-bottom: none !important;
-    }
-
-    #unitTypesTable tbody td::before,
-    #editUnitTypesTable tbody td::before {
-        content: attr(data-label) !important;
-        display: block !important;
-        font-weight: 600 !important;
-        color: #6c757d !important;
-        font-size: 11px !important;
-        text-transform: uppercase !important;
-        letter-spacing: 0.5px !important;
-        margin-bottom: 6px !important;
-    }
-}
-
-    </style>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 </head>
 <body>
     <!-- Print Frame (hidden) -->
@@ -7138,271 +6379,294 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
 
     <!-- MAIN APPLICATION -->
     <div id="appPage">
-        <!-- Sidebar -->
+ <!-- Sidebar -->
 <div class="sidebar" id="sidebar">
     <div class="sidebar-header">
         <h3>
             <button class="desktop-toggle-btn" id="desktopToggleBtn">
                 <i class="bi bi-list" id="toggleIcon"></i>
             </button>
-            <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon"> 
+
+            <img src="../Pictures/amgc3DLogo.png" alt="Logo" class="logo-icon">
+
             <span class="nav-text">Branch Admin</span>
         </h3>
     </div>
-    
+
     <div class="sidebar-content">
         <div class="sidebar-menu">
             <ul class="nav flex-column">
-<<<<<<< HEAD
-                            <li class="nav-item">
-                <a class="nav-link" href="branchdashboard.php">
-                    <i class="bi bi-speedometer2"></i>
-                    <span class="nav-text">Dashboard</span>
-                </a>
-                    </li>
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
-                <!-- Warehouse Dropdown - walang dropdown-toggle class -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'warehouseMenu')">
-        <i class="bi bi-shop"></i>
-        <span class="nav-text">Warehouse</span>
-        <i class="bi bi-chevron-down dropdown-arrow"></i>
-    </a>
-    <div class="collapse" id="warehouseMenu">
-        <ul class="nav flex-column ps-4">
-            <li class="nav-item">
-                <a class="nav-link active" href="current_inventory.php">
-                        <i class="bi bi-bar-chart-line"></i>
-                        <span class="nav-text">Current Inventory</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="bad_orders.php">
-                    <i class="bi bi-recycle"></i>
-                    <span class="nav-text">Bad Orders</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="pick_list_items.php">
-                    <i class="bi bi-list-check"></i>
-                    <span class="nav-text">Pick List Items</span>
-                </a>
-            </li>
-<<<<<<< HEAD
-            
-                                <li class="nav-item">
-                                    <a class="nav-link" href="warehouses.php">
-                                    <i class="bi bi-shop"></i>
-                                    <span class="nav-text">Warehouses</span></a>
-                                </li>
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
-        </ul>
-    </div>
-</li>
-
-                
-                <!-- Supplier Dropdown - walang dropdown-toggle class -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'supplierMenu')">
-        <i class="bi bi-building"></i>
-        <span class="nav-text">Supplier</span>
-        <i class="bi bi-chevron-down dropdown-arrow"></i>
-    </a>
-    <div class="collapse" id="supplierMenu">
-        <ul class="nav flex-column ps-4">
-            <li class="nav-item">
-                <a class="nav-link" href="purchase_order.php">
-                    <i class="bi bi-box"></i>
-                    <span class="nav-text">Receive Inventory</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="supplier.php">
-                    <i class="bi bi-people"></i>
-                    <span class="nav-text">Supplier List</span>
-                </a>
-            </li>
-        </ul>
-    </div>
-</li>
-
-<<<<<<< HEAD
-<li class="nav-item dropdown-nav">
-                            <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'customerMenu')">
-                                <i class="bi bi-people"></i><span class="nav-text">Customer</span><i class="bi bi-chevron-down dropdown-arrow"></i>
-                            </a>
-                            <div class="collapse" id="customerMenu">
-                                <ul class="nav flex-column ps-4">
-                                    <li class="nav-item"><a class="nav-link" href="customer_list.php"><i class="bi bi-person-badge"></i><span class="nav-text">Customer List</span></a></li>
-                                    <li class="nav-item"><a class="nav-link" href="approve_credit_requests.php"><i class="bi bi-pencil-square"></i><span class="nav-text">Approve Credit Request</span></a></li>
-                                    <li class="nav-item"><a class="nav-link" href="sales_order.php"><i class="bi bi-cart"></i><span class="nav-text">Sales Order</span></a></li>
-                                    <li class="nav-item"><a class="nav-link active" href="collections.php"><i class="bi bi-cash-stack"></i><span class="nav-text">Collections</span></a></li>
-                                </ul>
-                            </div>
-                        </li>
-=======
-<!-- Customer Dropdown - walang dropdown-toggle class -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'customerMenu')">
-        <i class="bi bi-people"></i>
-        <span class="nav-text">Customer</span>
-        <i class="bi bi-chevron-down dropdown-arrow"></i>
-    </a>
-    <div class="collapse" id="customerMenu">
-        <ul class="nav flex-column ps-4">
-            <li class="nav-item">
-                <a class="nav-link" href="sales_order.php">
-                    <i class="bi bi-cart"></i>
-                    <span class="nav-text">Sales Order</span>
-                </a>
-            </li>
-            <li class="nav-item"><a class="nav-link" href="collections.php">
-                <i class="bi bi-cash-stack"></i>
-                    <span class="nav-text">Collections</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="customer_list.php">
-                    <i class="bi bi-person-badge"></i>
-                    <span class="nav-text">Customer List</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="approve_credit_requests.php">
-                    <i class="bi bi-pencil-square"></i>
-                    <span class="nav-text">Approved Credit Request</span>
-                </a>
-            </li>
-        </ul>
-    </div>
-</li>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
-
-<!-- Delivery Dropdown - walang dropdown-toggle class -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'deliveryMenu')">
-        <i class="bi bi-truck"></i>
-        <span class="nav-text">Delivery</span>
-        <i class="bi bi-chevron-down dropdown-arrow"></i>
-    </a>
-    <div class="collapse" id="deliveryMenu">
-        <ul class="nav flex-column ps-4">
-            <li class="nav-item">
-                <a class="nav-link" href="trip_tickets.php">
-                    <i class="bi bi-ticket-perforated"></i>
-                    <span class="nav-text">Trip Tickets</span>
-                </a>
-            </li>
-        </ul>
-    </div>
-</li>
-<<<<<<< HEAD
-                 <!-- Banking Dropdown -->
-                    <li class="nav-item dropdown-nav">
-                        <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'bankingMenu')">
-                            <i class="bi bi-bank2"></i>
-                            <span class="nav-text">Banking</span>
-                            <i class="bi bi-chevron-down dropdown-arrow"></i>
-                        </a>
-
-                        <div class="collapse" id="bankingMenu">
-                            <ul class="nav flex-column ps-4">
-                                <li class="nav-item">
-                                    <a class="nav-link" href="deposit.php">
-                                        <i class="bi bi-arrow-down-circle"></i>
-                                        <span class="nav-text">Deposit</span>
-                                    </a>
-                                </li>
-
-                                <li class="nav-item">
-                                    <a class="nav-link" href="Withdrawal.php">
-                                        <i class="bi bi-arrow-up-circle"></i>
-                                        <span class="nav-text">Withdrawal</span>
-                                    </a>
-                                </li>
-
-                                <li class="nav-item">
-                                    <a class="nav-link" href="bank_statement.php">
-                                        <i class="bi bi-receipt"></i>
-                                        <span class="nav-text">Bank Statement</span>
-                                    </a>
-                                </li>
-
-                                <li class="nav-item">
-                                    <a class="nav-link" href="expenses.php">
-                                        <i class="bi bi-cash-stack"></i>
-                                        <span class="nav-text">Expenses</span>
-                                    </a>
-                                </li>
-                            </ul>
-                        </div>
-                    </li>
-                    
-                     <!-- Shared Services Dropdown -->
-<li class="nav-item dropdown-nav">
-    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'sharedServicesMenu')">
-        <i class="bi bi-grid-3x3-gap"></i>
-        <span class="nav-text">Shared Services</span>
-        <i class="bi bi-chevron-down dropdown-arrow"></i>
-    </a>
-    <div class="collapse" id="sharedServicesMenu">
-        <ul class="nav flex-column ps-4">
-            <li class="nav-item">
-                <a class="nav-link" href="motorpool.php">
-                    <i class="bi bi-truck"></i>
-                    <span class="nav-text">Motorpool</span>
-                </a>
-            </li>
-            <li class="nav-item">
-                <a class="nav-link" href="central_warehouse.php">
-                    <i class="bi bi-box-seam"></i>
-                    <span class="nav-text">Central Warehouse</span>
-                </a>
-            </li>
-        </ul>
-    </div>
-</li>
-                    
-=======
+                <!-- Dashboard -->
                 <li class="nav-item">
-    <a class="nav-link" href="banking.php">
-        <i class="bi bi-bank2"></i>
-        <span class="nav-text">Banking</span>
-    </a>
-</li>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
-                <!-- Users -->
-                <li class="nav-item">
-                    <a class="nav-link" href="drivers.php">
-                        <i class="bi bi-people-fill"></i>
-                        <span class="nav-text">Users</span>
+                    <a class="nav-link" href="branchdashboard.php">
+                        <i class="bi bi-speedometer2"></i>
+                        <span class="nav-text">Dashboard</span>
                     </a>
                 </li>
-<<<<<<< HEAD
+                <!-- Vendor Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'supplierMenu')">
+                        <i class="bi bi-building"></i>
+                        <span class="nav-text">Vendor</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
 
-              
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
+                    <div class="collapse" id="supplierMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="purchase_order.php">
+                                    <i class="bi bi-file-earmark-text"></i>
+                                    <span class="nav-text">Enter Bills</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="paybills.php">
+                                    <i class="bi bi-currency-dollar"></i>
+                                    <span class="nav-text">Pay Bills</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="supplier.php">
+                                    <i class="bi bi-shop"></i>
+                                    <span class="nav-text">Vendor List</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+
+                <!-- Customer Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'customerMenu')">
+                        <i class="bi bi-people-fill"></i>
+                        <span class="nav-text">Customers</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="customerMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="orderproduct.php">
+                                    <i class="bi bi-receipt"></i>
+                                    <span class="nav-text">Create Invoice</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="collections.php">
+                                    <i class="bi bi-cash-stack"></i>
+                                    <span class="nav-text">Receive Payment</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="customer_list.php">
+                                    <i class="bi bi-person-badge"></i>
+                                    <span class="nav-text">Customer List</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+
+                <!-- Employees Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'employeesMenu')">
+                        <i class="bi bi-briefcase"></i>
+                        <span class="nav-text">Employees</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="employeesMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="employeelist.php">
+                                    <i class="bi bi-person-badge"></i>
+                                    <span class="nav-text">Employee List</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="employee.php">
+                                    <i class="bi bi-clock-history"></i>
+                                    <span class="nav-text">Enter Time</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+
+                <!-- Banking Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'bankingMenu')">
+                        <i class="bi bi-bank2"></i>
+                        <span class="nav-text">Banking</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="bankingMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="deposit.php">
+                                    <i class="bi bi-bank"></i>
+                                    <span class="nav-text">Record Deposit</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="Withdrawal.php">
+                                    <i class="bi bi-journal-check"></i>
+                                    <span class="nav-text">Write Checks</span>
+                                </a>
+                            </li>
+                            
+                            <li class="nav-item">
+                                <a class="nav-link" href="transferfunds.php">
+                                    <i class="bi bi-arrow-left-right"></i>
+                                    <span class="nav-text">Transfer Funds</span>
+                                </a>
+                            </li>
+                            
+                            <li class="nav-item" hidden>
+                                <a class="nav-link" href="bank_statement.php">
+                                    <i class="bi bi-receipt"></i>
+                                    <span class="nav-text">Bank Statement</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item" hidden>
+                                <a class="nav-link" href="expenses.php">
+                                    <i class="bi bi-cash-stack"></i>
+                                    <span class="nav-text">Expenses</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+
+                <!-- Company Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'warehouseMenu')">
+                        <i class="bi bi-building"></i>
+                        <span class="nav-text">Company</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="warehouseMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link active" href="current_inventory.php">
+                                    <i class="bi bi-box"></i>
+                                    <span class="nav-text">Items</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="warehouses.php">
+                                    <i class="bi bi-shop"></i>
+                                    <span class="nav-text">Warehouses</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="chartofaccounts.php">
+                                    <i class="bi bi-graph-up"></i>
+                                    <span class="nav-text">Chart of Accounts</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item" hidden>
+                                <a class="nav-link" href="trip_tickets.php">
+                                    <i class="bi bi-ticket-perforated"></i>
+                                    <span class="nav-text">Trip Tickets</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="motorpool.php">
+                                    <i class="bi bi-truck"></i>
+                                    <span class="nav-text">Motorpool</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="central_warehouse.php">
+                                    <i class="bi bi-box-seam"></i>
+                                    <span class="nav-text">Central Warehouse</span>
+                                </a>
+                            </li>
+
+                            <li class="nav-item">
+                                <a class="nav-link" href="drivers.php">
+                                    <i class="bi bi-people-fill"></i>
+                                    <span class="nav-text">Users</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+                <!-- Accounting Dropdown -->
+                <li class="nav-item dropdown-nav">
+                    <a class="nav-link" href="#" onclick="toggleSidebarDropdown(event, 'accountingMenu')">
+                        <i class="bi bi-graph-up"></i>
+                        <span class="nav-text">Accounting</span>
+                        <i class="bi bi-chevron-down dropdown-arrow"></i>
+                    </a>
+
+                    <div class="collapse" id="accountingMenu">
+                        <ul class="nav flex-column ps-4">
+                            <li class="nav-item">
+                                <a class="nav-link" href="journal_entries.php">
+                                    <i class="bi bi-journal"></i>
+                                    <span class="nav-text">Journal Entries</span>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="batch_transaction.php">
+                                    <i class="bi bi-collection"></i>
+                                    <span class="nav-text">Batch Transaction</span>
+                                </a>
+                            </li>
+                            <li class="nav-item">
+                                <a class="nav-link" href="item_adjustment.php">
+                                    <i class="bi bi-sliders"></i>
+                                    <span class="nav-text">Item Adjusment</span>
+                                </a>
+                            </li>
+                        </ul>
+                    </div>
+                </li>
+
             </ul>
         </div>
     </div>
-    
+
     <div class="sidebar-footer">
         <div class="user-profile-sidebar">
-            <div class="user-avatar-sidebar"><?php echo $user_initials; ?></div>
+            <div class="user-avatar-sidebar">
+                <?php echo htmlspecialchars($user_initials); ?>
+            </div>
+
             <div class="user-details-sidebar">
-                <span class="user-name-sidebar"><?php echo htmlspecialchars($user_name); ?></span>
-                <span class="user-role-sidebar"><?php echo ucfirst($user_role); ?></span>
+                <span class="user-name-sidebar">
+                    <?php echo htmlspecialchars($user_name); ?>
+                </span>
+
+                <span class="user-role-sidebar">
+                    <?php echo htmlspecialchars(ucfirst($user_role)); ?>
+                </span>
             </div>
         </div>
+
         <button class="logout-btn-sidebar" onclick="logout()">
             <i class="bi bi-box-arrow-right"></i>
             <span class="logout-text">Logout</span>
         </button>
     </div>
 </div>
+
 
         <!-- Main Content -->
         <div class="main-content" id="mainContent">
@@ -7411,9 +6675,21 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
                     <button class="mobile-toggle-btn" id="mobileToggleBtn"><i class="bi bi-list"></i></button>
                     <div class="page-title">
                         <h2>Current Inventory</h2>
-                        <p id="dashboardSubtitle">Real-time inventory from database</p>
+                        <p id="dashboardSubtitle">Manage inventory, pricing and stock levels</p>
                     </div>
                 </div>
+                <div class="inventory-merge-tabs" id="inventoryMergeTabs">
+                    <button type="button" class="inventory-merge-tab active" data-inventory-tab="items" onclick="switchInventoryMainTab('items')"><i class="bi bi-box-seam"></i> Items</button>
+                    <button type="button" class="inventory-merge-tab" data-inventory-tab="bad-orders" onclick="switchInventoryMainTab('bad-orders')"><i class="bi bi-recycle"></i> Bad Orders</button>
+                    <button type="button" class="inventory-merge-tab" data-inventory-tab="picklist" onclick="switchInventoryMainTab('picklist')"><i class="bi bi-list-check"></i> Pick List</button>
+                </div>
+                <div class="inventory-merge-frame-wrap" id="badOrdersTabPanel">
+                    <iframe class="inventory-merge-frame" id="badOrdersFrame" title="Bad Orders" data-src="bad_orders.php" allowtransparency="true" onload="cleanMergedModuleFrame(this)"></iframe>
+                </div>
+                <div class="inventory-merge-frame-wrap" id="picklistTabPanel">
+                    <iframe class="inventory-merge-frame" id="picklistFrame" title="Picklist Items" data-src="pick_list_items.php" allowtransparency="true" onload="cleanMergedModuleFrame(this)"></iframe>
+                </div>
+
                 <!-- Additional Stats with Modals -->
                 <div class="row stat-card-row g-1 g-sm-2">
                     <!-- Stat 1: Total Inventory Value -->
@@ -7461,7 +6737,6 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
                                 <div class="stat-label">Needs Attention</div>
                                 <small><?= $low_stock_count ?> low, <?= $out_of_stock ?> out</small>
                             </div>
-<<<<<<< HEAD
                         </div>
                     </div>
                 </div>
@@ -7576,76 +6851,6 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
     </div>
 </div>
 
-=======
-                        </div>
-                    </div>
-                </div>
-                
-                <!-- FILTER SECTION - INVENTORY ITEMS (Collapsible Design) -->
-                <div class="form-card mb-4">
-                    <div class="filter-header">
-                        <h5>
-                            <i class="bi bi-funnel"></i> Filter Inventory Items
-                        </h5>
-                        <button class="filter-toggle-btn" type="button" id="filterToggleBtn" aria-expanded="false">
-                            <i class="bi bi-chevron-down" id="filterIcon"></i>
-                        </button>
-                    </div>
-                    
-                    <div class="filter-content collapsed" id="filterContent">
-                        <div class="row g-3">
-                            <!-- Search Field -->
-                            <div class="col-12 col-md-3">
-                                <label class="form-label">
-                                    <i class="bi bi-search"></i> Search
-                                </label>
-                                <input type="text" class="form-control" id="searchInput" placeholder="Search by item code, name, or category...">
-                            </div>
-                            
-                            <!-- Status Filter -->
-                            <div class="col-12 col-md-3">
-                                <label class="form-label">
-                                    <i class="bi bi-flag"></i> Status
-                                </label>
-                                <select class="form-select" id="statusFilter">
-                                    <option value="">All Status</option>
-                                    <option value="active">Active</option>
-                                    <option value="inactive">Inactive</option>
-                                    <option value="discontinued">Discontinued</option>
-                                </select>
-                            </div>
-                            
-                            <!-- Stock Level Filter -->
-                            <div class="col-12 col-md-3">
-                                <label class="form-label">
-                                    <i class="bi bi-box-seam"></i> Stock Level
-                                </label>
-                                <select class="form-select" id="stockFilter">
-                                    <option value="">Stock Level</option>
-                                    <option value="low">Low Stock</option>
-                                    <option value="normal">Normal</option>
-                                    <option value="adequate">Adequate</option>
-                                    <option value="out">Out of Stock</option>
-                                </select>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-
-                
-                <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
-                    <div class="view-toggle">
-                        <button class="view-btn active" id="viewCategoryBtn" onclick="toggleView('category')"><i class="bi bi-grid"></i> By Category</button>
-                        <button class="view-btn" id="viewSupplierBtn" onclick="toggleView('supplier')"><i class="bi bi-building"></i> By Supplier</button>
-                    </div>
-                    <div class="d-flex flex-wrap gap-2">
-                        <input type="file" id="importItemsFile" accept=".xlsx,.xls,.csv" style="display:none;" onchange="handleImportItemsFile(event)">
-                        <button class="btn btn-outline-warning" type="button" onclick="showBatchPriceLevelModal()"><i class="bi bi-cash-coin"></i> Update Price Level</button>
-                        <button class="btn btn-primary" onclick="showAddItemModal()"><i class="bi bi-plus-circle"></i> Add Item</button>
-                    </div>
-                </div>
-
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 <!-- CATEGORY VIEW -->
                 <div id="categoryView">
                     <?php if (empty($items)): ?>
@@ -7659,49 +6864,49 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
                         </div>
                         
                         <div id="cat-tab-all" class="tab-content active">
-<<<<<<< HEAD
-                            <div class="table-container"><table class="table custom-table compact-table"><thead><th class="col-image">Image</th><th>Item Name</th><th>Category</th><th>Principal</th><?php if ($items_branch_column_exists && $view_all_branches): ?><th>Branch</th><?php endif; ?><th>Stock</th><th class="col-status">Active</th><th class="col-actions">Actions</th> </thead><tbody>
-                            <?php foreach ($items as $item): $stock_status = getStockStatus($item['quantity_on_hand'], $item['reorder_level']); ?>
-                            <tr class="inventory-row" data-id="<?= $item['item_id'] ?>" data-code="<?= htmlspecialchars($item['item_code']) ?>" data-barcode="<?= htmlspecialchars($item['barcode'] ?? '') ?>" data-name="<?= htmlspecialchars($item['item_name']) ?>" data-category="<?= htmlspecialchars($item['category'] ?? '') ?>" data-principal="<?= htmlspecialchars($item['principal'] ?? 'No Principal') ?>" data-status="<?= $item['status'] ?>" data-stock="<?= $item['quantity_on_hand'] ?>" data-reorder="<?= $item['reorder_level'] ?>" data-price="<?= $item['unit_price'] ?>" data-unit="<?= $item['unit_type'] ?>" data-description="<?= htmlspecialchars($item['description'] ?? '') ?>" data-branch="<?= $item['branch_id'] ?? '' ?>">
+                            <div class="table-container"><table class="table custom-table compact-table"><thead><th class="col-image">Image</th><th>Item Name</th><th>Principal</th><?php if ($items_branch_column_exists && $view_all_branches): ?><th>Branch</th><?php endif; ?><th>Stock</th><th class="col-status">Active</th><th class="col-actions">Actions</th> </thead><tbody>
+                            <?php foreach ($items_by_category as $category => $category_items): $category_label = trim((string)$category) !== '' ? $category : 'Uncategorized'; ?>
+                            <tr class="category-group-header" data-category-group="<?= htmlspecialchars($category_label, ENT_QUOTES) ?>">
+                                <td colspan="<?= ($items_branch_column_exists && $view_all_branches) ? 7 : 6; ?>">
+                                    <div class="category-group-title">
+                                        <span class="category-group-name"><i class="bi bi-folder2-open"></i><?= htmlspecialchars($category_label) ?></span>
+                                        <span class="category-group-count"><?= count($category_items) ?> Item<?= count($category_items) > 1 ? 's' : '' ?></span>
+                                    </div>
+                                </td>
+                            </tr>
+                            <?php foreach ($category_items as $item): $stock_status = getStockStatus($item['quantity_on_hand'], $item['reorder_level']); ?>
+                            <tr class="inventory-row" data-id="<?= $item['item_id'] ?>" data-code="<?= htmlspecialchars($item['item_code']) ?>" data-barcode="<?= htmlspecialchars($item['barcode'] ?? '') ?>" data-name="<?= htmlspecialchars($item['item_name']) ?>" data-category="<?= htmlspecialchars($item['category'] ?? 'Uncategorized') ?>" data-principal="<?= htmlspecialchars($item['principal'] ?? 'No Principal') ?>" data-status="<?= $item['status'] ?>" data-points-eligible="<?= (int)($item['points_eligible'] ?? 1) ?>" data-stock="<?= $item['quantity_on_hand'] ?>" data-reorder="<?= $item['reorder_level'] ?>" data-price="<?= $item['unit_price'] ?>" data-unit="<?= $item['unit_type'] ?>" data-description="<?= htmlspecialchars($item['description'] ?? '') ?>" data-branch="<?= $item['branch_id'] ?? '' ?>">
                                 <td class="col-image"><div class="item-thumbnail" data-item-id="<?= $item['item_id'] ?>"><?php if (!empty($item['product_image_url'])): ?><img src="../uploads/products/<?= htmlspecialchars($item['product_image_url']) ?>" alt="<?= htmlspecialchars($item['item_name']) ?>" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;" onerror="this.style.display='none';"><?php endif; ?><i class="bi bi-image text-muted" style="<?= !empty($item['product_image_url']) ? 'display:none;' : '' ?>"></i></div></td>
                                 <td><strong><?= htmlspecialchars($item['item_name']) ?></strong></td>
-                                <td><?= htmlspecialchars($item['category'] ?? 'Uncategorized') ?></td>
                                 <td><?= htmlspecialchars($item['principal'] ?? 'No Principal') ?></td>
-=======
-                            <div class="table-container"><table class="table custom-table compact-table"><thead><th class="col-image">Image</th><th>Item Name</th><th>Category</th><?php if ($items_branch_column_exists && $view_all_branches): ?><th>Branch</th><?php endif; ?><th>Stock</th><th class="col-status">Active</th><th class="col-actions">Actions</th> </thead><tbody>
-                            <?php foreach ($items as $item): $stock_status = getStockStatus($item['quantity_on_hand'], $item['reorder_level']); ?>
-                            <tr class="inventory-row" data-id="<?= $item['item_id'] ?>" data-code="<?= htmlspecialchars($item['item_code']) ?>" data-name="<?= htmlspecialchars($item['item_name']) ?>" data-category="<?= htmlspecialchars($item['category'] ?? '') ?>" data-status="<?= $item['status'] ?>" data-stock="<?= $item['quantity_on_hand'] ?>" data-reorder="<?= $item['reorder_level'] ?>" data-price="<?= $item['unit_price'] ?>" data-unit="<?= $item['unit_type'] ?>" data-description="<?= htmlspecialchars($item['description'] ?? '') ?>" data-branch="<?= $item['branch_id'] ?? '' ?>">
-                                <td class="col-image"><div class="item-thumbnail" data-item-id="<?= $item['item_id'] ?>"><?php if (!empty($item['product_image_url'])): ?><img src="../uploads/products/<?= htmlspecialchars($item['product_image_url']) ?>" alt="<?= htmlspecialchars($item['item_name']) ?>" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;" onerror="this.style.display='none';"><?php endif; ?><i class="bi bi-image text-muted" style="<?= !empty($item['product_image_url']) ? 'display:none;' : '' ?>"></i></div></td>
-                                <td><strong><?= htmlspecialchars($item['item_name']) ?></strong></td>
-                                <td><?= htmlspecialchars($item['category'] ?? 'Uncategorized') ?></td>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                 <?php if ($items_branch_column_exists && $view_all_branches): ?><td><span class="badge bg-info">Branch <?= $item['branch_id'] ?? 'N/A' ?></span></td><?php endif; ?>
                                 <td><span class="<?= $item['quantity_on_hand'] <= $item['reorder_level'] ? 'text-danger fw-bold' : '' ?>"><?= $item['stock_display'] ?></span><span class="badge <?= $stock_status['class'] ?> ms-1"><?= $stock_status['label'] ?></span></td>
                                 <td class="col-status"><div class="status-toggle"><label class="toggle-switch"><input type="checkbox" class="status-checkbox" data-id="<?= $item['item_id'] ?>" <?= $item['status'] === 'active' ? 'checked' : '' ?> onchange="toggleItemStatus(<?= $item['item_id'] ?>, this)"><span class="toggle-slider"></span></label></div></td>
                                 <td class="col-actions"><div class="action-buttons"><button class="btn-action btn-edit" onclick="event.stopPropagation(); editItem(<?= $item['item_id'] ?>)" title="Edit"><i class="bi bi-pencil"></i></button><button class="btn-action btn-delete" onclick="event.stopPropagation(); deleteItem(<?= $item['item_id'] ?>)" title="Delete"><i class="bi bi-trash"></i></button></div></td>
                             </tr>
                             <?php endforeach; ?>
+                            <?php endforeach; ?>
                             </tbody></table></div>
+                            <div class="no-items-message" id="no-items-cat-tab-all" style="display: none;"><i class="bi bi-inbox"></i><h5>No items match your filters</h5><p class="text-muted">Try adjusting your search or filter criteria</p><button class="btn btn-sm btn-outline-primary" onclick="clearAllFilters()"><i class="bi bi-x-circle"></i> Clear Filters</button></div>
                         </div>
                         
                         <?php foreach ($items_by_category as $category => $category_items): $tab_id = 'cat-tab-' . preg_replace('/[^a-z0-9]/i', '-', strtolower($category)); ?>
                         <div id="<?= $tab_id ?>" class="tab-content" data-category="<?= htmlspecialchars($category) ?>">
-<<<<<<< HEAD
-                            <div class="table-container"><table class="table custom-table compact-table"><thead><th class="col-image">Image</th><th>Item Name</th><th>Category</th><th>Principal</th><?php if ($items_branch_column_exists && $view_all_branches): ?><th>Branch</th><?php endif; ?><th>Stock</th><th class="col-status">Active</th><th class="col-actions">Actions</th> </thead><tbody>
+                            <div class="table-container"><table class="table custom-table compact-table"><thead><th class="col-image">Image</th><th>Item Name</th><th>Principal</th><?php if ($items_branch_column_exists && $view_all_branches): ?><th>Branch</th><?php endif; ?><th>Stock</th><th class="col-status">Active</th><th class="col-actions">Actions</th> </thead><tbody>
+                            <?php $category_label = trim((string)$category) !== '' ? $category : 'Uncategorized'; ?>
+                            <tr class="category-group-header" data-category-group="<?= htmlspecialchars($category_label, ENT_QUOTES) ?>">
+                                <td colspan="<?= ($items_branch_column_exists && $view_all_branches) ? 7 : 6; ?>">
+                                    <div class="category-group-title">
+                                        <span class="category-group-name"><i class="bi bi-folder2-open"></i><?= htmlspecialchars($category_label) ?></span>
+                                        <span class="category-group-count"><?= count($category_items) ?> Item<?= count($category_items) > 1 ? 's' : '' ?></span>
+                                    </div>
+                                </td>
+                            </tr>
                             <?php foreach ($category_items as $item): $stock_status = getStockStatus($item['quantity_on_hand'], $item['reorder_level']); ?>
-                            <tr class="inventory-row" data-id="<?= $item['item_id'] ?>" data-code="<?= htmlspecialchars($item['item_code']) ?>" data-barcode="<?= htmlspecialchars($item['barcode'] ?? '') ?>" data-name="<?= htmlspecialchars($item['item_name']) ?>" data-category="<?= htmlspecialchars($item['category'] ?? '') ?>" data-principal="<?= htmlspecialchars($item['principal'] ?? 'No Principal') ?>" data-status="<?= $item['status'] ?>" data-stock="<?= $item['quantity_on_hand'] ?>" data-reorder="<?= $item['reorder_level'] ?>" data-price="<?= $item['unit_price'] ?>" data-unit="<?= $item['unit_type'] ?>" data-description="<?= htmlspecialchars($item['description'] ?? '') ?>" data-branch="<?= $item['branch_id'] ?? '' ?>">
+                            <tr class="inventory-row" data-id="<?= $item['item_id'] ?>" data-code="<?= htmlspecialchars($item['item_code']) ?>" data-barcode="<?= htmlspecialchars($item['barcode'] ?? '') ?>" data-name="<?= htmlspecialchars($item['item_name']) ?>" data-category="<?= htmlspecialchars($item['category'] ?? '') ?>" data-principal="<?= htmlspecialchars($item['principal'] ?? 'No Principal') ?>" data-status="<?= $item['status'] ?>" data-points-eligible="<?= (int)($item['points_eligible'] ?? 1) ?>" data-stock="<?= $item['quantity_on_hand'] ?>" data-reorder="<?= $item['reorder_level'] ?>" data-price="<?= $item['unit_price'] ?>" data-unit="<?= $item['unit_type'] ?>" data-description="<?= htmlspecialchars($item['description'] ?? '') ?>" data-branch="<?= $item['branch_id'] ?? '' ?>">
                                 <td class="col-image"><div class="item-thumbnail" data-item-id="<?= $item['item_id'] ?>"><?php if (!empty($item['product_image_url'])): ?><img src="../uploads/products/<?= htmlspecialchars($item['product_image_url']) ?>" alt="<?= htmlspecialchars($item['item_name']) ?>" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;" onerror="this.style.display='none';"><?php endif; ?><i class="bi bi-image text-muted" style="<?= !empty($item['product_image_url']) ? 'display:none;' : '' ?>"></i></div></td>
                                 <td><strong><?= htmlspecialchars($item['item_name']) ?></strong></td>
-                                <td><?= htmlspecialchars($item['category'] ?? 'Uncategorized') ?></td>
                                 <td><?= htmlspecialchars($item['principal'] ?? 'No Principal') ?></td>
-=======
-                            <div class="table-container"><table class="table custom-table compact-table"><thead><th class="col-image">Image</th><th>Item Name</th><th>Category</th><?php if ($items_branch_column_exists && $view_all_branches): ?><th>Branch</th><?php endif; ?><th>Stock</th><th class="col-status">Active</th><th class="col-actions">Actions</th> </thead><tbody>
-                            <?php foreach ($category_items as $item): $stock_status = getStockStatus($item['quantity_on_hand'], $item['reorder_level']); ?>
-                            <tr class="inventory-row" data-id="<?= $item['item_id'] ?>" data-code="<?= htmlspecialchars($item['item_code']) ?>" data-name="<?= htmlspecialchars($item['item_name']) ?>" data-category="<?= htmlspecialchars($item['category'] ?? '') ?>" data-status="<?= $item['status'] ?>" data-stock="<?= $item['quantity_on_hand'] ?>" data-reorder="<?= $item['reorder_level'] ?>" data-price="<?= $item['unit_price'] ?>" data-unit="<?= $item['unit_type'] ?>" data-description="<?= htmlspecialchars($item['description'] ?? '') ?>" data-branch="<?= $item['branch_id'] ?? '' ?>">
-                                <td class="col-image"><div class="item-thumbnail" data-item-id="<?= $item['item_id'] ?>"><?php if (!empty($item['product_image_url'])): ?><img src="../uploads/products/<?= htmlspecialchars($item['product_image_url']) ?>" alt="<?= htmlspecialchars($item['item_name']) ?>" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;" onerror="this.style.display='none';"><?php endif; ?><i class="bi bi-image text-muted" style="<?= !empty($item['product_image_url']) ? 'display:none;' : '' ?>"></i></div></td>
-                                <td><strong><?= htmlspecialchars($item['item_name']) ?></strong></td>
-                                <td><?= htmlspecialchars($item['category'] ?? 'Uncategorized') ?></td>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                 <?php if ($items_branch_column_exists && $view_all_branches): ?><td><span class="badge bg-info">Branch <?= $item['branch_id'] ?? 'N/A' ?></span></td><?php endif; ?>
                                 <td><span class="<?= $item['quantity_on_hand'] <= $item['reorder_level'] ? 'text-danger fw-bold' : '' ?>"><?= $item['stock_display'] ?></span><span class="badge <?= $stock_status['class'] ?> ms-1"><?= $stock_status['label'] ?></span></td>
                                 <td class="col-status"><div class="status-toggle"><label class="toggle-switch"><input type="checkbox" class="status-checkbox" data-id="<?= $item['item_id'] ?>" <?= $item['status'] === 'active' ? 'checked' : '' ?> onchange="toggleItemStatus(<?= $item['item_id'] ?>, this)"><span class="toggle-slider"></span></label></div></td>
@@ -7728,22 +6933,13 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
                         </div>
                         
                         <div id="sup-tab-all" class="tab-content active">
-<<<<<<< HEAD
                             <div class="table-container"><table class="table custom-table compact-table"><thead><th class="col-image">Image</th><th>Item Name</th><th>Category</th><th>Principal</th><?php if ($items_branch_column_exists && $view_all_branches): ?><th>Branch</th><?php endif; ?><th>Stock</th><th class="col-status">Active</th><th class="col-actions">Actions</th> </thead><tbody>
                             <?php foreach ($supplier_items as $item): $stock_status = getStockStatus($item['quantity_on_hand'], $item['reorder_level']); ?>
-                            <tr class="inventory-row" data-id="<?= $item['item_id'] ?>" data-code="<?= htmlspecialchars($item['item_code']) ?>" data-barcode="<?= htmlspecialchars($item['barcode'] ?? '') ?>" data-name="<?= htmlspecialchars($item['item_name']) ?>" data-category="<?= htmlspecialchars($item['category'] ?? '') ?>" data-principal="<?= htmlspecialchars($item['principal'] ?? 'No Principal') ?>" data-status="<?= $item['status'] ?>" data-stock="<?= $item['quantity_on_hand'] ?>" data-reorder="<?= $item['reorder_level'] ?>" data-price="0" data-unit="<?= $item['unit_type'] ?>" data-branch="<?= $item['branch_id'] ?? '' ?>">
+                            <tr class="inventory-row" data-id="<?= $item['item_id'] ?>" data-code="<?= htmlspecialchars($item['item_code']) ?>" data-barcode="<?= htmlspecialchars($item['barcode'] ?? '') ?>" data-name="<?= htmlspecialchars($item['item_name']) ?>" data-category="<?= htmlspecialchars($item['category'] ?? '') ?>" data-principal="<?= htmlspecialchars($item['principal'] ?? 'No Principal') ?>" data-status="<?= $item['status'] ?>" data-points-eligible="<?= (int)($item['points_eligible'] ?? 1) ?>" data-stock="<?= $item['quantity_on_hand'] ?>" data-reorder="<?= $item['reorder_level'] ?>" data-price="0" data-unit="<?= $item['unit_type'] ?>" data-branch="<?= $item['branch_id'] ?? '' ?>">
                                 <td class="col-image"><div class="item-thumbnail" data-item-id="<?= $item['item_id'] ?>"><?php if (!empty($item['product_image_url'])): ?><img src="../uploads/products/<?= htmlspecialchars($item['product_image_url']) ?>" alt="<?= htmlspecialchars($item['item_name']) ?>" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;" onerror="this.style.display='none';"><?php endif; ?><i class="bi bi-image text-muted" style="<?= !empty($item['product_image_url']) ? 'display:none;' : '' ?>"></i></div></td>
                                 <td><strong><?= htmlspecialchars($item['item_name']) ?></strong></td>
                                 <td><?= htmlspecialchars($item['category'] ?? 'Uncategorized') ?></td>
                                 <td><?= htmlspecialchars($item['principal'] ?? 'No Principal') ?></td>
-=======
-                            <div class="table-container"><table class="table custom-table compact-table"><thead><th class="col-image">Image</th><th>Item Name</th><th>Category</th><?php if ($items_branch_column_exists && $view_all_branches): ?><th>Branch</th><?php endif; ?><th>Stock</th><th class="col-status">Active</th><th class="col-actions">Actions</th> </thead><tbody>
-                            <?php foreach ($supplier_items as $item): $stock_status = getStockStatus($item['quantity_on_hand'], $item['reorder_level']); ?>
-                            <tr class="inventory-row" data-id="<?= $item['item_id'] ?>" data-code="<?= htmlspecialchars($item['item_code']) ?>" data-name="<?= htmlspecialchars($item['item_name']) ?>" data-category="<?= htmlspecialchars($item['category'] ?? '') ?>" data-status="<?= $item['status'] ?>" data-stock="<?= $item['quantity_on_hand'] ?>" data-reorder="<?= $item['reorder_level'] ?>" data-price="0" data-unit="<?= $item['unit_type'] ?>" data-branch="<?= $item['branch_id'] ?? '' ?>">
-                                <td class="col-image"><div class="item-thumbnail" data-item-id="<?= $item['item_id'] ?>"><?php if (!empty($item['product_image_url'])): ?><img src="../uploads/products/<?= htmlspecialchars($item['product_image_url']) ?>" alt="<?= htmlspecialchars($item['item_name']) ?>" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;" onerror="this.style.display='none';"><?php endif; ?><i class="bi bi-image text-muted" style="<?= !empty($item['product_image_url']) ? 'display:none;' : '' ?>"></i></div></td>
-                                <td><strong><?= htmlspecialchars($item['item_name']) ?></strong></td>
-                                <td><?= htmlspecialchars($item['category'] ?? 'Uncategorized') ?></td>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                 <?php if ($items_branch_column_exists && $view_all_branches): ?><td><span class="badge bg-info">Branch <?= $item['branch_id'] ?? 'N/A' ?></span></td><?php endif; ?>
                                 <td><span class="<?= $item['quantity_on_hand'] <= $item['reorder_level'] ? 'text-danger fw-bold' : '' ?>"><?= $item['stock_display'] ?></span><span class="badge <?= $stock_status['class'] ?> ms-1"><?= $stock_status['label'] ?></span></td>
                                 <td class="col-status"><div class="status-toggle"><label class="toggle-switch"><input type="checkbox" class="status-checkbox" data-id="<?= $item['item_id'] ?>" <?= $item['status'] === 'active' ? 'checked' : '' ?> onchange="toggleItemStatus(<?= $item['item_id'] ?>, this)"><span class="toggle-slider"></span></label></div></td>
@@ -7755,22 +6951,13 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
                         
                         <?php foreach ($items_by_supplier as $supplier => $supplier_items_group): $tab_id = 'sup-tab-' . preg_replace('/[^a-z0-9]/i', '-', strtolower($supplier)); ?>
                         <div id="<?= $tab_id ?>" class="tab-content" data-supplier="<?= htmlspecialchars($supplier) ?>">
-<<<<<<< HEAD
                             <div class="table-container"><table class="table custom-table compact-table"><thead><th class="col-image">Image</th><th>Item Name</th><th>Category</th><th>Principal</th><?php if ($items_branch_column_exists && $view_all_branches): ?><th>Branch</th><?php endif; ?><th>Stock</th><th class="col-status">Active</th><th class="col-actions">Actions</th> </thead><tbody>
                             <?php foreach ($supplier_items_group as $item): $stock_status = getStockStatus($item['quantity_on_hand'], $item['reorder_level']); ?>
-                            <tr class="inventory-row" data-id="<?= $item['item_id'] ?>" data-code="<?= htmlspecialchars($item['item_code']) ?>" data-barcode="<?= htmlspecialchars($item['barcode'] ?? '') ?>" data-name="<?= htmlspecialchars($item['item_name']) ?>" data-category="<?= htmlspecialchars($item['category'] ?? '') ?>" data-principal="<?= htmlspecialchars($item['principal'] ?? 'No Principal') ?>" data-status="<?= $item['status'] ?>" data-stock="<?= $item['quantity_on_hand'] ?>" data-reorder="<?= $item['reorder_level'] ?>" data-price="0" data-unit="<?= $item['unit_type'] ?>" data-branch="<?= $item['branch_id'] ?? '' ?>">
+                            <tr class="inventory-row" data-id="<?= $item['item_id'] ?>" data-code="<?= htmlspecialchars($item['item_code']) ?>" data-barcode="<?= htmlspecialchars($item['barcode'] ?? '') ?>" data-name="<?= htmlspecialchars($item['item_name']) ?>" data-category="<?= htmlspecialchars($item['category'] ?? '') ?>" data-principal="<?= htmlspecialchars($item['principal'] ?? 'No Principal') ?>" data-status="<?= $item['status'] ?>" data-points-eligible="<?= (int)($item['points_eligible'] ?? 1) ?>" data-stock="<?= $item['quantity_on_hand'] ?>" data-reorder="<?= $item['reorder_level'] ?>" data-price="0" data-unit="<?= $item['unit_type'] ?>" data-branch="<?= $item['branch_id'] ?? '' ?>">
                                 <td class="col-image"><div class="item-thumbnail" data-item-id="<?= $item['item_id'] ?>"><i class="bi bi-image text-muted"></i></div></td>
                                 <td><strong><?= htmlspecialchars($item['item_name']) ?></strong></td>
                                 <td><?= htmlspecialchars($item['category'] ?? 'Uncategorized') ?></td>
                                 <td><?= htmlspecialchars($item['principal'] ?? 'No Principal') ?></td>
-=======
-                            <div class="table-container"><table class="table custom-table compact-table"><thead><th class="col-image">Image</th><th>Item Name</th><th>Category</th><?php if ($items_branch_column_exists && $view_all_branches): ?><th>Branch</th><?php endif; ?><th>Stock</th><th class="col-status">Active</th><th class="col-actions">Actions</th> </thead><tbody>
-                            <?php foreach ($supplier_items_group as $item): $stock_status = getStockStatus($item['quantity_on_hand'], $item['reorder_level']); ?>
-                            <tr class="inventory-row" data-id="<?= $item['item_id'] ?>" data-code="<?= htmlspecialchars($item['item_code']) ?>" data-name="<?= htmlspecialchars($item['item_name']) ?>" data-category="<?= htmlspecialchars($item['category'] ?? '') ?>" data-status="<?= $item['status'] ?>" data-stock="<?= $item['quantity_on_hand'] ?>" data-reorder="<?= $item['reorder_level'] ?>" data-price="0" data-unit="<?= $item['unit_type'] ?>" data-branch="<?= $item['branch_id'] ?? '' ?>">
-                                <td class="col-image"><div class="item-thumbnail" data-item-id="<?= $item['item_id'] ?>"><i class="bi bi-image text-muted"></i></div></td>
-                                <td><strong><?= htmlspecialchars($item['item_name']) ?></strong></td>
-                                <td><?= htmlspecialchars($item['category'] ?? 'Uncategorized') ?></td>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                 <?php if ($items_branch_column_exists && $view_all_branches): ?><td><span class="badge bg-info">Branch <?= $item['branch_id'] ?? 'N/A' ?></span></td><?php endif; ?>
                                 <td><span class="<?= $item['quantity_on_hand'] <= $item['reorder_level'] ? 'text-danger fw-bold' : '' ?>"><?= $item['stock_display'] ?></span><span class="badge <?= $stock_status['class'] ?> ms-1"><?= $stock_status['label'] ?></span></td>
                                 <td class="col-status"><div class="status-toggle"><label class="toggle-switch"><input type="checkbox" class="status-checkbox" data-id="<?= $item['item_id'] ?>" <?= $item['status'] === 'active' ? 'checked' : '' ?> onchange="toggleItemStatus(<?= $item['item_id'] ?>, this)"><span class="toggle-slider"></span></label></div></td>
@@ -7784,17 +6971,10 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
                     <?php endif; ?>
                 </div>
 
-<<<<<<< HEAD
-=======
-                <?php if ($low_stock_count > 0): ?>
-                <div class="row g-3 mt-3"><div class="col-12"><div class="alert alert-warning alert-dismissible fade show mb-0" role="alert"><i class="bi bi-exclamation-triangle-fill me-2"></i><strong>Low Stock Alert!</strong> <?= $low_stock_count ?> item(s) are below reorder level.<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button></div></div></div>
-                <?php endif; ?>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
             </div>
         </div>
     </div>
 
-<<<<<<< HEAD
 <!-- Mobile Bottom Navigation - Clean Version (No Arrows) -->
 <div class="mobile-nav" id="mobileNav">
     <ul class="nav">
@@ -7816,10 +6996,10 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
                 <a href="current_inventory.php" class="dropdown-item">
                     <i class="bi bi-bar-chart-line"></i><span>Current Inventory</span>
                 </a>
-                <a href="bad_orders.php" class="dropdown-item">
+                <a href="current_inventory.php?tab=bad-orders" class="dropdown-item">
                     <i class="bi bi-recycle"></i><span>Bad Orders</span>
                 </a>
-                <a href="pick_list_items.php" class="dropdown-item">
+                <a href="current_inventory.php?tab=picklist" class="dropdown-item">
                     <i class="bi bi-list-check"></i><span>Pick List Items</span>
                 </a>
                 <a href="warehouses.php" class="dropdown-item">
@@ -7938,29 +7118,13 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
         </li>
     </ul>
 </div>
-=======
-    <!-- Mobile Bottom Navigation -->
-    <div class="mobile-nav" id="mobileNav">
-        <ul class="nav">
-            <li class="nav-item dropdown-more" id="inventoryDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'inventoryDropdownMenu')"><i class="bi bi-box-seam"></i><span>Inventory</span></a><div class="more-dropdown" id="inventoryDropdownMenu"><a href="current_inventory.php" class="dropdown-item"><i class="bi bi-bar-chart-line"></i><span>Current Inventory</span></a><a href="bad_orders.php" class="dropdown-item"><i class="bi bi-recycle"></i><span>Bad Orders</span></a></div></li>
-            <li class="nav-item dropdown-more" id="salesDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'salesDropdownMenu')"><i class="bi bi-cart"></i><span>Sales</span></a><div class="more-dropdown" id="salesDropdownMenu"><a href="sales_order.php" class="dropdown-item"><i class="bi bi-cart"></i><span>Sales Orders</span></a><a href="pick_list_items.php" class="dropdown-item"><i class="bi bi-list-check"></i><span>Pick Lists</span></a></div></li>
-            <li class="nav-item dropdown-more" id="purchaseDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'purchaseDropdownMenu')"><i class="bi bi-truck"></i><span>Purchase</span></a><div class="more-dropdown" id="purchaseDropdownMenu" style="right: 0 !important; left: auto !important;"><a href="purchase_order.php" class="dropdown-item"><i class="bi bi-box"></i><span>Purchase Orders</span></a><a href="supplier.php" class="dropdown-item"><i class="bi bi-building"></i><span>Suppliers</span></a></div></li>
-            <li class="nav-item"><a class="nav-link" href="trip_tickets.php"><i class="bi bi-ticket-perforated"></i><span>Trips</span></a></li>
-            <li class="nav-item dropdown-more" id="moreDropdown"><a class="nav-link more-btn" href="#" onclick="toggleDropdown(event, 'moreDropdownMenu')"><i class="bi bi-three-dots-vertical"></i><span>More</span></a><div class="more-dropdown" id="moreDropdownMenu"><a href="drivers.php" class="dropdown-item"><i class="bi bi-people"></i><span>Users</span></a><a href="approve_credit_requests.php" class="dropdown-item"><i class="bi bi-pencil-square"></i><span>Approve Requests</span></a><div class="dropdown-divider"></div><a href="#" class="dropdown-item logout-item" onclick="showProfileModal(); return false;"><i class="bi bi-box-arrow-right"></i><span>Logout</span></a></div></li>
-        </ul>
-    </div>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
     <!-- Mobile Profile Modal -->
     <div class="modal fade" id="profileModal" tabindex="-1" aria-hidden="true"><div class="modal-dialog modal-dialog-centered"><div class="modal-content"><div class="modal-header"><h5 class="modal-title"><i class="bi bi-person-circle me-2"></i>User Profile</h5><button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button></div><div class="modal-body text-center"><div class="user-avatar-large mb-3"><?php echo $user_initials; ?></div><h4 class="mb-1"><?php echo htmlspecialchars($user_name); ?></h4><p class="text-muted mb-3"><span class="badge bg-success"><?php echo ucfirst($user_role); ?></span></p><?php if (!$view_all_branches && $branch_id > 0): ?><div class="branch-info mb-3"><i class="bi bi-building me-1"></i><span><?php echo htmlspecialchars($branch_name); ?></span></div><?php endif; ?><div class="user-id text-muted small mb-4"><i class="bi bi-hash"></i> User ID: <?php echo $user_id; ?></div><button class="btn btn-danger btn-lg w-100" onclick="confirmLogout()"><i class="bi bi-box-arrow-right me-2"></i>Logout</button></div></div></div></div>
 
    <!-- ADD ITEM MODAL -->
 <div class="modal fade" id="itemModal" tabindex="-1">
-<<<<<<< HEAD
     <div class="modal-dialog modal-xl modal-dialog-scrollable" style="max-width: 95%;">
-=======
-    <div class="modal-dialog modal-xl modal-dialog-scrollable">
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         <div class="modal-content">
             <div class="modal-header sticky-top bg-white" style="z-index: 10; border-bottom: 1px solid #dee2e6;">
                 <h5 class="modal-title" id="itemModalTitle">
@@ -7978,19 +7142,11 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
                     <div class="alert alert-light border d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-4">
                         <div>
                             <div class="fw-bold text-dark"><i class="bi bi-file-earmark-arrow-up me-2 text-success"></i>Excel Import / Export</div>
-<<<<<<< HEAD
                             <small class="text-muted">Export current items, edit the Excel file, then import it to add or update/overwrite item columns. Supported: XLSX, XLS, CSV.</small>
                         </div>
                         <div class="d-flex flex-wrap gap-2">
                             <button type="button" class="btn btn-outline-success btn-sm" onclick="downloadItemsImportTemplate()">
                                 <i class="bi bi-download me-1"></i>Export Items
-=======
-                            <small class="text-muted">Use the template for faster bulk item creation. Supported: XLSX, XLS, CSV.</small>
-                        </div>
-                        <div class="d-flex flex-wrap gap-2">
-                            <button type="button" class="btn btn-outline-success btn-sm" onclick="downloadItemsImportTemplate()">
-                                <i class="bi bi-download me-1"></i>Export Template
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                             </button>
                             <button type="button" class="btn btn-outline-primary btn-sm" onclick="document.getElementById('importItemsFile').click()">
                                 <i class="bi bi-upload me-1"></i>Import File
@@ -8039,7 +7195,6 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
                                     <option value="Oil">
                                     <option value="General">
                                 </datalist>
-<<<<<<< HEAD
                             </div>
                             
                             <div class="col-12 col-md-4">
@@ -8077,13 +7232,9 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
                                 </select>
                             </div>
 
-=======
-                            </div>
-                            
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                             <div class="col-12 col-md-4">
                                 <label for="reorderLevel" class="form-label">Reorder Level </label>
-                                <input type="number" class="form-control" id="reorderLevel" min="0" required placeholder="0">
+                                <input type="number" class="form-control" id="reorderLevel" min="0" placeholder="0">
                             </div>
                             
                             <div class="col-12 col-md-4">
@@ -8092,6 +7243,48 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
                                     <option value="active">Active</option>
                                     <option value="inactive">Inactive</option>
                                     <option value="discontinued">Discontinued</option>
+                                </select>
+                            </div>
+
+                            <div class="col-12 col-md-4">
+                                <label class="form-label d-block">Loyalty Points</label>
+                                <div class="form-check form-switch mt-2">
+                                    <input class="form-check-input" type="checkbox" id="pointsEligible" checked>
+                                    <label class="form-check-label" for="pointsEligible">Eligible for Points</label>
+                                </div>
+                                <small class="text-muted">Uncheck for cigarettes/tobacco or exempted items.</small>
+                            </div>
+
+                            <div class="col-12 col-md-4">
+                                <label for="incomeAccount" class="form-label">Income Account <span class="text-danger">*</span></label>
+                                <select class="form-select item-account-select" id="incomeAccount" required onchange="handleItemAccountSelectChange(this)">
+                                    <option value="">-- Select Income Account --</option>
+                                    <option value="__add_income">+ Add New Income Account</option>
+                                    <?php foreach ($itemIncomeAccounts as $account): ?>
+                                        <option value="<?= (int)$account['id'] ?>" <?= count($itemIncomeAccounts) === 1 ? 'selected' : '' ?>><?= htmlspecialchars($account['label']) ?><?= !empty($account['type']) ? ' (' . htmlspecialchars($account['type']) . ')' : '' ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+
+                            <div class="col-12 col-md-4">
+                                <label for="cogsAccount" class="form-label">COGS Account <span class="text-danger">*</span></label>
+                                <select class="form-select item-account-select" id="cogsAccount" required onchange="handleItemAccountSelectChange(this)">
+                                    <option value="">-- Select COGS Account --</option>
+                                    <option value="__add_cogs">+ Add New COGS Account</option>
+                                    <?php foreach ($itemCogsAccounts as $account): ?>
+                                        <option value="<?= (int)$account['id'] ?>" <?= count($itemCogsAccounts) === 1 ? 'selected' : '' ?>><?= htmlspecialchars($account['label']) ?><?= !empty($account['type']) ? ' (' . htmlspecialchars($account['type']) . ')' : '' ?></option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+
+                            <div class="col-12 col-md-4">
+                                <label for="assetAccount" class="form-label">Asset Account <span class="text-danger">*</span></label>
+                                <select class="form-select item-account-select" id="assetAccount" required onchange="handleItemAccountSelectChange(this)">
+                                    <option value="">-- Select Asset Account --</option>
+                                    <option value="__add_asset">+ Add New Asset Account</option>
+                                    <?php foreach ($itemAssetAccounts as $account): ?>
+                                        <option value="<?= (int)$account['id'] ?>" <?= count($itemAssetAccounts) === 1 ? 'selected' : '' ?>><?= htmlspecialchars($account['label']) ?><?= !empty($account['type']) ? ' (' . htmlspecialchars($account['type']) . ')' : '' ?></option>
+                                    <?php endforeach; ?>
                                 </select>
                             </div>
                         </div>
@@ -8124,12 +7317,8 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
                                 <table class="table table-bordered" id="unitTypesTable" style="font-size: 0.85rem;">
                                     <thead class="table-light">
                                         <tr>
-<<<<<<< HEAD
                                             <th style="width: 12%">UoM</th>
                                             <th style="width: 8%">Initial</th>
-=======
-                                            <th style="width: 14%">UoM</th>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                             <th style="width: 10%">Barcode</th>
                                             <th style="width: 10%">Smallest Pack Qty</th>
                                             <th style="width: 12%">Current Inventory</th>
@@ -8190,11 +7379,7 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
 
    <!-- VIEW ITEM MODAL -->
 <div class="modal fade" id="batchPriceLevelModal" tabindex="-1" aria-hidden="true">
-<<<<<<< HEAD
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" style="max-width: 95%;">
-=======
-    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title"><i class="bi bi-cash-coin me-2"></i>Batch Update Price Level</h5>
@@ -8251,7 +7436,6 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
     </div>
 </div>
 
-<<<<<<< HEAD
 <!-- BATCH PRICE UPDATE DETAILS MODAL -->
 <div class="modal fade" id="batchPriceUpdateDetailsModal" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" style="max-width: 95%;">
@@ -8302,12 +7486,6 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
     <div class="modal-dialog modal-lg modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
-=======
-<div class="modal fade" id="viewItemModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-lg modal-dialog-centered">
-        <div class="modal-content">
-            <div class="modal-header">
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 <h5 class="modal-title">
                     <i class="bi bi-box-seam me-2"></i>
                     Item Details
@@ -8325,12 +7503,9 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
                 </div>
             </div>
             <div class="modal-footer">
-<<<<<<< HEAD
                 <button type="button" class="btn btn-success" onclick="printItemBarcodeLabels()">
                     <i class="bi bi-printer me-1"></i> Print Barcode
                 </button>
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 <button type="button" class="btn btn-warning" onclick="editFromView()">
                     <i class="bi bi-pencil me-1"></i> Edit Item
                 </button>
@@ -8341,11 +7516,7 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
 
     <!-- EDIT ITEM MODAL -->
 <div class="modal fade" id="editItemModal" tabindex="-1" aria-hidden="true">
-<<<<<<< HEAD
     <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable" style="max-width: 95%;">
-=======
-    <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">
@@ -8389,7 +7560,6 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
                             </datalist>
                         </div>
                         
-<<<<<<< HEAD
                         <div class="col-md-4">
                             <label for="editPrincipal" class="form-label">Principal</label>
                             <input
@@ -8425,8 +7595,6 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
                             </select>
                         </div>
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         <div class="col-md-4">
                             <label for="editReorderLevel" class="form-label">Reorder Level <span class="text-danger">*</span></label>
                             <input type="number" class="form-control" id="editReorderLevel" min="0" required>
@@ -8440,6 +7608,49 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
                                 <option value="discontinued">Discontinued</option>
                             </select>
                         </div>
+
+                        <div class="col-md-4">
+                            <label class="form-label d-block">Loyalty Points</label>
+                            <div class="form-check form-switch mt-2">
+                                <input class="form-check-input" type="checkbox" id="editPointsEligible">
+                                <label class="form-check-label" for="editPointsEligible">Eligible for Points</label>
+                            </div>
+                            <small class="text-muted">Uncheck for cigarettes/tobacco or exempted items.</small>
+                        </div>
+
+                        <div class="col-12 col-md-4">
+                            <label for="editIncomeAccount" class="form-label">Income Account <span class="text-danger">*</span></label>
+                            <select class="form-select item-account-select" id="editIncomeAccount" required onchange="handleItemAccountSelectChange(this)">
+                                <option value="">-- Select Income Account --</option>
+                                <option value="__add_income">+ Add New Income Account</option>
+                                <?php foreach ($itemIncomeAccounts as $account): ?>
+                                    <option value="<?= (int)$account['id'] ?>"><?= htmlspecialchars($account['label']) ?><?= !empty($account['type']) ? ' (' . htmlspecialchars($account['type']) . ')' : '' ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+
+                        <div class="col-12 col-md-4">
+                            <label for="editCogsAccount" class="form-label">COGS Account <span class="text-danger">*</span></label>
+                            <select class="form-select item-account-select" id="editCogsAccount" required onchange="handleItemAccountSelectChange(this)">
+                                <option value="">-- Select COGS Account --</option>
+                                <option value="__add_cogs">+ Add New COGS Account</option>
+                                <?php foreach ($itemCogsAccounts as $account): ?>
+                                    <option value="<?= (int)$account['id'] ?>"><?= htmlspecialchars($account['label']) ?><?= !empty($account['type']) ? ' (' . htmlspecialchars($account['type']) . ')' : '' ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+
+                        <div class="col-12 col-md-4">
+                            <label for="editAssetAccount" class="form-label">Asset Account <span class="text-danger">*</span></label>
+                            <select class="form-select item-account-select" id="editAssetAccount" required onchange="handleItemAccountSelectChange(this)">
+                                <option value="">-- Select Asset Account --</option>
+                                <option value="__add_asset">+ Add New Asset Account</option>
+                                <?php foreach ($itemAssetAccounts as $account): ?>
+                                    <option value="<?= (int)$account['id'] ?>"><?= htmlspecialchars($account['label']) ?><?= !empty($account['type']) ? ' (' . htmlspecialchars($account['type']) . ')' : '' ?></option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+
                         
                         <!-- Images Section -->
                         <div class="col-12">
@@ -8456,12 +7667,8 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
                                 <table class="table table-bordered" id="editUnitTypesTable" style="font-size: 0.85rem;">
                                     <thead class="table-light">
                                         <tr>
-<<<<<<< HEAD
                                             <th style="width: 12%">UoM</th>
                                             <th style="width: 8%">Initial</th>
-=======
-                                            <th style="width: 14%">UoM</th>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                             <th style="width: 10%">Barcode</th>
                                             <th style="width: 10%">Smallest Pack Qty</th>
                                             <th style="width: 12%">Current Inventory</th>
@@ -8579,12 +7786,6 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
                 </div>
             </div>
             <div class="modal-footer">
-<<<<<<< HEAD
-=======
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                    <i class="bi bi-x-circle me-1"></i> Close
-                </button>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 <button type="button" class="btn btn-primary" onclick="filterLowStock()">
                     <i class="bi bi-funnel me-1"></i> Show in Table
                 </button>
@@ -8594,11 +7795,7 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
 </div>
 
 <!-- OFFTAKE MODAL -->
-<<<<<<< HEAD
 <div class="modal fade" id="offtakeModal" tabindex="-1" data-bs-backdrop="true" data-bs-keyboard="true" aria-hidden="true">
-=======
-<div class="modal fade" id="offtakeModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false" aria-hidden="true">
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     <div class="modal-dialog modal-xl modal-dialog-centered">
         <div class="modal-content">
             <div class="modal-header">
@@ -8718,7 +7915,6 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
     </div>
 </div>
 
-<<<<<<< HEAD
 <!-- Barcode Search Scanner Modal -->
 <div class="modal fade" id="barcodeScannerModal" tabindex="-1" aria-labelledby="barcodeScannerModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -8735,6 +7931,54 @@ if (!$check_barcode_column || $check_barcode_column->num_rows == 0) {
                     <button class="btn btn-success" type="button" onclick="searchBarcodeManually()"><i class="bi bi-search"></i> Search</button>
                 </div>
             </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Item Linked Account Modal -->
+<div class="modal fade" id="itemLinkedAccountModal" tabindex="-1" aria-hidden="true" data-bs-backdrop="static" data-bs-keyboard="false">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content" style="border-radius: 18px; overflow: hidden; border: none; box-shadow: 0 20px 50px rgba(0,0,0,.25);">
+            <form id="itemLinkedAccountForm" autocomplete="off">
+                <div class="modal-header" style="background:#047857;color:#fff;border-bottom:none;padding:1.35rem 1.5rem;">
+                    <h5 class="modal-title fw-bold" id="itemLinkedAccountModalTitle"><i class="bi bi-plus-circle me-2"></i>Add Account</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body" style="padding:1.5rem;background:#fff;">
+                    <input type="hidden" id="itemLinkedAccountKind">
+                    <div class="row g-3">
+                        <div class="col-md-4">
+                            <label class="form-label fw-semibold" style="color:#052A47;">Account Code</label>
+                            <input type="text" id="itemLinkedAccountCode" class="form-control" placeholder="Example: 10100">
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label fw-semibold" style="color:#052A47;">Account Title <span class="text-danger">*</span></label>
+                            <input type="text" id="itemLinkedAccountTitle" class="form-control" placeholder="Example: Checking" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold" style="color:#052A47;">Account Type <span class="text-danger">*</span></label>
+                            <select id="itemLinkedAccountType" class="form-select" disabled>
+                                <option value="">Select account type</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold" style="color:#052A47;">Parent Account</label>
+                            <select id="itemLinkedParentAccount" class="form-select">
+                                <option value="">Main account</option>
+                            </select>
+                            <small class="text-muted d-block mt-1">Only accounts with the same account type can be selected as parent.</small>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-semibold" style="color:#052A47;">Description</label>
+                            <textarea id="itemLinkedAccountDescription" class="form-control" rows="4" placeholder="Enter account description or notes"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer" style="background:#fff;border-top:1px solid #e5e7eb;padding:1.25rem 1.5rem;">
+                    <button type="button" class="btn btn-light border" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn text-white fw-semibold" style="background:#16a34a;border-radius:24px;padding:.7rem 1.2rem;"><i class="bi bi-save me-1"></i>Save Account</button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
@@ -8758,27 +8002,6 @@ let currentUnitTypes = []; // Store current unit types for pricing table
 function escapeHtml(str) {
     if (str === null || str === undefined) return '';
     return String(str)
-=======
-<!-- Bootstrap JS -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
-
-<script>
-// ========== GLOBAL VARIABLES ==========
-let currentItemId = null;
-let currentView = 'category';
-const branchId = <?php echo $branch_id; ?>;
-const viewAllBranches = <?php echo $view_all_branches ? 'true' : 'false'; ?>;
-const itemsBranchColumnExists = <?php echo $items_branch_column_exists ? 'true' : 'false'; ?>;
-const logoBase64 = '<?php echo $logo_base64; ?>';
-let suppliersList = [];
-let activeFilters = { search: '', status: '', stockLevel: '' };
-let currentUnitTypes = []; // Store current unit types for pricing table
-
-// ========== HELPER FUNCTIONS ==========
-function escapeHtml(str) {
-    if (!str) return '';
-    return str
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
@@ -8813,7 +8036,6 @@ function fixModalBackdrop(modalId) {
     });
 }
 
-<<<<<<< HEAD
 
 // ========== MOBILE BOTTOM NAVBAR FIX ==========
 // Keep this global because the mobile nav uses inline onclick="toggleMobileDropdown(...)"
@@ -8856,64 +8078,9 @@ window.toggleMobileDropdown = function(event, dropdownId) {
         if (btn) {
             btn.classList.add('active');
             btn.setAttribute('aria-expanded', 'true');
-=======
-// Close all dropdowns helper
-function closeAllDropdowns() {
-    const dropdowns = ['inventoryDropdownMenu', 'salesDropdownMenu', 'purchaseDropdownMenu', 'moreDropdownMenu'];
-    dropdowns.forEach(id => {
-        const dropdown = document.getElementById(id);
-        if (dropdown) dropdown.classList.remove('show');
-    });
-    document.querySelectorAll('.more-btn').forEach(btn => btn.classList.remove('active'));
-}
-
-function toggleDropdown(event, dropdownId) {
-    event.preventDefault();
-    event.stopPropagation();
-    
-    const dropdown = document.getElementById(dropdownId);
-    const btn = event.currentTarget;
-    
-    if (dropdown.classList.contains('show')) {
-        dropdown.classList.remove('show');
-        btn.classList.remove('active');
-    } else {
-        closeAllDropdowns();
-        dropdown.classList.add('show');
-        btn.classList.add('active');
-        
-        setTimeout(() => {
-            document.addEventListener('click', function closeHandler(e) {
-                if (!dropdown.contains(e.target) && !btn.contains(e.target)) {
-                    dropdown.classList.remove('show');
-                    btn.classList.remove('active');
-                    document.removeEventListener('click', closeHandler);
-                }
-            });
-        }, 100);
-    }
-}
-
-document.addEventListener('keydown', function(e) {
-    if (e.key === 'Escape') closeAllDropdowns();
-});
-
-function showLoading() {
-    Swal.fire({ 
-        title: 'Processing...', 
-        text: 'Please wait', 
-        allowOutsideClick: false, 
-        didOpen: () => Swal.showLoading(),
-        width: '350px',
-        padding: '1.5rem',
-        customClass: {
-            popup: 'loading-swal-popup'
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         }
-    });
-}
+    }
 
-<<<<<<< HEAD
     return false;
 };
 
@@ -9293,10 +8460,37 @@ function filterCategoryView() {
         }
     });
     
+    updateCategoryGroupHeaders(activeTab);
+
     const noItemsMsg = document.getElementById(`no-items-${activeTab.id}`);
     if (noItemsMsg) {
         noItemsMsg.style.display = visibleCount === 0 ? 'block' : 'none';
     }
+}
+
+function updateCategoryGroupHeaders(activeTab) {
+    if (!activeTab) return;
+
+    const headers = activeTab.querySelectorAll('.category-group-header');
+    headers.forEach(header => {
+        let next = header.nextElementSibling;
+        let hasVisibleItem = false;
+        let visibleItems = 0;
+
+        while (next && !next.classList.contains('category-group-header')) {
+            if (next.classList.contains('inventory-row') && next.style.display !== 'none') {
+                hasVisibleItem = true;
+                visibleItems++;
+            }
+            next = next.nextElementSibling;
+        }
+
+        header.style.display = hasVisibleItem ? '' : 'none';
+        const countBadge = header.querySelector('.category-group-count');
+        if (countBadge) {
+            countBadge.textContent = `${visibleItems} Item${visibleItems > 1 ? 's' : ''}`;
+        }
+    });
 }
 
 function filterSupplierView() {
@@ -9403,7 +8597,7 @@ function applyScannedBarcodeToSearch(barcodeValue) {
         Swal.fire({
             icon: 'info',
             title: 'No item found',
-            text: 'Walang item na tumugma sa barcode: ' + cleanBarcode,
+            text: '' + cleanBarcode,
             confirmButtonColor: '#198754'
         });
     }
@@ -9613,230 +8807,6 @@ function toggleItemStatus(itemId, checkbox) {
     formData.append('action', 'toggle_status');
     formData.append('item_id', itemId);
     formData.append('status', newStatus);
-=======
-// ========== FIXED: Load unit types for all items in table ==========
-function loadAllItemUnitTypes() {
-    const unitTypeElements = document.querySelectorAll('.unit-types-display');
-    console.log('Found unit type elements:', unitTypeElements.length);
-    
-    unitTypeElements.forEach(element => {
-        const itemId = element.getAttribute('data-item-id');
-        if (itemId) {
-            loadItemUnitTypes(itemId, element);
-        }
-    });
-}
-
-// Fetch unit types for a specific item
-function loadItemUnitTypes(itemId, element) {
-    const formData = new FormData();
-    formData.append('action', 'get_item_unit_types');
-    formData.append('item_id', itemId);
-    
-    fetch('current_inventory.php', { method: 'POST', body: formData })
-        .then(response => response.json())
-        .then(data => {
-            if (data.success && data.unit_types && data.unit_types.length > 0) {
-                const badges = data.unit_types.map(ut => 
-                    `<span class="unit-type-badge">${escapeHtml(ut.unit_type_name)}: ₱${parseFloat(ut.unit_price).toFixed(2)}</span>`
-                ).join('');
-                element.innerHTML = badges;
-            } else {
-                element.innerHTML = '<span class="text-muted">No prices set</span>';
-            }
-        })
-        .catch(error => console.log('Error loading unit types:', error));
-}
-
-// ========== TOGGLE FUNCTIONS ==========
-function toggleView(view) {
-    currentView = view;
-    document.getElementById('viewCategoryBtn').classList.toggle('active', view === 'category');
-    document.getElementById('viewSupplierBtn').classList.toggle('active', view === 'supplier');
-    document.getElementById('categoryView').style.display = view === 'category' ? 'block' : 'none';
-    document.getElementById('supplierView').style.display = view === 'supplier' ? 'block' : 'none';
-    filterItems();
-}
-
-function switchCategoryTab(tabId, element) {
-    document.querySelectorAll('#categoryView .category-tab').forEach(tab => tab.classList.remove('active'));
-    element.classList.add('active');
-    document.querySelectorAll('#categoryView .tab-content').forEach(content => content.classList.remove('active'));
-    document.getElementById(tabId).classList.add('active');
-    filterItems();
-}
-
-function switchSupplierTab(tabId, element) {
-    document.querySelectorAll('#supplierView .category-tab').forEach(tab => tab.classList.remove('active'));
-    element.classList.add('active');
-    document.querySelectorAll('#supplierView .tab-content').forEach(content => content.classList.remove('active'));
-    document.getElementById(tabId).classList.add('active');
-    filterItems();
-}
-
-// ========== FILTER FUNCTIONS ==========
-function updateFilterCountBadge() {
-    const filterBadge = document.getElementById('filterCountBadge');
-    if (filterBadge) {
-        const activeFilterCount = Object.values(activeFilters).filter(v => v !== '' && v !== null).length;
-        filterBadge.textContent = activeFilterCount;
-    }
-}
-
-function initFilterToggle() {
-    const filterToggleBtn = document.getElementById('filterToggleBtn');
-    const filterContent = document.getElementById('filterContent');
-    
-    if (filterToggleBtn && filterContent) {
-        filterContent.classList.add('collapsed');
-        filterToggleBtn.setAttribute('aria-expanded', 'false');
-        
-        filterToggleBtn.addEventListener('click', function(e) {
-            e.preventDefault();
-            const expanded = this.getAttribute('aria-expanded') === 'true';
-            this.setAttribute('aria-expanded', !expanded);
-            
-            if (filterContent.classList.contains('collapsed')) {
-                filterContent.classList.remove('collapsed');
-            } else {
-                filterContent.classList.add('collapsed');
-            }
-        });
-    }
-}
-
-function filterItems() {
-    const searchInput = document.getElementById('searchInput');
-    const statusFilter = document.getElementById('statusFilter');
-    const stockFilter = document.getElementById('stockFilter');
-    
-    if (!searchInput || !statusFilter || !stockFilter) {
-        console.error('Filter elements not found');
-        return;
-    }
-    
-    const searchTerm = searchInput.value.toLowerCase();
-    const status = statusFilter.value;
-    const stockLevel = stockFilter.value;
-    
-    activeFilters = { search: searchTerm, status: status, stockLevel: stockLevel };
-    updateFilterCountBadge();
-    
-    if (currentView === 'category') {
-        filterCategoryView();
-    } else {
-        filterSupplierView();
-    }
-}
-
-function filterCategoryView() {
-    const activeTab = document.querySelector('#categoryView .tab-content.active');
-    if (!activeTab) return;
-    
-    const rows = activeTab.querySelectorAll('.inventory-row');
-    let visibleCount = 0;
-    
-    rows.forEach(row => {
-        const matchesSearch = activeFilters.search === '' || 
-            (row.dataset.code && row.dataset.code.toLowerCase().includes(activeFilters.search)) || 
-            (row.dataset.name && row.dataset.name.toLowerCase().includes(activeFilters.search));
-        
-        const matchesStatus = activeFilters.status === '' || 
-            (row.dataset.status && row.dataset.status === activeFilters.status);
-        
-        let matchesStock = true;
-        const stock = parseInt(row.dataset.stock) || 0;
-        const reorder = parseInt(row.dataset.reorder) || 0;
-        
-        if (activeFilters.stockLevel === 'low') {
-            matchesStock = stock <= reorder && stock > 0;
-        } else if (activeFilters.stockLevel === 'normal') {
-            matchesStock = stock > reorder && stock <= reorder * 2;
-        } else if (activeFilters.stockLevel === 'adequate') {
-            matchesStock = stock > reorder * 2;
-        } else if (activeFilters.stockLevel === 'out') {
-            matchesStock = stock <= 0;
-        }
-        
-        if (matchesSearch && matchesStatus && matchesStock) {
-            row.style.display = '';
-            visibleCount++;
-        } else {
-            row.style.display = 'none';
-        }
-    });
-    
-    const noItemsMsg = document.getElementById(`no-items-${activeTab.id}`);
-    if (noItemsMsg) {
-        noItemsMsg.style.display = visibleCount === 0 ? 'block' : 'none';
-    }
-}
-
-function filterSupplierView() {
-    const activeTab = document.querySelector('#supplierView .tab-content.active');
-    if (!activeTab) return;
-    
-    const rows = activeTab.querySelectorAll('.inventory-row');
-    let visibleCount = 0;
-    
-    rows.forEach(row => {
-        const matchesSearch = activeFilters.search === '' || 
-            (row.dataset.code && row.dataset.code.toLowerCase().includes(activeFilters.search)) || 
-            (row.dataset.name && row.dataset.name.toLowerCase().includes(activeFilters.search));
-        
-        const matchesStatus = activeFilters.status === '' || 
-            (row.dataset.status && row.dataset.status === activeFilters.status);
-        
-        let matchesStock = true;
-        const stock = parseInt(row.dataset.stock) || 0;
-        const reorder = parseInt(row.dataset.reorder) || 0;
-        
-        if (activeFilters.stockLevel === 'low') {
-            matchesStock = stock <= reorder && stock > 0;
-        } else if (activeFilters.stockLevel === 'normal') {
-            matchesStock = stock > reorder && stock <= reorder * 2;
-        } else if (activeFilters.stockLevel === 'adequate') {
-            matchesStock = stock > reorder * 2;
-        } else if (activeFilters.stockLevel === 'out') {
-            matchesStock = stock <= 0;
-        }
-        
-        if (matchesSearch && matchesStatus && matchesStock) {
-            row.style.display = '';
-            visibleCount++;
-        } else {
-            row.style.display = 'none';
-        }
-    });
-    
-    const noItemsMsg = document.getElementById(`no-items-${activeTab.id}`);
-    if (noItemsMsg) {
-        noItemsMsg.style.display = visibleCount === 0 ? 'block' : 'none';
-    }
-}
-
-function clearAllFilters() {
-    const searchInput = document.getElementById('searchInput');
-    const statusFilter = document.getElementById('statusFilter');
-    const stockFilter = document.getElementById('stockFilter');
-    
-    if (searchInput) searchInput.value = '';
-    if (statusFilter) statusFilter.value = '';
-    if (stockFilter) stockFilter.value = '';
-    
-    activeFilters = { search: '', status: '', stockLevel: '' };
-    updateFilterCountBadge();
-    filterItems();
-}
-
-// ========== ITEM STATUS FUNCTIONS ==========
-function toggleItemStatus(itemId, checkbox) {
-    const newStatus = checkbox.checked ? 'active' : 'inactive';
-    showLoading();
-    const formData = new FormData();
-    formData.append('action', 'toggle_status');
-    formData.append('item_id', itemId);
-    formData.append('status', newStatus);
     
     fetch('current_inventory.php', { method: 'POST', body: formData })
         .then(response => response.json())
@@ -9905,84 +8875,12 @@ function loadSupplierDetails(supplierId) {
     const formData = new FormData();
     formData.append('action', 'get_supplier_details');
     formData.append('supplier_id', supplierId);
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     
     fetch('current_inventory.php', { method: 'POST', body: formData })
         .then(response => response.json())
         .then(data => {
             Swal.close();
             if (data.success) {
-<<<<<<< HEAD
-                Swal.fire({ 
-                    icon: 'success', 
-                    title: 'Success!', 
-                    text: data.message, 
-                    timer: 1500, 
-                    showConfirmButton: false
-                });
-                const row = document.querySelector(`.inventory-row[data-id="${itemId}"]`);
-                if (row) row.dataset.status = newStatus;
-            } else {
-                Swal.fire({ icon: 'error', title: 'Error', text: data.message });
-                checkbox.checked = !checkbox.checked;
-            }
-        })
-        .catch(error => { 
-            Swal.close(); 
-            Swal.fire({ icon: 'error', title: 'Error', text: 'An error occurred' });
-            checkbox.checked = !checkbox.checked; 
-        });
-}
-
-// ========== SUPPLIER FUNCTIONS ==========
-function showSupplierSelector() {
-    cleanupModalBackdrops();
-    showLoading();
-    const formData = new FormData();
-    formData.append('action', 'get_suppliers');
-    
-    fetch('current_inventory.php', { method: 'POST', body: formData })
-        .then(response => response.json())
-        .then(data => {
-            Swal.close();
-            if (data.success) {
-                suppliersList = data.suppliers || [];
-                const select = $('#supplierSelect');
-                select.empty().append('<option value="">-- Choose Supplier --</option>');
-                suppliersList.forEach(s => select.append(new Option(s.supplier_name, s.supplier_id)));
-
-                document.getElementById('supplierDetailsContainer').style.display = 'none';
-                document.getElementById('noSupplierSelected').style.display = 'block';
-                new bootstrap.Modal(document.getElementById('supplierSelectorModal')).show();
-            } else {
-                Swal.fire({ icon: 'error', title: 'Error', text: data.message });
-            }
-        })
-        .catch(error => { 
-            Swal.close(); 
-            Swal.fire({ icon: 'error', title: 'Error', text: 'An error occurred' });
-        });
-}
-
-$('#supplierSelect').on('change', function() {
-    const supplierId = $(this).val();
-    if (supplierId) loadSupplierDetails(supplierId);
-    else { document.getElementById('supplierDetailsContainer').style.display = 'none'; document.getElementById('noSupplierSelected').style.display = 'block'; }
-});
-
-function loadSupplierDetails(supplierId) {
-    showLoading();
-    const formData = new FormData();
-    formData.append('action', 'get_supplier_details');
-    formData.append('supplier_id', supplierId);
-    
-    fetch('current_inventory.php', { method: 'POST', body: formData })
-        .then(response => response.json())
-        .then(data => {
-            Swal.close();
-            if (data.success) {
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 const supplier = data.supplier, purchaseOrders = data.purchase_orders || [];
                 let totalOrders = purchaseOrders.length, totalItems = 0, totalQuantity = 0, totalSpent = 0;
                 purchaseOrders.forEach(po => { totalItems += po.total_items || 0; totalQuantity += parseInt(po.total_quantity) || 0; totalSpent += parseFloat(po.total_amount) || 0; });
@@ -10113,11 +9011,7 @@ function updateOfftakeUI(data) {
             tableHtml += `<tr><td class="text-start">${date}</td><td class="text-center">${day.order_count}</td><td class="text-center">${day.total_quantity}</td><td class="text-end">₱${parseFloat(day.total_amount).toLocaleString(undefined, {minimumFractionDigits: 2})}</td></tr>`;
         });
         tableHtml += `<tr class="total-row"><td class="text-start"><strong>TOTAL</strong></td><td class="text-center"><strong>${totalOrders}</strong></td><td class="text-center"><strong>${totalQty.toLocaleString()}</strong></td><td class="text-end"><strong>₱${totalAmount.toLocaleString(undefined, {minimumFractionDigits: 2})}</strong></td></tr>`;
-<<<<<<< HEAD
     } else tableHtml = `<tr><td colspan="4" class="text-center py-4 text-muted"><i class="bi bi-info-circle fs-4 d-block mb-2"></i>No data found for the selected date range</div></td></tr>`;
-=======
-    } else tableHtml = `<tr><td colspan="4" class="text-center py-4 text-muted"><i class="bi bi-info-circle fs-4 d-block mb-2"></i>No data found for the selected date range</div></td>`;
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     document.getElementById('offtakeTableBody').innerHTML = tableHtml;
 }
 
@@ -10144,17 +9038,14 @@ function printOfftakeReport() {
                     let tableRows = ''; let tOrders = 0, tQty = 0, tAmount = 0;
                     items.forEach(item => {
                         tOrders += parseInt(item.order_count); tQty += parseInt(item.total_quantity); tAmount += parseFloat(item.total_amount);
-<<<<<<< HEAD
                         tableRows += `<tr><td style="padding:8px;border:1px solid #000">${new Date(item.sale_date).toLocaleDateString()}</td><td style="padding:8px;border:1px solid #000;text-align:center">${item.order_count}</td><td style="padding:8px;border:1px solid #000;text-align:center">${item.total_quantity}</td><td style="padding:8px;border:1px solid #000;text-align:right">₱${parseFloat(item.total_amount).toFixed(2)}</div></td></tr>`;
                     });
                     const currentDate = new Date().toLocaleString();
-                    return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Offtake Report</title><style>body{font-family:Arial;margin:0;padding:20px;font-size:12px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #000;padding:8px;text-align:left}th{background:#f0f0f0}.summary{display:flex;margin-bottom:20px}.summary-item{flex:1;border:1px solid #000;padding:10px;text-align:center}.print-header{text-align:center;margin-bottom:20px}.print-header img{width:50px}</style></head><body><div class="print-header"><img src="${logoBase64}" alt="Logo"><h2>Average Daily Offtake Report</h2><p>Branch: ${branchName || 'All Branches'}</p></div><div class="summary"><div class="summary-item"><strong>Avg Daily</strong><br>${summary.avg_daily.toFixed(1)}</div><div class="summary-item"><strong>Total Quantity</strong><br>${summary.total_quantity.toLocaleString()}</div><div class="summary-item"><strong>Active Days</strong><br>${summary.active_days}</div><div class="summary-item"><strong>Per Item Avg</strong><br>${summary.avg_per_item.toFixed(1)}</div></div><table><thead><tr><th>Date</th><th>Orders</th><th>Quantity</th><th>Amount</th></tr></thead><tbody>${tableRows}<tr style="font-weight:bold"><td>TOTAL</div><td style="text-align:center">${tOrders}</div><td style="text-align:center">${tQty}</div><td style="text-align:right">₱${tAmount.toFixed(2)}</div></tr></tbody></table><p style="margin-top:20px;font-size:10px">Generated: ${currentDate}</p></body></html>`;
-=======
-                        tableRows += `<tr><td style="padding:8px;border:1px solid #000">${new Date(item.sale_date).toLocaleDateString()}</td><td style="padding:8px;border:1px solid #000;text-align:center">${item.order_count}</td><td style="padding:8px;border:1px solid #000;text-align:center">${item.total_quantity}</td><td style="padding:8px;border:1px solid #000;text-align:right">₱${parseFloat(item.total_amount).toFixed(2)}</div></td>`;
-                    });
-                    const currentDate = new Date().toLocaleString();
-                    return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Offtake Report</title><style>body{font-family:Arial;margin:0;padding:20px;font-size:12px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #000;padding:8px;text-align:left}th{background:#f0f0f0}.summary{display:flex;margin-bottom:20px}.summary-item{flex:1;border:1px solid #000;padding:10px;text-align:center}.print-header{text-align:center;margin-bottom:20px}.print-header img{width:50px}</style></head><body><div class="print-header"><img src="${logoBase64}" alt="Logo"><h2>Average Daily Offtake Report</h2><p>Branch: ${branchName || 'All Branches'}</p></div><div class="summary"><div class="summary-item"><strong>Avg Daily</strong><br>${summary.avg_daily.toFixed(1)}</div><div class="summary-item"><strong>Total Quantity</strong><br>${summary.total_quantity.toLocaleString()}</div><div class="summary-item"><strong>Active Days</strong><br>${summary.active_days}</div><div class="summary-item"><strong>Per Item Avg</strong><br>${summary.avg_per_item.toFixed(1)}</div></div><table><thead><tr><th>Date</th><th>Orders</th><th>Quantity</th><th>Amount</th></tr></thead><tbody>${tableRows}<tr style="font-weight:bold"><td>TOTAL</div><td style="text-align:center">${tOrders}</div><td style="text-align:center">${tQty}</div><td style="text-align:right">₱${tAmount.toFixed(2)}</div></tr></tbody><table><p style="margin-top:20px;font-size:10px">Generated: ${currentDate}</p></body></html>`;
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
+                    return `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Offtake Report</title><style>body{font-family:Arial;margin:0;padding:20px;font-size:12px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #000;padding:8px;text-align:left}th{background:#f0f0f0}.summary{display:flex;margin-bottom:20px}.summary-item{flex:1;border:1px solid #000;padding:10px;text-align:center}.print-header{text-align:center;margin-bottom:20px}.print-header img{width:50px}</style></head><body><div class="print-header"><img src="${logoBase64}" alt="Logo"><h2>Average Daily Offtake Report</h2><p>Branch: ${branchName || 'All Branches'}</p></div><div class="summary"><div class="summary-item"><strong>Avg Daily</strong><br>${summary.avg_daily.toFixed(1)}</div><div class="summary-item"><strong>Total Quantity</strong><br>${summary.total_quantity.toLocaleString()}</div><div class="summary-item"><strong>Active Days</strong><br>${summary.active_days}</div><div class="summary-item"><strong>Per Item Avg</strong><br>${summary.avg_per_item.toFixed(1)}</div></div><table><thead><tr><th>Date</th><th>Orders</th><th>Quantity</th><th>Amount</th></tr></thead><tbody>${tableRows}<tr style="font-weight:bold"><td>TOTAL</div><td style="text-align:center">${tOrders}</div><td style="text-align:center">${tQty}</div><td style="text-align:right">₱${tAmount.toFixed(2)}</div></tr></tbody></table><p style="margin-top:20px;font-size:10px">Generated: ${currentDate}</p>
+<script>
+
+
+</body></html>`;
                 };
                 const htmlContent = generatePrintHTML(data.items, data.summary, data.date_range, data.branch_name);
                 const iframe = document.getElementById('printFrame');
@@ -10166,7 +9057,6 @@ function printOfftakeReport() {
                 Swal.fire({ icon: 'warning', title: 'No Data', text: 'No offtake data matches the selected date range' });
             }
             if (printBtn) { printBtn.innerHTML = '<i class="bi bi-printer"></i> Print'; printBtn.disabled = false; }
-<<<<<<< HEAD
         })
         .catch(error => { 
             Swal.close(); 
@@ -10701,321 +9591,6 @@ function saveBatchPriceLevelUpdates() {
         return;
     }
 
-=======
-        })
-        .catch(error => { 
-            Swal.close(); 
-            Swal.fire({ icon: 'error', title: 'Error', text: 'An error occurred' });
-            if (printBtn) { printBtn.innerHTML = '<i class="bi bi-printer"></i> Print'; printBtn.disabled = false; } 
-        });
-}
-
-function exportOfftakeToExcel() {
-    const rows = document.querySelectorAll('#offtakeTableBody tr');
-    if (rows.length === 0 || (rows.length === 1 && rows[0].querySelector('td[colspan]'))) { 
-        Swal.fire({ icon: 'warning', title: 'Warning', text: 'No data to export' });
-        return; 
-    }
-    const excelData = [['Date', 'Orders', 'Quantity', 'Amount (₱)']];
-    rows.forEach(row => {
-        const cells = row.querySelectorAll('td');
-        if (cells.length === 4 && !cells[0].hasAttribute('colspan')) excelData.push([cells[0].innerText, cells[1].innerText, cells[2].innerText, cells[3].innerText.replace('₱', '').replace(/,/g, '')]);
-    });
-    excelData.push([], ['SUMMARY'], ['Avg Daily Offtake', document.getElementById('summaryAvgDaily').textContent], ['Total Quantity', document.getElementById('summaryTotalQty').textContent], ['Active Days', document.getElementById('summaryActiveDays').textContent], ['Per Item Avg', document.getElementById('summaryPerItem').textContent]);
-    const wb = XLSX.utils.book_new(), ws = XLSX.utils.aoa_to_sheet(excelData);
-    ws['!cols'] = [{ wch: 15 }, { wch: 10 }, { wch: 12 }, { wch: 15 }];
-    XLSX.utils.book_append_sheet(wb, ws, 'Offtake Report');
-    XLSX.writeFile(wb, `Offtake_Report_${document.getElementById('offtakeStartDate').value}_to_${document.getElementById('offtakeEndDate').value}.xlsx`);
-    Swal.fire({ icon: 'success', title: 'Export Complete', timer: 1500, showConfirmButton: false });
-}
-
-function getItemsImportTemplateRows() {
-    return [[
-        'item_code', 'item_name', 'description', 'category', 'stock', 'reorder_level', 'status',
-        'unit_type', 'barcode', 'qty_smallest_pack', 'default_uom', 'unit_status',
-        'price_level', 'effective_date', 'unit_price', 'unit_quantity'
-    ], [
-        'ITEM001', 'Sample Cement', 'Sample Cement Description', 'Cement', 100, 20, 'active',
-        'Bag', '123456789012', 1, 'yes', 'active',
-        'Standard', '', 250.00, 1
-    ], [
-        'ITEM001', 'Sample Cement', 'Sample Cement Description', 'Cement', 100, 20, 'active',
-        'Bulk', '', 40, 'no', 'active',
-        'Standard', '', 10000.00, 40
-    ], [
-        '', 'Sample Oil', 'Sample Oil Description', 'Oil', 48, 12, 'active',
-        'Piece', '', 1, 'yes', 'active',
-        'Standard', '', 120.00, 1
-    ]];
-}
-
-function downloadItemsImportTemplate() {
-    const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet(getItemsImportTemplateRows());
-    ws['!cols'] = [
-        { wch: 14 }, { wch: 24 }, { wch: 30 }, { wch: 16 }, { wch: 10 }, { wch: 14 }, { wch: 14 },
-        { wch: 16 }, { wch: 18 }, { wch: 18 }, { wch: 12 }, { wch: 14 },
-        { wch: 16 }, { wch: 14 }, { wch: 12 }, { wch: 14 }
-    ];
-    XLSX.utils.book_append_sheet(wb, ws, 'Items Import');
-    XLSX.writeFile(wb, 'Items_Import_Template.xlsx');
-}
-
-function normalizeImportHeaderKey(value) {
-    return String(value || '')
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, '_')
-        .replace(/^_+|_+$/g, '');
-}
-
-function handleImportItemsFile(event) {
-    const file = event.target.files && event.target.files[0];
-    if (!file) return;
-
-    showLoading();
-    const reader = new FileReader();
-
-    reader.onload = function(e) {
-        try {
-            const data = e.target.result;
-            const workbook = XLSX.read(data, { type: 'array' });
-            const sheetName = workbook.SheetNames[0];
-            const sheet = workbook.Sheets[sheetName];
-            const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-
-            if (!rows || rows.length < 2) {
-                Swal.close();
-                Swal.fire({ icon: 'warning', title: 'Invalid File', text: 'The selected file has no import rows.' });
-                event.target.value = '';
-                return;
-            }
-
-            const headers = rows[0].map(normalizeImportHeaderKey);
-            const importedRows = [];
-
-            for (let i = 1; i < rows.length; i++) {
-                const row = rows[i];
-                if (!row || row.every(cell => String(cell || '').trim() === '')) continue;
-
-                const rowObj = {};
-                headers.forEach((header, index) => {
-                    rowObj[header] = row[index] ?? '';
-                });
-
-                importedRows.push({
-                    item_code: rowObj.item_code || '',
-                    item_name: rowObj.item_name || '',
-                    description: rowObj.description || '',
-                    category: rowObj.category || 'General',
-                    stock: rowObj.stock || 0,
-                    reorder_level: rowObj.reorder_level || 0,
-                    status: rowObj.status || 'active',
-                    unit_type: rowObj.unit_type || 'Piece',
-                    barcode: rowObj.barcode || '',
-                    qty_smallest_pack: rowObj.qty_smallest_pack || 1,
-                    default_uom: rowObj.default_uom || 'no',
-                    unit_status: rowObj.unit_status || 'active',
-                    price_level: rowObj.price_level || 'Standard',
-                    effective_date: rowObj.effective_date || '',
-                    unit_price: rowObj.unit_price || 0,
-                    unit_quantity: rowObj.unit_quantity || rowObj.qty_smallest_pack || 1,
-                    current_inventory: rowObj.current_inventory || rowObj.stock || 0,
-                    as_of_date: rowObj.as_of_date || '',
-                    unit_cost: rowObj.unit_cost || rowObj.unit_price || 0
-                });
-            }
-
-            if (importedRows.length === 0) {
-                Swal.close();
-                Swal.fire({ icon: 'warning', title: 'No Data', text: 'No valid rows found in the import file.' });
-                event.target.value = '';
-                return;
-            }
-
-            const formData = new FormData();
-            formData.append('action', 'import_items');
-            formData.append('rows', JSON.stringify(importedRows));
-
-            fetch('current_inventory.php', { method: 'POST', body: formData })
-                .then(response => response.json())
-                .then(data => {
-                    Swal.close();
-                    if (data.success) {
-                        Swal.fire({
-                            icon: 'success',
-                            title: 'Import Complete',
-                            text: data.message,
-                            confirmButtonText: 'OK'
-                        }).then(() => location.reload());
-                    } else {
-                        Swal.fire({ icon: 'error', title: 'Import Failed', text: data.message || 'Unable to import items.' });
-                    }
-                })
-                .catch(error => {
-                    Swal.close();
-                    Swal.fire({ icon: 'error', title: 'Import Error', text: 'An error occurred: ' + error.message });
-                })
-                .finally(() => {
-                    event.target.value = '';
-                });
-        } catch (error) {
-            Swal.close();
-            Swal.fire({ icon: 'error', title: 'Read Error', text: 'Unable to read the selected file: ' + error.message });
-            event.target.value = '';
-        }
-    };
-
-    reader.onerror = function() {
-        Swal.close();
-        Swal.fire({ icon: 'error', title: 'Read Error', text: 'Failed to read the selected file.' });
-        event.target.value = '';
-    };
-
-    reader.readAsArrayBuffer(file);
-}
-
-let batchPriceLevelModalInstance = null;
-
-function getSelectedBatchPriceLevel() {
-    const select = document.getElementById('batchPriceLevelSelect');
-    const newInput = document.getElementById('batchNewPriceLevel');
-    if (!select) return 'Standard';
-    if (select.value === '__new__') {
-        const newValue = (newInput?.value || '').trim();
-        return newValue || '';
-    }
-    return (select.value || 'Standard').trim();
-}
-
-function handleBatchPriceLevelSelectionChange() {
-    const select = document.getElementById('batchPriceLevelSelect');
-    const wrapper = document.getElementById('batchNewPriceLevelWrapper');
-    const newInput = document.getElementById('batchNewPriceLevel');
-    if (!select || !wrapper || !newInput) return;
-
-    const isNew = select.value === '__new__';
-    wrapper.style.display = isNew ? '' : 'none';
-    if (!isNew) {
-        newInput.value = '';
-    }
-    loadBatchPriceLevelTable();
-}
-
-function handleBatchNewPriceLevelInput() {
-    loadBatchPriceLevelTable();
-}
-
-function showBatchPriceLevelModal() {
-    const effectiveDateInput = document.getElementById('batchPriceEffectiveDate');
-    if (effectiveDateInput && !effectiveDateInput.value) {
-        effectiveDateInput.value = new Date().toISOString().split('T')[0];
-    }
-
-    const select = document.getElementById('batchPriceLevelSelect');
-    if (select && !select.value) {
-        select.value = 'Standard';
-    }
-
-    handleBatchPriceLevelSelectionChange();
-
-    const searchInput = document.getElementById('batchPriceSearch');
-    if (searchInput) {
-        searchInput.value = '';
-    }
-
-    if (!batchPriceLevelModalInstance) {
-        batchPriceLevelModalInstance = new bootstrap.Modal(document.getElementById('batchPriceLevelModal'));
-    }
-    batchPriceLevelModalInstance.show();
-}
-
-function loadBatchPriceLevelTable() {
-    const effectiveDate = document.getElementById('batchPriceEffectiveDate')?.value || '';
-    const priceLevel = getSelectedBatchPriceLevel();
-    const tbody = document.getElementById('batchPriceLevelBody');
-    if (!tbody) return;
-
-    if (!effectiveDate) {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">Please select an effective date first.</td></tr>';
-        return;
-    }
-
-    const select = document.getElementById('batchPriceLevelSelect');
-    if (select?.value === '__new__' && !priceLevel) {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">Type the new price level name to load all products.</td></tr>';
-        return;
-    }
-
-    tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">Loading items...</td></tr>';
-
-    const formData = new FormData();
-    formData.append('action', 'get_batch_price_level_items');
-    formData.append('effective_date', effectiveDate);
-    formData.append('price_level', priceLevel || 'Standard');
-
-    fetch(window.location.href, {
-        method: 'POST',
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (!data.success || !Array.isArray(data.items) || data.items.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted py-4">No items found for this price level.</td></tr>';
-            return;
-        }
-
-        tbody.innerHTML = data.items.map(row => {
-            const editablePrice = row.editable_price === null || row.editable_price === '' || typeof row.editable_price === 'undefined'
-                ? ''
-                : Number(row.editable_price).toFixed(2);
-            return `
-            <tr class="batch-price-row"
-                data-item-name="${escapeHtml((row.item_name || '').toLowerCase())}"
-                data-description="${escapeHtml((row.description || '').toLowerCase())}"
-                data-uom="${escapeHtml((row.unit_type_name || '').toLowerCase())}">
-                <td>
-                    <input type="hidden" class="batch-item-id" value="${row.item_id}">
-                    <input type="hidden" class="batch-unit-type-id" value="${row.unit_type_id}">
-                    <input type="hidden" class="batch-unit-quantity" value="${parseInt(row.unit_quantity || 1, 10)}">
-                    <strong>${escapeHtml(row.item_name || '')}</strong>
-                </td>
-                <td>${escapeHtml(row.description || '-')}</td>
-                <td>${escapeHtml(row.unit_type_name || '-')}</td>
-                <td><span class="fw-semibold">₱${Number(row.current_price || 0).toFixed(2)}</span></td>
-                <td><input type="number" class="form-control batch-new-price" min="0" step="0.01" value="${editablePrice}" placeholder="Leave blank if no price"></td>
-            </tr>`;
-        }).join('');
-        filterBatchPriceLevelRows();
-    })
-    .catch(() => {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger py-4">Failed to load price level items.</td></tr>';
-    });
-}
-
-function filterBatchPriceLevelRows() {
-    const keyword = (document.getElementById('batchPriceSearch')?.value || '').toLowerCase().trim();
-    document.querySelectorAll('#batchPriceLevelBody .batch-price-row').forEach(row => {
-        const haystack = [row.dataset.itemName || '', row.dataset.description || '', row.dataset.uom || ''].join(' ');
-        row.style.display = haystack.includes(keyword) ? '' : 'none';
-    });
-}
-
-function saveBatchPriceLevelUpdates() {
-    const effectiveDate = document.getElementById('batchPriceEffectiveDate')?.value || '';
-    const priceLevel = getSelectedBatchPriceLevel() || 'Standard';
-
-    if (!effectiveDate) {
-        Swal.fire({ icon: 'warning', title: 'Required', text: 'Please select an effective date.' });
-        return;
-    }
-
-    if (!priceLevel) {
-        Swal.fire({ icon: 'warning', title: 'Required', text: 'Please select or type a price level.' });
-        return;
-    }
-
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     const updates = [];
     document.querySelectorAll('#batchPriceLevelBody .batch-price-row').forEach(row => {
         const priceInput = row.querySelector('.batch-new-price');
@@ -11023,32 +9598,21 @@ function saveBatchPriceLevelUpdates() {
         const unitTypeId = row.querySelector('.batch-unit-type-id')?.value;
         const unitQuantity = row.querySelector('.batch-unit-quantity')?.value || 1;
         if (!priceInput || itemId === undefined || unitTypeId === undefined) return;
-<<<<<<< HEAD
         if (priceInput.dataset.edited !== '1') return;
 
         const rawPrice = (priceInput.value || '').trim();
         if (rawPrice === '') return;
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         updates.push({
             item_id: parseInt(itemId, 10),
             unit_type_id: parseInt(unitTypeId, 10),
             unit_quantity: parseInt(unitQuantity, 10) || 1,
-<<<<<<< HEAD
             unit_price: parseFloat(rawPrice) || 0
-=======
-            unit_price: parseFloat(priceInput.value || '0') || 0
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         });
     });
 
     if (updates.length === 0) {
-<<<<<<< HEAD
         Swal.fire({ icon: 'warning', title: 'No Changes', text: 'Click and edit at least one New Price before updating.' });
-=======
-        Swal.fire({ icon: 'warning', title: 'No Data', text: 'There are no price rows to update.' });
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         return;
     }
 
@@ -11072,17 +9636,9 @@ function saveBatchPriceLevelUpdates() {
     .then(response => response.json())
     .then(data => {
         if (data.success) {
-<<<<<<< HEAD
             Swal.close();
             showBatchPriceUpdateDetailsModal(data.updated_items || [], data.message)
                 .then(() => window.location.reload());
-=======
-            Swal.fire({
-                icon: 'success',
-                title: 'Success',
-                text: data.message
-            }).then(() => window.location.reload());
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         } else {
             Swal.fire({ icon: 'error', title: 'Error', text: data.message || 'Failed to save price updates.' });
         }
@@ -11107,7 +9663,6 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-<<<<<<< HEAD
 // Handle Volume field visibility based on category selection
 document.addEventListener('DOMContentLoaded', function() {
     const categoryField = document.getElementById('category');
@@ -11218,6 +9773,11 @@ function showAddItemModal() {
     document.getElementById('itemCode').value = '<?= $next_item_code ?>';
     document.getElementById('itemCode').readOnly = true;
     document.getElementById('status').value = 'active';
+    if (document.getElementById('pointsEligible')) document.getElementById('pointsEligible').checked = true;
+    if (document.getElementById('incomeAccount')) document.getElementById('incomeAccount').value = '';
+    if (document.getElementById('cogsAccount')) document.getElementById('cogsAccount').value = '';
+    if (document.getElementById('assetAccount')) document.getElementById('assetAccount').value = '';
+    applySingleRegisteredItemAccountDefaults();
     if (document.getElementById('principal')) document.getElementById('principal').value = '';
     if (document.getElementById('volume')) document.getElementById('volume').value = '';
     
@@ -11427,229 +9987,6 @@ function collectUnitTypesAndPricing() {
             unitTypesData.push({
                 unit_type: unitTypeInput.value.trim(),
                 uom_initial: initialInput ? initialInput.value.trim().toUpperCase() : '',
-=======
-// ========== ITEM CRUD FUNCTIONS ==========
-
-function calculateUnitTotalCost(row) {
-    const inventoryInput = row.querySelector('input[name="current_inventory[]"], input[name="edit_current_inventory[]"]');
-    const unitCostInput = row.querySelector('input[name="unit_cost[]"], input[name="edit_unit_cost[]"]');
-    const totalCostInput = row.querySelector('input[name="total_cost[]"], input[name="edit_total_cost[]"]');
-    if (!totalCostInput) return;
-    const inventory = inventoryInput ? (parseFloat(inventoryInput.value) || 0) : 0;
-    const unitCost = unitCostInput ? (parseFloat(unitCostInput.value) || 0) : 0;
-    totalCostInput.value = (inventory * unitCost).toFixed(2);
-}
-
-function bindUnitInventoryRowEvents(row) {
-    const inventoryInput = row.querySelector('input[name="current_inventory[]"], input[name="edit_current_inventory[]"]');
-    const unitCostInput = row.querySelector('input[name="unit_cost[]"], input[name="edit_unit_cost[]"]');
-    if (inventoryInput) {
-        inventoryInput.addEventListener('input', () => calculateUnitTotalCost(row));
-    }
-    if (unitCostInput) {
-        unitCostInput.addEventListener('input', () => calculateUnitTotalCost(row));
-    }
-    calculateUnitTotalCost(row);
-}
-
-function showAddItemModal() {
-    cleanupModalBackdrops();
-    
-    document.getElementById('itemForm').reset();
-    document.getElementById('itemId').value = '';
-    document.getElementById('itemCode').value = '<?= $next_item_code ?>';
-    document.getElementById('itemCode').readOnly = true;
-    document.getElementById('status').value = 'active';
-    
-    const unitTypesBody = document.getElementById('unitTypesBody');
-    unitTypesBody.innerHTML = '';
-    const pricingBody = document.getElementById('pricingBody');
-    pricingBody.innerHTML = '';
-    currentUnitTypes = [];
-    
-    // Add default unit type row
-    addUnitTypeRow();
-    addPricingRow();
-    
-    const editBtn = document.getElementById('editItemCodeBtn');
-    if (editBtn) {
-        editBtn.innerHTML = '<i class="bi bi-pencil"></i> Edit';
-        editBtn.classList.remove('btn-success');
-        editBtn.classList.add('btn-outline-secondary');
-    }
-    
-    new bootstrap.Modal(document.getElementById('itemModal')).show();
-}
-
-// Add Unit Type Row (Add Modal)
-function addUnitTypeRow() {
-    const tbody = document.getElementById('unitTypesBody');
-    const rowId = 'unitType_' + Date.now();
-    const isFirstRow = tbody.children.length === 0;
-    
-    const row = document.createElement('tr');
-    row.id = rowId;
-    row.innerHTML = `
-        <td><input type="text" class="form-control form-control-sm" placeholder="e.g., Piece, Box, Carton" name="unit_type[]" required></td>
-        <td><input type="text" class="form-control form-control-sm" placeholder="Optional" name="barcode[]"></td>
-        <td><input type="number" class="form-control form-control-sm" placeholder="1" min="1" value="1" name="qty_smallest_pack[]"></td>
-        <td><input type="number" class="form-control form-control-sm" placeholder="0" min="0" step="0.01" value="0" name="current_inventory[]"></td>
-        <td><input type="date" class="form-control form-control-sm" name="as_of_date[]"></td>
-        <td class="text-center"><input type="radio" class="form-check-input default-uom-radio" name="default_uom" value="1" ${isFirstRow ? 'checked' : ''} onchange="handleDefaultUOMChange(this)"></td>
-        <td><input type="number" class="form-control form-control-sm" placeholder="0.00" min="0" step="0.01" value="0" name="unit_cost[]"></td>
-        <td><input type="number" class="form-control form-control-sm" placeholder="0.00" min="0" step="0.01" value="0.00" name="total_cost[]" readonly></td>
-        <td class="text-center">
-            ${!isFirstRow ? `<button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove(); updatePricingTableColumns()"><i class="bi bi-trash"></i></button>` : '<span class="text-muted">Default</span>'}
-        </td>
-    `;
-    tbody.appendChild(row);
-    bindUnitInventoryRowEvents(row);
-    
-    const unitTypeInput = row.querySelector('input[name="unit_type[]"]');
-    if (unitTypeInput) {
-        unitTypeInput.addEventListener('change', () => updatePricingTableColumns());
-        unitTypeInput.addEventListener('keyup', () => updatePricingTableColumns());
-    }
-    
-    updatePricingTableColumns();
-}
-
-function updateUnitTypeStatus(checkbox) { return true; }
-
-// Handle Default UoM radio button - only one can be checked at a time
-function handleDefaultUOMChange(radio) {
-    if (radio.checked) {
-        // Uncheck all other default_uom radio buttons in the table
-        const allRadios = document.querySelectorAll('input[name="default_uom"]');
-        allRadios.forEach(r => {
-            if (r !== radio) {
-                r.checked = false;
-            }
-        });
-    }
-}
-
-
-
-function updatePricingTableColumns() {
-    const unitTypeRows = document.querySelectorAll('#unitTypesBody tr');
-    const unitTypes = [];
-    
-    unitTypeRows.forEach(row => {
-        const unitTypeInput = row.querySelector('input[name="unit_type[]"]');
-        if (unitTypeInput && unitTypeInput.value.trim()) {
-            unitTypes.push(unitTypeInput.value.trim());
-        }
-    });
-    
-    currentUnitTypes = unitTypes;
-    
-    const pricingTableHead = document.getElementById('pricingTableHead');
-    if (!pricingTableHead) return;
-    
-    const headerRow = pricingTableHead.querySelector('tr');
-    if (!headerRow) return;
-    
-    // Remove all dynamic columns (keep first two + action)
-    const thElements = Array.from(headerRow.querySelectorAll('th'));
-    for (let i = thElements.length - 1; i >= 2; i--) {
-        if (i < thElements.length - 1) { // keep the last (action) column
-            thElements[i].remove();
-        }
-    }
-    
-    // Insert new columns for each unit type (before the action column)
-    const actionTh = headerRow.querySelector('th:last-child');
-    unitTypes.forEach((unitType) => {
-        const th = document.createElement('th');
-        th.style.width = '15%';
-        th.textContent = unitType;
-        headerRow.insertBefore(th, actionTh);
-    });
-    
-    // Update each pricing row
-    const pricingRows = document.querySelectorAll('#pricingBody tr');
-    pricingRows.forEach(row => {
-        const cells = Array.from(row.querySelectorAll('td'));
-        // Remove dynamic price cells (keep first two + action)
-        for (let i = cells.length - 2; i >= 2; i--) { // stop before last cell (action)
-            cells[i].remove();
-        }
-        
-        // Insert new price inputs for each unit type
-        unitTypes.forEach((unitType, index) => {
-            const td = document.createElement('td');
-            const input = document.createElement('input');
-            input.type = 'number';
-            input.className = 'form-control form-control-sm pricing-input';
-            input.dataset.unitType = unitType;
-            input.placeholder = `₱0.00 (${unitType})`;
-            input.step = '0.01';
-            input.min = '0';
-            td.appendChild(input);
-            row.insertBefore(td, cells[cells.length - 1]); // insert before the action cell
-        });
-    });
-}
-
-function buildPriceLevelSelectHtml(className, selectedValue) {
-    const options = (window.availablePriceLevels || ['Standard']).map(level => {
-        const isSelected = String(level) === String(selectedValue || 'Standard') ? 'selected' : '';
-        return `<option value="${escapeHtml(level)}" ${isSelected}>${escapeHtml(level)}</option>`;
-    }).join('');
-    return `<select class="form-select form-select-sm ${className}">${options}</select>`;
-}
-
-function addPricingRow() {
-    const tbody = document.getElementById('pricingBody');
-    const unitTypes = currentUnitTypes.length > 0 ? currentUnitTypes : ['Piece'];
-    
-    const rowId = 'pricing_' + Date.now();
-    const row = document.createElement('tr');
-    row.id = rowId;
-    
-    let rowHTML = `
-        <td><input type="date" class="form-control form-control-sm pricing-date"></td>
-        <td><select class="form-select form-select-sm pricing-level">
-            <?php foreach ($priceLevels as $level): ?>
-                <option value="<?= htmlspecialchars($level) ?>" <?= $level === 'Standard' ? 'selected' : '' ?>><?= htmlspecialchars($level) ?></option>
-            <?php endforeach; ?>
-        </select></td>
-    `;
-    
-    unitTypes.forEach((unitType) => {
-        rowHTML += `<td><input type="number" class="form-control form-control-sm pricing-input" data-unit-type="${unitType}" placeholder="₱0.00" step="0.01" min="0"></td>`;
-    });
-    
-    rowHTML += `<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" onclick="removePricingRow(this)"><i class="bi bi-trash"></i></button></td>`;
-    
-    row.innerHTML = rowHTML;
-    tbody.appendChild(row);
-
-}
-
-function removePricingRow(btn) {
-    const row = btn.closest('tr');
-    if (row) row.remove();
-}
-
-function collectUnitTypesAndPricing() {
-    const unitTypeRows = document.querySelectorAll('#unitTypesBody tr');
-    const unitTypesData = [];
-    
-    unitTypeRows.forEach(row => {
-        const unitTypeInput = row.querySelector('input[name="unit_type[]"]');
-        const barcodeInput = row.querySelector('input[name="barcode[]"]');
-        const qtyInput = row.querySelector('input[name="qty_smallest_pack[]"]');
-        const currentInventoryInput = row.querySelector('input[name="current_inventory[]"]');
-        const asOfDateInput = row.querySelector('input[name="as_of_date[]"]');
-        const defaultRadio = row.querySelector('input[name="default_uom"]');
-        const unitCostInput = row.querySelector('input[name="unit_cost[]"]');
-        
-        if (unitTypeInput && unitTypeInput.value.trim()) {
-            unitTypesData.push({
-                unit_type: unitTypeInput.value.trim(),
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 barcode: barcodeInput ? barcodeInput.value.trim() : '',
                 qty_smallest_pack: qtyInput ? parseInt(qtyInput.value) || 1 : 1,
                 current_inventory: currentInventoryInput ? parseFloat(currentInventoryInput.value) || 0 : 0,
@@ -11700,20 +10037,417 @@ function collectUnitTypesAndPricing() {
     return { unitTypesData, pricingData };
 }
 
+
+const itemAccountAddConfig = {
+    incomeAccount: {
+        kind: 'income',
+        addValue: '__add_income',
+        title: 'Add New Income Account',
+        accountLabel: 'Income Account',
+        accountType: 'Income'
+    },
+    cogsAccount: {
+        kind: 'cogs',
+        addValue: '__add_cogs',
+        title: 'Add New COGS Account',
+        accountLabel: 'COGS Account',
+        accountType: 'Cost of Goods Sold'
+    },
+    assetAccount: {
+        kind: 'asset',
+        addValue: '__add_asset',
+        title: 'Add New Asset Account',
+        accountLabel: 'Asset Account',
+        accountType: 'Other Current Asset'
+    }
+};
+
+const itemLinkedAccountParents = {
+    income: <?= json_encode($itemIncomeAccounts, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
+    cogs: <?= json_encode($itemCogsAccounts, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>,
+    asset: <?= json_encode($itemAssetAccounts, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT) ?>
+};
+
+const itemLinkedAccountDefaultSelections = {
+    incomeAccount: <?= count($itemIncomeAccounts) === 1 ? (int)$itemIncomeAccounts[0]['id'] : 0 ?>,
+    cogsAccount: <?= count($itemCogsAccounts) === 1 ? (int)$itemCogsAccounts[0]['id'] : 0 ?>,
+    assetAccount: <?= count($itemAssetAccounts) === 1 ? (int)$itemAssetAccounts[0]['id'] : 0 ?>
+};
+
+function applySingleRegisteredItemAccountDefaults() {
+    Object.entries(itemLinkedAccountDefaultSelections).forEach(([selectId, defaultAccountId]) => {
+        const select = document.getElementById(selectId);
+        if (!select || !defaultAccountId || String(select.value || '').startsWith('__add_')) return;
+        if (select.value) return;
+        const optionExists = Array.from(select.options).some(option => String(option.value) === String(defaultAccountId));
+        if (optionExists) {
+            select.value = String(defaultAccountId);
+            select.dataset.previousValue = String(defaultAccountId);
+        }
+    });
+}
+let itemLinkedAccountActiveSelect = null;
+let itemLinkedAccountModalInstance = null;
+
+function escapeItemAccountHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+}
+
+function buildItemAccountOptionLabel(account) {
+    const label = (account && account.label) ? account.label : '';
+    const type = (account && account.type) ? account.type : '';
+    return label + (type ? ' (' + type + ')' : '');
+}
+
+function addAccountOptionToDropdown(select, account) {
+    if (!select || !account || !account.id) return;
+
+    const existing = Array.from(select.options).find(option => String(option.value) === String(account.id));
+    if (existing) {
+        existing.textContent = buildItemAccountOptionLabel(account);
+        select.value = String(account.id);
+        return;
+    }
+
+    const option = document.createElement('option');
+    option.value = String(account.id);
+    option.textContent = buildItemAccountOptionLabel(account);
+
+    const addOption = Array.from(select.options).find(opt => String(opt.value).startsWith('__add_'));
+    if (addOption && addOption.nextSibling) {
+        select.insertBefore(option, addOption.nextSibling);
+    } else {
+        select.appendChild(option);
+    }
+
+    select.value = String(account.id);
+}
+
+function populateItemLinkedAccountType(config) {
+    const typeSelect = document.getElementById('itemLinkedAccountType');
+    if (!typeSelect || !config) return;
+    typeSelect.innerHTML = '';
+    const option = document.createElement('option');
+    option.value = config.accountType;
+    option.textContent = config.accountType;
+    option.selected = true;
+    typeSelect.appendChild(option);
+}
+
+function populateItemLinkedParentAccounts(config) {
+    const parentSelect = document.getElementById('itemLinkedParentAccount');
+    if (!parentSelect || !config) return;
+    parentSelect.innerHTML = '<option value="">Main account</option>';
+    const accounts = itemLinkedAccountParents[config.kind] || [];
+    accounts.forEach(account => {
+        const option = document.createElement('option');
+        option.value = String(account.id);
+        option.textContent = buildItemAccountOptionLabel(account);
+        parentSelect.appendChild(option);
+    });
+}
+
+function resetItemLinkedAccountForm(config) {
+    document.getElementById('itemLinkedAccountKind').value = config.kind;
+    document.getElementById('itemLinkedAccountCode').value = '';
+    document.getElementById('itemLinkedAccountTitle').value = '';
+    document.getElementById('itemLinkedAccountDescription').value = '';
+    document.getElementById('itemLinkedAccountModalTitle').innerHTML = '<i class="bi bi-plus-circle me-2"></i>' + escapeItemAccountHtml(config.title.replace('New ', ''));
+    populateItemLinkedAccountType(config);
+    populateItemLinkedParentAccounts(config);
+}
+
+
+function getVisibleItemParentModal() {
+    return document.querySelector('#itemModal.show, #editItemModal.show');
+}
+
+function prepareItemLinkedAccountModalLayer() {
+    const parentModal = getVisibleItemParentModal();
+    const childModal = document.getElementById('itemLinkedAccountModal');
+
+    if (parentModal) {
+        parentModal.classList.remove('amgc-parent-modal-paused');
+        parentModal.style.zIndex = '1055';
+        parentModal.style.opacity = '1';
+        parentModal.style.filter = 'none';
+        parentModal.style.pointerEvents = 'auto';
+        parentModal.removeAttribute('aria-hidden');
+    }
+
+    if (childModal) {
+        childModal.style.zIndex = '1095';
+        childModal.setAttribute('data-bs-backdrop', 'false');
+    }
+
+    document.body.classList.add('modal-open');
+    document.body.style.overflow = 'hidden';
+
+    requestAnimationFrame(() => {
+        const parentIsOpen = !!getVisibleItemParentModal();
+        const childIsOpen = childModal && childModal.classList.contains('show');
+
+        document.querySelectorAll('.modal-backdrop').forEach((backdrop, index) => {
+            if (backdrop.classList.contains('item-linked-account-backdrop') ||
+                backdrop.classList.contains('amgc-item-linked-backdrop-final') ||
+                parseInt(backdrop.style.zIndex || window.getComputedStyle(backdrop).zIndex || '0', 10) >= 1080) {
+                backdrop.remove();
+            }
+        });
+
+        if (parentIsOpen) {
+            let parentBackdrop = Array.from(document.querySelectorAll('.modal-backdrop'))
+                .find(backdrop => backdrop.classList.contains('item-parent-backdrop'));
+
+            if (!parentBackdrop) {
+                parentBackdrop = Array.from(document.querySelectorAll('.modal-backdrop'))[0] || document.createElement('div');
+                if (!parentBackdrop.parentNode) {
+                    parentBackdrop.className = 'modal-backdrop fade show item-parent-backdrop';
+                    document.body.appendChild(parentBackdrop);
+                }
+            }
+
+            parentBackdrop.classList.add('item-parent-backdrop');
+            parentBackdrop.classList.remove('item-linked-account-backdrop', 'amgc-item-linked-backdrop-final', 'uom-scanner-backdrop');
+            parentBackdrop.style.zIndex = '1040';
+            parentBackdrop.style.opacity = '0.5';
+        } else if (!document.querySelector('.modal.show')) {
+            document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.remove());
+            document.body.classList.remove('modal-open');
+            document.body.style.removeProperty('overflow');
+            document.body.style.removeProperty('padding-right');
+        }
+    });
+}
+
+function restoreItemParentModalAfterLinkedAccount() {
+    const parentModal = getVisibleItemParentModal();
+
+    document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
+        const z = parseInt(backdrop.style.zIndex || window.getComputedStyle(backdrop).zIndex || '0', 10);
+        if (backdrop.classList.contains('item-linked-account-backdrop') ||
+            backdrop.classList.contains('amgc-item-linked-backdrop-final') ||
+            z >= 1080) {
+            backdrop.remove();
+        }
+    });
+
+    if (!parentModal) {
+        if (!document.querySelector('.modal.show')) {
+            document.body.classList.remove('modal-open');
+            document.body.style.removeProperty('overflow');
+            document.body.style.removeProperty('padding-right');
+            document.querySelectorAll('.modal-backdrop').forEach(backdrop => backdrop.remove());
+        }
+        return;
+    }
+
+    parentModal.classList.remove('amgc-parent-modal-paused');
+    parentModal.style.zIndex = '1055';
+    parentModal.style.opacity = '1';
+    parentModal.style.filter = 'none';
+    parentModal.style.pointerEvents = 'auto';
+    parentModal.removeAttribute('aria-hidden');
+
+    document.body.classList.add('modal-open');
+    document.body.style.overflow = 'hidden';
+
+    let parentBackdrop = Array.from(document.querySelectorAll('.modal-backdrop'))
+        .find(backdrop => backdrop.classList.contains('item-parent-backdrop'))
+        || Array.from(document.querySelectorAll('.modal-backdrop'))[0];
+
+    if (!parentBackdrop) {
+        parentBackdrop = document.createElement('div');
+        parentBackdrop.className = 'modal-backdrop fade show item-parent-backdrop';
+        document.body.appendChild(parentBackdrop);
+    }
+
+    document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
+        if (backdrop !== parentBackdrop && !backdrop.classList.contains('uom-scanner-backdrop')) {
+            backdrop.remove();
+        }
+    });
+
+    parentBackdrop.classList.add('item-parent-backdrop');
+    parentBackdrop.classList.remove('item-linked-account-backdrop', 'amgc-item-linked-backdrop-final', 'uom-scanner-backdrop');
+    parentBackdrop.style.zIndex = '1040';
+    parentBackdrop.style.opacity = '0.5';
+}
+
+function openItemLinkedAccountModal(config, select) {
+    itemLinkedAccountActiveSelect = select;
+    const modalEl = document.getElementById('itemLinkedAccountModal');
+    if (!modalEl) return;
+
+    resetItemLinkedAccountForm(config);
+
+    prepareItemLinkedAccountModalLayer();
+
+    itemLinkedAccountModalInstance = bootstrap.Modal.getOrCreateInstance(modalEl, {
+        backdrop: false,
+        keyboard: false
+    });
+    itemLinkedAccountModalInstance.show();
+
+    setTimeout(() => {
+        prepareItemLinkedAccountModalLayer();
+        const titleInput = document.getElementById('itemLinkedAccountTitle');
+        if (titleInput) titleInput.focus();
+    }, 250);
+}
+
+function handleItemAccountSelectChange(select) {
+    if (!select) return;
+
+    const config = itemAccountAddConfig[select.id];
+    if (!config || select.value !== config.addValue) return;
+
+    const previousValue = select.dataset.previousValue || '';
+    select.value = previousValue;
+    openItemLinkedAccountModal(config, select);
+}
+
+const itemLinkedAccountModalEl = document.getElementById('itemLinkedAccountModal');
+if (itemLinkedAccountModalEl) {
+    itemLinkedAccountModalEl.addEventListener('show.bs.modal', function() {
+        prepareItemLinkedAccountModalLayer();
+    });
+
+    itemLinkedAccountModalEl.addEventListener('shown.bs.modal', function() {
+        prepareItemLinkedAccountModalLayer();
+    });
+
+    itemLinkedAccountModalEl.addEventListener('hide.bs.modal', function() {
+        document.querySelectorAll('.modal-backdrop.item-linked-account-backdrop').forEach(backdrop => {
+            backdrop.style.opacity = '0';
+        });
+    });
+
+    itemLinkedAccountModalEl.addEventListener('hidden.bs.modal', function() {
+        setTimeout(restoreItemParentModalAfterLinkedAccount, 10);
+        setTimeout(restoreItemParentModalAfterLinkedAccount, 160);
+    });
+}
+
+const itemLinkedAccountForm = document.getElementById('itemLinkedAccountForm');
+if (itemLinkedAccountForm) {
+    itemLinkedAccountForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+
+        const kind = document.getElementById('itemLinkedAccountKind').value;
+        const config = Object.values(itemAccountAddConfig).find(item => item.kind === kind);
+        if (!config || !itemLinkedAccountActiveSelect) return;
+
+        const title = document.getElementById('itemLinkedAccountTitle').value.trim();
+        const code = document.getElementById('itemLinkedAccountCode').value.trim();
+        const parentId = document.getElementById('itemLinkedParentAccount').value || '';
+        const description = document.getElementById('itemLinkedAccountDescription').value.trim();
+
+        if (!title) {
+            Swal.fire({ icon: 'warning', title: 'Required Field', text: 'Account Title is required.' });
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('action', 'add_item_chart_account');
+        formData.append('account_kind', config.kind);
+        formData.append('account_title', title);
+        formData.append('account_code', code);
+        formData.append('parent_account_id', parentId);
+        formData.append('description', description);
+
+        const saveBtn = itemLinkedAccountForm.querySelector('button[type="submit"]');
+        const originalSaveText = saveBtn ? saveBtn.innerHTML : '';
+        if (saveBtn) {
+            saveBtn.disabled = true;
+            saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>Saving...';
+        }
+
+        fetch('current_inventory.php', { method: 'POST', body: formData })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.success || !data.account) {
+                    Swal.fire({ icon: 'error', title: 'Error', text: data.message || 'Failed to save account.' });
+                    return;
+                }
+
+                addAccountOptionToDropdown(itemLinkedAccountActiveSelect, data.account);
+                itemLinkedAccountActiveSelect.dataset.previousValue = String(data.account.id);
+
+                if (!itemLinkedAccountParents[config.kind]) itemLinkedAccountParents[config.kind] = [];
+                if (!itemLinkedAccountParents[config.kind].some(account => String(account.id) === String(data.account.id))) {
+                    itemLinkedAccountParents[config.kind].push(data.account);
+                }
+
+                if (itemLinkedAccountModalInstance) {
+                    itemLinkedAccountModalInstance.hide();
+                }
+
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Account Added',
+                    text: data.message || 'Account added successfully.',
+                    timer: 1500,
+                    showConfirmButton: false
+                });
+            })
+            .catch(error => {
+                Swal.fire({ icon: 'error', title: 'Error', text: 'An error occurred: ' + error.message });
+            })
+            .finally(() => {
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.innerHTML = originalSaveText;
+                }
+            });
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    applySingleRegisteredItemAccountDefaults();
+    document.querySelectorAll('.item-account-select').forEach(select => {
+        select.dataset.previousValue = select.value || '';
+        select.addEventListener('focus', function() {
+            this.dataset.previousValue = this.value || '';
+        });
+        select.addEventListener('change', function() {
+            if (!String(this.value).startsWith('__add_')) {
+                this.dataset.previousValue = this.value || '';
+            }
+        });
+    });
+});
+
+
 function saveItem() {
     const itemCode = document.getElementById('itemCode').value.trim();
     const itemName = document.getElementById('itemName').value.trim();
     const category = document.getElementById('category').value;
-<<<<<<< HEAD
     const principal = normalizePrincipalValue(document.getElementById('principal') ? document.getElementById('principal').value : '');
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     const description = document.getElementById('description').value;
         const reorderLevel = document.getElementById('reorderLevel').value;
     const status = document.getElementById('status').value;
+    const incomeAccountId = document.getElementById('incomeAccount') ? document.getElementById('incomeAccount').value : '';
+    const cogsAccountId = document.getElementById('cogsAccount') ? document.getElementById('cogsAccount').value : '';
+    const assetAccountId = document.getElementById('assetAccount') ? document.getElementById('assetAccount').value : '';
     
-    if (!itemCode || !itemName || !reorderLevel) {
-        Swal.fire({ icon: 'warning', title: 'Required Fields', text: 'Please fill in all required fields' });
+    const missingFields = [];
+    if (!itemCode) missingFields.push('Item Code');
+    if (!itemName) missingFields.push('Item Name');
+    // Linked accounts are saved when selected, but they no longer block saving the item.
+    // This prevents false Required Fields alerts when the dropdown visually has a value but its hidden value is blank.
+
+    if (missingFields.length > 0) {
+        Swal.fire({
+            icon: 'warning',
+            title: 'Required Fields',
+            text: 'Please fill in: ' + missingFields.join(', ') + '.'
+        });
         return;
     }
     
@@ -11739,7 +10473,6 @@ function saveItem() {
     
     showLoading();
     
-<<<<<<< HEAD
     // Barcode is optional. If typed in any UoM barcode field, save it to items.barcode.
     const barcode = (unitTypesData.find(ut => (ut.barcode || '').trim() !== '')?.barcode || '').trim();
 
@@ -11756,16 +10489,11 @@ function saveItem() {
     const oilType = document.getElementById('oilType') ? document.getElementById('oilType').value.trim() : '';
     formData.append('oil_type', oilType);
     formData.append('reorder_level', reorderLevel);
-=======
-    const formData = new FormData();
-    formData.append('action', 'add_item');
-    formData.append('item_code', itemCode);
-    formData.append('item_name', itemName);
-    formData.append('description', description);
-    formData.append('category', category);
-        formData.append('reorder_level', reorderLevel);
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
     formData.append('status', status);
+    formData.append('points_eligible', document.getElementById('pointsEligible') && document.getElementById('pointsEligible').checked ? '1' : '0');
+    formData.append('income_account_id', incomeAccountId);
+    formData.append('cogs_account_id', cogsAccountId);
+    formData.append('asset_account_id', assetAccountId);
     formData.append('unit_types', JSON.stringify(unitTypesData));
     formData.append('pricing', JSON.stringify(pricingData));
     
@@ -11796,7 +10524,6 @@ function saveItem() {
         });
 }
 
-<<<<<<< HEAD
 
 function showItemTransactionDetails(index) {
     const transactions = window.currentItemTransactions || [];
@@ -11850,8 +10577,6 @@ Quantity: ${qty}`);
 
 let currentViewItemData = null;
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 function viewItem(id) {
     cleanupModalBackdrops();
     showLoading();
@@ -11865,26 +10590,18 @@ function viewItem(id) {
             Swal.close();
             if (data.success) {
                 const item = data.item;
-<<<<<<< HEAD
                 currentViewItemData = item;
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 const unitTypes = data.unit_types || [];
                 const pricingRows = data.pricing_rows || [];
                 const pricingHistory = data.pricing_history || [];
                 const inventorySummary = data.inventory_summary || {};
                 const transactions = data.transactions || [];
                 const images = data.images || [];
-<<<<<<< HEAD
                 item.status = item.status || 'inactive';
                 item.item_code = item.item_code || '';
                 item.item_name = item.item_name || '';
                 const stock = Number(inventorySummary.total_inventory || item.stock || 0);
                 const reorder = Number(item.reorder_level || 0);
-=======
-                const stock = Number(inventorySummary.total_inventory || item.stock || 0);
-                const reorder = Number(item.reorder_level);
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
 
                 const formatMoney = (value) => `₱${Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
                 const formatNumber = (value) => Number(value || 0).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
@@ -11973,11 +10690,7 @@ function viewItem(id) {
                         <td>Total</td>
                         <td>${formatNumber(inventorySummary.beginning_inventory)}</td>
                         <td>—</td>
-<<<<<<< HEAD
                         <td>—</td>
-=======
-                        <td>${formatMoney(inventorySummary.average_cost_month)}</td>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                         <td>${formatMoney(inventorySummary.total_cost)}</td>
                     </tr>`;
                 } else {
@@ -11985,7 +10698,6 @@ function viewItem(id) {
                 }
                 beginningInventoryHtml += `</tbody></table></div>`;
 
-<<<<<<< HEAD
                 const pricingHistoryUomColumns = [];
                 unitTypes.forEach(ut => {
                     const uomName = (ut.unit_type_name || '').trim();
@@ -12105,48 +10817,6 @@ function viewItem(id) {
                     });
                 } else {
                     transactionsHtml += `<tr><td colspan="5" class="text-center text-muted">No transactions found for this item</td></tr>`;
-=======
-                let pricingHistoryHtml = `<div class="table-responsive"><table class="table table-sm table-bordered align-middle">
-                    <thead class="table-light">
-                        <tr><th>Effective Date</th><th>Price Level</th><th>UoM</th><th>Price</th><th>Status</th></tr>
-                    </thead><tbody>`;
-                if (pricingHistory.length > 0) {
-                    pricingHistory.forEach(row => {
-                        pricingHistoryHtml += `<tr>
-                            <td>${row.effective_date ? new Date(row.effective_date).toLocaleDateString() : 'Immediate'}</td>
-                            <td>${escapeHtml(row.price_level || 'Standard')}</td>
-                            <td>${escapeHtml(row.unit_type_name || '')}</td>
-                            <td>${formatMoney(row.unit_price)}</td>
-                            <td><span class="badge ${row.history_source === 'scheduled' ? 'bg-warning text-dark' : 'bg-success'}">${row.history_source === 'scheduled' ? 'Scheduled' : 'Applied'}</span></td>
-                        </tr>`;
-                    });
-                } else {
-                    pricingHistoryHtml += `<tr><td colspan="5" class="text-center text-muted">No pricing history found</td></tr>`;
-                }
-                pricingHistoryHtml += `</tbody></table></div>`;
-
-                let transactionsHtml = `<div class="table-responsive"><table class="table table-sm table-bordered align-middle">
-                    <thead class="table-light">
-                        <tr><th>Date</th><th>Source</th><th>Party</th><th>Reference</th><th>Quantity</th><th>By</th></tr>
-                    </thead><tbody>`;
-                if (transactions.length > 0) {
-                    transactions.forEach(tx => {
-                        const sourceLabel = tx.source_label || tx.reference_type || tx.transaction_type || 'Transaction';
-                        const partyLabel = tx.party_name || tx.supplier_name || '—';
-                        const referenceLabel = tx.reference_label || tx.po_number || (tx.reference_id ? `Ref #${tx.reference_id}` : '—');
-                        const actorName = (tx.actor_name || tx.received_by_name || '').trim() || '—';
-                        transactionsHtml += `<tr>
-                            <td>${tx.created_at ? new Date(tx.created_at).toLocaleString() : '—'}</td>
-                            <td>${escapeHtml(sourceLabel)}</td>
-                            <td>${escapeHtml(partyLabel)}</td>
-                            <td>${escapeHtml(referenceLabel)}</td>
-                            <td>${formatNumber(tx.quantity)}</td>
-                            <td>${escapeHtml(actorName)}</td>
-                        </tr>`;
-                    });
-                } else {
-                    transactionsHtml += `<tr><td colspan="6" class="text-center text-muted">No transactions found for this item</td></tr>`;
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 }
                 transactionsHtml += `</tbody></table></div>`;
 
@@ -12156,7 +10826,6 @@ function viewItem(id) {
                         ${imagesHtml}
                         
                         <div class="detail-section">
-<<<<<<< HEAD
                             <button class="detail-dropdown-toggle" type="button" data-bs-toggle="collapse" data-bs-target="#basicInfoDropdown" aria-expanded="false" aria-controls="basicInfoDropdown">
                                 <span class="dropdown-title"><i class="bi bi-tag"></i> Basic Information</span>
                                 <i class="bi bi-chevron-down dropdown-chevron"></i>
@@ -12307,81 +10976,6 @@ function viewItem(id) {
                     }
                 }
 
-=======
-                            <h6><i class="bi bi-tag"></i> Basic Information</h6>
-                            <table class="table table-sm table-borderless">
-                                <tr><td class="info-label">Item Code:</div><td class="info-value"><strong>${escapeHtml(item.item_code)}</strong></div></div></div>
-                                <tr><td class="info-label">Item Name:</div><td class="info-value">${escapeHtml(item.item_name)}</div> <span class="status-badge ${statusClass}"><i class="bi ${statusIcon}"></i> ${item.status.charAt(0).toUpperCase() + item.status.slice(1)}</span></div></div></td>
-                                <tr><td class="info-label">Category:</div><td class="info-value">${escapeHtml(item.category || 'Uncategorized')}</div></div></div>
-                                <tr><td class="info-label">Description:</div><td class="info-value">${escapeHtml(item.description || 'No description')}</div></div></div>
-                            </table>
-                        </div>
-                        
-                        <div class="detail-section">
-    <h6><i class="bi bi-box-seam"></i> Inventory Information</h6>
-    
-    <!-- Table DIRECTLY here, no label column -->
-    <div class="table-responsive mb-3">
-        <table class="table table-sm table-bordered">
-            <thead class="table-light">
-                <tr>
-                    <th>UNIT TYPE</th>
-                    <th>CURRENT STOCK</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${unitTypes.map(ut => `
-                    <tr>
-                        <td><strong>${escapeHtml(ut.unit_type_name)}</strong></td>
-                        <td><span class="stock-value ${parseFloat(ut.current_inventory || 0) <= (ut.reorder_level || 0) ? 'text-danger fw-bold' : ''}">${formatNumber(ut.current_inventory || 0)}</span></td>
-                    </tr>
-                `).join('')}
-            </tbody>
-        </table>
-    </div>
-    
-    <!-- Rest of the inventory info -->
-    <table class="table table-sm table-borderless">
-        <tr><td class="info-label">Reorder Level:</td><td class="info-value">${reorder} ${item.unit_type} <span class="badge ${stock <= reorder ? 'bg-warning' : 'bg-info'}">${stock <= reorder ? 'Needs Restock' : 'Adequate'}</span></td></tr>
-        <tr><td class="info-label">Stock Value:</td><td class="info-value price-value">₱${Number(stockValueTotal).toLocaleString(undefined, {minimumFractionDigits: 2})}</td></tr>
-        <tr><td class="info-label">Beginning Inventory:</td><td class="info-value">${formatNumber(inventorySummary.beginning_inventory)} total across UoM</td></tr>
-        <tr><td class="info-label">Average Cost / Month:</td><td class="info-value price-value">${formatMoney(inventorySummary.average_cost_month)}</td></tr>
-        <tr><td class="info-label">Total Cost:</td><td class="info-value price-value">${formatMoney(inventorySummary.total_cost)}</td></tr>
-        <tr><td class="info-label">Ave. Daily Offtake:</td><td class="info-value">${formatNumber(inventorySummary.ave_daily_offtake)} <small class="text-muted">(Last 30 days)</small></td></tr>
-    </table>
-</div>
-
-                        <div class="detail-section">
-                            <h6><i class="bi bi-archive"></i> Beginning Inventory by UoM</h6>
-                            ${beginningInventoryHtml}
-                        </div>
-
-                        <div class="detail-section">
-                            <h6><i class="bi bi-calculator"></i> Unit Types & Pricing</h6>
-                            ${unitTypesHtml}
-                        </div>
-
-                        <div class="detail-section">
-                            <h6><i class="bi bi-clock-history"></i> Pricing History</h6>
-                            ${pricingHistoryHtml}
-                        </div>
-
-                        <div class="detail-section">
-                            <h6><i class="bi bi-arrow-left-right"></i> Transactions</h6>
-                            ${transactionsHtml}
-                        </div>
-                        
-                        <div class="detail-section">
-                            <h6><i class="bi bi-clock-history"></i> System Information</h6>
-                            <table class="table table-sm table-borderless">
-                                <tr><td class="info-label">Created By:</div><td class="info-value"><i class="bi bi-person-fill me-1"></i> ${escapeHtml(createdByName)}</div></div></div>
-                                <tr><td class="info-label">Created At:</div><td class="info-value"><i class="bi bi-calendar-plus me-1"></i> ${createdDate}</div></div></div>
-                                <tr><td class="info-label">Last Updated:</div><td class="info-value"><i class="bi bi-clock-history me-1"></i> ${updatedDate}</div></div></div>
-                            </table>
-                        </div>
-                    </div>
-                `;
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 currentItemId = id;
                 new bootstrap.Modal(document.getElementById('viewItemModal')).show();
             } else {
@@ -12399,7 +10993,6 @@ function editFromView() {
     setTimeout(() => editItem(currentItemId), 300); 
 }
 
-<<<<<<< HEAD
 
 function printItemBarcodeLabels() {
     const item = currentViewItemData || null;
@@ -12409,19 +11002,17 @@ function printItemBarcodeLabels() {
             Swal.fire({
                 icon: 'warning',
                 title: 'No Barcode',
-                text: 'Wala pang saved barcode ang item na ito.',
+                text: '',
                 confirmButtonColor: '#047857'
             });
         } else {
-            alert('Wala pang saved barcode ang item na ito.');
+            alert('');
         }
         return;
     }
 
     const barcodeValue = String(item.barcode || '').trim();
     const itemName = String(item.item_name || '').trim();
-    const itemCode = String(item.item_code || '').trim();
-    const labelCount = 30;
 
     const esc = (value) => String(value || '')
         .replace(/&/g, '&amp;')
@@ -12430,16 +11021,15 @@ function printItemBarcodeLabels() {
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#039;');
 
-    const labelsHtml = Array.from({ length: labelCount }).map((_, index) => `
+    const labelHtml = `
         <div class="barcode-label">
             <div class="label-item-name">${esc(itemName)}</div>
-            <div class="label-item-code">${esc(itemCode)}</div>
-            <svg class="barcode-svg" id="barcodeLabel${index}"></svg>
+            <svg class="barcode-svg" id="barcodeLabel0"></svg>
             <div class="label-barcode-text">${esc(barcodeValue)}</div>
         </div>
-    `).join('');
+    `;
 
-    const printWindow = window.open('', '_blank', 'width=900,height=700');
+    const printWindow = window.open('', '_blank', 'width=420,height=650');
     if (!printWindow) {
         if (typeof Swal !== 'undefined') {
             Swal.fire({
@@ -12460,41 +11050,119 @@ function printItemBarcodeLabels() {
         <html>
         <head>
             <meta charset="UTF-8">
-            <title>Print Barcode - ${esc(itemCode)}</title>
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Print Barcode - ${esc(itemName)}</title>
             <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"><\/script>
             <style>
-                @page { size: A4 portrait; margin: 8mm; }
-                * { box-sizing: border-box; }
-                body { margin: 0; padding: 0; background: #fff; color: #111827; font-family: Arial, sans-serif; }
-                .barcode-sheet { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; width: 100%; }
-                .barcode-label { height: 25mm; border: 1px dashed #cbd5e1; border-radius: 3mm; padding: 2mm 3mm; display: flex; flex-direction: column; align-items: center; justify-content: center; overflow: hidden; page-break-inside: avoid; }
-                .label-item-name { width: 100%; font-size: 8.5pt; font-weight: 700; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.1; }
-                .label-item-code { width: 100%; font-size: 7pt; text-align: center; color: #374151; margin-top: 1mm; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-                .barcode-svg { width: 100%; max-width: 55mm; height: 12mm; margin-top: 1mm; }
-                .label-barcode-text { font-size: 7pt; font-weight: 700; letter-spacing: 0.5px; text-align: center; line-height: 1; margin-top: 0.5mm; }
-                @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } .barcode-label { border-color: #d1d5db; } }
+                @page {
+                    size: 80mm auto;
+                    margin: 3mm;
+                }
+
+                * {
+                    box-sizing: border-box;
+                }
+
+                html,
+                body {
+                    width: 80mm;
+                    margin: 0;
+                    padding: 0;
+                    background: #ffffff;
+                    color: #111827;
+                    font-family: Arial, Helvetica, sans-serif;
+                }
+
+                .barcode-sheet {
+                    width: 74mm;
+                    margin: 0 auto;
+                    padding: 0;
+                }
+
+                .barcode-label {
+                    width: 74mm;
+                    min-height: 32mm;
+                    padding: 0;
+                    border: none;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: flex-start;
+                    text-align: center;
+                    overflow: hidden;
+                    page-break-inside: avoid;
+                    break-inside: avoid;
+                }
+
+                .label-item-name {
+                    width: 100%;
+                    margin: 0 0 2mm 0;
+                    padding: 0;
+                    font-size: 11pt;
+                    font-weight: 700;
+                    line-height: 1.2;
+                    text-align: center;
+                    color: #111827;
+                    white-space: normal;
+                    word-break: break-word;
+                }
+
+                .barcode-svg {
+                    width: 100%;
+                    max-width: 72mm;
+                    height: 18mm;
+                    margin: 0 auto;
+                    display: block;
+                }
+
+                .label-barcode-text {
+                    width: 100%;
+                    margin-top: 1mm;
+                    font-size: 9pt;
+                    font-weight: 700;
+                    letter-spacing: 0.4px;
+                    line-height: 1.1;
+                    text-align: center;
+                    color: #111827;
+                    white-space: nowrap;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                }
+
+                @media print {
+                    html,
+                    body {
+                        width: 80mm;
+                        margin: 0;
+                        padding: 0;
+                        -webkit-print-color-adjust: exact;
+                        print-color-adjust: exact;
+                    }
+                }
             </style>
         </head>
         <body>
-            <div class="barcode-sheet">${labelsHtml}</div>
+            <div class="barcode-sheet">${labelHtml}</div>
             <script>
                 const barcodeValue = ${JSON.stringify(barcodeValue)};
                 window.onload = function() {
-                    for (let i = 0; i < ${labelCount}; i++) {
-                        try {
-                            JsBarcode('#barcodeLabel' + i, barcodeValue, {
-                                format: 'CODE128',
-                                lineColor: '#111827',
-                                width: 1.4,
-                                height: 34,
-                                displayValue: false,
-                                margin: 0
-                            });
-                        } catch (error) {
-                            console.error(error);
-                        }
+                    try {
+                        JsBarcode('#barcodeLabel0', barcodeValue, {
+                            format: 'CODE128',
+                            lineColor: '#111827',
+                            width: 1.6,
+                            height: 52,
+                            displayValue: false,
+                            margin: 0
+                        });
+                    } catch (error) {
+                        console.error(error);
                     }
-                    setTimeout(function() { window.focus(); window.print(); }, 500);
+
+                    setTimeout(function() {
+                        window.focus();
+                        window.print();
+                    }, 500);
                 };
             <\/script>
         </body>
@@ -12539,8 +11207,14 @@ function getPricingCellValue(pricingRow, unitTypeName, unitTypeId) {
     return Number.isFinite(num) ? num.toFixed(2) : String(value);
 }
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
+function setSelectValueIfOptionExists(selectId, value) {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    const stringValue = value === null || typeof value === 'undefined' ? '' : String(value);
+    const hasOption = Array.from(select.options).some(option => option.value === stringValue);
+    select.value = hasOption ? stringValue : '';
+}
+
 function editItem(id) {
     cleanupModalBackdrops();
     showLoading();
@@ -12557,17 +11231,13 @@ function editItem(id) {
                 const unitTypes = data.unit_types || [];
                 const images = data.images || [];
                 const pricingRows = data.pricing_rows || [];
-<<<<<<< HEAD
                 currentEditPricingRows = pricingRows;
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                 
                 document.getElementById('editItemId').value = item.item_id;
                 document.getElementById('editItemCode').value = item.item_code;
                 document.getElementById('editItemName').value = item.item_name;
                 document.getElementById('editDescription').value = item.description || '';
                 document.getElementById('editCategory').value = item.category || '';
-<<<<<<< HEAD
                 setPrincipalSelectValue(document.getElementById('editPrincipal'), item.principal || '');
                 if (document.getElementById('editVolume')) {
                     document.getElementById('editVolume').value = item.volume || '';
@@ -12585,10 +11255,14 @@ function editItem(id) {
                         editOilTypeField.style.display = (item.category && item.category.toLowerCase() === 'oil') ? 'block' : 'none';
                     }
                 }
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                                 document.getElementById('editReorderLevel').value = item.reorder_level;
                 document.getElementById('editStatus').value = item.status;
+                if (document.getElementById('editPointsEligible')) {
+                    document.getElementById('editPointsEligible').checked = String(item.points_eligible ?? '1') === '1';
+                }
+                setSelectValueIfOptionExists('editIncomeAccount', item.income_account_id || '');
+                setSelectValueIfOptionExists('editCogsAccount', item.cogs_account_id || '');
+                setSelectValueIfOptionExists('editAssetAccount', item.asset_account_id || '');
                 
                 const editUnitTypesBody = document.getElementById('editUnitTypesBody');
                 editUnitTypesBody.innerHTML = '';
@@ -12604,7 +11278,6 @@ function editItem(id) {
                         currentUnitTypes.push(ut.unit_type_name);
                         row.innerHTML = `
                             <td><input type="text" class="form-control form-control-sm" placeholder="e.g., Piece, Box, Carton" name="edit_unit_type[]" value="${escapeHtml(ut.unit_type_name)}" required></td>
-<<<<<<< HEAD
                             <td><input type="text" class="form-control form-control-sm text-uppercase" placeholder="CS" maxlength="20" name="edit_uom_initial[]" value="${escapeHtml(ut.uom_initial || '')}"></td>
                             <td>
     <div class="input-group barcode-group">
@@ -12624,9 +11297,6 @@ function editItem(id) {
         </button>
     </div>
 </td>
-=======
-                            <td><input type="text" class="form-control form-control-sm" placeholder="Optional" name="edit_barcode[]" value="${escapeHtml(ut.barcode || '')}"></td>
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                             <td><input type="number" class="form-control form-control-sm" placeholder="1" min="1" value="${ut.quantity_smallest_pack || 1}" name="edit_qty_smallest_pack[]"></td>
                             <td><input type="number" class="form-control form-control-sm" placeholder="0" min="0" step="0.01" value="${ut.current_inventory || 0}" name="edit_current_inventory[]"></td>
                             <td><input type="date" class="form-control form-control-sm" name="edit_as_of_date[]" value="${ut.as_of_date || ''}"></td>
@@ -12660,12 +11330,7 @@ function editItem(id) {
                         `;
                         
                         unitTypes.forEach((ut) => {
-<<<<<<< HEAD
                             const rowUnitPrice = getPricingCellValue(pricingRow, ut.unit_type_name, ut.unit_type_id);
-=======
-                            const rowPriceInfo = pricingRow.prices && pricingRow.prices[ut.unit_type_name] ? pricingRow.prices[ut.unit_type_name] : null;
-                            const rowUnitPrice = rowPriceInfo ? rowPriceInfo.unit_price : '';
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
                             rowHTML += `<td><input type="number" class="form-control form-control-sm edit-pricing-input" data-unit-type="${escapeHtml(ut.unit_type_name)}" placeholder="₱0.00" step="0.01" min="0" value="${rowUnitPrice}"></td>`;
                         });
                         
@@ -12706,7 +11371,6 @@ function editItem(id) {
         .catch(error => { 
             Swal.close(); 
             Swal.fire({ icon: 'error', title: 'Error', text: 'An error occurred' });
-<<<<<<< HEAD
         });
 }
 
@@ -12771,40 +11435,8 @@ function handleEditDefaultUOMChange(radio) {
             if (r !== radio) {
                 r.checked = false;
             }
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         });
-}
-
-function addEditUnitTypeRow() {
-    const tbody = document.getElementById('editUnitTypesBody');
-    const rowId = 'editUnitType_' + Date.now();
-    const isFirstRow = tbody.children.length === 0;
-    
-    const row = document.createElement('tr');
-    row.id = rowId;
-    row.innerHTML = `
-        <td><input type="text" class="form-control form-control-sm" placeholder="e.g., Piece, Box, Carton" name="edit_unit_type[]" required></td>
-        <td><input type="text" class="form-control form-control-sm" placeholder="Optional" name="edit_barcode[]"></td>
-        <td><input type="number" class="form-control form-control-sm" placeholder="1" min="1" value="1" name="edit_qty_smallest_pack[]"></td>
-        <td><input type="number" class="form-control form-control-sm" placeholder="0" min="0" step="0.01" value="0" name="edit_current_inventory[]"></td>
-        <td><input type="date" class="form-control form-control-sm" name="edit_as_of_date[]"></td>
-        <td class="text-center"><input type="radio" class="form-check-input edit-default-uom-radio" name="edit_default_uom" value="1" ${isFirstRow ? 'checked' : ''} onchange="handleEditDefaultUOMChange(this)"></td>
-        <td><input type="number" class="form-control form-control-sm" placeholder="0.00" min="0" step="0.01" value="0" name="edit_unit_cost[]"></td>
-        <td><input type="number" class="form-control form-control-sm" placeholder="0.00" min="0" step="0.01" value="0.00" name="edit_total_cost[]" readonly></td>
-        <td class="text-center">
-            ${!isFirstRow ? `<button type="button" class="btn btn-sm btn-outline-danger" onclick="this.closest('tr').remove(); updateEditPricingTableColumns()"><i class="bi bi-trash"></i></button>` : '<span class="text-muted">Default</span>'}
-        </td>
-    `;
-    tbody.appendChild(row);
-    bindUnitInventoryRowEvents(row);
-    
-    const unitTypeInput = row.querySelector('input[name="edit_unit_type[]"]');
-    if (unitTypeInput) {
-        unitTypeInput.addEventListener('change', () => updateEditPricingTableColumns());
-        unitTypeInput.addEventListener('keyup', () => updateEditPricingTableColumns());
     }
-<<<<<<< HEAD
 }
 
 function updateEditUnitTypeStatus(checkbox) { return true; }
@@ -12995,9 +11627,17 @@ function updateItem() {
     const description = document.getElementById('editDescription').value;
         const reorderLevel = document.getElementById('editReorderLevel').value;
     const status = document.getElementById('editStatus').value;
+    const incomeAccountId = document.getElementById('editIncomeAccount') ? document.getElementById('editIncomeAccount').value : '';
+    const cogsAccountId = document.getElementById('editCogsAccount') ? document.getElementById('editCogsAccount').value : '';
+    const assetAccountId = document.getElementById('editAssetAccount') ? document.getElementById('editAssetAccount').value : '';
     
-    if (!itemName || !reorderLevel) {
-        Swal.fire({ icon: 'warning', title: 'Required Fields', text: 'Please fill in all required fields' });
+    if (!itemName) {
+        Swal.fire({ icon: 'warning', title: 'Required Fields', text: 'Please fill in Item Name.' });
+        return;
+    }
+
+    if (!incomeAccountId || !cogsAccountId || !assetAccountId) {
+        Swal.fire({ icon: 'warning', title: 'Required Fields', text: 'Please select Income Account, COGS Account, and Asset Account.' });
         return;
     }
     
@@ -13042,6 +11682,10 @@ function updateItem() {
     formData.append('oil_type', oilType);
     formData.append('reorder_level', reorderLevel);
     formData.append('status', status);
+    formData.append('points_eligible', document.getElementById('editPointsEligible') && document.getElementById('editPointsEligible').checked ? '1' : '0');
+    formData.append('income_account_id', incomeAccountId);
+    formData.append('cogs_account_id', cogsAccountId);
+    formData.append('asset_account_id', assetAccountId);
     formData.append('unit_types', JSON.stringify(unitTypesData));
     formData.append('pricing', JSON.stringify(pricingData));
     
@@ -14789,1229 +13433,9 @@ window.addEventListener('beforeunload', function () {
     document.addEventListener('hidden.bs.modal', function (event) {
         if (event.target && event.target.id === 'uomBarcodeScannerModal') {
             window.restoreParentItemModalBackdrop();
-=======
-    
-    updateEditPricingTableColumns();
-}
-
-// Handle Edit Default UoM radio button - only one can be checked at a time
-function handleEditDefaultUOMChange(radio) {
-    if (radio.checked) {
-        // Uncheck all other edit_default_uom radio buttons in the table
-        const allRadios = document.querySelectorAll('input[name="edit_default_uom"]');
-        allRadios.forEach(r => {
-            if (r !== radio) {
-                r.checked = false;
-            }
-        });
-    }
-}
-
-function updateEditUnitTypeStatus(checkbox) { return true; }
-
-function updateEditPricingTableColumns() {
-    const unitTypeRows = document.querySelectorAll('#editUnitTypesBody tr');
-    const unitTypes = [];
-    
-    unitTypeRows.forEach(row => {
-        const unitTypeInput = row.querySelector('input[name="edit_unit_type[]"]');
-        if (unitTypeInput && unitTypeInput.value.trim()) {
-            unitTypes.push(unitTypeInput.value.trim());
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
         }
     });
-    
-    currentUnitTypes = unitTypes;
-    
-    const pricingTableHead = document.getElementById('editPricingTableHead');
-    if (!pricingTableHead) return;
-    
-    const headerRow = pricingTableHead.querySelector('tr');
-    if (!headerRow) return;
-    
-    const thElements = Array.from(headerRow.querySelectorAll('th'));
-    for (let i = thElements.length - 1; i >= 2; i--) {
-        if (i < thElements.length - 1) {
-            thElements[i].remove();
-        }
-    }
-    
-    const actionTh = headerRow.querySelector('th:last-child');
-    unitTypes.forEach((unitType) => {
-        const th = document.createElement('th');
-        th.style.width = '15%';
-        th.textContent = unitType;
-        headerRow.insertBefore(th, actionTh);
-    });
-    
-    const pricingRows = document.querySelectorAll('#editPricingBody tr');
-    pricingRows.forEach(row => {
-        const cells = Array.from(row.querySelectorAll('td'));
-        for (let i = cells.length - 2; i >= 2; i--) {
-            cells[i].remove();
-        }
-        
-        unitTypes.forEach((unitType, index) => {
-            const td = document.createElement('td');
-            const input = document.createElement('input');
-            input.type = 'number';
-            input.className = 'form-control form-control-sm edit-pricing-input';
-            input.dataset.unitType = unitType;
-            input.placeholder = `₱0.00 (${unitType})`;
-            input.step = '0.01';
-            input.min = '0';
-            td.appendChild(input);
-            row.insertBefore(td, cells[cells.length - 1]);
-        });
-    });
-}
 
-function addEditPricingRow() {
-    const tbody = document.getElementById('editPricingBody');
-    const unitTypes = currentUnitTypes.length > 0 ? currentUnitTypes : ['Piece'];
-    
-    const rowId = 'editPricing_' + Date.now();
-    const row = document.createElement('tr');
-    row.id = rowId;
-    
-    let rowHTML = `
-        <td><input type="date" class="form-control form-control-sm edit-pricing-date"></td>
-        <td><select class="form-select form-select-sm edit-pricing-level">
-            <?php foreach ($priceLevels as $level): ?>
-                <option value="<?= htmlspecialchars($level) ?>" <?= $level === 'Standard' ? 'selected' : '' ?>><?= htmlspecialchars($level) ?></option>
-            <?php endforeach; ?>
-        </select></td>
-    `;
-    
-    unitTypes.forEach((unitType) => {
-        rowHTML += `<td><input type="number" class="form-control form-control-sm edit-pricing-input" data-unit-type="${unitType}" placeholder="₱0.00" step="0.01" min="0"></td>`;
-    });
-    
-    rowHTML += `<td class="text-center"><button type="button" class="btn btn-sm btn-outline-danger" onclick="removePricingRow(this)"><i class="bi bi-trash"></i></button></td>`;
-    
-    row.innerHTML = rowHTML;
-    tbody.appendChild(row);
-}
-
-function collectEditUnitTypesAndPricing() {
-    const unitTypeRows = document.querySelectorAll('#editUnitTypesBody tr');
-    const unitTypesData = [];
-    
-    unitTypeRows.forEach(row => {
-        const unitTypeInput = row.querySelector('input[name="edit_unit_type[]"]');
-        const barcodeInput = row.querySelector('input[name="edit_barcode[]"]');
-        const qtyInput = row.querySelector('input[name="edit_qty_smallest_pack[]"]');
-        const currentInventoryInput = row.querySelector('input[name="edit_current_inventory[]"]');
-        const asOfDateInput = row.querySelector('input[name="edit_as_of_date[]"]');
-        const defaultRadio = row.querySelector('input[name="edit_default_uom"]');
-        const unitCostInput = row.querySelector('input[name="edit_unit_cost[]"]');
-        
-        if (unitTypeInput && unitTypeInput.value.trim()) {
-            unitTypesData.push({
-                unit_type: unitTypeInput.value.trim(),
-                barcode: barcodeInput ? barcodeInput.value.trim() : '',
-                qty_smallest_pack: qtyInput ? parseInt(qtyInput.value) || 1 : 1,
-                current_inventory: currentInventoryInput ? parseFloat(currentInventoryInput.value) || 0 : 0,
-                as_of_date: asOfDateInput ? asOfDateInput.value : '',
-                default_uom: defaultRadio ? (defaultRadio.checked ? 1 : 0) : 0,
-                unit_cost: unitCostInput ? parseFloat(unitCostInput.value) || 0 : 0,
-                status: 'active',
-                unit_price: 0
-            });
-        }
-    });
-    
-    const pricingRows = document.querySelectorAll('#editPricingBody tr');
-    const pricingData = [];
-    
-    pricingRows.forEach((row, rowIndex) => {
-        const dateInput = row.querySelector('.edit-pricing-date');
-        const levelInput = row.querySelector('.edit-pricing-level');
-        const priceInputs = row.querySelectorAll('.edit-pricing-input');
-        
-        const priceRow = {
-            effective_date: dateInput ? dateInput.value : null,
-            price_level: levelInput ? levelInput.value.trim() || 'Standard' : 'Standard',
-            prices: {}
-        };
-        
-        priceInputs.forEach((input, idx) => {
-            if (idx < unitTypesData.length) {
-                priceRow.prices[unitTypesData[idx].unit_type] = parseFloat(input.value) || 0;
-            }
-        });
-        
-        pricingData.push(priceRow);
-    });
-    
-    if (pricingData.length > 0 && unitTypesData.length > 0) {
-        const firstPriceRow = pricingData[0];
-        unitTypesData.forEach(ut => {
-            ut.unit_price = firstPriceRow.prices[ut.unit_type] || 0;
-        });
-    }
-    
-    return { unitTypesData, pricingData };
-}
-
-function updateItem() {
-    const itemId = document.getElementById('editItemId').value;
-    const itemName = document.getElementById('editItemName').value.trim();
-    const category = document.getElementById('editCategory').value;
-    const description = document.getElementById('editDescription').value;
-        const reorderLevel = document.getElementById('editReorderLevel').value;
-    const status = document.getElementById('editStatus').value;
-    
-    if (!itemName || !reorderLevel) {
-        Swal.fire({ icon: 'warning', title: 'Required Fields', text: 'Please fill in all required fields' });
-        return;
-    }
-    
-    const { unitTypesData, pricingData } = collectEditUnitTypesAndPricing();
-    
-    if (unitTypesData.length === 0) {
-        Swal.fire({ icon: 'warning', title: 'Unit Types Required', text: 'Please add at least one unit type' });
-        return;
-    }
-    
-    let hasPrice = false;
-    for (const ut of unitTypesData) {
-        if (ut.unit_price > 0) {
-            hasPrice = true;
-            break;
-        }
-    }
-    
-    if (!hasPrice) {
-        Swal.fire({ icon: 'warning', title: 'Pricing Required', text: 'Please set at least one price for a unit type' });
-        return;
-    }
-    
-    showLoading();
-    
-    const formData = new FormData();
-    formData.append('action', 'update_item');
-    formData.append('item_id', itemId);
-    formData.append('item_name', itemName);
-    formData.append('description', description);
-    formData.append('category', category);
-        formData.append('reorder_level', reorderLevel);
-    formData.append('status', status);
-    formData.append('unit_types', JSON.stringify(unitTypesData));
-    formData.append('pricing', JSON.stringify(pricingData));
-    
-    const imagesInput = document.getElementById('editItemImages');
-    if (imagesInput && imagesInput.files.length > 0) {
-        for (let i = 0; i < imagesInput.files.length; i++) {
-            formData.append('editItemImages[]', imagesInput.files[i]);
-        }
-    }
-    
-    fetch('current_inventory.php', { method: 'POST', body: formData })
-        .then(response => response.json())
-        .then(data => {
-            Swal.close();
-            if (data.success) {
-                Swal.fire({ icon: 'success', title: 'Success!', text: data.message, timer: 2000, showConfirmButton: false })
-                    .then(() => {
-                        bootstrap.Modal.getInstance(document.getElementById('editItemModal')).hide();
-                        location.reload();
-                    });
-            } else {
-                Swal.fire({ icon: 'error', title: 'Error', text: data.message });
-            }
-        })
-        .catch(error => {
-            Swal.close();
-            Swal.fire({ icon: 'error', title: 'Error', text: 'An error occurred: ' + error.message });
-        });
-}
-
-function deleteItemImage(imageId) {
-    Swal.fire({
-        title: 'Delete Image?',
-        text: 'This action cannot be undone!',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#dc3545',
-        cancelButtonColor: '#6c757d',
-        confirmButtonText: 'Yes, delete it!'
-    }).then((result) => {
-        if (result.isConfirmed) {
-            showLoading();
-            const formData = new FormData();
-            formData.append('action', 'delete_item_image');
-            formData.append('image_id', imageId);
-            
-            fetch('current_inventory.php', { method: 'POST', body: formData })
-                .then(response => response.json())
-                .then(data => {
-                    Swal.close();
-                    if (data.success) {
-                        Swal.fire({ icon: 'success', title: 'Deleted!', text: data.message, timer: 1500, showConfirmButton: false })
-                            .then(() => editItem(currentItemId));
-                    } else {
-                        Swal.fire({ icon: 'error', title: 'Error', text: data.message });
-                    }
-                })
-                .catch(error => {
-                    Swal.close();
-                    Swal.fire({ icon: 'error', title: 'Error', text: 'An error occurred' });
-                });
-        }
-    });
-}
-
-function deleteItem(id) {
-    const row = document.querySelector(`.inventory-row[data-id="${id}"]`);
-    const itemCode = row ? row.dataset.code : 'this item';
-    const itemName = row ? row.dataset.name : 'item';
-    
-    Swal.fire({
-        title: 'Delete Item?',
-        html: `
-            <div style="text-align: center;">
-                <div style="background: #fef2f2; border-radius: 16px; padding: 1rem; margin: 0.5rem 0;">
-                    <i class="bi bi-exclamation-triangle-fill" style="font-size: 36px; color: #f59e0b; margin-bottom: 8px; display: block;"></i>
-                    <p style="margin: 0; font-weight: 500; color: #1f2937;">${escapeHtml(itemName)}</p>
-                    <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: #6c757d;">${escapeHtml(itemCode)}</p>
-                </div>
-                <p style="margin: 12px 0 0 0; color: #6c757d; font-size: 0.85rem;">
-                    <i class="bi bi-info-circle me-1"></i> This action cannot be undone!
-                </p>
-            </div>
-        `,
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#dc3545',
-        cancelButtonColor: '#6c757d',
-        confirmButtonText: '<i class="bi bi-trash me-1"></i> Yes, Delete',
-        cancelButtonText: '<i class="bi bi-x-circle me-1"></i> Cancel',
-        reverseButtons: true,
-        width: '450px',
-        padding: '1.5rem',
-        backdrop: true,
-        allowOutsideClick: false,
-        allowEscapeKey: true
-    }).then((result) => {
-        if (result.isConfirmed) {
-            showLoading();
-            const formData = new FormData();
-            formData.append('action', 'delete_item');
-            formData.append('item_id', id);
-            
-            fetch('current_inventory.php', { method: 'POST', body: formData })
-                .then(response => response.json())
-                .then(data => {
-                    Swal.close();
-                    if (data.success) {
-                        Swal.fire({
-                            icon: 'success',
-                            title: 'Deleted!',
-                            text: data.message,
-                            timer: 2000,
-                            showConfirmButton: false,
-                            willClose: () => location.reload()
-                        });
-                    } else {
-                        Swal.fire({ icon: 'error', title: 'Error!', text: data.message, confirmButtonColor: '#dc3545' });
-                    }
-                })
-                .catch(error => {
-                    Swal.close();
-                    Swal.fire({ icon: 'error', title: 'Error!', text: 'An error occurred while deleting the item.', confirmButtonColor: '#dc3545' });
-                });
-        } else if (result.dismiss === Swal.DismissReason.cancel) {
-            Swal.close();
-            setTimeout(() => cleanupModalBackdrops(), 100);
-        }
-    });
-}
-
-function showProfileModal() { 
-    cleanupModalBackdrops();
-    new bootstrap.Modal(document.getElementById('profileModal')).show(); 
-}
-
-function confirmLogout() {
-            // Close the modal first
-            const modal = bootstrap.Modal.getInstance(document.getElementById('profileModal'));
-            if (modal) {
-                modal.hide();
-            }
-            
-            // Show confirmation dialog
-            Swal.fire({
-                title: 'Are you sure?',
-                text: 'You will be logged out of the system',
-                icon: 'question',
-                showCancelButton: true,
-                confirmButtonColor: '#07d826',
-                cancelButtonColor: '#6c757d',
-                confirmButtonText: 'Yes, logout'
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    localStorage.removeItem('sidebarCollapsed');
-                    window.location.href = '../logout.php';
-                }
-            });
-        }
-
-function logout() { confirmLogout(); }
-
-function toggleSidebar() {
-    const sidebar = document.getElementById('sidebar');
-    const desktopToggleBtn = document.getElementById('desktopToggleBtn');
-    
-    if (window.innerWidth <= 992) {
-        // Mobile behavior
-        sidebar.classList.toggle('active');
-        let overlay = document.querySelector('.sidebar-overlay');
-        if (!overlay) { 
-            overlay = document.createElement('div'); 
-            overlay.className = 'sidebar-overlay'; 
-            document.body.appendChild(overlay); 
-            overlay.addEventListener('click', function() { 
-                sidebar.classList.remove('active'); 
-                overlay.classList.remove('active'); 
-                setTimeout(function() { overlay.remove(); }, 300); 
-            }); 
-        }
-        setTimeout(function() { overlay.classList.add('active'); }, 10);
-    } else {
-        // Desktop behavior - toggle collapse
-        const wasCollapsed = sidebar.classList.contains('collapsed');
-        sidebar.classList.toggle('collapsed');
-        localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
-        
-        // If expanding (removing collapsed class), reset hover state
-        if (wasCollapsed && !sidebar.classList.contains('collapsed')) {
-            // Remove any inline styles that might have been set by hover
-            sidebar.style.width = '';
-        }
-    }
-}
-
-function setActiveMobileNav() {
-    const currentPage = window.location.pathname.split('/').pop();
-    document.querySelectorAll('.mobile-nav .nav-link, .dropdown-item').forEach(link => link.classList.remove('active'));
-    document.querySelectorAll('.mobile-nav .nav-link, .dropdown-item').forEach(link => { if (link.getAttribute('href') === currentPage) link.classList.add('active'); });
-}
-
-function attachMobileCardClick() {
-    const rows = document.querySelectorAll('.table-container tbody tr');
-    rows.forEach(row => {
-        row.removeEventListener('click', handleRowClick);
-        row.addEventListener('click', handleRowClick);
-    });
-}
-
-function handleRowClick(e) {
-    // Kung ang click ay galing sa edit/delete button o toggle switch, huwag mag-view
-    if (e.target.closest('.btn-action') || e.target.closest('.toggle-switch')) {
-        e.stopPropagation();
-        return;
-    }
-    const itemId = this.getAttribute('data-id');
-    if (itemId) {
-        viewItem(itemId);
-    }
-}
-
-function showInventoryValueDetails() {
-    Swal.fire({
-        title: 'Total Inventory Value',
-        html: `
-            <div style="text-align: left;">
-                <p><strong>Total Value:</strong> <?= $statInventoryValue ?></p>
-                <p><strong>Total Units:</strong> <?= number_format($total_stock) ?></p>
-                <p><strong>Total Items:</strong> <?= $total_items ?></p>
-                <hr>
-                <p class="text-muted small mb-0">Value calculated using default unit type prices from item_unit_pricing table.</p>
-            </div>
-        `,
-        icon: 'info',
-        confirmButtonText: 'OK',
-        confirmButtonColor: '#2E7D32',
-        width: '400px',
-        padding: '1.5rem'
-    });
-}
-
-function toggleItemCodeEdit() {
-    const itemCodeInput = document.getElementById('itemCode');
-    const editBtn = document.getElementById('editItemCodeBtn');
-    
-    if (itemCodeInput.readOnly) {
-        itemCodeInput.readOnly = false;
-        itemCodeInput.focus();
-        editBtn.innerHTML = '<i class="bi bi-check"></i> Done';
-        editBtn.classList.add('btn-success');
-        editBtn.classList.remove('btn-outline-secondary');
-    } else {
-        itemCodeInput.readOnly = true;
-        editBtn.innerHTML = '<i class="bi bi-pencil"></i> Edit';
-        editBtn.classList.remove('btn-success');
-        editBtn.classList.add('btn-outline-secondary');
-    }
-}
-
-// ========== DOCUMENT READY ==========
-document.addEventListener('DOMContentLoaded', function() {
-    // FIXED: Listen for inventory updates from other windows/tabs (after order placement)
-    try {
-        const channel = new BroadcastChannel('inventory_update');
-        channel.addEventListener('message', (event) => {
-            if (event.data.action === 'reload_inventory') {
-                console.log('[v0] Inventory update received, reloading...');
-                location.reload();
-            }
-        });
-    } catch (e) {
-        // BroadcastChannel not supported, use localStorage fallback
-        let lastUpdate = localStorage.getItem('inventory_update_timestamp');
-        window.addEventListener('storage', (event) => {
-            if (event.key === 'inventory_update_timestamp' && event.newValue !== lastUpdate) {
-                lastUpdate = event.newValue;
-                console.log('[v0] Inventory update signal received, reloading...');
-                location.reload();
-            }
-        });
-    }
-    
-    // Load all unit types for items in the table
-    setTimeout(() => {
-        loadAllItemUnitTypes();
-    }, 500);
-    
-    const sidebar = document.getElementById('sidebar');
-    if (window.innerWidth > 992 && localStorage.getItem('sidebarCollapsed') === 'true') sidebar.classList.add('collapsed');
-    
-    const mobileToggleBtn = document.getElementById('mobileToggleBtn');
-    const desktopToggleBtn = document.getElementById('desktopToggleBtn');
-    
-    if (mobileToggleBtn) mobileToggleBtn.addEventListener('click', toggleSidebar);
-    if (desktopToggleBtn) desktopToggleBtn.addEventListener('click', toggleSidebar);
-    
-    document.addEventListener('click', function(e) {
-        if (window.innerWidth <= 992 && sidebar && sidebar.classList.contains('active') && !sidebar.contains(e.target) && mobileToggleBtn && !mobileToggleBtn.contains(e.target)) {
-            sidebar.classList.remove('active');
-            const overlay = document.querySelector('.sidebar-overlay');
-            if (overlay) overlay.remove();
-        }
-    });
-    
-    window.addEventListener('resize', function() {
-        if (window.innerWidth > 992 && sidebar) {
-            sidebar.classList.remove('active');
-            const overlay = document.querySelector('.sidebar-overlay');
-            if (overlay) overlay.remove();
-        } else if (window.innerWidth <= 992 && sidebar) {
-            sidebar.classList.remove('collapsed');
-        }
-        attachMobileCardClick();
-    });
-    
-    setActiveMobileNav();
-    initFilterToggle();
-    
-    const modals = ['profileModal', 'supplierSelectorModal', 'lowStockModal', 'offtakeModal', 'itemModal', 'editItemModal', 'viewItemModal'];
-    modals.forEach(modalId => {
-        fixModalBackdrop(modalId);
-    });
-    
-    document.addEventListener('click', function() {
-        setTimeout(function() {
-            const backdrops = document.querySelectorAll('.modal-backdrop');
-            if (backdrops.length > 1) {
-                for (let i = 1; i < backdrops.length; i++) {
-                    backdrops[i].remove();
-                }
-            }
-        }, 300);
-    });
-    
-    const searchInput = document.getElementById('searchInput');
-    const statusFilter = document.getElementById('statusFilter');
-    const stockFilter = document.getElementById('stockFilter');
-    
-    if (searchInput) {
-        searchInput.removeEventListener('keyup', filterItems);
-        searchInput.addEventListener('keyup', filterItems);
-    }
-    if (statusFilter) {
-        statusFilter.removeEventListener('change', filterItems);
-        statusFilter.addEventListener('change', filterItems);
-    }
-    if (stockFilter) {
-        stockFilter.removeEventListener('change', filterItems);
-        stockFilter.addEventListener('change', filterItems);
-    }
-    
-    attachMobileCardClick();
-    
-    setTimeout(() => {
-        filterItems();
-    }, 100);
-});
-
-if (typeof bootstrap !== 'undefined' && bootstrap.Modal) {
-    const originalHide = bootstrap.Modal.prototype.hide;
-    bootstrap.Modal.prototype.hide = function() {
-        const result = originalHide.apply(this, arguments);
-        setTimeout(() => {
-            cleanupModalBackdrops();
-        }, 150);
-        return result;
-    };
-}
-
-window.updateInventoryFromSales = function(itemId, quantity, soId) {
-    showLoading();
-    const formData = new FormData();
-    formData.append('action', 'update_stock_from_sales');
-    formData.append('item_id', itemId);
-    formData.append('quantity', quantity);
-    formData.append('so_id', soId);
-    fetch('current_inventory.php', { method: 'POST', body: formData }).then(r => r.json()).then(d => { Swal.close(); if (!d.success) console.error(d.message); }).catch(e => { Swal.close(); console.error(e); });
-};
-
-// Function to add category to datalist dynamically
-function addCategoryToDatalist(categoryName) {
-    if (!categoryName || categoryName.trim() === '') return;
-    
-    const categoryName_trimmed = categoryName.trim();
-    
-    // Add to both datalists (Add and Edit modals)
-    const datalists = ['categoryList', 'editCategoryList'];
-    datalists.forEach(listId => {
-        const datalist = document.getElementById(listId);
-        if (datalist) {
-            // Check if option already exists
-            const existingOption = Array.from(datalist.options).find(opt => opt.value.toLowerCase() === categoryName_trimmed.toLowerCase());
-            if (!existingOption) {
-                const newOption = document.createElement('option');
-                newOption.value = categoryName_trimmed;
-                datalist.appendChild(newOption);
-            }
-        }
-    });
-}
-
-// Load item images for table thumbnails
-function loadItemImages(itemId) {
-    return new Promise((resolve) => {
-        const formData = new FormData();
-        formData.append('action', 'get_item');
-        formData.append('item_id', itemId);
-        
-        fetch(window.location.href, { method: 'POST', body: formData })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success && data.images && data.images.length > 0) {
-                    const primaryImage = data.images.find(img => img.is_primary) || data.images[0];
-                    const thumbnail = document.querySelector(`.item-thumbnail[data-item-id="${itemId}"]`);
-                    if (thumbnail) {
-                        thumbnail.innerHTML = `<img src="../uploads/products/${primaryImage.image_path}" alt="Product" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;" onerror="this.style.display='none';">`;
-                    }
-                }
-                resolve();
-            })
-            .catch(() => {
-                resolve();
-            });
-    });
-}
-
-// Load all item images
-function loadAllItemImages() {
-    const thumbnails = document.querySelectorAll('.item-thumbnail[data-item-id]');
-    const promises = Array.from(thumbnails).map(thumb => {
-        const itemId = thumb.getAttribute('data-item-id');
-        return loadItemImages(itemId);
-    });
-    return Promise.all(promises);
-}
-
-// Monitor category input field for blur event to add new categories
-document.addEventListener('DOMContentLoaded', function() {
-    const categoryInput = document.getElementById('category');
-    if (categoryInput) {
-        categoryInput.addEventListener('blur', function() {
-            const value = this.value.trim();
-            if (value && value !== '') {
-                addCategoryToDatalist(value);
-            }
-        });
-    }
-    
-    // Also monitor the edit category field
-    const editCategoryInput = document.getElementById('editCategory');
-    if (editCategoryInput) {
-        editCategoryInput.addEventListener('blur', function() {
-            const value = this.value.trim();
-            if (value && value !== '') {
-                addCategoryToDatalist(value);
-            }
-        });
-    }
-    
-    // Load all item images for table thumbnails
-    loadAllItemImages();
-});
-// ========== SIDEBAR DROPDOWN HANDLING ==========
-
-// Set active state for current page and highlight parent dropdown
-function setActiveSidebarItem() {
-    const currentPage = window.location.pathname.split('/').pop();
-    
-    // Remove active class from all nav links
-    document.querySelectorAll('.sidebar .nav-link').forEach(link => {
-        link.classList.remove('active');
-    });
-    
-    // Find and activate the matching link
-    document.querySelectorAll('.sidebar .nav-link').forEach(link => {
-        const href = link.getAttribute('href');
-        if (href === currentPage) {
-            link.classList.add('active');
-            
-            // If this link is inside a dropdown, expand the dropdown and mark parent as active
-            const collapseDiv = link.closest('.collapse');
-            if (collapseDiv) {
-                const dropdownToggle = document.querySelector(`[data-bs-target="#${collapseDiv.id}"]`);
-                if (dropdownToggle) {
-                    // Expand the collapse
-                    const bsCollapse = new bootstrap.Collapse(collapseDiv, { toggle: false });
-                    bsCollapse.show();
-                    dropdownToggle.setAttribute('aria-expanded', 'true');
-                    dropdownToggle.classList.add('active-parent');
-                }
-            }
-        }
-    });
-}
-
-// Handle sidebar dropdown toggles to prevent closing when clicking inside
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize sidebar dropdowns
-    const dropdownToggles = document.querySelectorAll('.sidebar .dropdown-toggle');
-    dropdownToggles.forEach(toggle => {
-        toggle.addEventListener('click', function(e) {
-            e.preventDefault();
-            const targetId = this.getAttribute('data-bs-target');
-            const target = document.querySelector(targetId);
-            if (target) {
-                const bsCollapse = bootstrap.Collapse.getOrCreateInstance(target);
-                bsCollapse.toggle();
-                const expanded = this.getAttribute('aria-expanded') === 'true';
-                this.setAttribute('aria-expanded', !expanded);
-            }
-        });
-    });
-    
-    // Set active sidebar item based on current page
-    setActiveSidebarItem();
-    
-    // Handle sidebar collapse state with dropdowns
-    const sidebar = document.getElementById('sidebar');
-    if (sidebar && window.innerWidth > 992) {
-        if (localStorage.getItem('sidebarCollapsed') === 'true') {
-            sidebar.classList.add('collapsed');
-        }
-    }
-    
-    // When sidebar collapses, ensure dropdowns are closed
-    const desktopToggleBtn = document.getElementById('desktopToggleBtn');
-    if (desktopToggleBtn) {
-        desktopToggleBtn.addEventListener('click', function() {
-            setTimeout(() => {
-                if (sidebar.classList.contains('collapsed')) {
-                    // Close all dropdowns when sidebar collapses
-                    document.querySelectorAll('.sidebar .collapse.show').forEach(collapse => {
-                        const bsCollapse = bootstrap.Collapse.getInstance(collapse);
-                        if (bsCollapse) bsCollapse.hide();
-                    });
-                }
-            }, 300);
-        });
-    }
-});
-function toggleSidebarDropdown(event, targetId) {
-    event.preventDefault();
-    event.stopPropagation();
-    
-    const target = document.getElementById(targetId);
-    const btn = event.currentTarget;
-    const arrow = btn.querySelector('.dropdown-arrow');
-    const sidebar = document.getElementById('sidebar');
-    
-    // If sidebar is collapsed, don't open dropdown - just expand sidebar if needed
-    if (sidebar.classList.contains('collapsed')) {
-        // Expand the sidebar first
-        sidebar.classList.remove('collapsed');
-        localStorage.setItem('sidebarCollapsed', 'false');
-        
-        // Small delay to let CSS transition complete, then open dropdown
-        setTimeout(() => {
-            // Close all other dropdowns first
-            document.querySelectorAll('.sidebar .collapse.show').forEach(collapse => {
-                if (collapse.id !== targetId) {
-                    collapse.classList.remove('show');
-                    const otherBtn = document.querySelector(`[onclick*="${collapse.id}"]`);
-                    if (otherBtn) {
-                        const otherArrow = otherBtn.querySelector('.dropdown-arrow');
-                        if (otherArrow) otherArrow.style.transform = 'translateY(-50%) rotate(0deg)';
-                    }
-                }
-            });
-            
-            // Open the clicked dropdown
-            target.classList.add('show');
-            if (arrow) arrow.style.transform = 'translateY(-50%) rotate(180deg)';
-        }, 50);
-        return;
-    }
-    
-    // Normal behavior when sidebar is already expanded
-    if (target.classList.contains('show')) {
-        target.classList.remove('show');
-        if (arrow) arrow.style.transform = 'translateY(-50%) rotate(0deg)';
-    } else {
-        // Close all other open dropdowns
-        document.querySelectorAll('.sidebar .collapse.show').forEach(collapse => {
-            if (collapse.id !== targetId) {
-                collapse.classList.remove('show');
-                const otherBtn = document.querySelector(`[onclick*="${collapse.id}"]`);
-                if (otherBtn) {
-                    const otherArrow = otherBtn.querySelector('.dropdown-arrow');
-                    if (otherArrow) otherArrow.style.transform = 'translateY(-50%) rotate(0deg)';
-                }
-            }
-        });
-        
-        target.classList.add('show');
-        if (arrow) arrow.style.transform = 'translateY(-50%) rotate(180deg)';
-    }
-}
-
-// ========== SIDEBAR HOVER TO EXPAND - STAY AFTER CLICK ==========
-let isSidebarPinned = false;
-
-function initSidebarHoverBehavior() {
-    const sidebar = document.getElementById('sidebar');
-    if (!sidebar) return;
-    
-    // Only apply on desktop (above 992px)
-    if (window.innerWidth <= 992) return;
-    
-    // When mouse leaves sidebar, collapse unless pinned
-    sidebar.addEventListener('mouseleave', function() {
-        if (!isSidebarPinned && sidebar.classList.contains('collapsed')) {
-            // Remove any inline styles and let CSS handle the rest
-            sidebar.style.width = '';
-        }
-    });
-    
-    // Handle clicks inside sidebar when collapsed
-    sidebar.addEventListener('click', function(e) {
-        // Check if click is on a nav-link or inside dropdown
-        const navLink = e.target.closest('.nav-link');
-        const isDropdownToggle = e.target.closest('.dropdown-nav .nav-link');
-        
-        if (navLink && sidebar.classList.contains('collapsed')) {
-            // Pin the sidebar to stay expanded after click
-            isSidebarPinned = true;
-            
-            // Remove collapsed class to keep it permanently expanded
-            sidebar.classList.remove('collapsed');
-            localStorage.setItem('sidebarCollapsed', 'false');
-            
-            // If it's a dropdown toggle, we need to handle it after expansion
-            if (isDropdownToggle) {
-                // Wait for CSS transition then trigger the dropdown
-                setTimeout(() => {
-                    const onClickAttr = navLink.getAttribute('onclick');
-                    if (onClickAttr && onClickAttr.includes('toggleSidebarDropdown')) {
-                        // Extract the targetId from the onclick
-                        const match = onClickAttr.match(/toggleSidebarDropdown\(event,\s*['"]([^'"]+)['"]\)/);
-                        if (match && match[1]) {
-                            // Trigger the dropdown manually
-                            toggleSidebarDropdown(e, match[1]);
-                        }
-                    }
-                }, 200);
-            }
-        }
-    });
-    
-    // Reset pin when manually toggling
-    const desktopToggleBtn = document.getElementById('desktopToggleBtn');
-    if (desktopToggleBtn) {
-        desktopToggleBtn.addEventListener('click', function() {
-            isSidebarPinned = false;
-        });
-    }
-}
-
-function toggleSidebar() {
-    const sidebar = document.getElementById('sidebar');
-    
-    if (window.innerWidth <= 992) {
-        // Mobile behavior
-        sidebar.classList.toggle('active');
-        let overlay = document.querySelector('.sidebar-overlay');
-        if (!overlay) { 
-            overlay = document.createElement('div'); 
-            overlay.className = 'sidebar-overlay'; 
-            document.body.appendChild(overlay); 
-            overlay.addEventListener('click', function() { 
-                sidebar.classList.remove('active'); 
-                overlay.classList.remove('active'); 
-                setTimeout(function() { overlay.remove(); }, 300); 
-            }); 
-        }
-        setTimeout(function() { overlay.classList.add('active'); }, 10);
-    } else {
-        // Desktop behavior - simple toggle collapse
-        sidebar.classList.toggle('collapsed');
-        localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
-        
-        // If expanding, reset any hover state
-        if (!sidebar.classList.contains('collapsed')) {
-            sidebar.style.width = '';
-        }
-    }
-}
-
-// Initialize on page load
-document.addEventListener('DOMContentLoaded', function() {
-    initSidebarHoverBehavior();
-    
-    // Restore sidebar state from localStorage
-    const sidebar = document.getElementById('sidebar');
-    if (sidebar && window.innerWidth > 992) {
-        const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
-        if (isCollapsed) {
-            sidebar.classList.add('collapsed');
-        } else {
-            sidebar.classList.remove('collapsed');
-            isSidebarPinned = true; // If expanded by default, consider it pinned
-        }
-    }
-});
-// Set active sidebar item based on current page
-function setActiveSidebarItem() {
-    const currentPage = window.location.pathname.split('/').pop();
-    
-    // Remove active class from all nav links
-    document.querySelectorAll('.sidebar .nav-link').forEach(link => {
-        link.classList.remove('active');
-    });
-    
-    // Find and activate the matching link
-    document.querySelectorAll('.sidebar .nav-link').forEach(link => {
-        const href = link.getAttribute('href');
-        if (href === currentPage) {
-            link.classList.add('active');
-            
-            // If this link is inside a dropdown, open the dropdown
-            const collapseDiv = link.closest('.collapse');
-            if (collapseDiv) {
-                collapseDiv.classList.add('show');
-                const parentBtn = document.querySelector(`[onclick*="${collapseDiv.id}"]`);
-                if (parentBtn) {
-                    const arrow = parentBtn.querySelector('.dropdown-arrow');
-                    if (arrow) arrow.style.transform = 'translateY(-50%) rotate(180deg)';
-                }
-            }
-        }
-    });
-}
-
-// Initialize sidebar
-document.addEventListener('DOMContentLoaded', function() {
-    setActiveSidebarItem();
-    
-    const sidebar = document.getElementById('sidebar');
-    const desktopToggleBtn = document.getElementById('desktopToggleBtn');
-    
-    // Restore sidebar state from localStorage
-    if (sidebar && window.innerWidth > 992) {
-        const isCollapsed = localStorage.getItem('sidebarCollapsed') === 'true';
-        if (isCollapsed) {
-            sidebar.classList.add('collapsed');
-        } else {
-            sidebar.classList.remove('collapsed');
-        }
-    }
-    
-    // Handle desktop toggle button
-    if (desktopToggleBtn) {
-        desktopToggleBtn.addEventListener('click', function() {
-            setTimeout(() => {
-                if (sidebar.classList.contains('collapsed')) {
-                    // Close all dropdowns when collapsing
-                    document.querySelectorAll('.sidebar .collapse.show').forEach(collapse => {
-                        collapse.classList.remove('show');
-                        const parentBtn = document.querySelector(`[onclick*="${collapse.id}"]`);
-                        if (parentBtn) {
-                            const arrow = parentBtn.querySelector('.dropdown-arrow');
-                            if (arrow) arrow.style.transform = 'translateY(-50%) rotate(0deg)';
-                        }
-                    });
-                }
-            }, 50);
-        });
-    }
-    
-    // Prevent dropdown from closing when clicking inside it
-    document.querySelectorAll('.sidebar .collapse').forEach(collapse => {
-        collapse.addEventListener('click', function(e) {
-            e.stopPropagation();
-        });
-    });
-});
-// Set active sidebar item
-function setActiveSidebarItem() {
-    const currentPage = window.location.pathname.split('/').pop();
-    
-    document.querySelectorAll('.sidebar .nav-link').forEach(link => {
-        link.classList.remove('active');
-    });
-    
-    document.querySelectorAll('.sidebar .nav-link').forEach(link => {
-        const href = link.getAttribute('href');
-        if (href === currentPage) {
-            link.classList.add('active');
-            
-            const collapseDiv = link.closest('.collapse');
-            if (collapseDiv) {
-                collapseDiv.classList.add('show');
-                const parentBtn = document.querySelector(`[onclick*="${collapseDiv.id}"]`);
-                if (parentBtn) {
-                    const arrow = parentBtn.querySelector('.dropdown-arrow');
-                    if (arrow) arrow.style.transform = 'translateY(-50%) rotate(180deg)';
-                }
-            }
-        }
-    });
-}
-
-// Initialize sidebar
-document.addEventListener('DOMContentLoaded', function() {
-    setActiveSidebarItem();
-    
-    // Handle sidebar collapse
-    const sidebar = document.getElementById('sidebar');
-    const desktopToggleBtn = document.getElementById('desktopToggleBtn');
-    
-    if (desktopToggleBtn) {
-        desktopToggleBtn.addEventListener('click', function() {
-            setTimeout(() => {
-                if (sidebar.classList.contains('collapsed')) {
-                    document.querySelectorAll('.sidebar .collapse.show').forEach(collapse => {
-                        collapse.classList.remove('show');
-                        const parentBtn = document.querySelector(`[onclick*="${collapse.id}"]`);
-                        if (parentBtn) {
-                            const arrow = parentBtn.querySelector('.dropdown-arrow');
-                            if (arrow) arrow.style.transform = 'translateY(-50%) rotate(0deg)';
-                        }
-                    });
-                }
-            }, 300);
-        });
-    }
-});
-
-// Update setActiveSidebarItem function to work with manual toggle
-function setActiveSidebarItem() {
-    const currentPage = window.location.pathname.split('/').pop();
-    
-    document.querySelectorAll('.sidebar .nav-link').forEach(link => {
-        link.classList.remove('active');
-    });
-    
-    document.querySelectorAll('.sidebar .nav-link').forEach(link => {
-        const href = link.getAttribute('href');
-        if (href === currentPage) {
-            link.classList.add('active');
-            
-            const collapseDiv = link.closest('.collapse');
-            if (collapseDiv) {
-                // Open the parent dropdown
-                collapseDiv.classList.add('show');
-                const parentBtn = document.querySelector(`[onclick*="${collapseDiv.id}"]`);
-                if (parentBtn) {
-                    const arrow = parentBtn.querySelector('.dropdown-arrow');
-                    if (arrow) arrow.style.transform = 'translateY(-50%) rotate(180deg)';
-                }
-            }
-        }
-    });
-}
-// Update active state for dropdown parent when sidebar is collapsed
-function updateDropdownParentActiveState() {
-    const sidebar = document.getElementById('sidebar');
-    if (!sidebar) return;
-    
-    if (sidebar.classList.contains('collapsed')) {
-        // Find all dropdown-nav items that have an active child link
-        document.querySelectorAll('.dropdown-nav').forEach(dropdownNav => {
-            const hasActiveChild = dropdownNav.querySelector('.nav-link.active');
-            const parentLink = dropdownNav.querySelector(':scope > .nav-link');
-            
-            if (hasActiveChild && parentLink) {
-                parentLink.classList.add('active');
-            } else if (parentLink) {
-                parentLink.classList.remove('active');
-            }
-        });
-    }
-}
-
-// Call this after sidebar toggle and on page load
-function updateActiveStates() {
-    // First, ensure the current page link has active class
-    const currentPage = window.location.pathname.split('/').pop();
-    document.querySelectorAll('.sidebar .nav-link').forEach(link => {
-        const href = link.getAttribute('href');
-        if (href === currentPage) {
-            link.classList.add('active');
-        }
-    });
-    
-    // Then update parent dropdown active states
-    updateDropdownParentActiveState();
-}
-
-// Call this when sidebar is toggled
-const originalToggleSidebar = toggleSidebar;
-window.toggleSidebar = function() {
-    originalToggleSidebar();
-    setTimeout(updateDropdownParentActiveState, 300);
-};
-function toggleSidebar() {
-    const sidebar = document.getElementById('sidebar');
-    const desktopToggleBtn = document.getElementById('desktopToggleBtn');
-    
-    if (window.innerWidth <= 992) {
-        // Mobile behavior
-        sidebar.classList.toggle('active');
-        let overlay = document.querySelector('.sidebar-overlay');
-        if (!overlay) { 
-            overlay = document.createElement('div'); 
-            overlay.className = 'sidebar-overlay'; 
-            document.body.appendChild(overlay); 
-            overlay.addEventListener('click', function() { 
-                sidebar.classList.remove('active'); 
-                overlay.classList.remove('active'); 
-                setTimeout(function() { overlay.remove(); }, 300); 
-            }); 
-        }
-        setTimeout(function() { overlay.classList.add('active'); }, 10);
-    } else {
-        // Desktop behavior - toggle collapse
-        const wasCollapsed = sidebar.classList.contains('collapsed');
-        sidebar.classList.toggle('collapsed');
-        localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
-        
-        // If expanding from collapsed state (was collapsed, now not collapsed)
-        if (wasCollapsed && !sidebar.classList.contains('collapsed')) {
-            // Remove any inline styles that might have been set by hover
-            sidebar.style.width = '';
-            
-            // AFTER expanding, find any active child link and open its parent dropdown
-            setTimeout(function() {
-                expandActiveDropdownContainers();
-            }, 150);
-        }
-    }
-}
-// Update active state for dropdown parent when sidebar is collapsed
-function updateDropdownParentActiveState() {
-    const sidebar = document.getElementById('sidebar');
-    if (!sidebar) return;
-    
-    if (sidebar.classList.contains('collapsed')) {
-        // Find all dropdown-nav items that have an active child link
-        document.querySelectorAll('.dropdown-nav').forEach(function(dropdownNav) {
-            const hasActiveChild = dropdownNav.querySelector('.nav-link.active');
-            const parentLink = dropdownNav.querySelector(':scope > .nav-link');
-            
-            if (hasActiveChild && parentLink) {
-                parentLink.classList.add('active');
-            } else if (parentLink) {
-                parentLink.classList.remove('active');
-            }
-        });
-    }
-}
-// Function to expand all dropdown containers that contain active links
-function expandActiveDropdownContainers() {
-    const sidebar = document.getElementById('sidebar');
-    if (!sidebar) return;
-    
-    // Find all dropdown-nav containers
-    const dropdownNavs = document.querySelectorAll('.sidebar .dropdown-nav');
-    
-    dropdownNavs.forEach(function(dropdownNav) {
-        // Check if this dropdown contains any active link
-        const activeLink = dropdownNav.querySelector('.nav-link.active');
-        
-        if (activeLink) {
-            // Find the collapse element inside this dropdown
-            const collapseDiv = dropdownNav.querySelector('.collapse');
-            
-            if (collapseDiv && !collapseDiv.classList.contains('show')) {
-                // Open the dropdown
-                collapseDiv.classList.add('show');
-                
-                // Rotate the arrow of the parent link
-                const parentLink = dropdownNav.querySelector(':scope > .nav-link');
-                if (parentLink) {
-                    const arrow = parentLink.querySelector('.dropdown-arrow');
-                    if (arrow) {
-                        arrow.style.transform = 'translateY(-50%) rotate(180deg)';
-                    }
-                    // Also add active class to parent if sidebar is collapsed
-                    if (sidebar.classList.contains('collapsed')) {
-                        parentLink.classList.add('active');
-                    }
-                }
-            }
-        }
-    });
-}
-function setActiveSidebarItem() {
-    const currentPage = window.location.pathname.split('/').pop();
-    
-    // Remove active class from all nav links
-    document.querySelectorAll('.sidebar .nav-link').forEach(link => {
-        link.classList.remove('active');
-    });
-    
-    // Find and activate the matching link
-    document.querySelectorAll('.sidebar .nav-link').forEach(link => {
-        const href = link.getAttribute('href');
-        if (href === currentPage) {
-            link.classList.add('active');
-        }
-    });
-    
-    // Expand dropdown containers that have active links (only if sidebar is expanded)
-    const sidebar = document.getElementById('sidebar');
-    if (sidebar && !sidebar.classList.contains('collapsed')) {
-        expandActiveDropdownContainers();
-    }
-}
-</script>
-
-<script>
-window.availablePriceLevels = <?php echo json_encode(array_values($priceLevels)); ?>;
-</script>
-
-<<<<<<< HEAD
     document.addEventListener('shown.bs.modal', function (event) {
         if (event.target && (event.target.id === 'itemModal' || event.target.id === 'editItemModal')) {
             setTimeout(normalizeNestedModalBackdrops, 60);
@@ -16020,7 +13444,668 @@ window.availablePriceLevels = <?php echo json_encode(array_values($priceLevels))
 })();
 </script>
 
-=======
->>>>>>> 97aee82aa9dc5d65ae46ea5072f4ceb2156ef928
+
+
+
+<style id="amgc-linked-account-no-flicker-final">
+/* No-flicker nested Add Account modal:
+   Keep only the Add Item backdrop. The child Add Account modal opens above it without its own backdrop. */
+#itemModal.show,
+#editItemModal.show {
+    z-index: 1055 !important;
+    opacity: 1 !important;
+    filter: none !important;
+    pointer-events: auto !important;
+}
+#itemLinkedAccountModal.show {
+    z-index: 1095 !important;
+}
+.modal-backdrop.item-parent-backdrop {
+    z-index: 1040 !important;
+    opacity: .5 !important;
+}
+.modal-backdrop.item-linked-account-backdrop,
+.modal-backdrop.amgc-item-linked-backdrop-final {
+    display: none !important;
+}
+</style>
+
+<script id="amgc-linked-account-no-flicker-final">
+(function () {
+    function parentItemModal() {
+        return document.querySelector('#itemModal.show, #editItemModal.show');
+    }
+
+    function removeChildAccountBackdrops() {
+        document.querySelectorAll('.modal-backdrop').forEach(function (backdrop) {
+            var z = parseInt(backdrop.style.zIndex || window.getComputedStyle(backdrop).zIndex || '0', 10);
+            if (
+                backdrop.classList.contains('item-linked-account-backdrop') ||
+                backdrop.classList.contains('amgc-item-linked-backdrop-final') ||
+                z >= 1080
+            ) {
+                backdrop.remove();
+            }
+        });
+    }
+
+    function ensureParentBackdrop() {
+        var parent = parentItemModal();
+        if (!parent) return;
+
+        removeChildAccountBackdrops();
+
+        var parentBackdrop = Array.from(document.querySelectorAll('.modal-backdrop')).find(function (backdrop) {
+            return backdrop.classList.contains('item-parent-backdrop');
+        }) || Array.from(document.querySelectorAll('.modal-backdrop'))[0];
+
+        if (!parentBackdrop) {
+            parentBackdrop = document.createElement('div');
+            parentBackdrop.className = 'modal-backdrop fade show item-parent-backdrop';
+            document.body.appendChild(parentBackdrop);
+        }
+
+        parentBackdrop.className = 'modal-backdrop fade show item-parent-backdrop';
+        parentBackdrop.style.zIndex = '1040';
+        parentBackdrop.style.opacity = '0.5';
+
+        parent.style.zIndex = '1055';
+        parent.style.opacity = '1';
+        parent.style.filter = 'none';
+        parent.style.pointerEvents = 'auto';
+        parent.removeAttribute('aria-hidden');
+
+        document.body.classList.add('modal-open');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function cleanNestedState() {
+        var parent = parentItemModal();
+        removeChildAccountBackdrops();
+
+        if (parent) {
+            ensureParentBackdrop();
+            return;
+        }
+
+        if (!document.querySelector('.modal.show')) {
+            document.querySelectorAll('.modal-backdrop').forEach(function (backdrop) {
+                backdrop.remove();
+            });
+            document.body.classList.remove('modal-open');
+            document.body.style.removeProperty('overflow');
+            document.body.style.removeProperty('padding-right');
+        }
+    }
+
+    var childModal = document.getElementById('itemLinkedAccountModal');
+    if (childModal) {
+        childModal.setAttribute('data-bs-backdrop', 'false');
+
+        childModal.addEventListener('show.bs.modal', function () {
+            childModal.setAttribute('data-bs-backdrop', 'false');
+            ensureParentBackdrop();
+        }, true);
+
+        childModal.addEventListener('shown.bs.modal', function () {
+            removeChildAccountBackdrops();
+            ensureParentBackdrop();
+        }, true);
+
+        childModal.addEventListener('hide.bs.modal', function () {
+            removeChildAccountBackdrops();
+        }, true);
+
+        childModal.addEventListener('hidden.bs.modal', function () {
+            requestAnimationFrame(cleanNestedState);
+            setTimeout(cleanNestedState, 60);
+        }, true);
+    }
+
+    document.addEventListener('shown.bs.modal', function (event) {
+        if (event.target && (event.target.id === 'itemModal' || event.target.id === 'editItemModal')) {
+            setTimeout(ensureParentBackdrop, 40);
+        }
+    }, true);
+
+    document.addEventListener('hidden.bs.modal', function () {
+        setTimeout(cleanNestedState, 40);
+    }, true);
+})();
+</script>
+
+
+
+<style id="amgc-linked-account-hide-parent-final-fix">
+/* FINAL NESTED ACCOUNT MODAL FIX
+   Kapag nag-add ng Income/COGS/Asset account, itatago muna ang Add Item modal
+   para hindi mag-flicker ang backdrop. Add Account modal has its own steady dark bg. */
+#itemModal.amgc-item-modal-temporarily-hidden,
+#editItemModal.amgc-item-modal-temporarily-hidden {
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+.amgc-linked-account-dark-layer {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.62);
+    z-index: 1088 !important;
+}
+
+#itemLinkedAccountModal.show {
+    z-index: 1095 !important;
+}
+
+/* Hide any Bootstrap child backdrop so only our stable dark layer is used. */
+.modal-backdrop.item-linked-account-backdrop,
+.modal-backdrop.amgc-item-linked-backdrop-final {
+    display: none !important;
+}
+
+/* Cancel button fixed style for Add Account modal */
+#itemLinkedAccountModal .modal-footer .btn[data-bs-dismiss="modal"] {
+    background: #f8fafc !important;
+    color: #111827 !important;
+    border: 1px solid #d1d5db !important;
+    border-radius: 10px !important;
+    min-width: 96px !important;
+    height: 44px !important;
+    font-weight: 500 !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: .35rem !important;
+    padding: 0 1rem !important;
+}
+#itemLinkedAccountModal .modal-footer .btn[data-bs-dismiss="modal"]:hover {
+    background: #e5e7eb !important;
+    color: #052A47 !important;
+}
+#itemLinkedAccountModal .modal-footer .btn[data-bs-dismiss="modal"]::before {
+    content: "\F62A";
+    font-family: "bootstrap-icons" !important;
+    font-size: .95rem;
+    line-height: 1;
+}
+</style>
+
+<script id="amgc-linked-account-hide-parent-final-fix">
+(function () {
+    function getParentItemModal() {
+        return document.querySelector('#itemModal.show, #editItemModal.show');
+    }
+
+    function removeChildBootstrapBackdrops() {
+        document.querySelectorAll('.modal-backdrop').forEach(function (backdrop) {
+            var z = parseInt(backdrop.style.zIndex || window.getComputedStyle(backdrop).zIndex || '0', 10);
+            if (backdrop.classList.contains('item-linked-account-backdrop') ||
+                backdrop.classList.contains('amgc-item-linked-backdrop-final') ||
+                z >= 1080) {
+                backdrop.remove();
+            }
+        });
+    }
+
+    function showStableDarkLayer() {
+        var layer = document.querySelector('.amgc-linked-account-dark-layer');
+        if (!layer) {
+            layer = document.createElement('div');
+            layer.className = 'amgc-linked-account-dark-layer';
+            document.body.appendChild(layer);
+        }
+    }
+
+    function hideStableDarkLayer() {
+        document.querySelectorAll('.amgc-linked-account-dark-layer').forEach(function (layer) {
+            layer.remove();
+        });
+    }
+
+    function pauseParentItemModal() {
+        var parent = getParentItemModal();
+        if (!parent) return;
+
+        parent.classList.add('amgc-item-modal-temporarily-hidden');
+        parent.style.visibility = 'hidden';
+        parent.style.opacity = '0';
+        parent.style.pointerEvents = 'none';
+        parent.style.zIndex = '1055';
+        parent.removeAttribute('aria-hidden');
+
+        showStableDarkLayer();
+        removeChildBootstrapBackdrops();
+        document.body.classList.add('modal-open');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function resumeParentItemModal() {
+        var parent = document.querySelector('#itemModal.show, #editItemModal.show, #itemModal.amgc-item-modal-temporarily-hidden, #editItemModal.amgc-item-modal-temporarily-hidden');
+
+        hideStableDarkLayer();
+        removeChildBootstrapBackdrops();
+
+        if (parent) {
+            parent.classList.remove('amgc-item-modal-temporarily-hidden');
+            parent.style.visibility = '';
+            parent.style.opacity = '';
+            parent.style.pointerEvents = '';
+            parent.style.zIndex = '1055';
+            parent.removeAttribute('aria-hidden');
+
+            var parentBackdrop = document.querySelector('.modal-backdrop.item-parent-backdrop') || document.querySelector('.modal-backdrop');
+            if (!parentBackdrop) {
+                parentBackdrop = document.createElement('div');
+                parentBackdrop.className = 'modal-backdrop fade show item-parent-backdrop';
+                document.body.appendChild(parentBackdrop);
+            }
+            parentBackdrop.className = 'modal-backdrop fade show item-parent-backdrop';
+            parentBackdrop.style.zIndex = '1040';
+            parentBackdrop.style.opacity = '0.5';
+
+            document.body.classList.add('modal-open');
+            document.body.style.overflow = 'hidden';
+            return;
+        }
+
+        if (!document.querySelector('.modal.show')) {
+            document.querySelectorAll('.modal-backdrop').forEach(function (backdrop) { backdrop.remove(); });
+            document.body.classList.remove('modal-open');
+            document.body.style.removeProperty('overflow');
+            document.body.style.removeProperty('padding-right');
+        }
+    }
+
+    var childModal = document.getElementById('itemLinkedAccountModal');
+    if (!childModal) return;
+
+    childModal.setAttribute('data-bs-backdrop', 'false');
+
+    childModal.addEventListener('show.bs.modal', function () {
+        childModal.setAttribute('data-bs-backdrop', 'false');
+        pauseParentItemModal();
+    }, true);
+
+    childModal.addEventListener('shown.bs.modal', function () {
+        pauseParentItemModal();
+        var titleInput = document.getElementById('itemLinkedAccountTitle');
+        if (titleInput) titleInput.focus();
+    }, true);
+
+    childModal.addEventListener('hide.bs.modal', function () {
+        removeChildBootstrapBackdrops();
+    }, true);
+
+    childModal.addEventListener('hidden.bs.modal', function () {
+        requestAnimationFrame(resumeParentItemModal);
+        setTimeout(resumeParentItemModal, 80);
+        setTimeout(resumeParentItemModal, 180);
+    }, true);
+})();
+
+document.addEventListener('DOMContentLoaded', function () {
+    const sidebar = document.querySelector('.sidebar-content');
+    const activeLink = document.querySelector('.sidebar .nav-link.active');
+
+    if (!sidebar || !activeLink) return;
+
+    // Open parent dropdown if collapsed
+    const collapse = activeLink.closest('.collapse');
+    if (collapse) {
+        collapse.classList.add('show');
+
+        const trigger = document.querySelector(
+            `[onclick*="${collapse.id}"]`
+        );
+
+        if (trigger) {
+            trigger.setAttribute('aria-expanded', 'true');
+
+            const arrow = trigger.querySelector('.dropdown-arrow');
+            if (arrow) {
+                arrow.style.transform = 'rotate(180deg)';
+            }
+        }
+    }
+
+    // Smooth scroll to active menu
+    setTimeout(() => {
+        activeLink.scrollIntoView({
+            behavior: 'smooth',
+            block: 'center'
+        });
+    }, 200);
+});
+
+// ===== Inventory Page Merge Tabs: Items, Bad Orders, Picklist =====
+(function(){
+    const TITLES = {
+        'items': ['Current Inventory', 'Manage inventory, pricing and stock levels'],
+        'bad-orders': ['Bad Orders', 'Manage Returned Merchandise Requests (RMR) from rejected deliveries'],
+        'picklist': ['Pick List Items', 'Manage item picking, allocation and delivery preparation']
+    };
+
+    function getFrameDoc(frame){
+        try { return frame && (frame.contentDocument || frame.contentWindow.document); } catch(e) { return null; }
+    }
+
+    function injectMergedFrameStyle(doc){
+        if (!doc || !doc.head || doc.getElementById('amgcMergedStableStyle')) return;
+        const style = doc.createElement('style');
+        style.id = 'amgcMergedStableStyle';
+        style.textContent = `
+            html, body {
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #fff !important;
+                overflow-x: hidden !important;
+            }
+            .sidebar, #sidebar, .sidebar-overlay,
+            .bottom-nav, .mobile-bottom-nav, .sidebar-footer,
+            .navbar-top, .top-navbar, #mobileToggleBtn, .mobile-toggle-btn,
+            footer,
+            .page-title, .dashboard-header, .header-card {
+                display: none !important;
+                visibility: hidden !important;
+                width: 0 !important;
+                height: 0 !important;
+                min-height: 0 !important;
+                max-height: 0 !important;
+                overflow: hidden !important;
+                opacity: 0 !important;
+                pointer-events: none !important;
+            }
+            .main-content, #mainContent {
+                margin-left: 0 !important;
+                left: 0 !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                padding: 0 !important;
+                min-height: auto !important;
+            }
+            .page-content, #dashboardContent,
+            .content-wrapper, .container-fluid, .container {
+                display: block !important;
+                width: 100% !important;
+                max-width: 100% !important;
+                padding-left: 0 !important;
+                padding-right: 0 !important;
+                margin-left: 0 !important;
+                margin-right: 0 !important;
+            }
+            html:has(body.amgc-frame-modal-open),
+            body.amgc-frame-modal-open {
+                background: transparent !important;
+                overflow: hidden !important;
+            }
+            body.amgc-frame-modal-open > *:not(.modal):not(.modal-backdrop):not(script):not(style) {
+                visibility: hidden !important;
+                opacity: 0 !important;
+                pointer-events: none !important;
+            }
+            body.amgc-frame-modal-open .main-content,
+            body.amgc-frame-modal-open #mainContent,
+            body.amgc-frame-modal-open .page-content,
+            body.amgc-frame-modal-open #dashboardContent {
+                visibility: hidden !important;
+                opacity: 0 !important;
+                pointer-events: none !important;
+            }
+            body.amgc-frame-modal-open .modal,
+            body.amgc-frame-modal-open .modal * {
+                pointer-events: auto !important;
+                visibility: visible !important;
+            }
+            body.amgc-frame-modal-open .modal {
+                position: fixed !important;
+                inset: 0 !important;
+                z-index: 2147483640 !important;
+                background: transparent !important;
+            }
+            body.amgc-frame-modal-open .modal-backdrop {
+                background: transparent !important;
+                opacity: 0 !important;
+                pointer-events: none !important;
+            }
+        `;
+        doc.head.appendChild(style);
+    }
+
+    function removeDuplicatedLayout(doc){
+        if (!doc || !doc.body) return;
+        const selectors = [
+            '.sidebar', '#sidebar', '.sidebar-overlay',
+            '.bottom-nav', '.mobile-bottom-nav', '.sidebar-footer',
+            '.navbar-top', '.top-navbar', '#mobileToggleBtn', '.mobile-toggle-btn',
+            'footer'
+        ];
+        selectors.forEach(function(sel){
+            doc.querySelectorAll(sel).forEach(function(el){
+                el.style.display = 'none';
+                el.style.visibility = 'hidden';
+                el.style.pointerEvents = 'none';
+            });
+        });
+    }
+
+    function resizeMergedFrame(frame){
+        const doc = getFrameDoc(frame);
+        if (!doc || !doc.body) return;
+        if (frame.classList.contains('amgc-frame-modal-active')) return;
+        const h = Math.max(
+            doc.body.scrollHeight || 0,
+            doc.documentElement ? doc.documentElement.scrollHeight : 0,
+            760
+        );
+        frame.style.height = (h + 40) + 'px';
+    }
+
+    function getModalTargetFromTrigger(trigger){
+        if (!trigger) return '';
+        return trigger.getAttribute('data-bs-target') ||
+               trigger.getAttribute('data-target') ||
+               (trigger.getAttribute('href') && trigger.getAttribute('href').charAt(0) === '#' ? trigger.getAttribute('href') : '');
+    }
+
+    function promoteMergedFrameModal(frame, modalEl){
+        const doc = getFrameDoc(frame);
+        const wrap = frame ? frame.closest('.inventory-merge-frame-wrap') : null;
+        if (!doc || !doc.body || !wrap) return;
+
+        wrap.classList.add('amgc-frame-modal-active');
+        frame.classList.add('amgc-frame-modal-active');
+        doc.body.classList.add('amgc-frame-modal-open');
+        document.body.classList.add('amgc-iframe-modal-open');
+
+        if (modalEl) {
+            if (modalEl.parentNode !== doc.body) {
+                doc.body.appendChild(modalEl);
+            }
+            modalEl.style.position = 'fixed';
+            modalEl.style.inset = '0';
+            modalEl.style.zIndex = '2147483640';
+            modalEl.style.visibility = 'visible';
+            modalEl.style.opacity = '1';
+            modalEl.style.pointerEvents = 'auto';
+            modalEl.style.paddingRight = '0';
+            modalEl.style.paddingLeft = '0';
+        }
+    }
+
+    window.cleanMergedModuleFrame = function(frame){
+        const doc = getFrameDoc(frame);
+        if (!doc || !doc.body) return;
+
+        injectMergedFrameStyle(doc);
+        removeDuplicatedLayout(doc);
+        frame.classList.add('amgc-frame-ready');
+        resizeMergedFrame(frame);
+        setTimeout(function(){ removeDuplicatedLayout(doc); resizeMergedFrame(frame); }, 250);
+        setTimeout(function(){ removeDuplicatedLayout(doc); resizeMergedFrame(frame); }, 900);
+
+        if (frame.dataset.amgcStableEvents === '1') return;
+        frame.dataset.amgcStableEvents = '1';
+
+        const syncLater = function(){
+            setTimeout(function(){ syncMergedFrameModalState(frame); resizeMergedFrame(frame); }, 20);
+            setTimeout(function(){ syncMergedFrameModalState(frame); resizeMergedFrame(frame); }, 180);
+        };
+
+        doc.addEventListener('click', function(e){
+            const trigger = e.target && e.target.closest ? e.target.closest('[data-bs-toggle="modal"], [data-toggle="modal"], a[href^="#"][data-bs-target], button[data-bs-target]') : null;
+            const targetSelector = getModalTargetFromTrigger(trigger);
+            if (!targetSelector) return;
+            try {
+                const modalEl = doc.querySelector(targetSelector);
+                if (modalEl && modalEl.classList.contains('modal')) {
+                    promoteMergedFrameModal(frame, modalEl);
+                }
+            } catch(err) {}
+        }, true);
+
+        doc.addEventListener('show.bs.modal', function(e){
+            if (e && e.target && e.target.classList && e.target.classList.contains('modal')) {
+                promoteMergedFrameModal(frame, e.target);
+            }
+            syncLater();
+        }, true);
+
+        ['shown.bs.modal','hide.bs.modal','hidden.bs.modal'].forEach(function(evt){
+            doc.addEventListener(evt, syncLater, true);
+        });
+
+        doc.addEventListener('keydown', function(e){
+            if (e.key === 'Escape') syncLater();
+        }, true);
+
+        // Light safety check only. The old very fast observer/polling caused the Bad Orders
+        // and Pick List tabs to freeze on some browsers.
+        frame._amgcLightTimer = setInterval(function(){
+            if (!frame.closest('.inventory-merge-frame-wrap.active')) return;
+            syncMergedFrameModalState(frame);
+        }, 900);
+    };
+
+    window.syncMergedFrameModalState = function(frame){
+        const doc = getFrameDoc(frame);
+        const wrap = frame ? frame.closest('.inventory-merge-frame-wrap') : null;
+        if (!doc || !doc.body || !wrap) return;
+
+        const activeModal = doc.querySelector('.modal.show, .modal[style*="display: block"]');
+        const modalOpen = !!activeModal || doc.body.classList.contains('modal-open');
+
+        wrap.classList.toggle('amgc-frame-modal-active', modalOpen);
+        frame.classList.toggle('amgc-frame-modal-active', modalOpen);
+        doc.body.classList.toggle('amgc-frame-modal-open', modalOpen);
+        document.body.classList.toggle('amgc-iframe-modal-open', modalOpen);
+
+        if (modalOpen && activeModal) {
+            if (activeModal.parentNode !== doc.body) {
+                doc.body.appendChild(activeModal);
+            }
+
+            activeModal.style.position = 'fixed';
+            activeModal.style.inset = '0';
+            activeModal.style.zIndex = '2147483640';
+            activeModal.style.display = 'block';
+            activeModal.style.visibility = 'visible';
+            activeModal.style.opacity = '1';
+            activeModal.style.pointerEvents = 'auto';
+            activeModal.style.paddingRight = '0';
+            activeModal.style.paddingLeft = '0';
+
+            doc.querySelectorAll('.modal-backdrop').forEach(function(backdrop){
+                backdrop.style.background = 'transparent';
+                backdrop.style.opacity = '0';
+                backdrop.style.pointerEvents = 'none';
+            });
+
+            doc.querySelectorAll('.modal-dialog').forEach(function(dialog){
+                dialog.style.marginLeft = 'auto';
+                dialog.style.marginRight = 'auto';
+                if (dialog.classList.contains('modal-xl')) dialog.style.maxWidth = '95vw';
+            });
+        } else {
+            wrap.classList.remove('amgc-frame-modal-active');
+            frame.classList.remove('amgc-frame-modal-active');
+            doc.body.classList.remove('amgc-frame-modal-open');
+            document.body.classList.remove('amgc-iframe-modal-open');
+
+            doc.querySelectorAll('[data-amgc-hidden-during-modal="1"]').forEach(function(child){
+                child.removeAttribute('data-amgc-hidden-during-modal');
+                child.style.removeProperty('display');
+                child.style.removeProperty('visibility');
+                child.style.removeProperty('opacity');
+                child.style.removeProperty('pointer-events');
+            });
+
+            doc.querySelectorAll('.modal-backdrop').forEach(function(backdrop){ backdrop.remove(); });
+            doc.body.classList.remove('modal-open');
+            doc.body.style.removeProperty('overflow');
+            doc.body.style.removeProperty('padding-right');
+            resizeMergedFrame(frame);
+        }
+    };
+
+    function setVisiblePanels(tabName){
+        const panels = {
+            'bad-orders': document.getElementById('badOrdersTabPanel'),
+            'picklist': document.getElementById('picklistTabPanel')
+        };
+        Object.keys(panels).forEach(function(key){
+            if (panels[key]) panels[key].classList.toggle('active', key === tabName);
+        });
+    }
+
+    window.switchInventoryMainTab = function(tabName){
+        if (!TITLES[tabName]) tabName = 'items';
+
+        document.querySelectorAll('.inventory-merge-tab').forEach(function(btn){
+            btn.classList.toggle('active', btn.getAttribute('data-inventory-tab') === tabName);
+        });
+
+        const title = document.querySelector('.page-title h2');
+        const subtitle = document.getElementById('dashboardSubtitle');
+        if (title) title.textContent = TITLES[tabName][0];
+        if (subtitle) subtitle.textContent = TITLES[tabName][1];
+
+        document.body.classList.toggle('inventory-external-tab-active', tabName !== 'items');
+        setVisiblePanels(tabName);
+
+        if (tabName === 'bad-orders') {
+            const badFrame = document.getElementById('badOrdersFrame');
+            if (badFrame && !badFrame.getAttribute('src')) {
+                badFrame.classList.remove('amgc-frame-ready');
+                badFrame.setAttribute('src', badFrame.getAttribute('data-src'));
+            }
+            setTimeout(function(){ resizeMergedFrame(badFrame); }, 400);
+        } else if (tabName === 'picklist') {
+            const pickFrame = document.getElementById('picklistFrame');
+            if (pickFrame && !pickFrame.getAttribute('src')) {
+                pickFrame.classList.remove('amgc-frame-ready');
+                pickFrame.setAttribute('src', pickFrame.getAttribute('data-src'));
+            }
+            setTimeout(function(){ resizeMergedFrame(pickFrame); }, 400);
+        } else {
+            document.body.classList.remove('amgc-iframe-modal-open');
+        }
+
+        try {
+            const url = new URL(window.location.href);
+            url.searchParams.set('tab', tabName);
+            window.history.replaceState({}, '', url.toString());
+        } catch(e) {}
+
+        window.scrollTo({top:0, behavior:'smooth'});
+    };
+
+    document.addEventListener('DOMContentLoaded', function(){
+        const initialTab = new URLSearchParams(window.location.search).get('tab') || 'items';
+        window.switchInventoryMainTab(initialTab);
+    });
+})();
+</script>
+
 </body>
 </html>
